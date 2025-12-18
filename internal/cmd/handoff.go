@@ -264,11 +264,10 @@ Check gt mail inbox for messages received during transition.
 `, time.Now().Format(time.RFC3339), role)
 	}
 
-	// Send via bd mail
-	cmd := exec.Command("bd", "mail", "send",
-		"--to", selfAddr,
-		"--subject", subject,
-		"--body", body,
+	// Send via bd mail (syntax: bd mail send <recipient> -s <subject> -m <body>)
+	cmd := exec.Command("bd", "mail", "send", selfAddr,
+		"-s", subject,
+		"-m", body,
 	)
 	cmd.Dir = townRoot
 
@@ -296,11 +295,10 @@ Time: %s
 Please verify state and execute lifecycle action.
 `, role, action, time.Now().Format(time.RFC3339))
 
-	// Send via bd mail
-	cmd := exec.Command("bd", "mail", "send",
-		"--to", manager,
-		"--subject", subject,
-		"--body", body,
+	// Send via bd mail (syntax: bd mail send <recipient> -s <subject> -m <body>)
+	cmd := exec.Command("bd", "mail", "send", manager,
+		"-s", subject,
+		"-m", body,
 	)
 	cmd.Dir = townRoot
 
