@@ -288,8 +288,8 @@ graph TB
         Beads[".beads/"]
 
         subgraph Polecats["polecats/"]
-            Nux["Nux/<br/>(git clone)"]
-            Toast["Toast/<br/>(git clone)"]
+            Nux["Nux/<br/>(worktree)"]
+            Toast["Toast/<br/>(worktree)"]
         end
 
         subgraph Refinery["refinery/"]
