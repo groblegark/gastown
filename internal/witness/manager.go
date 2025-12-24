@@ -337,6 +337,11 @@ func (m *Manager) run(w *Witness) error {
 	m.handoffState = handoffState
 	fmt.Printf("Loaded handoff state with %d worker(s)\n", len(m.handoffState.WorkerStates))
 
+	// Ensure mol-witness-patrol instance exists for tracking
+	if err := m.ensurePatrolInstance(); err != nil {
+		fmt.Printf("Warning: could not ensure patrol instance: %v\n", err)
+	}
+
 	// Initial check immediately
 	m.checkAndProcess(w)
 
@@ -346,6 +351,88 @@ func (m *Manager) run(w *Witness) error {
 	for range ticker.C {
 		m.checkAndProcess(w)
 	}
+	return nil
+}
+
+// ensurePatrolInstance ensures a mol-witness-patrol instance exists for tracking.
+// If one already exists (from a previous session), it's reused. Otherwise, a new
+// instance is created and pinned to the witness handoff bead.
+func (m *Manager) ensurePatrolInstance() error {
+	// Check if we already have a patrol instance
+	if m.handoffState != nil && m.handoffState.PatrolInstanceID != "" {
+		// Verify it still exists
+		cmd := exec.Command("bd", "show", m.handoffState.PatrolInstanceID, "--json")
+		cmd.Dir = m.workDir
+		if err := cmd.Run(); err == nil {
+			fmt.Printf("Using existing patrol instance: %s\n", m.handoffState.PatrolInstanceID)
+			return nil
+		}
+		// Instance no longer exists, clear it
+		m.handoffState.PatrolInstanceID = ""
+	}
+
+	// Create a new patrol instance
+	// First, create a root issue for the patrol
+	patrolTitle := fmt.Sprintf("Witness Patrol (%s)", m.rig.Name)
+	patrolDesc := fmt.Sprintf(`Active mol-witness-patrol instance for %s.
+
+rig: %s
+started_at: %s
+type: patrol-instance
+`, m.rig.Name, m.rig.Name, time.Now().UTC().Format(time.RFC3339))
+
+	cmd := exec.Command("bd", "create",
+		"--title", patrolTitle,
+		"--type", "task",
+		"--priority", "3",
+		"--description", patrolDesc,
+	)
+	cmd.Dir = m.workDir
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("creating patrol instance: %s", stderr.String())
+	}
+
+	// Parse the created issue ID from stdout
+	// Output format: "✓ Created issue: gt-xyz"
+	output := stdout.String()
+	var patrolID string
+	if _, err := fmt.Sscanf(output, "✓ Created issue: %s", &patrolID); err != nil {
+		// Try alternate parsing
+		lines := strings.Split(output, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "Created issue:") {
+				parts := strings.Split(line, ":")
+				if len(parts) >= 2 {
+					patrolID = strings.TrimSpace(parts[len(parts)-1])
+					break
+				}
+			}
+		}
+	}
+
+	if patrolID == "" {
+		return fmt.Errorf("could not parse patrol instance ID from: %s", output)
+	}
+
+	// Store the patrol instance ID
+	if m.handoffState == nil {
+		m.handoffState = &WitnessHandoffState{
+			WorkerStates: make(map[string]WorkerState),
+		}
+	}
+	m.handoffState.PatrolInstanceID = patrolID
+
+	// Persist the updated handoff state
+	if err := m.saveHandoffState(m.handoffState); err != nil {
+		return fmt.Errorf("saving handoff state: %w", err)
+	}
+
+	fmt.Printf("Created patrol instance: %s\n", patrolID)
 	return nil
 }
 

@@ -90,6 +90,9 @@ type WorkerState struct {
 	// Issue is the current issue the worker is assigned to.
 	Issue string `json:"issue,omitempty"`
 
+	// ArmID is the mol-polecat-arm instance tracking this worker.
+	ArmID string `json:"arm_id,omitempty"`
+
 	// NudgeCount is how many times this worker has been nudged.
 	NudgeCount int `json:"nudge_count"`
 
@@ -105,6 +108,9 @@ type WorkerState struct {
 type WitnessHandoffState struct {
 	// WorkerStates maps polecat names to their state.
 	WorkerStates map[string]WorkerState `json:"worker_states"`
+
+	// PatrolInstanceID is the mol-witness-patrol instance tracking this patrol.
+	PatrolInstanceID string `json:"patrol_instance_id,omitempty"`
 
 	// LastPatrol is when the last patrol cycle completed.
 	LastPatrol *time.Time `json:"last_patrol,omitempty"`
