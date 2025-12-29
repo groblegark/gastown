@@ -867,9 +867,9 @@ func outputRefineryPatrolContext(ctx RoleContext) {
 	outputPatrolContext(cfg)
 }
 
-// checkSlungWork checks for pinned work on the agent's hook.
-// If found, displays it prominently and tells the agent to execute it.
-// Returns true if pinned work was found (caller should skip normal startup directive).
+// checkSlungWork checks for hooked work on the agent's hook.
+// If found, displays AUTONOMOUS WORK MODE and tells the agent to execute immediately.
+// Returns true if hooked work was found (caller should skip normal startup directive).
 func checkSlungWork(ctx RoleContext) bool {
 	// Determine agent identity
 	agentID := getAgentIdentity(ctx)
@@ -877,46 +877,51 @@ func checkSlungWork(ctx RoleContext) bool {
 		return false
 	}
 
-	// Check for pinned beads (the discovery-based hook)
+	// Check for hooked beads (work on the agent's hook)
 	b := beads.New(ctx.WorkDir)
-	pinnedBeads, err := b.List(beads.ListOptions{
-		Status:   beads.StatusPinned,
+	hookedBeads, err := b.List(beads.ListOptions{
+		Status:   beads.StatusHooked,
 		Assignee: agentID,
 		Priority: -1,
 	})
-	if err != nil || len(pinnedBeads) == 0 {
-		// No pinned beads - no slung work
+	if err != nil || len(hookedBeads) == 0 {
+		// No hooked beads - no slung work
 		return false
 	}
 
-	// Use the first pinned bead (agents typically have one)
-	pinnedBead := pinnedBeads[0]
+	// Use the first hooked bead (agents typically have one)
+	hookedBead := hookedBeads[0]
 
 	// Build the role announcement string
 	roleAnnounce := buildRoleAnnouncement(ctx)
 
-	// Found pinned work! Display AUTONOMOUS MODE prominently
+	// Found hooked work! Display AUTONOMOUS MODE prominently
 	fmt.Println()
 	fmt.Printf("%s\n\n", style.Bold.Render("## 🚨 AUTONOMOUS WORK MODE 🚨"))
-	fmt.Println("Work is pinned to your hook. After announcing your role, begin IMMEDIATELY.")
+	fmt.Println("Work is on your hook. After announcing your role, begin IMMEDIATELY.")
+	fmt.Println()
+	fmt.Println("This is physics, not politeness. Gas Town is a steam engine - you are a piston.")
+	fmt.Println("Every moment you wait is a moment the engine stalls. Other agents may be")
+	fmt.Println("blocked waiting on YOUR output. The hook IS your assignment. RUN IT.")
 	fmt.Println()
 	fmt.Println("1. Announce: \"" + roleAnnounce + "\" (ONE line, no elaboration)")
-	fmt.Printf("2. Then IMMEDIATELY run: `bd show %s`\n", pinnedBead.ID)
+	fmt.Printf("2. Then IMMEDIATELY run: `bd show %s`\n", hookedBead.ID)
 	fmt.Println("3. Begin execution - no waiting for user input")
 	fmt.Println()
 	fmt.Println("**DO NOT:**")
 	fmt.Println("- Wait for user response after announcing")
 	fmt.Println("- Ask clarifying questions")
 	fmt.Println("- Describe what you're going to do")
+	fmt.Println("- Check mail first (hook takes priority)")
 	fmt.Println()
 
-	// Show the pinned work details
-	fmt.Printf("%s\n\n", style.Bold.Render("## Pinned Work"))
-	fmt.Printf("  Bead ID: %s\n", style.Bold.Render(pinnedBead.ID))
-	fmt.Printf("  Title: %s\n", pinnedBead.Title)
-	if pinnedBead.Description != "" {
+	// Show the hooked work details
+	fmt.Printf("%s\n\n", style.Bold.Render("## Hooked Work"))
+	fmt.Printf("  Bead ID: %s\n", style.Bold.Render(hookedBead.ID))
+	fmt.Printf("  Title: %s\n", hookedBead.Title)
+	if hookedBead.Description != "" {
 		// Show first few lines of description
-		lines := strings.Split(pinnedBead.Description, "\n")
+		lines := strings.Split(hookedBead.Description, "\n")
 		maxLines := 5
 		if len(lines) > maxLines {
 			lines = lines[:maxLines]
@@ -931,7 +936,7 @@ func checkSlungWork(ctx RoleContext) bool {
 
 	// Show bead preview using bd show
 	fmt.Println("**Bead details:**")
-	cmd := exec.Command("bd", "show", pinnedBead.ID)
+	cmd := exec.Command("bd", "show", hookedBead.ID)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = nil
