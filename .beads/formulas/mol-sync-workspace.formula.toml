@@ -412,14 +412,24 @@ needs = ["run-tests"]
 description = """
 Summarize sync results for broadcast response.
 
-**Report format:**
+**Git status check:**
+```bash
+# Get current branch
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Check divergence from origin/main
+BEHIND=$(git rev-list HEAD..origin/main --count)
+AHEAD=$(git rev-list origin/main..HEAD --count)
+```
+
+**Report format (for feature branches):**
 ```
 SYNC COMPLETE: <agent-name>
 
 Git:
   - Branch: <branch>
-  - Commits behind main: 0
-  - Commits ahead: <n>
+  - Commits behind main: <n>
+  - Commits ahead of main: <n>
   - Conflicts resolved: <y/n, details if yes>
 
 Beads:
@@ -433,6 +443,27 @@ Worktrees cleaned: <count>
 
 Ready for work: YES | NO (<reason>)
 ```
+
+**Report format (for crew on main):**
+
+When the agent is on the main branch directly (common for crew workers),
+use "Unpushed commits" instead of "Commits ahead of main":
+
+```
+SYNC COMPLETE: <agent-name>
+
+Git:
+  - Branch: main
+  - Commits behind origin: <n>
+  - Unpushed commits: <n>
+  - Conflicts resolved: <y/n, details if yes>
+...
+```
+
+This distinction is important because:
+- Crew workers often work directly on main
+- "Commits ahead of main" is confusing when you ARE on main
+- "Unpushed commits" is clearer - it means local work not yet on origin
 
 **Exit criteria:** Report generated."""
 
