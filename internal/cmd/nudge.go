@@ -3,8 +3,10 @@ package cmd
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
@@ -39,12 +41,18 @@ Role shortcuts (expand to session names):
   witness   Maps to gt-<rig>-witness (uses current rig)
   refinery  Maps to gt-<rig>-refinery (uses current rig)
 
+Channel syntax:
+  channel:<name>  Nudges all members of a named channel defined in
+                  ~/gt/config/messaging.json under "nudge_channels".
+                  Patterns like "gastown/polecats/*" are expanded.
+
 Examples:
   gt nudge greenplace/furiosa "Check your mail and start working"
   gt nudge greenplace/alpha -m "What's your status?"
   gt nudge mayor "Status update requested"
   gt nudge witness "Check polecat health"
-  gt nudge deacon session-started`,
+  gt nudge deacon session-started
+  gt nudge channel:workers "New priority work available"`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: runNudge,
 }
@@ -60,6 +68,12 @@ func runNudge(cmd *cobra.Command, args []string) error {
 		message = args[1]
 	} else {
 		return fmt.Errorf("message required: use -m flag or provide as second argument")
+	}
+
+	// Handle channel syntax: channel:<name>
+	if strings.HasPrefix(target, "channel:") {
+		channelName := strings.TrimPrefix(target, "channel:")
+		return runNudgeChannel(channelName, message)
 	}
 
 	// Identify sender for message prefix
@@ -196,4 +210,192 @@ func runNudge(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// runNudgeChannel nudges all members of a named channel.
+func runNudgeChannel(channelName, message string) error {
+	// Find town root
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("cannot find town root: %w", err)
+	}
+
+	// Load messaging config
+	msgConfigPath := config.MessagingConfigPath(townRoot)
+	msgConfig, err := config.LoadMessagingConfig(msgConfigPath)
+	if err != nil {
+		return fmt.Errorf("loading messaging config: %w", err)
+	}
+
+	// Look up channel
+	patterns, ok := msgConfig.NudgeChannels[channelName]
+	if !ok {
+		return fmt.Errorf("nudge channel %q not found in messaging config", channelName)
+	}
+
+	if len(patterns) == 0 {
+		return fmt.Errorf("nudge channel %q has no members", channelName)
+	}
+
+	// Identify sender for message prefix
+	sender := "unknown"
+	if roleInfo, err := GetRole(); err == nil {
+		switch roleInfo.Role {
+		case RoleMayor:
+			sender = "mayor"
+		case RoleCrew:
+			sender = fmt.Sprintf("%s/crew/%s", roleInfo.Rig, roleInfo.Polecat)
+		case RolePolecat:
+			sender = fmt.Sprintf("%s/%s", roleInfo.Rig, roleInfo.Polecat)
+		case RoleWitness:
+			sender = fmt.Sprintf("%s/witness", roleInfo.Rig)
+		case RoleRefinery:
+			sender = fmt.Sprintf("%s/refinery", roleInfo.Rig)
+		case RoleDeacon:
+			sender = "deacon"
+		default:
+			sender = string(roleInfo.Role)
+		}
+	}
+
+	// Prefix message with sender
+	prefixedMessage := fmt.Sprintf("[from %s] %s", sender, message)
+
+	// Get all running sessions for pattern matching
+	agents, err := getAgentSessions(true)
+	if err != nil {
+		return fmt.Errorf("listing sessions: %w", err)
+	}
+
+	// Resolve patterns to session names
+	var targets []string
+	seenTargets := make(map[string]bool)
+
+	for _, pattern := range patterns {
+		resolved := resolveNudgePattern(pattern, agents)
+		for _, sessionName := range resolved {
+			if !seenTargets[sessionName] {
+				seenTargets[sessionName] = true
+				targets = append(targets, sessionName)
+			}
+		}
+	}
+
+	if len(targets) == 0 {
+		fmt.Printf("%s No sessions match channel %q patterns\n", style.WarningPrefix, channelName)
+		return nil
+	}
+
+	// Send nudges
+	t := tmux.NewTmux()
+	var succeeded, failed int
+	var failures []string
+
+	fmt.Printf("Nudging channel %q (%d target(s))...\n\n", channelName, len(targets))
+
+	for i, sessionName := range targets {
+		if err := t.NudgeSession(sessionName, prefixedMessage); err != nil {
+			failed++
+			failures = append(failures, fmt.Sprintf("%s: %v", sessionName, err))
+			fmt.Printf("  %s %s\n", style.ErrorPrefix, sessionName)
+		} else {
+			succeeded++
+			fmt.Printf("  %s %s\n", style.SuccessPrefix, sessionName)
+		}
+
+		// Small delay between nudges
+		if i < len(targets)-1 {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	fmt.Println()
+
+	// Log nudge event
+	_ = events.LogFeed(events.TypeNudge, sender, events.NudgePayload("", "channel:"+channelName, message))
+
+	if failed > 0 {
+		fmt.Printf("%s Channel nudge complete: %d succeeded, %d failed\n",
+			style.WarningPrefix, succeeded, failed)
+		for _, f := range failures {
+			fmt.Printf("  %s\n", style.Dim.Render(f))
+		}
+		return fmt.Errorf("%d nudge(s) failed", failed)
+	}
+
+	fmt.Printf("%s Channel nudge complete: %d target(s) nudged\n", style.SuccessPrefix, succeeded)
+	return nil
+}
+
+// resolveNudgePattern resolves a nudge channel pattern to session names.
+// Patterns can be:
+//   - Literal: "gastown/witness" → gt-gastown-witness
+//   - Wildcard: "gastown/polecats/*" → all polecat sessions in gastown
+//   - Role: "*/witness" → all witness sessions
+//   - Special: "mayor", "deacon" → gt-mayor, gt-deacon
+func resolveNudgePattern(pattern string, agents []*AgentSession) []string {
+	var results []string
+
+	// Handle special cases
+	switch pattern {
+	case "mayor":
+		return []string{session.MayorSessionName()}
+	case "deacon":
+		return []string{DeaconSessionName}
+	}
+
+	// Parse pattern
+	if !strings.Contains(pattern, "/") {
+		// Unknown pattern format
+		return nil
+	}
+
+	parts := strings.SplitN(pattern, "/", 2)
+	rigPattern := parts[0]
+	targetPattern := parts[1]
+
+	for _, agent := range agents {
+		// Match rig pattern
+		if rigPattern != "*" && rigPattern != agent.Rig {
+			continue
+		}
+
+		// Match target pattern
+		if strings.HasPrefix(targetPattern, "polecats/") {
+			// polecats/* or polecats/<name>
+			if agent.Type != AgentPolecat {
+				continue
+			}
+			suffix := strings.TrimPrefix(targetPattern, "polecats/")
+			if suffix != "*" && suffix != agent.AgentName {
+				continue
+			}
+		} else if strings.HasPrefix(targetPattern, "crew/") {
+			// crew/* or crew/<name>
+			if agent.Type != AgentCrew {
+				continue
+			}
+			suffix := strings.TrimPrefix(targetPattern, "crew/")
+			if suffix != "*" && suffix != agent.AgentName {
+				continue
+			}
+		} else if targetPattern == "witness" {
+			if agent.Type != AgentWitness {
+				continue
+			}
+		} else if targetPattern == "refinery" {
+			if agent.Type != AgentRefinery {
+				continue
+			}
+		} else {
+			// Assume it's a polecat name (legacy short format)
+			if agent.Type != AgentPolecat || agent.AgentName != targetPattern {
+				continue
+			}
+		}
+
+		results = append(results, agent.Name)
+	}
+
+	return results
 }
