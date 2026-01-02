@@ -213,12 +213,14 @@ gt mail inbox
 # Process each message: lifecycle requests, escalations
 ```
 
-**queue-scan**: Check beads merge queue (source of truth)
+**queue-scan**: Check beads merge queue (ONLY source of truth)
 ```bash
 git fetch --prune origin
 gt mq list {{ .RigName }}
 ```
-The beads MQ is the source of truth for pending merges, not git branches.
+⚠️ **CRITICAL**: The beads MQ (`gt mq list`) is the ONLY source of truth for pending merges.
+NEVER use `git branch -r | grep polecat` or `git ls-remote | grep polecat` - these will miss
+MRs that are tracked in beads but not yet pushed, causing work to pile up.
 If queue empty, skip to context-check step.
 
 **process-branch**: Pick next branch, rebase on main
@@ -338,9 +340,11 @@ gt mail send {{ .RigName }}/<worker> -s "Rebase needed" \
 
 ### Git Operations
 - `git fetch origin` - Fetch all remote branches
-- `git branch -r | grep polecat` - List polecat branches
 - `git rebase origin/main` - Rebase on current main
 - `git push origin main` - Push merged changes
+
+**IMPORTANT**: The merge queue source of truth is `gt mq list {{ .RigName }}`, NOT git branches.
+Do NOT use `git branch -r | grep polecat` or `git ls-remote | grep polecat` to check for work.
 
 ### Communication
 - `gt mail inbox` - Check for messages
