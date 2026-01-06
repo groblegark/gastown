@@ -737,15 +737,14 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 		skipped = append(skipped, "witness (already running)")
 	} else {
 		fmt.Printf("  Starting witness...\n")
-		// Use ensureWitnessSession to create tmux session (same as gt witness start)
-		created, err := ensureWitnessSession(rigName, r)
-		if err != nil {
-			return fmt.Errorf("starting witness: %w", err)
-		}
-		if created {
-			// Update manager state to reflect running session
-			witMgr := witness.NewManager(r)
-			_ = witMgr.Start() // non-fatal: state file update
+		witMgr := witness.NewManager(r)
+		if err := witMgr.Start(false); err != nil {
+			if err == witness.ErrAlreadyRunning {
+				skipped = append(skipped, "witness (already running)")
+			} else {
+				return fmt.Errorf("starting witness: %w", err)
+			}
+		} else {
 			started = append(started, "witness")
 		}
 	}
@@ -818,13 +817,15 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 			skipped = append(skipped, "witness")
 		} else {
 			fmt.Printf("  Starting witness...\n")
-			created, err := ensureWitnessSession(rigName, r)
-			if err != nil {
-				fmt.Printf("  %s Failed to start witness: %v\n", style.Warning.Render("⚠"), err)
-				hasError = true
-			} else if created {
-				witMgr := witness.NewManager(r)
-				_ = witMgr.Start()
+			witMgr := witness.NewManager(r)
+			if err := witMgr.Start(false); err != nil {
+				if err == witness.ErrAlreadyRunning {
+					skipped = append(skipped, "witness")
+				} else {
+					fmt.Printf("  %s Failed to start witness: %v\n", style.Warning.Render("⚠"), err)
+					hasError = true
+				}
+			} else {
 				started = append(started, "witness")
 			}
 		}
@@ -1385,12 +1386,14 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 			skipped = append(skipped, "witness")
 		} else {
 			fmt.Printf("    Starting witness...\n")
-			created, err := ensureWitnessSession(rigName, r)
-			if err != nil {
-				fmt.Printf("    %s Failed to start witness: %v\n", style.Warning.Render("⚠"), err)
-				startErrors = append(startErrors, fmt.Sprintf("witness: %v", err))
-			} else if created {
-				_ = witMgr.Start()
+			if err := witMgr.Start(false); err != nil {
+				if err == witness.ErrAlreadyRunning {
+					skipped = append(skipped, "witness")
+				} else {
+					fmt.Printf("    %s Failed to start witness: %v\n", style.Warning.Render("⚠"), err)
+					startErrors = append(startErrors, fmt.Sprintf("witness: %v", err))
+				}
+			} else {
 				started = append(started, "witness")
 			}
 		}

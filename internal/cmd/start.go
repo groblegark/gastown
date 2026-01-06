@@ -19,6 +19,7 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -225,10 +226,14 @@ func startRigAgents(t *tmux.Tmux, townRoot string) {
 		if witnessRunning {
 			fmt.Printf("  %s %s witness already running\n", style.Dim.Render("○"), r.Name)
 		} else {
-			created, err := ensureWitnessSession(r.Name, r)
-			if err != nil {
-				fmt.Printf("  %s %s witness failed: %v\n", style.Dim.Render("○"), r.Name, err)
-			} else if created {
+			witMgr := witness.NewManager(r)
+			if err := witMgr.Start(false); err != nil {
+				if err == witness.ErrAlreadyRunning {
+					fmt.Printf("  %s %s witness already running\n", style.Dim.Render("○"), r.Name)
+				} else {
+					fmt.Printf("  %s %s witness failed: %v\n", style.Dim.Render("○"), r.Name, err)
+				}
+			} else {
 				fmt.Printf("  %s %s witness started\n", style.Bold.Render("✓"), r.Name)
 			}
 		}

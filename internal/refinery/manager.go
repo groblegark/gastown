@@ -14,10 +14,12 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/claude"
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/mrqueue"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
@@ -208,6 +210,31 @@ func (m *Manager) Start(foreground bool) error {
 		_ = t.KillSession(sessionID)
 		return fmt.Errorf("starting Claude agent: %w", err)
 	}
+
+	// Wait for Claude to start and show its prompt (non-fatal)
+	// WaitForClaudeReady waits for "> " prompt, more reliable than just checking node is running
+	if err := t.WaitForClaudeReady(sessionID, constants.ClaudeStartTimeout); err != nil {
+		// Non-fatal - try to continue anyway
+	}
+
+	// Accept bypass permissions warning dialog if it appears.
+	_ = t.AcceptBypassPermissionsWarning(sessionID)
+
+	time.Sleep(constants.ShutdownNotifyDelay)
+
+	// Inject startup nudge for predecessor discovery via /resume
+	address := fmt.Sprintf("%s/refinery", m.rig.Name)
+	_ = session.StartupNudge(t, sessionID, session.StartupNudgeConfig{
+		Recipient: address,
+		Sender:    "deacon",
+		Topic:     "patrol",
+	}) // Non-fatal
+
+	// GUPP: Gas Town Universal Propulsion Principle
+	// Send the propulsion nudge to trigger autonomous patrol execution.
+	// Wait for beacon to be fully processed (needs to be separate prompt)
+	time.Sleep(2 * time.Second)
+	_ = t.NudgeSession(sessionID, session.PropulsionNudgeForRole("refinery", refineryRigDir)) // Non-fatal
 
 	return nil
 }

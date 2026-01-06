@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/claude"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/daemon"
@@ -18,6 +19,7 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -103,11 +105,22 @@ func runUp(cmd *cobra.Command, args []string) error {
 	rigs := discoverRigs(townRoot)
 	for _, rigName := range rigs {
 		sessionName := fmt.Sprintf("gt-%s-witness", rigName)
-		rigPath := filepath.Join(townRoot, rigName)
 
-		if err := ensureWitness(t, sessionName, rigPath, rigName); err != nil {
+		_, r, err := getRig(rigName)
+		if err != nil {
 			printStatus(fmt.Sprintf("Witness (%s)", rigName), false, err.Error())
 			allOK = false
+			continue
+		}
+
+		mgr := witness.NewManager(r)
+		if err := mgr.Start(false); err != nil {
+			if err == witness.ErrAlreadyRunning {
+				printStatus(fmt.Sprintf("Witness (%s)", rigName), true, sessionName)
+			} else {
+				printStatus(fmt.Sprintf("Witness (%s)", rigName), false, err.Error())
+				allOK = false
+			}
 		} else {
 			printStatus(fmt.Sprintf("Witness (%s)", rigName), true, sessionName)
 		}
@@ -244,6 +257,11 @@ func ensureSession(t *tmux.Tmux, sessionName, workDir, role string) error {
 		return nil
 	}
 
+	// Ensure Claude settings exist
+	if err := claude.EnsureSettingsForRole(workDir, role); err != nil {
+		return fmt.Errorf("ensuring Claude settings: %w", err)
+	}
+
 	// Create session
 	if err := t.NewSession(sessionName, workDir); err != nil {
 		return err
@@ -298,59 +316,6 @@ func ensureSession(t *tmux.Tmux, sessionName, workDir, role string) error {
 			Topic:     "cold-start",
 		}) // Non-fatal
 	}
-
-	return nil
-}
-
-// ensureWitness starts a witness session for a rig.
-func ensureWitness(t *tmux.Tmux, sessionName, rigPath, rigName string) error {
-	running, err := t.HasSession(sessionName)
-	if err != nil {
-		return err
-	}
-	if running {
-		return nil
-	}
-
-	// Create session in rig directory
-	if err := t.NewSession(sessionName, rigPath); err != nil {
-		return err
-	}
-
-	// Set environment (non-fatal: session works without these)
-	bdActor := fmt.Sprintf("%s/witness", rigName)
-	_ = t.SetEnvironment(sessionName, "GT_ROLE", "witness")
-	_ = t.SetEnvironment(sessionName, "GT_RIG", rigName)
-	_ = t.SetEnvironment(sessionName, "BD_ACTOR", bdActor)
-
-	// Apply theme (non-fatal: theming failure doesn't affect operation)
-	theme := tmux.AssignTheme(rigName)
-	_ = t.ConfigureGasTownSession(sessionName, theme, "", "Witness", rigName)
-
-	// Launch Claude using runtime config
-	// Export GT_ROLE and BD_ACTOR in the command since tmux SetEnvironment only affects new panes
-	claudeCmd := config.BuildAgentStartupCommand("witness", bdActor, rigPath, "")
-	if err := t.SendKeysDelayed(sessionName, claudeCmd, 200); err != nil {
-		return err
-	}
-
-	// Wait for Claude to start (non-fatal)
-	if err := t.WaitForCommand(sessionName, constants.SupportedShells, constants.ClaudeStartTimeout); err != nil {
-		// Non-fatal
-	}
-
-	// Accept bypass permissions warning dialog if it appears.
-	_ = t.AcceptBypassPermissionsWarning(sessionName)
-
-	time.Sleep(constants.ShutdownNotifyDelay)
-
-	// Inject startup nudge for predecessor discovery via /resume
-	address := fmt.Sprintf("%s/witness", rigName)
-	_ = session.StartupNudge(t, sessionName, session.StartupNudgeConfig{
-		Recipient: address,
-		Sender:    "deacon",
-		Topic:     "patrol",
-	}) // Non-fatal
 
 	return nil
 }
