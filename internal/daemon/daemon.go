@@ -798,7 +798,9 @@ func (d *Daemon) restartPolecatSession(rigName, polecatName, sessionName string)
 	_ = d.tmux.SetPaneDiedHook(sessionName, agentID)
 
 	// Launch Claude with environment exported inline
-	startCmd := config.BuildPolecatStartupCommand(rigName, polecatName, "", "")
+	// Pass rigPath so rig agent settings are honored (not town-level defaults)
+	rigPath := filepath.Join(d.config.TownRoot, rigName)
+	startCmd := config.BuildPolecatStartupCommand(rigName, polecatName, rigPath, "")
 	if err := d.tmux.SendKeys(sessionName, startCmd); err != nil {
 		return fmt.Errorf("sending startup command: %w", err)
 	}
