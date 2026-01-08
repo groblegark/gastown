@@ -225,26 +225,26 @@ func (c *OrphanSessionCheck) isValidSession(sess string, validRigs []string, may
 	return true
 }
 
-// OrphanProcessCheck detects orphaned Claude/claude-code processes
-// that are not associated with a Gas Town tmux session.
+// OrphanProcessCheck detects Claude/claude-code processes that are not
+// running inside a tmux session. These may be user's personal Claude sessions
+// or legitimately orphaned processes from crashed Gas Town sessions.
+// This check is informational only - it does not auto-fix since we cannot
+// distinguish user sessions from orphaned Gas Town processes.
 type OrphanProcessCheck struct {
-	FixableCheck
-	orphanPIDs []int // Cached during Run for use in Fix
+	BaseCheck
 }
 
 // NewOrphanProcessCheck creates a new orphan process check.
 func NewOrphanProcessCheck() *OrphanProcessCheck {
 	return &OrphanProcessCheck{
-		FixableCheck: FixableCheck{
-			BaseCheck: BaseCheck{
-				CheckName:        "orphan-processes",
-				CheckDescription: "Detect orphaned Claude processes",
-			},
+		BaseCheck: BaseCheck{
+			CheckName:        "orphan-processes",
+			CheckDescription: "Detect Claude processes outside tmux",
 		},
 	}
 }
 
-// Run checks for orphaned Claude processes.
+// Run checks for Claude processes running outside tmux.
 func (c *OrphanProcessCheck) Run(ctx *CheckContext) *CheckResult {
 	// Get list of tmux session PIDs
 	tmuxPIDs, err := c.getTmuxSessionPIDs()
@@ -276,143 +276,39 @@ func (c *OrphanProcessCheck) Run(ctx *CheckContext) *CheckResult {
 		}
 	}
 
-	// Check which Claude processes are orphaned
-	var orphans []processInfo
-	var validCount int
+	// Check which Claude processes are outside tmux
+	var outsideTmux []processInfo
+	var insideTmux int
 
 	for _, proc := range claudeProcs {
 		if c.isOrphanProcess(proc, tmuxPIDs) {
-			orphans = append(orphans, proc)
+			outsideTmux = append(outsideTmux, proc)
 		} else {
-			validCount++
+			insideTmux++
 		}
 	}
 
-	// Cache orphan PIDs for Fix
-	c.orphanPIDs = make([]int, len(orphans))
-	for i, p := range orphans {
-		c.orphanPIDs[i] = p.pid
-	}
-
-	if len(orphans) == 0 {
+	if len(outsideTmux) == 0 {
 		return &CheckResult{
 			Name:    c.Name(),
 			Status:  StatusOK,
-			Message: fmt.Sprintf("All %d Claude processes have valid parents", validCount),
+			Message: fmt.Sprintf("All %d Claude processes are inside tmux", insideTmux),
 		}
 	}
 
-	details := make([]string, len(orphans))
-	for i, proc := range orphans {
-		details[i] = fmt.Sprintf("PID %d: %s (parent: %d)", proc.pid, proc.cmd, proc.ppid)
+	details := make([]string, 0, len(outsideTmux)+2)
+	details = append(details, "These may be your personal Claude sessions or orphaned Gas Town processes.")
+	details = append(details, "Verify these are expected before manually killing any:")
+	for _, proc := range outsideTmux {
+		details = append(details, fmt.Sprintf("  PID %d: %s (parent: %d)", proc.pid, proc.cmd, proc.ppid))
 	}
 
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusWarning,
-		Message: fmt.Sprintf("Found %d orphaned Claude process(es)", len(orphans)),
+		Message: fmt.Sprintf("Found %d Claude process(es) running outside tmux", len(outsideTmux)),
 		Details: details,
-		FixHint: "Run 'gt doctor --fix' to kill orphaned processes",
 	}
-}
-
-// Fix kills orphaned processes, with safeguards for crew sessions.
-func (c *OrphanProcessCheck) Fix(ctx *CheckContext) error {
-	if len(c.orphanPIDs) == 0 {
-		return nil
-	}
-
-	// SAFEGUARD: Get crew session pane PIDs to avoid killing crew processes.
-	// Even if a process appears orphaned, if its parent is a crew session pane,
-	// we should not kill it (the detection might be wrong).
-	crewPanePIDs := c.getCrewSessionPanePIDs()
-
-	var lastErr error
-	for _, pid := range c.orphanPIDs {
-		// Check if this process has a crew session ancestor
-		if c.hasCrewAncestor(pid, crewPanePIDs) {
-			// Skip - this process might belong to a crew session
-			continue
-		}
-
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if err := proc.Signal(os.Interrupt); err != nil {
-			// Try SIGKILL if SIGINT fails
-			if killErr := proc.Kill(); killErr != nil {
-				lastErr = killErr
-			}
-		}
-	}
-
-	return lastErr
-}
-
-// getCrewSessionPanePIDs returns pane PIDs for all crew sessions.
-func (c *OrphanProcessCheck) getCrewSessionPanePIDs() map[int]bool {
-	pids := make(map[int]bool)
-
-	t := tmux.NewTmux()
-	sessions, err := t.ListSessions()
-	if err != nil {
-		return pids
-	}
-
-	for _, session := range sessions {
-		if !isCrewSession(session) {
-			continue
-		}
-		// Get pane PIDs for this crew session
-		out, err := exec.Command("tmux", "list-panes", "-t", session, "-F", "#{pane_pid}").Output()
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			var pid int
-			if _, err := fmt.Sscanf(line, "%d", &pid); err == nil {
-				pids[pid] = true
-			}
-		}
-	}
-
-	return pids
-}
-
-// hasCrewAncestor checks if a process has a crew session pane as an ancestor.
-func (c *OrphanProcessCheck) hasCrewAncestor(pid int, crewPanePIDs map[int]bool) bool {
-	if len(crewPanePIDs) == 0 {
-		return false
-	}
-
-	// Walk up the process tree
-	currentPID := pid
-	visited := make(map[int]bool)
-
-	for currentPID > 1 && !visited[currentPID] {
-		visited[currentPID] = true
-
-		// Check if this PID is a crew pane
-		if crewPanePIDs[currentPID] {
-			return true
-		}
-
-		// Get parent PID
-		out, err := exec.Command("ps", "-p", fmt.Sprintf("%d", currentPID), "-o", "ppid=").Output() //nolint:gosec // G204: PID is numeric from internal state
-		if err != nil {
-			break
-		}
-
-		var ppid int
-		if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &ppid); err != nil {
-			break
-		}
-		currentPID = ppid
-	}
-
-	return false
 }
 
 type processInfo struct {
