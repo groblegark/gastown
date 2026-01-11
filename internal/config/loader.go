@@ -1184,11 +1184,15 @@ func BuildAgentStartupCommand(role, bdActor, rigPath, prompt string) string {
 }
 
 // BuildAgentStartupCommandWithAgentOverride is like BuildAgentStartupCommand, but uses agentOverride if non-empty.
-func BuildAgentStartupCommandWithAgentOverride(role, bdActor, rigPath, prompt, agentOverride string) (string, error) {
+// If claudeConfigDir is non-empty, CLAUDE_CONFIG_DIR is set in the startup command.
+func BuildAgentStartupCommandWithAgentOverride(role, bdActor, rigPath, prompt, agentOverride, claudeConfigDir string) (string, error) {
 	envVars := map[string]string{
 		"GT_ROLE":         role,
 		"BD_ACTOR":        bdActor,
 		"GIT_AUTHOR_NAME": bdActor,
+	}
+	if claudeConfigDir != "" {
+		envVars["CLAUDE_CONFIG_DIR"] = claudeConfigDir
 	}
 	return BuildStartupCommandWithAgentOverride(envVars, rigPath, prompt, agentOverride)
 }

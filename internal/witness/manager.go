@@ -287,8 +287,13 @@ func buildWitnessStartCommand(rigPath, rigName, townRoot, agentOverride string, 
 	if roleConfig != nil && roleConfig.StartCommand != "" {
 		return beads.ExpandRolePattern(roleConfig.StartCommand, townRoot, rigName, "", "witness"), nil
 	}
+
+	// Resolve account config dir for CLAUDE_CONFIG_DIR
+	accountsPath := constants.MayorAccountsPath(townRoot)
+	claudeConfigDir, _, _ := config.ResolveAccountConfigDir(accountsPath, "")
+
 	bdActor := fmt.Sprintf("%s/witness", rigName)
-	command, err := config.BuildAgentStartupCommandWithAgentOverride("witness", bdActor, rigPath, "", agentOverride)
+	command, err := config.BuildAgentStartupCommandWithAgentOverride("witness", bdActor, rigPath, "", agentOverride, claudeConfigDir)
 	if err != nil {
 		return "", fmt.Errorf("building startup command: %w", err)
 	}

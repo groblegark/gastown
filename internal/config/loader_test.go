@@ -1106,7 +1106,7 @@ func TestBuildAgentStartupCommandWithAgentOverride(t *testing.T) {
 	}
 
 	t.Run("empty override uses default agent", func(t *testing.T) {
-		cmd, err := BuildAgentStartupCommandWithAgentOverride("mayor", "mayor", "", "", "")
+		cmd, err := BuildAgentStartupCommandWithAgentOverride("mayor", "mayor", "", "", "", "")
 		if err != nil {
 			t.Fatalf("BuildAgentStartupCommandWithAgentOverride: %v", err)
 		}
@@ -1122,12 +1122,22 @@ func TestBuildAgentStartupCommandWithAgentOverride(t *testing.T) {
 	})
 
 	t.Run("override switches agent", func(t *testing.T) {
-		cmd, err := BuildAgentStartupCommandWithAgentOverride("mayor", "mayor", "", "", "codex")
+		cmd, err := BuildAgentStartupCommandWithAgentOverride("mayor", "mayor", "", "", "codex", "")
 		if err != nil {
 			t.Fatalf("BuildAgentStartupCommandWithAgentOverride: %v", err)
 		}
 		if !strings.Contains(cmd, "codex") {
 			t.Fatalf("expected codex command in output: %q", cmd)
+		}
+	})
+
+	t.Run("includes CLAUDE_CONFIG_DIR when provided", func(t *testing.T) {
+		cmd, err := BuildAgentStartupCommandWithAgentOverride("mayor", "mayor", "", "", "", "/home/user/.claude-accounts/test")
+		if err != nil {
+			t.Fatalf("BuildAgentStartupCommandWithAgentOverride: %v", err)
+		}
+		if !strings.Contains(cmd, "CLAUDE_CONFIG_DIR=/home/user/.claude-accounts/test") {
+			t.Fatalf("expected CLAUDE_CONFIG_DIR export in command: %q", cmd)
 		}
 	})
 }

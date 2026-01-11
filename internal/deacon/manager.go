@@ -80,9 +80,13 @@ func (m *Manager) Start(agentOverride string) error {
 		return fmt.Errorf("ensuring Claude settings: %w", err)
 	}
 
+	// Resolve account config dir for CLAUDE_CONFIG_DIR
+	accountsPath := constants.MayorAccountsPath(m.townRoot)
+	claudeConfigDir, _, _ := config.ResolveAccountConfigDir(accountsPath, "")
+
 	// Build startup command first
 	// Restarts are handled by daemon via ensureDeaconRunning on each heartbeat
-	startupCmd, err := config.BuildAgentStartupCommandWithAgentOverride("deacon", "deacon", "", "", agentOverride)
+	startupCmd, err := config.BuildAgentStartupCommandWithAgentOverride("deacon", "deacon", "", "", agentOverride, claudeConfigDir)
 	if err != nil {
 		return fmt.Errorf("building startup command: %w", err)
 	}
@@ -96,9 +100,10 @@ func (m *Manager) Start(agentOverride string) error {
 	// Set environment variables (non-fatal: session works without these)
 	// Use centralized AgentEnv for consistency across all role startup paths
 	envVars := config.AgentEnv(config.AgentEnvConfig{
-		Role:     "deacon",
-		TownRoot: m.townRoot,
-		BeadsDir: beads.ResolveBeadsDir(m.townRoot),
+		Role:             "deacon",
+		TownRoot:         m.townRoot,
+		BeadsDir:         beads.ResolveBeadsDir(m.townRoot),
+		RuntimeConfigDir: claudeConfigDir,
 	})
 	for k, v := range envVars {
 		_ = t.SetEnvironment(sessionID, k, v)
