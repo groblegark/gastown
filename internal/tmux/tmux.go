@@ -361,8 +361,10 @@ func (t *Tmux) AcceptBypassPermissionsWarning(session string) error {
 		return err
 	}
 
-	// Look for the characteristic warning text
-	if !strings.Contains(content, "Bypass Permissions mode") {
+	// Look for the characteristic warning text (case-insensitive, support variations)
+	// The dialog shows: "⏵⏵ bypass permissions on" (or similar variations)
+	lowerContent := strings.ToLower(content)
+	if !strings.Contains(lowerContent, "bypass permissions") {
 		// Warning not present, nothing to do
 		return nil
 	}
