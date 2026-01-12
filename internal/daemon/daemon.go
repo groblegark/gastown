@@ -851,17 +851,16 @@ func (d *Daemon) restartPolecatSession(rigName, polecatName, sessionName string)
 		return fmt.Errorf("creating session: %w", err)
 	}
 
-	// Set environment variables
-	// Use centralized AgentEnvSimple for consistency across all role startup paths
-	envVars := config.AgentEnvSimple("polecat", rigName, polecatName)
-
-	// Add polecat-specific beads configuration
-	// Use ResolveBeadsDir to follow redirects for repos with tracked beads
+	// Set environment variables using centralized AgentEnv
 	rigPath := filepath.Join(d.config.TownRoot, rigName)
-	beadsDir := beads.ResolveBeadsDir(rigPath)
-	envVars["BEADS_DIR"] = beadsDir
-	envVars["BEADS_NO_DAEMON"] = "1"
-	envVars["BEADS_AGENT_NAME"] = fmt.Sprintf("%s/%s", rigName, polecatName)
+	envVars := config.AgentEnv(config.AgentEnvConfig{
+		Role:          "polecat",
+		Rig:           rigName,
+		AgentName:     polecatName,
+		TownRoot:      d.config.TownRoot,
+		BeadsDir:      beads.ResolveBeadsDir(rigPath),
+		BeadsNoDaemon: true,
+	})
 
 	// Set all env vars in tmux session (for debugging) and they'll also be exported to Claude
 	for k, v := range envVars {

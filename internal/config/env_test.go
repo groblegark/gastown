@@ -163,9 +163,32 @@ func TestAgentEnvSimple(t *testing.T) {
 	assertEnv(t, env, "GT_ROLE", "polecat")
 	assertEnv(t, env, "GT_RIG", "myrig")
 	assertEnv(t, env, "GT_POLECAT", "Toast")
-	// Simple doesn't set TownRoot/BeadsDir
-	assertEnv(t, env, "GT_ROOT", "")
-	assertEnv(t, env, "BEADS_DIR", "")
+	// Simple doesn't set TownRoot/BeadsDir, so keys should be absent
+	// (not empty strings which would override tmux session environment)
+	assertNotSet(t, env, "GT_ROOT")
+	assertNotSet(t, env, "BEADS_DIR")
+}
+
+func TestAgentEnv_EmptyTownRootBeadsDirOmitted(t *testing.T) {
+	t.Parallel()
+	// Regression test: empty TownRoot/BeadsDir should NOT create keys in the map.
+	// If they were set to empty strings, ExportPrefix would generate "export GT_ROOT= ..."
+	// which overrides tmux session environment where these are correctly set.
+	env := AgentEnv(AgentEnvConfig{
+		Role:      "polecat",
+		Rig:       "myrig",
+		AgentName: "Toast",
+		TownRoot:  "", // explicitly empty
+		BeadsDir:  "", // explicitly empty
+	})
+
+	// Keys should be absent, not empty strings
+	assertNotSet(t, env, "GT_ROOT")
+	assertNotSet(t, env, "BEADS_DIR")
+
+	// Other keys should still be set
+	assertEnv(t, env, "GT_ROLE", "polecat")
+	assertEnv(t, env, "GT_RIG", "myrig")
 }
 
 func TestExportPrefix(t *testing.T) {

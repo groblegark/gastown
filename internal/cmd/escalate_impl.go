@@ -540,7 +540,7 @@ func extractMailTargetsFromActions(actions []string) []string {
 
 // executeExternalActions processes external notification actions (email:, sms:, slack).
 // For now, this logs warnings if contacts aren't configured - actual sending is future work.
-func executeExternalActions(actions []string, cfg *config.EscalationConfig, beadID, severity, description string) {
+func executeExternalActions(actions []string, cfg *config.EscalationConfig, _, _, _ string) {
 	for _, action := range actions {
 		switch {
 		case strings.HasPrefix(action, "email:"):

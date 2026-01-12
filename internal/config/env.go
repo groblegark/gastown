@@ -81,8 +81,14 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 		env["GIT_AUTHOR_NAME"] = cfg.AgentName
 	}
 
-	env["GT_ROOT"] = cfg.TownRoot
-	env["BEADS_DIR"] = cfg.BeadsDir
+	// Only set GT_ROOT and BEADS_DIR if provided
+	// Empty values would override tmux session environment
+	if cfg.TownRoot != "" {
+		env["GT_ROOT"] = cfg.TownRoot
+	}
+	if cfg.BeadsDir != "" {
+		env["BEADS_DIR"] = cfg.BeadsDir
+	}
 
 	// Set BEADS_AGENT_NAME for polecat/crew (uses same format as BD_ACTOR)
 	if cfg.Role == "polecat" || cfg.Role == "crew" {
