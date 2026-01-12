@@ -93,6 +93,11 @@ func (m *Manager) Start(agentOverride string) error {
 		return fmt.Errorf("creating tmux session: %w", err)
 	}
 
+	// Reset heartbeat to prevent daemon from immediately killing the new session.
+	// The daemon checks heartbeat age and would kill a fresh session if the old
+	// heartbeat file is stale from a previous run.
+	_ = Touch(m.townRoot)
+
 	// Set environment variables (non-fatal: session works without these)
 	// Use centralized AgentEnv for consistency across all role startup paths
 	envVars := config.AgentEnv(config.AgentEnvConfig{

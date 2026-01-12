@@ -367,6 +367,8 @@ func (d *Daemon) checkDeaconHeartbeat() {
 		if err := d.tmux.KillSession(sessionName); err != nil {
 			d.logger.Printf("Error killing stuck Deacon: %v", err)
 		}
+		// Reset heartbeat so next heartbeat doesn't immediately kill new session
+		_ = deacon.Touch(d.config.TownRoot)
 		// ensureDeaconRunning will restart on next heartbeat
 	} else {
 		// Stuck but not critically - nudge to wake up
