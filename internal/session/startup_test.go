@@ -86,6 +86,35 @@ func TestFormatStartupNudge(t *testing.T) {
 				"ready",
 			},
 		},
+		{
+			name: "start includes fallback instructions",
+			cfg: StartupNudgeConfig{
+				Recipient: "beads/crew/fang",
+				Sender:    "human",
+				Topic:     "start",
+			},
+			wantSub: []string{
+				"[GAS TOWN]",
+				"beads/crew/fang",
+				"<- human",
+				"start",
+				"gt prime", // fallback instruction for when SessionStart hook fails
+			},
+		},
+		{
+			name: "restart includes fallback instructions",
+			cfg: StartupNudgeConfig{
+				Recipient: "gastown/crew/george",
+				Sender:    "human",
+				Topic:     "restart",
+			},
+			wantSub: []string{
+				"[GAS TOWN]",
+				"gastown/crew/george",
+				"restart",
+				"gt prime", // fallback instruction for when SessionStart hook fails
+			},
+		},
 	}
 
 	for _, tt := range tests {

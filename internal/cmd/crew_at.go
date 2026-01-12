@@ -103,7 +103,10 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 	}
 
 	runtimeConfig := config.LoadRuntimeConfig(r.Path)
-	_ = runtime.EnsureSettingsForRole(worker.ClonePath, "crew", runtimeConfig)
+	if err := runtime.EnsureSettingsForRole(worker.ClonePath, "crew", runtimeConfig); err != nil {
+		// Non-fatal but log warning - missing settings can cause agents to start without hooks
+		style.PrintWarning("could not ensure settings for %s: %v", name, err)
+	}
 
 	// Check if session exists
 	t := tmux.NewTmux()
