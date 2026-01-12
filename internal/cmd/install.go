@@ -454,70 +454,28 @@ func initTownAgentBeads(townPath string) error {
 		return err
 	}
 
-	// Role beads (global templates)
-	roleDefs := []struct {
-		id    string
-		title string
-		desc  string
-	}{
-		{
-			id:    beads.MayorRoleBeadIDTown(),
-			title: "Mayor Role",
-			desc:  "Role definition for Mayor agents. Global coordinator for cross-rig work.",
-		},
-		{
-			id:    beads.DeaconRoleBeadIDTown(),
-			title: "Deacon Role",
-			desc:  "Role definition for Deacon agents. Daemon beacon for heartbeats and monitoring.",
-		},
-		{
-			id:    beads.DogRoleBeadIDTown(),
-			title: "Dog Role",
-			desc:  "Role definition for Dog agents. Town-level workers for cross-rig tasks.",
-		},
-		{
-			id:    beads.WitnessRoleBeadIDTown(),
-			title: "Witness Role",
-			desc:  "Role definition for Witness agents. Per-rig worker monitor with progressive nudging.",
-		},
-		{
-			id:    beads.RefineryRoleBeadIDTown(),
-			title: "Refinery Role",
-			desc:  "Role definition for Refinery agents. Merge queue processor with verification gates.",
-		},
-		{
-			id:    beads.PolecatRoleBeadIDTown(),
-			title: "Polecat Role",
-			desc:  "Role definition for Polecat agents. Ephemeral workers for batch work dispatch.",
-		},
-		{
-			id:    beads.CrewRoleBeadIDTown(),
-			title: "Crew Role",
-			desc:  "Role definition for Crew agents. Persistent user-managed workspaces.",
-		},
-	}
-
-	for _, role := range roleDefs {
+	// Role beads (global templates) - use shared definitions from beads package
+	for _, role := range beads.AllRoleBeadDefs() {
 		// Check if already exists
-		if _, err := bd.Show(role.id); err == nil {
+		if _, err := bd.Show(role.ID); err == nil {
 			continue // Already exists
 		}
 
 		// Create role bead using the beads API
 		// CreateWithID with Type: "role" automatically adds gt:role label
-		_, err := bd.CreateWithID(role.id, beads.CreateOptions{
-			Title:       role.title,
+		_, err := bd.CreateWithID(role.ID, beads.CreateOptions{
+			Title:       role.Title,
 			Type:        "role",
-			Description: role.desc,
+			Description: role.Desc,
 			Priority:    -1, // No priority
 		})
 		if err != nil {
 			// Log but continue - role beads are optional
 			fmt.Printf("   %s Could not create role bead %s: %v\n",
-				style.Dim.Render("⚠"), role.id, err)
+				style.Dim.Render("⚠"), role.ID, err)
 			continue
 		}
-		fmt.Printf("   ✓ Created role bead: %s\n", role.id)
+		fmt.Printf("   ✓ Created role bead: %s\n", role.ID)
 	}
 
 	// Town-level agent beads

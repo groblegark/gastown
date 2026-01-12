@@ -153,6 +153,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	d.Register(doctor.NewPatrolRolesHavePromptsCheck())
 	d.Register(doctor.NewAgentBeadsCheck())
 	d.Register(doctor.NewRigBeadsCheck())
+	d.Register(doctor.NewRoleBeadsCheck())
 
 	// NOTE: StaleAttachmentsCheck removed - staleness detection belongs in Deacon molecule
 
