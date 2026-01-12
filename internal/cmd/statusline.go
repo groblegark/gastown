@@ -196,13 +196,26 @@ func runMayorStatusLine(t *tmux.Tmux) error {
 		rigStatuses[rigName] = &rigStatus{}
 	}
 
-	// Count polecats and track rig witness/refinery status
-	polecatCount := 0
+	// Track per-agent-type health (working/zombie counts)
+	type agentHealth struct {
+		total   int
+		working int
+	}
+	healthByType := map[AgentType]*agentHealth{
+		AgentPolecat:  {},
+		AgentWitness:  {},
+		AgentRefinery: {},
+		AgentDeacon:   {},
+	}
+
+	// Single pass: track rig status AND agent health
 	for _, s := range sessions {
 		agent := categorizeSession(s)
 		if agent == nil {
 			continue
 		}
+
+		// Track rig-level status (witness/refinery/polecat presence)
 		if agent.Rig != "" && registeredRigs[agent.Rig] {
 			if rigStatuses[agent.Rig] == nil {
 				rigStatuses[agent.Rig] = &rigStatus{}
@@ -213,8 +226,16 @@ func runMayorStatusLine(t *tmux.Tmux) error {
 			case AgentRefinery:
 				rigStatuses[agent.Rig].hasRefinery = true
 			case AgentPolecat:
-				polecatCount++
 				rigStatuses[agent.Rig].polecatCount++
+			}
+		}
+
+		// Track agent health (skip Mayor and Crew)
+		if health := healthByType[agent.Type]; health != nil {
+			health.total++
+			// Detect working state via ✻ symbol
+			if isSessionWorking(t, s) {
+				health.working++
 			}
 		}
 	}
@@ -227,44 +248,6 @@ func runMayorStatusLine(t *tmux.Tmux) error {
 		} else {
 			status.opState = "OPERATIONAL"
 		}
-	}
-
-	// Track per-agent-type health (working/zombie counts)
-	type agentHealth struct {
-		total   int
-		working int
-	}
-
-	// Initialize health tracker for tracked agent types
-	healthByType := map[AgentType]*agentHealth{
-		AgentPolecat:  {},
-		AgentWitness:  {},
-		AgentRefinery: {},
-		AgentDeacon:   {},
-	}
-
-	for _, s := range sessions {
-		agent := categorizeSession(s)
-		if agent == nil {
-			continue
-		}
-
-		// Skip Mayor (always 1) and Crew (not tracked)
-		if agent.Type == AgentMayor || agent.Type == AgentCrew {
-			continue
-		}
-
-		health := healthByType[agent.Type]
-		if health == nil {
-			continue
-		}
-		health.total++
-
-		// Detect working state via ✻ symbol
-		if isSessionWorking(t, s) {
-			health.working++
-		}
-		// Non-working sessions are zombies (polecats) or idle (persistent agents)
 	}
 
 	// Build status
