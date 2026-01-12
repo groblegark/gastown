@@ -632,7 +632,7 @@ func (e *Engineer) handleFailureFromQueue(mr *mrqueue.MR, result ProcessResult) 
 }
 
 // createConflictResolutionTask creates a dispatchable task for resolving merge conflicts.
-// This task will be picked up by bd ready and can be dispatched to an available polecat.
+// This task will be picked up by bd ready and can be slung to a fresh polecat (spawned on demand).
 // Returns the created task's ID for blocking the MR until resolution.
 //
 // Task format:

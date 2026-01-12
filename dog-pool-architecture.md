@@ -306,7 +306,7 @@ Rationale:
 What dogs DO share:
 - tmux utilities for message sending/capture
 - State file patterns
-- Pool allocation pattern
+- Name slot allocation pattern (pool of names, not instances)
 
 ### Dog Execution Loop
 

@@ -12,7 +12,10 @@ import (
 )
 
 const (
-	// DefaultPoolSize is the number of reusable names in the pool.
+	// DefaultPoolSize is the number of name slots in the pool.
+	// NOTE: This is a pool of NAMES, not polecats. Polecats are spawned fresh
+	// for each task and nuked when done - there is no idle pool of polecats.
+	// Only the name slots are reused when a polecat is nuked and a new one spawned.
 	DefaultPoolSize = 50
 
 	// DefaultTheme is the default theme for new rigs.
@@ -59,7 +62,12 @@ var BuiltinThemes = map[string][]string{
 	},
 }
 
-// NamePool manages a bounded pool of reusable polecat names.
+// NamePool manages a bounded pool of reusable polecat NAME SLOTS.
+// IMPORTANT: This pools NAMES, not polecats. Polecats are spawned fresh for each
+// task and nuked when done - there is no idle pool of polecat instances waiting
+// for work. When a polecat is nuked, its name slot becomes available for the next
+// freshly-spawned polecat.
+//
 // Names are drawn from a themed pool (mad-max by default).
 // When the pool is exhausted, overflow names use rigname-N format.
 type NamePool struct {
@@ -214,7 +222,9 @@ func (p *NamePool) Allocate() (string, error) {
 	return name, nil
 }
 
-// Release returns a pooled name to the pool.
+// Release returns a name slot to the available pool.
+// Called when a polecat is nuked - the name becomes available for new polecats.
+// NOTE: This releases the NAME, not the polecat. The polecat is gone (nuked).
 // For overflow names, this is a no-op (they are not reusable).
 func (p *NamePool) Release(name string) {
 	p.mu.Lock()
