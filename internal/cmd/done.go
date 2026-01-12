@@ -262,6 +262,7 @@ func runDone(cmd *cobra.Command, args []string) error {
 				Type:        "merge-request",
 				Priority:    priority,
 				Description: description,
+				Ephemeral:   true,
 			})
 			if err != nil {
 				return fmt.Errorf("creating merge request bead: %w", err)

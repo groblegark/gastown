@@ -86,6 +86,7 @@ type CreateOptions struct {
 	Description string
 	Parent      string
 	Actor       string // Who is creating this issue (populates created_by)
+	Ephemeral   bool   // Create as ephemeral (wisp) - not exported to JSONL
 }
 
 // UpdateOptions specifies options for updating an issue.
@@ -390,6 +391,9 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 	}
 	if opts.Parent != "" {
 		args = append(args, "--parent="+opts.Parent)
+	}
+	if opts.Ephemeral {
+		args = append(args, "--ephemeral")
 	}
 	// Default Actor from BD_ACTOR env var if not specified
 	actor := opts.Actor
