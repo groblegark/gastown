@@ -67,7 +67,6 @@ This is THE command for assigning work in Gas Town. It handles:
   - Auto-spawning polecats when target is a rig
   - Dispatching to dogs (Deacon's helper workers)
   - Formula instantiation and wisp creation
-  - No-tmux mode for manual agent operation
   - Auto-convoy creation for dashboard visibility
 
 Auto-Convoy:
@@ -89,7 +88,6 @@ Target Resolution:
 
 Spawning Options (when target is a rig):
   gt sling gp-abc greenplace --create               # Create polecat if missing
-  gt sling gp-abc greenplace --naked                # No-tmux (manual start)
   gt sling gp-abc greenplace --force                # Ignore unread mail
   gt sling gp-abc greenplace --account work         # Use specific Claude account
 
@@ -132,8 +130,7 @@ var (
 	slingVars     []string // --var flag: formula variables (key=value)
 	slingArgs     string   // --args flag: natural language instructions for executor
 
-	// Flags migrated for polecat spawning (used by sling for work assignment
-	slingNaked    bool   // --naked: no-tmux mode (skip session creation)
+	// Flags migrated for polecat spawning (used by sling for work assignment)
 	slingCreate   bool   // --create: create polecat if it doesn't exist
 	slingForce    bool   // --force: force spawn even if polecat has unread mail
 	slingAccount  string // --account: Claude Code account handle to use
@@ -150,7 +147,6 @@ func init() {
 	slingCmd.Flags().StringVarP(&slingArgs, "args", "a", "", "Natural language instructions for the executor (e.g., 'patch release')")
 
 	// Flags for polecat spawning (when target is a rig)
-	slingCmd.Flags().BoolVar(&slingNaked, "naked", false, "No-tmux mode: assign work but skip session creation (manual start)")
 	slingCmd.Flags().BoolVar(&slingCreate, "create", false, "Create polecat if it doesn't exist")
 	slingCmd.Flags().BoolVar(&slingForce, "force", false, "Force spawn even if polecat has unread mail")
 	slingCmd.Flags().StringVar(&slingAccount, "account", "", "Claude Code account handle to use")
@@ -271,9 +267,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 			if slingDryRun {
 				// Dry run - just indicate what would happen
 				fmt.Printf("Would spawn fresh polecat in rig '%s'\n", rigName)
-				if slingNaked {
-					fmt.Printf("  --naked: would skip tmux session\n")
-				}
 				targetAgent = fmt.Sprintf("%s/polecats/<new>", rigName)
 				targetPane = "<new-pane>"
 			} else {
@@ -281,7 +274,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 				fmt.Printf("Target is rig '%s', spawning fresh polecat...\n", rigName)
 				spawnOpts := SlingSpawnOptions{
 					Force:    slingForce,
-					Naked:    slingNaked,
 					Account:  slingAccount,
 					Create:   slingCreate,
 					HookBead: beadID, // Set atomically at spawn time
@@ -300,9 +292,8 @@ func runSling(cmd *cobra.Command, args []string) error {
 			}
 		} else {
 			// Slinging to an existing agent
-			// Skip pane lookup if --naked (agent may be terminated)
 			var targetWorkDir string
-			targetAgent, targetPane, targetWorkDir, err = resolveTargetAgent(target, slingNaked)
+			targetAgent, targetPane, targetWorkDir, err = resolveTargetAgent(target)
 			if err != nil {
 				return fmt.Errorf("resolving target: %w", err)
 			}
@@ -685,8 +676,7 @@ func ensureAgentReady(sessionName string) error {
 }
 
 // resolveTargetAgent converts a target spec to agent ID, pane, and hook root.
-// If skipPane is true, skip tmux pane lookup (for --naked mode).
-func resolveTargetAgent(target string, skipPane bool) (agentID string, pane string, hookRoot string, err error) {
+func resolveTargetAgent(target string) (agentID string, pane string, hookRoot string, err error) {
 	// First resolve to session name
 	sessionName, err := resolveRoleToSession(target)
 	if err != nil {
@@ -695,11 +685,6 @@ func resolveTargetAgent(target string, skipPane bool) (agentID string, pane stri
 
 	// Convert session name to agent ID format (this doesn't require tmux)
 	agentID = sessionToAgentID(sessionName)
-
-	// Skip pane lookup if requested (--naked mode)
-	if skipPane {
-		return agentID, "", "", nil
-	}
 
 	// Get the pane for that session
 	pane, err = getSessionPane(sessionName)
@@ -916,9 +901,6 @@ func runSlingFormula(args []string) error {
 			if slingDryRun {
 				// Dry run - just indicate what would happen
 				fmt.Printf("Would spawn fresh polecat in rig '%s'\n", rigName)
-				if slingNaked {
-					fmt.Printf("  --naked: would skip tmux session\n")
-				}
 				targetAgent = fmt.Sprintf("%s/polecats/<new>", rigName)
 				targetPane = "<new-pane>"
 			} else {
@@ -926,7 +908,6 @@ func runSlingFormula(args []string) error {
 				fmt.Printf("Target is rig '%s', spawning fresh polecat...\n", rigName)
 				spawnOpts := SlingSpawnOptions{
 					Force:   slingForce,
-					Naked:   slingNaked,
 					Account: slingAccount,
 					Create:  slingCreate,
 					Agent:   slingAgent,
@@ -943,9 +924,8 @@ func runSlingFormula(args []string) error {
 			}
 		} else {
 			// Slinging to an existing agent
-			// Skip pane lookup if --naked (agent may be terminated)
 			var targetWorkDir string
-			targetAgent, targetPane, targetWorkDir, err = resolveTargetAgent(target, slingNaked)
+			targetAgent, targetPane, targetWorkDir, err = resolveTargetAgent(target)
 			if err != nil {
 				return fmt.Errorf("resolving target: %w", err)
 			}
@@ -1429,9 +1409,6 @@ func runBatchSling(beadIDs []string, rigName string, townBeadsDir string) error 
 		for _, beadID := range beadIDs {
 			fmt.Printf("  Would spawn polecat for: %s\n", beadID)
 		}
-		if slingNaked {
-			fmt.Printf("  --naked: would skip tmux sessions\n")
-		}
 		return nil
 	}
 
@@ -1467,7 +1444,6 @@ func runBatchSling(beadIDs []string, rigName string, townBeadsDir string) error 
 		// Spawn a fresh polecat
 		spawnOpts := SlingSpawnOptions{
 			Force:    slingForce,
-			Naked:    slingNaked,
 			Account:  slingAccount,
 			Create:   slingCreate,
 			HookBead: beadID, // Set atomically at spawn time
