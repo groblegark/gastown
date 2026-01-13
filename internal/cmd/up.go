@@ -70,6 +70,22 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	allOK := true
 
+	// 0. Sync beads databases from JSONL (ensures db is up-to-date after git pulls)
+	// This must happen before any beads-dependent operations (witnesses, polecats)
+	rigs := discoverRigs(townRoot)
+	for _, rigName := range rigs {
+		rigPath := filepath.Join(townRoot, rigName)
+		b := beads.New(rigPath)
+		if b.IsBeadsRepo() {
+			if err := b.SyncImportOnly(); err != nil {
+				// Log but don't fail - some rigs may not have beads configured
+				if !upQuiet {
+					fmt.Printf("%s Beads sync (%s): %s\n", style.WarningPrefix, rigName, err.Error())
+				}
+			}
+		}
+	}
+
 	// 1. Daemon (Go process)
 	if err := ensureDaemon(townRoot); err != nil {
 		printStatus("Daemon", false, err.Error())
@@ -108,7 +124,6 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	// 4. Witnesses (one per rig)
-	rigs := discoverRigs(townRoot)
 	for _, rigName := range rigs {
 		_, r, err := getRig(rigName)
 		if err != nil {
