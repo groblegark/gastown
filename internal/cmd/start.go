@@ -198,7 +198,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			startRigAgents(t, rigs, &mu)
+			startRigAgents(rigs, &mu)
 		}()
 	}
 
@@ -240,7 +240,7 @@ func startCoreAgents(townRoot string, agentOverride string, mu *sync.Mutex) erro
 		defer wg.Done()
 		mayorMgr := mayor.NewManager(townRoot)
 		if err := mayorMgr.Start(agentOverride); err != nil {
-			if err == mayor.ErrAlreadyRunning {
+			if errors.Is(err, mayor.ErrAlreadyRunning) {
 				mu.Lock()
 				fmt.Printf("  %s Mayor already running\n", style.Dim.Render("○"))
 				mu.Unlock()
@@ -267,7 +267,7 @@ func startCoreAgents(townRoot string, agentOverride string, mu *sync.Mutex) erro
 		defer wg.Done()
 		deaconMgr := deacon.NewManager(townRoot)
 		if err := deaconMgr.Start(agentOverride); err != nil {
-			if err == deacon.ErrAlreadyRunning {
+			if errors.Is(err, deacon.ErrAlreadyRunning) {
 				mu.Lock()
 				fmt.Printf("  %s Deacon already running\n", style.Dim.Render("○"))
 				mu.Unlock()
@@ -294,7 +294,7 @@ func startCoreAgents(townRoot string, agentOverride string, mu *sync.Mutex) erro
 
 // startRigAgents starts witness and refinery for all rigs in parallel.
 // Called when --all flag is passed to gt start.
-func startRigAgents(t *tmux.Tmux, rigs []*rig.Rig, mu *sync.Mutex) {
+func startRigAgents(rigs []*rig.Rig, mu *sync.Mutex) {
 	var wg sync.WaitGroup
 
 	for _, r := range rigs {
@@ -303,7 +303,7 @@ func startRigAgents(t *tmux.Tmux, rigs []*rig.Rig, mu *sync.Mutex) {
 		// Start Witness in goroutine
 		go func(r *rig.Rig) {
 			defer wg.Done()
-			msg := startWitnessForRig(t, r)
+			msg := startWitnessForRig(r)
 			mu.Lock()
 			fmt.Print(msg)
 			mu.Unlock()
@@ -323,16 +323,10 @@ func startRigAgents(t *tmux.Tmux, rigs []*rig.Rig, mu *sync.Mutex) {
 }
 
 // startWitnessForRig starts the witness for a single rig and returns a status message.
-func startWitnessForRig(t *tmux.Tmux, r *rig.Rig) string {
-	witnessSession := fmt.Sprintf("gt-%s-witness", r.Name)
-	witnessRunning, _ := t.HasSession(witnessSession)
-	if witnessRunning {
-		return fmt.Sprintf("  %s %s witness already running\n", style.Dim.Render("○"), r.Name)
-	}
-
+func startWitnessForRig(r *rig.Rig) string {
 	witMgr := witness.NewManager(r)
 	if err := witMgr.Start(false, "", nil); err != nil {
-		if err == witness.ErrAlreadyRunning {
+		if errors.Is(err, witness.ErrAlreadyRunning) {
 			return fmt.Sprintf("  %s %s witness already running\n", style.Dim.Render("○"), r.Name)
 		}
 		return fmt.Sprintf("  %s %s witness failed: %v\n", style.Dim.Render("○"), r.Name, err)
