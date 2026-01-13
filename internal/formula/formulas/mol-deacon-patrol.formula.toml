@@ -87,7 +87,7 @@ Keep inbox near-empty - only unprocessed items should remain."""
 [[steps]]
 id = "trigger-pending-spawns"
 title = "Nudge newly spawned polecats"
-needs = ["inbox-check"]
+needs = ["inbox-check"]  # P1: High priority - polecats waiting for work
 description = """
 Nudge newly spawned polecats that are ready for input.
 
@@ -301,7 +301,7 @@ Keep notifications brief and actionable. The recipient can run bd show for detai
 [[steps]]
 id = "health-scan"
 title = "Check Witness and Refinery health"
-needs = ["trigger-pending-spawns", "dispatch-gated-molecules", "fire-notifications"]
+needs = ["inbox-check"]  # P0: Critical - run early, witnesses/refineries keep the town alive
 description = """
 Check Witness and Refinery health for each rig.
 
@@ -534,9 +534,12 @@ Skip dispatch - nothing to do.
 [[steps]]
 id = "session-gc"
 title = "Detect cleanup needs"
-needs = ["orphan-check"]
+needs = ["orphan-check"]  # P3: Low priority - skip if patrol is running long
 description = """
 **DETECT ONLY** - Check if cleanup is needed and dispatch to dog.
+
+**LOW PRIORITY**: This step can be skipped if the patrol cycle is running long.
+Session cleanup is not urgent - it can wait for the next cycle.
 
 **Step 1: Preview cleanup needs**
 ```bash
@@ -566,9 +569,11 @@ Skip dispatch - system is healthy.
 [[steps]]
 id = "costs-digest"
 title = "Aggregate daily costs"
-needs = ["session-gc"]
+needs = ["session-gc"]  # P3: Low priority - once daily is fine
 description = """
 **DAILY DIGEST** - Aggregate yesterday's session cost wisps.
+
+**LOW PRIORITY**: Run once per day. Skip if patrol is busy with higher-priority work.
 
 Session costs are recorded as ephemeral wisps (not exported to JSONL) to avoid
 log-in-database pollution. This step aggregates them into a permanent daily
@@ -604,8 +609,10 @@ we don't try to digest today's incomplete data.
 [[steps]]
 id = "log-maintenance"
 title = "Rotate logs and prune state"
-needs = ["costs-digest"]
+needs = ["costs-digest"]  # P3: Low priority - background maintenance
 description = """
+**LOW PRIORITY**: Log rotation can wait. Skip if patrol is busy.
+
 Maintain daemon logs and state files.
 
 **Step 1: Check daemon.log size**
