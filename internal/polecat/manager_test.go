@@ -292,8 +292,8 @@ func TestAddWithOptions_HasAgentsMD(t *testing.T) {
 		t.Fatalf("mkdir mayor/rig: %v", err)
 	}
 
-	// Initialize git repo in mayor/rig
-	cmd := exec.Command("git", "init")
+	// Initialize git repo in mayor/rig with main branch
+	cmd := exec.Command("git", "init", "-b", "main")
 	cmd.Dir = mayorRig
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
@@ -367,7 +367,7 @@ func TestAddWithOptions_AgentsMDFallback(t *testing.T) {
 	}
 
 	// Initialize git repo in mayor/rig WITHOUT AGENTS.md in git
-	cmd := exec.Command("git", "init")
+	cmd := exec.Command("git", "init", "-b", "main")
 	cmd.Dir = mayorRig
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
