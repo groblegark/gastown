@@ -779,7 +779,7 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("  Starting refinery...\n")
 		refMgr := refinery.NewManager(r)
-		if err := refMgr.Start(false); err != nil { // false = background mode
+		if err := refMgr.Start(false, ""); err != nil { // false = background mode
 			return fmt.Errorf("starting refinery: %w", err)
 		}
 		started = append(started, "refinery")
@@ -859,7 +859,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Printf("  Starting refinery...\n")
 			refMgr := refinery.NewManager(r)
-			if err := refMgr.Start(false); err != nil {
+			if err := refMgr.Start(false, ""); err != nil {
 				fmt.Printf("  %s Failed to start refinery: %v\n", style.Warning.Render("⚠"), err)
 				hasError = true
 			} else {
@@ -921,7 +921,7 @@ func runRigShutdown(cmd *cobra.Command, args []string) error {
 	// Check all polecats for uncommitted work (unless nuclear)
 	if !rigShutdownNuclear {
 		polecatGit := git.NewGit(r.Path)
-		polecatMgr := polecat.NewManager(r, polecatGit)
+		polecatMgr := polecat.NewManager(r, polecatGit, nil) // nil tmux: just listing
 		polecats, err := polecatMgr.List()
 		if err == nil && len(polecats) > 0 {
 			var problemPolecats []struct {
@@ -1105,7 +1105,7 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 
 	// Polecats
 	polecatGit := git.NewGit(r.Path)
-	polecatMgr := polecat.NewManager(r, polecatGit)
+	polecatMgr := polecat.NewManager(r, polecatGit, t)
 	polecats, err := polecatMgr.List()
 	fmt.Printf("%s", style.Bold.Render("Polecats"))
 	if err != nil || len(polecats) == 0 {
@@ -1198,7 +1198,7 @@ func runRigStop(cmd *cobra.Command, args []string) error {
 		// Check all polecats for uncommitted work (unless nuclear)
 		if !rigStopNuclear {
 			polecatGit := git.NewGit(r.Path)
-			polecatMgr := polecat.NewManager(r, polecatGit)
+			polecatMgr := polecat.NewManager(r, polecatGit, nil) // nil tmux: just listing
 			polecats, err := polecatMgr.List()
 			if err == nil && len(polecats) > 0 {
 				var problemPolecats []struct {
@@ -1330,7 +1330,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		// Check all polecats for uncommitted work (unless nuclear)
 		if !rigRestartNuclear {
 			polecatGit := git.NewGit(r.Path)
-			polecatMgr := polecat.NewManager(r, polecatGit)
+			polecatMgr := polecat.NewManager(r, polecatGit, nil) // nil tmux: just listing
 			polecats, err := polecatMgr.List()
 			if err == nil && len(polecats) > 0 {
 				var problemPolecats []struct {
@@ -1437,7 +1437,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 			skipped = append(skipped, "refinery")
 		} else {
 			fmt.Printf("    Starting refinery...\n")
-			if err := refMgr.Start(false); err != nil {
+			if err := refMgr.Start(false, ""); err != nil {
 				fmt.Printf("    %s Failed to start refinery: %v\n", style.Warning.Render("⚠"), err)
 				startErrors = append(startErrors, fmt.Sprintf("refinery: %v", err))
 			} else {

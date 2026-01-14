@@ -62,6 +62,7 @@ func looksLikeIssueID(s string) bool {
 var (
 	convoyMolecule     string
 	convoyNotify       string
+	convoyOwner        string
 	convoyStatusJSON   bool
 	convoyListJSON     bool
 	convoyListStatus   string
@@ -121,10 +122,15 @@ var convoyCreateCmd = &cobra.Command{
 The convoy is created in town-level beads (hq-* prefix) and can track
 issues across any rig.
 
+The --owner flag specifies who requested the convoy (receives completion
+notification by default). If not specified, defaults to created_by.
+The --notify flag adds additional subscribers beyond the owner.
+
 Examples:
   gt convoy create "Deploy v2.0" gt-abc bd-xyz
   gt convoy create "Release prep" gt-abc --notify           # defaults to mayor/
   gt convoy create "Release prep" gt-abc --notify ops/      # notify ops/
+  gt convoy create "Feature rollout" gt-a gt-b --owner mayor/ --notify ops/
   gt convoy create "Feature rollout" gt-a gt-b gt-c --molecule mol-release`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runConvoyCreate,
@@ -225,7 +231,8 @@ Examples:
 func init() {
 	// Create flags
 	convoyCreateCmd.Flags().StringVar(&convoyMolecule, "molecule", "", "Associated molecule ID")
-	convoyCreateCmd.Flags().StringVar(&convoyNotify, "notify", "", "Address to notify on completion (default: mayor/ if flag used without value)")
+	convoyCreateCmd.Flags().StringVar(&convoyOwner, "owner", "", "Owner who requested convoy (gets completion notification)")
+	convoyCreateCmd.Flags().StringVar(&convoyNotify, "notify", "", "Additional address to notify on completion (default: mayor/ if flag used without value)")
 	convoyCreateCmd.Flags().Lookup("notify").NoOptDefVal = "mayor/"
 
 	// Status flags
@@ -291,6 +298,9 @@ func runConvoyCreate(cmd *cobra.Command, args []string) error {
 
 	// Create convoy issue in town beads
 	description := fmt.Sprintf("Convoy tracking %d issues", len(trackedIssues))
+	if convoyOwner != "" {
+		description += fmt.Sprintf("\nOwner: %s", convoyOwner)
+	}
 	if convoyNotify != "" {
 		description += fmt.Sprintf("\nNotify: %s", convoyNotify)
 	}
@@ -344,6 +354,9 @@ func runConvoyCreate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Tracking: %d issues\n", trackedCount)
 	if len(trackedIssues) > 0 {
 		fmt.Printf("  Issues:   %s\n", strings.Join(trackedIssues, ", "))
+	}
+	if convoyOwner != "" {
+		fmt.Printf("  Owner:    %s\n", convoyOwner)
 	}
 	if convoyNotify != "" {
 		fmt.Printf("  Notify:   %s\n", convoyNotify)
@@ -786,9 +799,9 @@ func checkAndCloseCompletedConvoys(townBeads string) ([]struct{ ID, Title string
 	return closed, nil
 }
 
-// notifyConvoyCompletion sends a notification if the convoy has a notify address.
+// notifyConvoyCompletion sends notifications to owner and any notify addresses.
 func notifyConvoyCompletion(townBeads, convoyID, title string) {
-	// Get convoy description to find notify address
+	// Get convoy description to find owner and notify addresses
 	showArgs := []string{"show", convoyID, "--json"}
 	showCmd := exec.Command("bd", showArgs...)
 	showCmd.Dir = townBeads
@@ -806,20 +819,26 @@ func notifyConvoyCompletion(townBeads, convoyID, title string) {
 		return
 	}
 
-	// Parse notify address from description
+	// Parse owner and notify addresses from description
 	desc := convoys[0].Description
+	notified := make(map[string]bool) // Track who we've notified to avoid duplicates
+
 	for _, line := range strings.Split(desc, "\n") {
-		if strings.HasPrefix(line, "Notify: ") {
-			addr := strings.TrimPrefix(line, "Notify: ")
-			if addr != "" {
-				// Send notification via gt mail
-				mailArgs := []string{"mail", "send", addr,
-					"-s", fmt.Sprintf("🚚 Convoy landed: %s", title),
-					"-m", fmt.Sprintf("Convoy %s has completed.\n\nAll tracked issues are now closed.", convoyID)}
-				mailCmd := exec.Command("gt", mailArgs...)
-				_ = mailCmd.Run() // Best effort, ignore errors
-			}
-			break
+		var addr string
+		if strings.HasPrefix(line, "Owner: ") {
+			addr = strings.TrimPrefix(line, "Owner: ")
+		} else if strings.HasPrefix(line, "Notify: ") {
+			addr = strings.TrimPrefix(line, "Notify: ")
+		}
+
+		if addr != "" && !notified[addr] {
+			// Send notification via gt mail
+			mailArgs := []string{"mail", "send", addr,
+				"-s", fmt.Sprintf("🚚 Convoy landed: %s", title),
+				"-m", fmt.Sprintf("Convoy %s has completed.\n\nAll tracked issues are now closed.", convoyID)}
+			mailCmd := exec.Command("gt", mailArgs...)
+			_ = mailCmd.Run() // Best effort, ignore errors
+			notified[addr] = true
 		}
 	}
 }

@@ -330,7 +330,8 @@ func getPolecatManager(rigName string) (*polecat.Manager, *rig.Rig, error) {
 	}
 
 	polecatGit := git.NewGit(r.Path)
-	mgr := polecat.NewManager(r, polecatGit)
+	t := tmux.NewTmux()
+	mgr := polecat.NewManager(r, polecatGit, t)
 
 	return mgr, r, nil
 }
@@ -363,7 +364,7 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 
 	for _, r := range rigs {
 		polecatGit := git.NewGit(r.Path)
-		mgr := polecat.NewManager(r, polecatGit)
+		mgr := polecat.NewManager(r, polecatGit, t)
 		polecatMgr := polecat.NewSessionManager(t, r)
 
 		polecats, err := mgr.List()

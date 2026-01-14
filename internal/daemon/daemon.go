@@ -127,7 +127,7 @@ func (d *Daemon) Run() error {
 
 	// Handle signals
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
+	signal.Notify(sigChan, daemonSignals()...)
 
 	// Fixed recovery-focused heartbeat (no activity-based backoff)
 	// Normal wake is handled by feed subscription (bd activity --follow)
@@ -162,9 +162,9 @@ func (d *Daemon) Run() error {
 			return d.shutdown(state)
 
 		case sig := <-sigChan:
-			if sig == syscall.SIGUSR1 {
-				// SIGUSR1: immediate lifecycle processing (from gt handoff)
-				d.logger.Println("Received SIGUSR1, processing lifecycle requests immediately")
+			if isLifecycleSignal(sig) {
+				// Lifecycle signal: immediate lifecycle processing (from gt handoff)
+				d.logger.Println("Received lifecycle signal, processing lifecycle requests immediately")
 				d.processLifecycleRequests()
 			} else {
 				d.logger.Printf("Received signal %v, shutting down", sig)
@@ -270,7 +270,7 @@ func (d *Daemon) ensureBootRunning() {
 
 	// Spawn Boot in a fresh tmux session
 	d.logger.Println("Spawning Boot for triage...")
-	if err := b.Spawn(); err != nil {
+	if err := b.Spawn(""); err != nil {
 		d.logger.Printf("Error spawning Boot: %v, falling back to direct Deacon check", err)
 		// Fallback: ensure Deacon is running directly
 		d.ensureDeaconRunning()
@@ -395,7 +395,7 @@ func (d *Daemon) ensureRefineryRunning(rigName string) {
 	}
 	mgr := refinery.NewManager(r)
 
-	if err := mgr.Start(false); err != nil {
+	if err := mgr.Start(false, ""); err != nil {
 		if err == refinery.ErrAlreadyRunning {
 			// Already running - nothing to do
 			return
@@ -783,13 +783,16 @@ func (d *Daemon) restartPolecatSession(rigName, polecatName, sessionName string)
 		return fmt.Errorf("cannot restart polecat: %s", reason)
 	}
 
+	// Calculate rig path for agent config resolution
+	rigPath := filepath.Join(d.config.TownRoot, rigName)
+
 	// Determine working directory (handle both new and old structures)
 	// New structure: polecats/<name>/<rigname>/
 	// Old structure: polecats/<name>/
-	workDir := filepath.Join(d.config.TownRoot, rigName, "polecats", polecatName, rigName)
+	workDir := filepath.Join(rigPath, "polecats", polecatName, rigName)
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
 		// Fall back to old structure
-		workDir = filepath.Join(d.config.TownRoot, rigName, "polecats", polecatName)
+		workDir = filepath.Join(rigPath, "polecats", polecatName)
 	}
 
 	// Verify the worktree exists
@@ -807,13 +810,11 @@ func (d *Daemon) restartPolecatSession(rigName, polecatName, sessionName string)
 	}
 
 	// Set environment variables using centralized AgentEnv
-	rigPath := filepath.Join(d.config.TownRoot, rigName)
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:          "polecat",
 		Rig:           rigName,
 		AgentName:     polecatName,
 		TownRoot:      d.config.TownRoot,
-		BeadsDir:      beads.ResolveBeadsDir(rigPath),
 		BeadsNoDaemon: true,
 	})
 

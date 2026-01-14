@@ -178,8 +178,13 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 
 // CreateOrReopenAgentBead creates an agent bead or reopens an existing one.
 // This handles the case where a polecat is nuked and re-spawned with the same name:
-// the old agent bead exists as a tombstone, so we reopen and update it instead of
+// the old agent bead exists as a closed bead, so we reopen and update it instead of
 // failing with a UNIQUE constraint error.
+//
+// NOTE: This does NOT handle tombstones. If the old bead was hard-deleted (creating
+// a tombstone), this function will fail. Use CloseAndClearAgentBead instead of DeleteAgentBead
+// when cleaning up agent beads to ensure they can be reopened later.
+//
 //
 // The function:
 // 1. Tries to create the agent bead
@@ -196,7 +201,7 @@ func (b *Beads) CreateOrReopenAgentBead(id, title string, fields *AgentFields) (
 		return nil, err
 	}
 
-	// The bead already exists (likely a tombstone from a previous nuked polecat)
+	// The bead already exists (should be closed from previous polecat lifecycle)
 	// Reopen it and update its fields
 	if _, reopenErr := b.run("reopen", id, "--reason=re-spawning agent"); reopenErr != nil {
 		// If reopen fails, the bead might already be open - continue with update
@@ -223,10 +228,11 @@ func (b *Beads) CreateOrReopenAgentBead(id, title string, fields *AgentFields) (
 		}
 	}
 
+	// Clear any existing hook slot (handles stale state from previous lifecycle)
+	_, _ = b.run("slot", "clear", id, "hook")
+
 	// Set the hook slot if specified
 	if fields != nil && fields.HookBead != "" {
-		// Clear any existing hook first, then set new one
-		_, _ = b.run("slot", "clear", id, "hook")
 		if _, err := b.run("slot", "set", id, "hook", fields.HookBead); err != nil {
 			// Non-fatal: warn but continue
 			fmt.Printf("Warning: could not set hook slot: %v\n", err)
@@ -400,8 +406,67 @@ func (b *Beads) GetAgentNotificationLevel(id string) (string, error) {
 
 // DeleteAgentBead permanently deletes an agent bead.
 // Uses --hard --force for immediate permanent deletion (no tombstone).
+//
+// WARNING: Due to a bd bug, --hard --force still creates tombstones instead of
+// truly deleting. This breaks CreateOrReopenAgentBead because tombstones are
+// invisible to bd show/reopen but still block bd create via UNIQUE constraint.
+//
+//
+// WORKAROUND: Use CloseAndClearAgentBead instead, which allows CreateOrReopenAgentBead
+// to reopen the bead on re-spawn.
 func (b *Beads) DeleteAgentBead(id string) error {
 	_, err := b.run("delete", id, "--hard", "--force")
+	return err
+}
+
+// CloseAndClearAgentBead closes an agent bead (soft delete).
+// This is the recommended way to clean up agent beads because CreateOrReopenAgentBead
+// can reopen closed beads when re-spawning polecats with the same name.
+//
+// This is a workaround for the bd tombstone bug where DeleteAgentBead creates
+// tombstones that cannot be reopened.
+//
+// To emulate the clean slate of delete --force --hard, this clears all mutable
+// fields (hook_bead, active_mr, cleanup_status, agent_state) before closing.
+func (b *Beads) CloseAndClearAgentBead(id, reason string) error {
+	// Clear mutable fields to emulate delete --force --hard behavior.
+	// This ensures reopened agent beads don't have stale state.
+
+	// First get current issue to preserve immutable fields
+	issue, err := b.Show(id)
+	if err != nil {
+		// If we can't read the issue, still attempt to close
+		args := []string{"close", id}
+		if reason != "" {
+			args = append(args, "--reason="+reason)
+		}
+		_, closeErr := b.run(args...)
+		return closeErr
+	}
+
+	// Parse existing fields and clear mutable ones
+	fields := ParseAgentFields(issue.Description)
+	fields.HookBead = ""     // Clear hook_bead
+	fields.ActiveMR = ""     // Clear active_mr
+	fields.CleanupStatus = "" // Clear cleanup_status
+	fields.AgentState = "closed"
+
+	// Update description with cleared fields
+	description := FormatAgentDescription(issue.Title, fields)
+	if err := b.Update(id, UpdateOptions{Description: &description}); err != nil {
+		// Non-fatal: continue with close even if update fails
+	}
+
+	// Also clear the hook slot in the database
+	if err := b.ClearHookBead(id); err != nil {
+		// Non-fatal
+	}
+
+	args := []string{"close", id}
+	if reason != "" {
+		args = append(args, "--reason="+reason)
+	}
+	_, err = b.run(args...)
 	return err
 }
 

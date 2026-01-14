@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
@@ -253,7 +254,37 @@ func runSling(cmd *cobra.Command, args []string) error {
 			var targetWorkDir string
 			targetAgent, targetPane, targetWorkDir, err = resolveTargetAgent(target)
 			if err != nil {
-				return fmt.Errorf("resolving target: %w", err)
+				// Check if this is a dead polecat (no active session)
+				// If so, spawn a fresh polecat instead of failing
+				if isPolecatTarget(target) {
+					// Extract rig name from polecat target (format: rig/polecats/name)
+					parts := strings.Split(target, "/")
+					if len(parts) >= 3 && parts[1] == "polecats" {
+						rigName := parts[0]
+						fmt.Printf("Target polecat has no active session, spawning fresh polecat in rig '%s'...\n", rigName)
+						spawnOpts := SlingSpawnOptions{
+							Force:    slingForce,
+							Account:  slingAccount,
+							Create:   slingCreate,
+							HookBead: beadID,
+							Agent:    slingAgent,
+						}
+						spawnInfo, spawnErr := SpawnPolecatForSling(rigName, spawnOpts)
+						if spawnErr != nil {
+							return fmt.Errorf("spawning polecat to replace dead polecat: %w", spawnErr)
+						}
+						targetAgent = spawnInfo.AgentID()
+						targetPane = spawnInfo.Pane
+						hookWorkDir = spawnInfo.ClonePath
+
+						// Wake witness and refinery to monitor the new polecat
+						wakeRigAgents(rigName)
+					} else {
+						return fmt.Errorf("resolving target: %w", err)
+					}
+				} else {
+					return fmt.Errorf("resolving target: %w", err)
+				}
 			}
 			// Use target's working directory for bd commands (needed for redirect-based routing)
 			if targetWorkDir != "" {
@@ -343,12 +374,13 @@ func runSling(cmd *cobra.Command, args []string) error {
 	if formulaName != "" {
 		fmt.Printf("  Instantiating formula %s...\n", formulaName)
 
-		// Route bd mutations (cook/wisp/bond) to the correct beads context for the target bead.
+		// Route bd mutations (wisp/bond) to the correct beads context for the target bead.
 		// Some bd mol commands don't support prefix routing, so we must run them from the
 		// rig directory that owns the bead's database.
 		formulaWorkDir := beads.ResolveHookDir(townRoot, beadID, hookWorkDir)
 
 		// Step 1: Cook the formula (ensures proto exists)
+		// Cook runs from rig directory to access the correct formula database
 		cookCmd := exec.Command("bd", "--no-daemon", "cook", formulaName)
 		cookCmd.Dir = formulaWorkDir
 		cookCmd.Stderr = os.Stderr
@@ -357,11 +389,13 @@ func runSling(cmd *cobra.Command, args []string) error {
 		}
 
 		// Step 2: Create wisp with feature and issue variables from bead
+		// Run from rig directory so wisp is created in correct database
 		featureVar := fmt.Sprintf("feature=%s", info.Title)
 		issueVar := fmt.Sprintf("issue=%s", beadID)
 		wispArgs := []string{"--no-daemon", "mol", "wisp", formulaName, "--var", featureVar, "--var", issueVar, "--json"}
 		wispCmd := exec.Command("bd", wispArgs...)
 		wispCmd.Dir = formulaWorkDir
+		wispCmd.Env = append(os.Environ(), "GT_ROOT="+townRoot)
 		wispCmd.Stderr = os.Stderr
 		wispOut, err := wispCmd.Output()
 		if err != nil {
@@ -421,6 +455,15 @@ func runSling(cmd *cobra.Command, args []string) error {
 
 	// Update agent bead's hook_bead field (ZFC: agents track their current work)
 	updateAgentHookBead(targetAgent, beadID, hookWorkDir, townBeadsDir)
+
+	// Auto-attach mol-polecat-work to polecat agent beads
+	// This ensures polecats have the standard work molecule attached for guidance
+	if strings.Contains(targetAgent, "/polecats/") {
+		if err := attachPolecatWorkMolecule(targetAgent, hookWorkDir, townRoot); err != nil {
+			// Warn but don't fail - polecat will still work without molecule
+			fmt.Printf("%s Could not attach work molecule: %v\n", style.Dim.Render("Warning:"), err)
+		}
+	}
 
 	// Store dispatcher in bead description (enables completion notification to dispatcher)
 	if err := storeDispatcherInBead(beadID, actor); err != nil {

@@ -460,6 +460,9 @@ fi
 if [[ "$1" == "--no-daemon" ]]; then
   shift
 fi
+if [[ "$1" == "--allow-stale" ]]; then
+  shift
+fi
 cmd="$1"
 shift
 case "$cmd" in

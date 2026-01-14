@@ -337,7 +337,7 @@ func startWitnessForRig(r *rig.Rig) string {
 // startRefineryForRig starts the refinery for a single rig and returns a status message.
 func startRefineryForRig(r *rig.Rig) string {
 	refineryMgr := refinery.NewManager(r)
-	if err := refineryMgr.Start(false); err != nil {
+	if err := refineryMgr.Start(false, ""); err != nil {
 		if errors.Is(err, refinery.ErrAlreadyRunning) {
 			return fmt.Sprintf("  %s %s refinery already running\n", style.Dim.Render("○"), r.Name)
 		}
@@ -381,10 +381,10 @@ func startConfiguredCrew(t *tmux.Tmux, rigs []*rig.Rig, townRoot string, mu *syn
 func startOrRestartCrewMember(t *tmux.Tmux, r *rig.Rig, crewName, townRoot string) (msg string, started bool) {
 	sessionID := crewSessionName(r.Name, crewName)
 	if running, _ := t.HasSession(sessionID); running {
-		// Session exists - check if Claude is still running
-		agentCfg := config.ResolveAgentConfig(townRoot, r.Path)
+		// Session exists - check if agent is still running
+		agentCfg := config.ResolveRoleAgentConfig(constants.RoleCrew, townRoot, r.Path)
 		if !t.IsAgentRunning(sessionID, config.ExpectedPaneCommands(agentCfg)...) {
-			// Claude has exited, restart it
+			// Agent has exited, restart it
 			// Build startup beacon for predecessor discovery via /resume
 			address := fmt.Sprintf("%s/crew/%s", r.Name, crewName)
 			beacon := session.FormatStartupNudge(session.StartupNudgeConfig{
@@ -392,11 +392,11 @@ func startOrRestartCrewMember(t *tmux.Tmux, r *rig.Rig, crewName, townRoot strin
 				Sender:    "human",
 				Topic:     "restart",
 			})
-			claudeCmd := config.BuildCrewStartupCommand(r.Name, crewName, r.Path, beacon)
-			if err := t.SendKeys(sessionID, claudeCmd); err != nil {
+			agentCmd := config.BuildCrewStartupCommand(r.Name, crewName, r.Path, beacon)
+			if err := t.SendKeys(sessionID, agentCmd); err != nil {
 				return fmt.Sprintf("  %s %s/%s restart failed: %v\n", style.Dim.Render("○"), r.Name, crewName, err), false
 			}
-			return fmt.Sprintf("  %s %s/%s Claude restarted\n", style.Bold.Render("✓"), r.Name, crewName), true
+			return fmt.Sprintf("  %s %s/%s agent restarted\n", style.Bold.Render("✓"), r.Name, crewName), true
 		}
 		return fmt.Sprintf("  %s %s/%s already running\n", style.Dim.Render("○"), r.Name, crewName), false
 	}
@@ -627,7 +627,7 @@ func killSessionsInOrder(t *tmux.Tmux, sessions []string, mayorSession, deaconSe
 
 	// 1. Stop Deacon first
 	if inList(deaconSession) {
-		if err := t.KillSession(deaconSession); err == nil {
+		if err := t.KillSessionWithProcesses(deaconSession); err == nil {
 			fmt.Printf("  %s %s stopped\n", style.Bold.Render("✓"), deaconSession)
 			stopped++
 		}
@@ -638,7 +638,7 @@ func killSessionsInOrder(t *tmux.Tmux, sessions []string, mayorSession, deaconSe
 		if sess == deaconSession || sess == mayorSession {
 			continue
 		}
-		if err := t.KillSession(sess); err == nil {
+		if err := t.KillSessionWithProcesses(sess); err == nil {
 			fmt.Printf("  %s %s stopped\n", style.Bold.Render("✓"), sess)
 			stopped++
 		}
@@ -646,7 +646,7 @@ func killSessionsInOrder(t *tmux.Tmux, sessions []string, mayorSession, deaconSe
 
 	// 3. Stop Mayor last
 	if inList(mayorSession) {
-		if err := t.KillSession(mayorSession); err == nil {
+		if err := t.KillSessionWithProcesses(mayorSession); err == nil {
 			fmt.Printf("  %s %s stopped\n", style.Bold.Render("✓"), mayorSession)
 			stopped++
 		}
@@ -682,7 +682,7 @@ func cleanupPolecats(townRoot string) {
 
 	for _, r := range rigs {
 		polecatGit := git.NewGit(r.Path)
-		polecatMgr := polecat.NewManager(r, polecatGit)
+		polecatMgr := polecat.NewManager(r, polecatGit, nil) // nil tmux: just listing, not allocating
 
 		polecats, err := polecatMgr.List()
 		if err != nil {

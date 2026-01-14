@@ -9,15 +9,12 @@ func TestAgentEnv_Mayor(t *testing.T) {
 	env := AgentEnv(AgentEnvConfig{
 		Role:     "mayor",
 		TownRoot: "/town",
-		BeadsDir: "/town/.beads",
 	})
 
 	assertEnv(t, env, "GT_ROLE", "mayor")
 	assertEnv(t, env, "BD_ACTOR", "mayor")
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "mayor")
 	assertEnv(t, env, "GT_ROOT", "/town")
-	assertEnv(t, env, "BEADS_DIR", "/town/.beads")
-	assertEnv(t, env, "BEADS_AUTO_START_DAEMON", "false")
 	assertNotSet(t, env, "GT_RIG")
 	assertNotSet(t, env, "BEADS_NO_DAEMON")
 }
@@ -28,7 +25,6 @@ func TestAgentEnv_Witness(t *testing.T) {
 		Role:     "witness",
 		Rig:      "myrig",
 		TownRoot: "/town",
-		BeadsDir: "/town/myrig/.beads",
 	})
 
 	assertEnv(t, env, "GT_ROLE", "witness")
@@ -36,8 +32,6 @@ func TestAgentEnv_Witness(t *testing.T) {
 	assertEnv(t, env, "BD_ACTOR", "myrig/witness")
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "myrig/witness")
 	assertEnv(t, env, "GT_ROOT", "/town")
-	assertEnv(t, env, "BEADS_DIR", "/town/myrig/.beads")
-	assertEnv(t, env, "BEADS_AUTO_START_DAEMON", "false")
 }
 
 func TestAgentEnv_Polecat(t *testing.T) {
@@ -47,7 +41,6 @@ func TestAgentEnv_Polecat(t *testing.T) {
 		Rig:           "myrig",
 		AgentName:     "Toast",
 		TownRoot:      "/town",
-		BeadsDir:      "/town/myrig/.beads",
 		BeadsNoDaemon: true,
 	})
 
@@ -68,7 +61,6 @@ func TestAgentEnv_Crew(t *testing.T) {
 		Rig:           "myrig",
 		AgentName:     "emma",
 		TownRoot:      "/town",
-		BeadsDir:      "/town/myrig/.beads",
 		BeadsNoDaemon: true,
 	})
 
@@ -88,7 +80,6 @@ func TestAgentEnv_Refinery(t *testing.T) {
 		Role:          "refinery",
 		Rig:           "myrig",
 		TownRoot:      "/town",
-		BeadsDir:      "/town/myrig/.beads",
 		BeadsNoDaemon: true,
 	})
 
@@ -105,15 +96,12 @@ func TestAgentEnv_Deacon(t *testing.T) {
 	env := AgentEnv(AgentEnvConfig{
 		Role:     "deacon",
 		TownRoot: "/town",
-		BeadsDir: "/town/.beads",
 	})
 
 	assertEnv(t, env, "GT_ROLE", "deacon")
 	assertEnv(t, env, "BD_ACTOR", "deacon")
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "deacon")
 	assertEnv(t, env, "GT_ROOT", "/town")
-	assertEnv(t, env, "BEADS_DIR", "/town/.beads")
-	assertEnv(t, env, "BEADS_AUTO_START_DAEMON", "false")
 	assertNotSet(t, env, "GT_RIG")
 	assertNotSet(t, env, "BEADS_NO_DAEMON")
 }
@@ -123,15 +111,12 @@ func TestAgentEnv_Boot(t *testing.T) {
 	env := AgentEnv(AgentEnvConfig{
 		Role:     "boot",
 		TownRoot: "/town",
-		BeadsDir: "/town/.beads",
 	})
 
 	assertEnv(t, env, "GT_ROLE", "boot")
 	assertEnv(t, env, "BD_ACTOR", "deacon-boot")
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "boot")
 	assertEnv(t, env, "GT_ROOT", "/town")
-	assertEnv(t, env, "BEADS_DIR", "/town/.beads")
-	assertEnv(t, env, "BEADS_AUTO_START_DAEMON", "false")
 	assertNotSet(t, env, "GT_RIG")
 	assertNotSet(t, env, "BEADS_NO_DAEMON")
 }
@@ -143,7 +128,6 @@ func TestAgentEnv_WithRuntimeConfigDir(t *testing.T) {
 		Rig:              "myrig",
 		AgentName:        "Toast",
 		TownRoot:         "/town",
-		BeadsDir:         "/town/myrig/.beads",
 		RuntimeConfigDir: "/home/user/.config/claude",
 	})
 
@@ -157,7 +141,6 @@ func TestAgentEnv_WithoutRuntimeConfigDir(t *testing.T) {
 		Rig:       "myrig",
 		AgentName: "Toast",
 		TownRoot:  "/town",
-		BeadsDir:  "/town/myrig/.beads",
 	})
 
 	assertNotSet(t, env, "CLAUDE_CONFIG_DIR")
@@ -170,28 +153,25 @@ func TestAgentEnvSimple(t *testing.T) {
 	assertEnv(t, env, "GT_ROLE", "polecat")
 	assertEnv(t, env, "GT_RIG", "myrig")
 	assertEnv(t, env, "GT_POLECAT", "Toast")
-	// Simple doesn't set TownRoot/BeadsDir, so keys should be absent
-	// (not empty strings which would override tmux session environment)
+	// Simple doesn't set TownRoot, so key should be absent
+	// (not empty string which would override tmux session environment)
 	assertNotSet(t, env, "GT_ROOT")
-	assertNotSet(t, env, "BEADS_DIR")
 }
 
-func TestAgentEnv_EmptyTownRootBeadsDirOmitted(t *testing.T) {
+func TestAgentEnv_EmptyTownRootOmitted(t *testing.T) {
 	t.Parallel()
-	// Regression test: empty TownRoot/BeadsDir should NOT create keys in the map.
-	// If they were set to empty strings, ExportPrefix would generate "export GT_ROOT= ..."
-	// which overrides tmux session environment where these are correctly set.
+	// Regression test: empty TownRoot should NOT create keys in the map.
+	// If it was set to empty string, ExportPrefix would generate "export GT_ROOT= ..."
+	// which overrides tmux session environment where it's correctly set.
 	env := AgentEnv(AgentEnvConfig{
 		Role:      "polecat",
 		Rig:       "myrig",
 		AgentName: "Toast",
 		TownRoot:  "", // explicitly empty
-		BeadsDir:  "", // explicitly empty
 	})
 
-	// Keys should be absent, not empty strings
+	// Key should be absent, not empty string
 	assertNotSet(t, env, "GT_ROOT")
-	assertNotSet(t, env, "BEADS_DIR")
 
 	// Other keys should still be set
 	assertEnv(t, env, "GT_ROLE", "polecat")

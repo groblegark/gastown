@@ -129,8 +129,10 @@ func NewWithBeadsDir(workDir, beadsDir string) *Beads {
 // run executes a bd command and returns stdout.
 func (b *Beads) run(args ...string) ([]byte, error) {
 	// Use --no-daemon for faster read operations (avoids daemon IPC overhead)
-	// The daemon is primarily useful for write coalescing, not reads
-	fullArgs := append([]string{"--no-daemon"}, args...)
+	// The daemon is primarily useful for write coalescing, not reads.
+	// Use --allow-stale to prevent failures when db is out of sync with JSONL
+	// (e.g., after daemon is killed during shutdown before syncing).
+	fullArgs := append([]string{"--no-daemon", "--allow-stale"}, args...)
 	cmd := exec.Command("bd", fullArgs...) //nolint:gosec // G204: bd is a trusted internal tool
 	cmd.Dir = b.workDir
 
@@ -661,15 +663,16 @@ This is physics, not politeness. Gas Town is a steam engine - you are a piston.
 
 ## Session Close Protocol
 
-Before saying "done":
+Before signaling completion:
 1. git status (check what changed)
 2. git add <files> (stage code changes)
 3. bd sync (commit beads changes)
 4. git commit -m "..." (commit code)
 5. bd sync (commit any new beads changes)
 6. git push (push to remote)
+7. ` + "`gt done`" + ` (submit to merge queue and exit)
 
-**Work is not done until pushed.**
+**Polecats MUST call ` + "`gt done`" + ` - this submits work and exits the session.**
 `
 
 // ProvisionPrimeMD writes the Gas Town PRIME.md file to the specified beads directory.
