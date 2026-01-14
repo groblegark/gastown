@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -161,12 +162,14 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		workDir = m.clonePath(polecat)
 	}
 
-	runtimeConfig := config.LoadRuntimeConfig(m.rig.Path)
+	townRoot := filepath.Dir(m.rig.Path)
+	runtimeConfig := config.ResolveAgentConfig(townRoot, m.rig.Path)
 
-	// Ensure runtime settings exist in polecats/ (not polecats/<name>/) so we don't
-	// write into the source repo. Runtime walks up the tree to find settings.
+	// Ensure runtime settings exist.
+	// If an account is configured, settings are stored per-account (shared across all polecats).
+	// Otherwise, settings are stored in polecats/ (legacy per-workspace behavior).
 	polecatsDir := filepath.Join(m.rig.Path, "polecats")
-	if err := runtime.EnsureSettingsForRole(polecatsDir, "polecat", runtimeConfig); err != nil {
+	if err := runtime.EnsureSettingsForRoleWithAccount(polecatsDir, "polecat", opts.RuntimeConfigDir, runtimeConfig); err != nil {
 		return fmt.Errorf("ensuring runtime settings: %w", err)
 	}
 
@@ -188,7 +191,6 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 
 	// Set environment (non-fatal: session works without these)
 	// Use centralized AgentEnv for consistency across all role startup paths
-	townRoot := filepath.Dir(m.rig.Path)
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:             "polecat",
 		Rig:              m.rig.Name,

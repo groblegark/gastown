@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/beads"
-	"github.com/steveyegge/gastown/internal/claude"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
@@ -481,11 +481,13 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 		}
 	}
 
-	// Ensure Claude settings exist in crew/ (not crew/<name>/) so we don't
-	// write into the source repo. Claude walks up the tree to find settings.
-	// All crew members share the same settings file.
+	// Ensure Claude settings exist.
+	// If an account is configured, settings are stored per-account (shared across all crew members).
+	// Otherwise, settings are stored in crew/ (legacy per-workspace behavior).
 	crewBaseDir := filepath.Join(m.rig.Path, "crew")
-	if err := claude.EnsureSettingsForRole(crewBaseDir, "crew"); err != nil {
+	townRoot := filepath.Dir(m.rig.Path)
+	rigRC := config.ResolveAgentConfig(townRoot, m.rig.Path)
+	if err := runtime.EnsureSettingsForRoleWithAccount(crewBaseDir, "crew", opts.ClaudeConfigDir, rigRC); err != nil {
 		return fmt.Errorf("ensuring Claude settings: %w", err)
 	}
 
@@ -522,7 +524,6 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 
 	// Set environment variables (non-fatal: session works without these)
 	// Use centralized AgentEnv for consistency across all role startup paths
-	townRoot := filepath.Dir(m.rig.Path)
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:             "crew",
 		Rig:              m.rig.Name,

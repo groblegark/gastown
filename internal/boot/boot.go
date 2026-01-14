@@ -11,8 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
-"github.com/steveyegge/gastown/internal/config"
-	"github.com/steveyegge/gastown/internal/templates"
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
