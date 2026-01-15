@@ -1,0 +1,327 @@
+description = """
+Sync gastown fork from upstream (steveyegge/gastown).
+
+This molecule synchronizes a forked gastown installation with the upstream
+repository. It merges upstream changes into the fork's remote, then pulls
+to local, ensuring the gt binary stays current with upstream improvements.
+
+## Workflow
+
+1. Fetch upstream (steveyegge/gastown)
+2. Merge upstream/main into fork's main (on remote via PR or local merge + push)
+3. Pull merged changes to local
+4. Rebuild gt binary
+5. Verify with tests
+
+## Conflict Resolution Philosophy
+
+**Conflicts MUST be resolved, not deferred.**
+
+When merge conflicts occur:
+1. Analyze each conflict to understand both sides
+2. Prefer upstream changes unless local changes are critical fixes not yet PR'd
+3. If local changes are valuable, ensure they're in a PR to upstream BEFORE resolving
+4. Document any local changes that were intentionally kept over upstream
+5. Never leave conflicts unresolved - the sync must complete
+
+## Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| upstream_remote | upstream | Name of upstream remote |
+| upstream_url | https://github.com/steveyegge/gastown.git | Upstream repo URL |
+| fork_remote | origin | Name of fork remote |
+| branch | main | Branch to sync |
+| gt_install_path | ~/.local/bin/gt | Where to install gt binary |
+
+## Failure Modes
+
+| Situation | Action |
+|-----------|--------|
+| Upstream not configured | Add remote automatically |
+| Merge conflicts | STOP and resolve - do not skip |
+| Build failure | Fix before completing - gt must work |
+| Test failure | Assess if blocking, file issue if needed |
+| Push rejected | Likely needs force push or rebase - escalate |
+"""
+formula = "mol-gastown-sync"
+version = 1
+
+[[steps]]
+id = "verify-remotes"
+title = "Verify git remotes are configured"
+description = """
+Ensure both upstream and fork remotes are properly configured.
+
+**1. Check current remotes:**
+```bash
+git remote -v
+```
+
+**2. Add upstream if missing:**
+```bash
+# Check if upstream exists
+git remote get-url upstream 2>/dev/null || git remote add upstream https://github.com/steveyegge/gastown.git
+```
+
+**3. Verify upstream URL is correct:**
+```bash
+git remote get-url upstream
+# Should be: https://github.com/steveyegge/gastown.git
+# If wrong: git remote set-url upstream https://github.com/steveyegge/gastown.git
+```
+
+**4. Verify fork remote (origin):**
+```bash
+git remote get-url origin
+# Should be your fork (e.g., https://github.com/groblegark/gastown.git)
+```
+
+**Completion criteria:**
+- upstream remote points to steveyegge/gastown
+- origin remote points to your fork
+"""
+
+[[steps]]
+id = "fetch-upstream"
+title = "Fetch latest from upstream"
+description = """
+Fetch all changes from upstream without merging.
+
+```bash
+git fetch upstream main
+```
+
+**Check what's new:**
+```bash
+# See commits in upstream not in local
+git log HEAD..upstream/main --oneline
+
+# See summary of changes
+git diff --stat HEAD..upstream/main
+```
+
+**Document findings:**
+- Number of new commits from upstream
+- Any particularly notable changes (check commit messages)
+- Files that will be affected
+
+**Completion criteria:**
+- upstream/main ref is updated
+- You understand what changes are incoming
+"""
+
+[[steps]]
+id = "check-local-state"
+title = "Check local state before merge"
+description = """
+Ensure local state is clean and ready for merge.
+
+**1. Check for uncommitted changes:**
+```bash
+git status
+```
+If dirty, either commit or stash changes first.
+
+**2. Check current branch:**
+```bash
+git branch --show-current
+# Should be on main
+```
+
+**3. Check if local has commits not in origin:**
+```bash
+git log origin/main..HEAD --oneline
+```
+If there are local-only commits, they need to be pushed or PR'd first.
+
+**4. Check if local has commits not in upstream:**
+```bash
+git log upstream/main..HEAD --oneline
+```
+These are your fork's unique changes - note them for conflict resolution.
+
+**Completion criteria:**
+- Working directory is clean
+- On main branch
+- Documented any local-only commits
+"""
+
+[[steps]]
+id = "merge-upstream"
+title = "Merge upstream into local main"
+description = """
+Merge upstream changes into local main branch.
+
+**Attempt the merge:**
+```bash
+git merge upstream/main -m "Merge upstream/main: sync with steveyegge/gastown"
+```
+
+**If merge succeeds (no conflicts):**
+- Proceed to next step
+
+**If merge has conflicts:**
+
+1. **List conflicted files:**
+   ```bash
+   git diff --name-only --diff-filter=U
+   ```
+
+2. **For each conflicted file, analyze the conflict:**
+   ```bash
+   git diff <file>
+   ```
+
+3. **Resolution strategy per conflict:**
+   - If upstream change is a new feature/fix: TAKE UPSTREAM
+   - If local change is a critical fix not yet PR'd: KEEP LOCAL, but file PR immediately
+   - If both changes are valuable: COMBINE them intelligently
+   - If local change is obsolete: TAKE UPSTREAM
+
+4. **Resolve each file:**
+   ```bash
+   # Edit the file to resolve conflicts
+   # Remove conflict markers (<<<<<<<, =======, >>>>>>>)
+   git add <file>
+   ```
+
+5. **Complete the merge:**
+   ```bash
+   git commit -m "Merge upstream/main: sync with steveyegge/gastown
+
+   Resolved conflicts in: <list files>
+   Resolution notes: <brief explanation>"
+   ```
+
+**CRITICAL: Do NOT abort the merge or skip conflicts. The sync must complete.**
+
+**Completion criteria:**
+- Merge completed successfully
+- No unresolved conflicts
+- All conflict resolutions documented in commit message
+"""
+
+[[steps]]
+id = "push-to-fork"
+title = "Push merged changes to fork remote"
+description = """
+Push the merged main to your fork's remote (origin).
+
+**Push to origin:**
+```bash
+git push origin main
+```
+
+**If push is rejected (non-fast-forward):**
+
+This means origin/main has commits not in your local. This shouldn't happen
+if you're the only one pushing to the fork, but if it does:
+
+1. **Check what's different:**
+   ```bash
+   git log HEAD..origin/main --oneline
+   ```
+
+2. **If safe to overwrite (you control the fork):**
+   ```bash
+   git push origin main --force-with-lease
+   ```
+
+3. **If uncertain, pull and re-merge:**
+   ```bash
+   git pull origin main --rebase
+   git push origin main
+   ```
+
+**Completion criteria:**
+- origin/main matches your local main
+- Fork remote is now synced with upstream
+"""
+
+[[steps]]
+id = "rebuild-gt"
+title = "Rebuild gt binary"
+description = """
+Rebuild the gt binary with the updated code.
+
+**1. Run the build:**
+```bash
+go build -o ~/.local/bin/gt ./cmd/gt
+```
+
+**2. Verify the binary:**
+```bash
+gt --version
+# or
+gt status
+```
+
+**If build fails:**
+- Do NOT skip this step
+- Analyze the error
+- If it's a code issue from upstream, check upstream issues/PRs
+- If it's a local environment issue, fix it
+- The sync is not complete until gt builds successfully
+
+**Completion criteria:**
+- gt binary builds without errors
+- gt command runs successfully
+"""
+
+[[steps]]
+id = "run-tests"
+title = "Run tests to verify sync"
+description = """
+Run tests to ensure the synced code works correctly.
+
+**1. Run unit tests:**
+```bash
+go test ./... -short
+```
+
+**2. Quick smoke test:**
+```bash
+gt status
+gt hook
+bd doctor
+```
+
+**If tests fail:**
+- Assess if the failure is from upstream (check upstream CI)
+- If upstream CI is green, the issue is local - investigate
+- If upstream CI is red, the failure is known - note it and proceed
+- File an issue if you discover a new bug
+
+**Completion criteria:**
+- Core tests pass (or failures are known upstream issues)
+- gt commands work correctly
+- Sync is complete
+"""
+
+[[steps]]
+id = "document-sync"
+title = "Document sync completion"
+description = """
+Record the sync for future reference.
+
+**1. Note the sync:**
+```bash
+echo "$(date): Synced gastown from upstream" >> ~/.gt-sync-log
+git log -1 --oneline >> ~/.gt-sync-log
+```
+
+**2. Check for any upstream changes that need attention:**
+- New features that need configuration?
+- Deprecated commands?
+- Breaking changes in behavior?
+
+**3. If any local changes were overwritten:**
+- Ensure they're captured in PRs to upstream
+- Or documented as intentional local divergence
+
+**Completion criteria:**
+- Sync logged
+- Any follow-up actions identified
+- Ready to use updated gt
+"""
