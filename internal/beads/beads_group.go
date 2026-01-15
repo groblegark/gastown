@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // GroupFields holds structured fields for group beads.
@@ -114,6 +115,7 @@ func (b *Beads) CreateGroupBead(name string, members []string, createdBy string)
 		Name:      name,
 		Members:   members,
 		CreatedBy: createdBy,
+		CreatedAt: time.Now().Format(time.RFC3339),
 	}
 
 	description := FormatGroupDescription(title, fields)

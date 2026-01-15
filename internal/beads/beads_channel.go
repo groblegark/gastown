@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ChannelFields holds structured fields for channel beads.
@@ -146,6 +147,7 @@ func (b *Beads) CreateChannelBead(name string, subscribers []string, createdBy s
 		Subscribers: subscribers,
 		Status:      ChannelStatusActive,
 		CreatedBy:   createdBy,
+		CreatedAt:   time.Now().Format(time.RFC3339),
 	}
 
 	description := FormatChannelDescription(title, fields)

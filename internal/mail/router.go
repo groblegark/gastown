@@ -829,6 +829,9 @@ func (r *Router) sendToChannel(msg *Message) error {
 	if fields == nil {
 		return fmt.Errorf("channel not found: %s", channelName)
 	}
+	if fields.Status == beads.ChannelStatusClosed {
+		return fmt.Errorf("channel %s is closed", channelName)
+	}
 
 	// Build labels for from/thread/reply-to/cc plus channel metadata
 	var labels []string
