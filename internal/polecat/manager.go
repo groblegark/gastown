@@ -94,14 +94,17 @@ func (m *Manager) assigneeID(name string) string {
 }
 
 // agentBeadID returns the agent bead ID for a polecat.
-// Format: "hq-<rig>-polecat-<name>" (e.g., "hq-gastown-polecat-Toast")
-// Polecat agent beads are stored at town-level (hq- prefix) so all polecats
-// in any worktree can access them. This avoids routing/visibility issues where
-// rig-prefixed beads would route to a specific worktree (e.g., mayor/rig)
-// that polecats can't access from their own worktrees.
+// Format: "<prefix>-<rig>-polecat-<name>" (e.g., "gt-gastown-polecat-Toast")
+// Polecat agent beads are stored at rig-level per architecture.md.
+// The redirect system (rig/.beads/redirect -> mayor/rig/.beads) ensures
+// all polecats can access rig-level beads from their worktrees.
 func (m *Manager) agentBeadID(name string) string {
-	// Always use town-level (hq-) prefix for polecat agent beads
-	return beads.PolecatBeadIDWithPrefix("hq", m.rig.Name, name)
+	// Use rig's configured prefix for polecat agent beads (architecture.md)
+	prefix := "gt" // fallback
+	if m.rig.Config != nil && m.rig.Config.Prefix != "" {
+		prefix = m.rig.Config.Prefix
+	}
+	return beads.PolecatBeadIDWithPrefix(prefix, m.rig.Name, name)
 }
 
 // getCleanupStatusFromBead reads the cleanup_status from the polecat's agent bead.
