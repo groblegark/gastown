@@ -135,6 +135,7 @@ func (t *Tmux) EnsureSessionFresh(name, workDir string) error {
 }
 
 // KillSession terminates a tmux session.
+// This is the simple version - use KillSessionWithProcesses for aggressive cleanup.
 func (t *Tmux) KillSession(name string) error {
 	_, err := t.run("kill-session", "-t", name)
 	return err
