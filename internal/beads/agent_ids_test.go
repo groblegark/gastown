@@ -98,3 +98,102 @@ func TestDogRoleBeadIDTown(t *testing.T) {
 		t.Errorf("DogRoleBeadIDTown() = %q, want %q", got, want)
 	}
 }
+
+// TestPolecatBeadIDWithPrefixDeduplication tests that prefix==rig doesn't duplicate.
+// Fixes issue gt-u6qwz: fhc-fhc-polecat-stoat should be fhc-polecat-stoat
+func TestPolecatBeadIDWithPrefixDeduplication(t *testing.T) {
+	tests := []struct {
+		name   string
+		prefix string
+		rig    string
+		pname  string
+		want   string
+	}{
+		// prefix != rig: include rig in ID
+		{"prefix_ne_rig", "gt", "gastown", "toast", "gt-gastown-polecat-toast"},
+		// prefix == rig: omit rig to avoid duplication
+		{"prefix_eq_rig", "fhc", "fhc", "stoat", "fhc-polecat-stoat"},
+		// another prefix == rig case
+		{"helm_rig", "helm", "helm", "worker", "helm-polecat-worker"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PolecatBeadIDWithPrefix(tt.prefix, tt.rig, tt.pname)
+			if got != tt.want {
+				t.Errorf("PolecatBeadIDWithPrefix(%q, %q, %q) = %q, want %q",
+					tt.prefix, tt.rig, tt.pname, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestWitnessBeadIDWithPrefixDeduplication tests that prefix==rig doesn't duplicate.
+func TestWitnessBeadIDWithPrefixDeduplication(t *testing.T) {
+	tests := []struct {
+		name   string
+		prefix string
+		rig    string
+		want   string
+	}{
+		{"prefix_ne_rig", "gt", "gastown", "gt-gastown-witness"},
+		{"prefix_eq_rig", "fhc", "fhc", "fhc-witness"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := WitnessBeadIDWithPrefix(tt.prefix, tt.rig)
+			if got != tt.want {
+				t.Errorf("WitnessBeadIDWithPrefix(%q, %q) = %q, want %q",
+					tt.prefix, tt.rig, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRefineryBeadIDWithPrefixDeduplication tests that prefix==rig doesn't duplicate.
+func TestRefineryBeadIDWithPrefixDeduplication(t *testing.T) {
+	tests := []struct {
+		name   string
+		prefix string
+		rig    string
+		want   string
+	}{
+		{"prefix_ne_rig", "gt", "gastown", "gt-gastown-refinery"},
+		{"prefix_eq_rig", "fhc", "fhc", "fhc-refinery"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := RefineryBeadIDWithPrefix(tt.prefix, tt.rig)
+			if got != tt.want {
+				t.Errorf("RefineryBeadIDWithPrefix(%q, %q) = %q, want %q",
+					tt.prefix, tt.rig, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCrewBeadIDWithPrefixDeduplication tests that prefix==rig doesn't duplicate.
+func TestCrewBeadIDWithPrefixDeduplication(t *testing.T) {
+	tests := []struct {
+		name   string
+		prefix string
+		rig    string
+		cname  string
+		want   string
+	}{
+		{"prefix_ne_rig", "gt", "gastown", "max", "gt-gastown-crew-max"},
+		{"prefix_eq_rig", "fhc", "fhc", "max", "fhc-crew-max"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CrewBeadIDWithPrefix(tt.prefix, tt.rig, tt.cname)
+			if got != tt.want {
+				t.Errorf("CrewBeadIDWithPrefix(%q, %q, %q) = %q, want %q",
+					tt.prefix, tt.rig, tt.cname, got, tt.want)
+			}
+		})
+	}
+}

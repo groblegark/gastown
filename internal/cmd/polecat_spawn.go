@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/events"
@@ -116,12 +115,8 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 		return nil, fmt.Errorf("getting polecat after creation: %w", err)
 	}
 
-	// Create agent bead for the polecat (ZFC: track agent lifecycle)
-	// This ensures gt hook discovery works and hook_bead slot can be set
-	if err := createPolecatAgentBead(townRoot, rigName, polecatName, opts.HookBead); err != nil {
-		// Non-fatal: log warning but continue - polecat will still work via nudge
-		fmt.Printf("%s Could not create agent bead for polecat: %v\n", style.Dim.Render("Warning:"), err)
-	}
+	// NOTE: Agent bead is already created by AddWithOptions/RepairWorktreeWithOptions
+	// with hook_bead set atomically. No need to call createPolecatAgentBead here.
 
 	// Resolve account for runtime config
 	accountsPath := constants.MayorAccountsPath(townRoot)
@@ -219,44 +214,3 @@ func IsRigName(target string) (string, bool) {
 	return target, true
 }
 
-// createPolecatAgentBead creates an agent bead for a spawned polecat.
-// This enables gt hook discovery and allows hook_bead slot to be set.
-// Format: <prefix>-<rig>-polecat-<name> (e.g., gt-gastown-polecat-Toast)
-// Agent beads are stored at rig-level per architecture.md.
-func createPolecatAgentBead(townRoot, rigName, polecatName, hookBead string) error {
-	// Load rig config to get the beads prefix
-	rigPath := filepath.Join(townRoot, rigName)
-	rigCfg, err := rig.LoadRigConfig(rigPath)
-	prefix := "gt" // fallback
-	if err == nil && rigCfg.Beads != nil && rigCfg.Beads.Prefix != "" {
-		prefix = rigCfg.Beads.Prefix
-	}
-
-	// Build the agent bead ID using rig's prefix (architecture.md)
-	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
-
-	// Open rig-level beads database (redirect system handles routing)
-	rigBeadsDir := beads.ResolveBeadsDir(rigPath)
-	bd := beads.NewWithBeadsDir(rigPath, rigBeadsDir)
-
-	// Define agent fields
-	fields := &beads.AgentFields{
-		RoleType:   "polecat",
-		Rig:        rigName,
-		AgentState: "idle",
-		HookBead:   hookBead,
-		RoleBead:   beads.RoleBeadIDTown("polecat"),
-	}
-
-	// Description for the agent bead
-	desc := fmt.Sprintf("Agent bead for %s/%s polecat", rigName, polecatName)
-
-	// Create or reopen the agent bead (handles tombstones from previous spawns)
-	_, err = bd.CreateOrReopenAgentBead(agentBeadID, desc, fields)
-	if err != nil {
-		return fmt.Errorf("creating agent bead %s: %w", agentBeadID, err)
-	}
-
-	fmt.Printf("   ✓ Created agent bead: %s\n", agentBeadID)
-	return nil
-}
