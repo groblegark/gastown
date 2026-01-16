@@ -254,7 +254,7 @@ func (d *Daemon) ensureBootRunning() {
 	// This ensures Boot doesn't get stuck and fail to manage Deacon
 	if b.IsSessionAlive() {
 		d.logger.Println("Killing stale Boot session for fresh spawn")
-		if err := b.Tmux().KillSession(boot.SessionName); err != nil {
+		if err := b.Tmux().KillSessionWithProcesses(boot.SessionName); err != nil {
 			d.logger.Printf("Error killing stale Boot session: %v", err)
 		}
 	}
