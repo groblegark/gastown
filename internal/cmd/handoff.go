@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -554,18 +555,34 @@ func handoffRemoteSession(t *tmux.Tmux, targetSession, restartCmd string) error 
 func getSessionPane(sessionName string) (string, error) {
 	const maxRetries = 30
 	const retryDelay = 100 * time.Millisecond
+	debug := os.Getenv("GT_DEBUG_SLING") != ""
+
+	if debug {
+		fmt.Fprintf(os.Stderr, "[sling-debug] getSessionPane: looking for session %q\n", sessionName)
+	}
 
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
 		// Get the pane ID for the first pane in the session
 		cmd := exec.Command("tmux", "list-panes", "-t", sessionName, "-F", "#{pane_id}")
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
 		out, err := cmd.Output()
 		if err != nil {
 			// Capture stderr for better error diagnosis
-			if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
+			stderrStr := strings.TrimSpace(stderr.String())
+			if stderrStr != "" {
+				lastErr = fmt.Errorf("%w: %s", err, stderrStr)
+			} else if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
 				lastErr = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
 			} else {
 				lastErr = err
+			}
+			if debug && i%5 == 0 {
+				// Check if session exists at all
+				hasCmd := exec.Command("tmux", "has-session", "-t", "="+sessionName)
+				hasErr := hasCmd.Run()
+				fmt.Fprintf(os.Stderr, "[sling-debug] retry %d: list-panes failed: %v, has-session: %v\n", i, lastErr, hasErr)
 			}
 			time.Sleep(retryDelay)
 			continue
@@ -573,8 +590,14 @@ func getSessionPane(sessionName string) (string, error) {
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(lines) == 0 || lines[0] == "" {
 			lastErr = fmt.Errorf("no panes found in session")
+			if debug {
+				fmt.Fprintf(os.Stderr, "[sling-debug] retry %d: session exists but no panes\n", i)
+			}
 			time.Sleep(retryDelay)
 			continue
+		}
+		if debug {
+			fmt.Fprintf(os.Stderr, "[sling-debug] found pane %s after %d retries\n", lines[0], i)
 		}
 		return lines[0], nil
 	}
