@@ -232,7 +232,7 @@ func runPolecatIdentityAdd(cmd *cobra.Command, args []string) error {
 
 	// Check if identity already exists
 	bd := beads.New(r.Path)
-	beadID := beads.PolecatBeadID(rigName, polecatName)
+	beadID := polecatBeadIDForRig(r, rigName, polecatName)
 	existingIssue, _, _ := bd.GetAgentBead(beadID)
 	if existingIssue != nil && existingIssue.Status != "closed" {
 		return fmt.Errorf("identity bead %s already exists", beadID)
@@ -385,7 +385,7 @@ func runPolecatIdentityShow(cmd *cobra.Command, args []string) error {
 
 	// Get identity bead
 	bd := beads.New(r.Path)
-	beadID := beads.PolecatBeadID(rigName, polecatName)
+	beadID := polecatBeadIDForRig(r, rigName, polecatName)
 	issue, fields, err := bd.GetAgentBead(beadID)
 	if err != nil {
 		return fmt.Errorf("getting identity bead: %w", err)
@@ -416,17 +416,34 @@ func runPolecatIdentityShow(cmd *cobra.Command, args []string) error {
 
 	// JSON output - include both identity and CV data
 	if polecatIdentityShowJSON {
-		if cv == nil {
-			cv = &CVSummary{
-				Identity:   beadID,
-				Languages:  make(map[string]int),
-				WorkTypes:  make(map[string]int),
-				RecentWork: []RecentWorkItem{},
-			}
+		output := struct {
+			IdentityInfo
+			Title     string     `json:"title"`
+			CreatedAt string     `json:"created_at,omitempty"`
+			UpdatedAt string     `json:"updated_at,omitempty"`
+			CV        *CVSummary `json:"cv,omitempty"`
+		}{
+			IdentityInfo: IdentityInfo{
+				Rig:            rigName,
+				Name:           polecatName,
+				BeadID:         beadID,
+				AgentState:     fields.AgentState,
+				HookBead:       issue.HookBead,
+				CleanupStatus:  fields.CleanupStatus,
+				WorktreeExists: worktreeExists,
+				SessionRunning: sessionRunning,
+			},
+			Title:     issue.Title,
+			CreatedAt: issue.CreatedAt,
+			UpdatedAt: issue.UpdatedAt,
+			CV:        cv,
+		}
+		if output.HookBead == "" {
+			output.HookBead = fields.HookBead
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(cv)
+		return enc.Encode(output)
 	}
 
 	// Human-readable output
@@ -553,8 +570,8 @@ func runPolecatIdentityRename(cmd *cobra.Command, args []string) error {
 	}
 
 	bd := beads.New(r.Path)
-	oldBeadID := beads.PolecatBeadID(rigName, oldName)
-	newBeadID := beads.PolecatBeadID(rigName, newName)
+	oldBeadID := polecatBeadIDForRig(r, rigName, oldName)
+	newBeadID := polecatBeadIDForRig(r, rigName, newName)
 
 	// Check old identity exists
 	oldIssue, oldFields, err := bd.GetAgentBead(oldBeadID)
@@ -621,7 +638,7 @@ func runPolecatIdentityRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	bd := beads.New(r.Path)
-	beadID := beads.PolecatBeadID(rigName, polecatName)
+	beadID := polecatBeadIDForRig(r, rigName, polecatName)
 
 	// Check identity exists
 	issue, fields, err := bd.GetAgentBead(beadID)
