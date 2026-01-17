@@ -30,6 +30,11 @@ set -euo pipefail
 FIFO_IN="${GT_DECISION_FIFO_IN:-/tmp/gt-decisions.fifo}"
 FIFO_OUT="${GT_DECISION_FIFO_OUT:-/tmp/gt-decisions-out.fifo}"
 POLL_INTERVAL=0.1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NOTIFY_SCRIPT="${SCRIPT_DIR}/decision-notify.sh"
+
+# Presentation mode: terminal (default) or notify (macOS notifications)
+PRESENTATION_MODE="${GT_DECISION_MODE:-terminal}"
 
 # Colors
 RED='\033[0;31m'
@@ -237,6 +242,86 @@ present_multiselect() {
     echo "[$(IFS=,; echo "${selected[*]}")]"
 }
 
+# Present yes/no via macOS notification
+present_yesno_notify() {
+    local context="$1"
+    local default="${2:-}"
+    local timeout="${3:-0}"
+
+    if [[ ! -x "$NOTIFY_SCRIPT" ]]; then
+        echo -e "${RED}Notification script not found: $NOTIFY_SCRIPT${NC}" >&2
+        echo -e "${YELLOW}Falling back to terminal mode${NC}" >&2
+        present_yesno "$context" "$default" "$timeout"
+        return
+    fi
+
+    local args=("yesno" "$context")
+    if [[ -n "$default" ]]; then
+        args+=(--default="$default")
+    fi
+    if [[ "$timeout" -gt 0 ]]; then
+        args+=(--timeout="$timeout")
+    fi
+
+    local result
+    result=$("$NOTIFY_SCRIPT" "${args[@]}" 2>/dev/null) || {
+        local exit_code=$?
+        case $exit_code in
+            2) result="timeout" ;;
+            3) result="${default:-no}" ;;
+            *) result="no" ;;
+        esac
+    }
+    echo "$result"
+}
+
+# Present choice via macOS notification
+present_choice_notify() {
+    local context="$1"
+    local default="$2"
+    local timeout="$3"
+    shift 3
+    local options=("$@")
+
+    if [[ ! -x "$NOTIFY_SCRIPT" ]]; then
+        echo -e "${RED}Notification script not found: $NOTIFY_SCRIPT${NC}" >&2
+        echo -e "${YELLOW}Falling back to terminal mode${NC}" >&2
+        present_choice "$context" "$default" "$timeout" "${options[@]}"
+        return
+    fi
+
+    local args=("choice" "$context" "${options[@]}")
+    if [[ -n "$default" ]]; then
+        args+=(--default="$default")
+    fi
+    if [[ "$timeout" -gt 0 ]]; then
+        args+=(--timeout="$timeout")
+    fi
+
+    local result
+    result=$("$NOTIFY_SCRIPT" "${args[@]}" 2>/dev/null) || {
+        local exit_code=$?
+        case $exit_code in
+            2) result="timeout" ;;
+            3) result="cancelled" ;;
+            *) result="invalid" ;;
+        esac
+    }
+    echo "$result"
+}
+
+# Present multiselect via notification (falls back to terminal - notifications don't support multi-select well)
+present_multiselect_notify() {
+    local context="$1"
+    local timeout="$2"
+    shift 2
+    local options=("$@")
+
+    # Multi-select doesn't work well with notifications, fall back to terminal
+    echo -e "${YELLOW}Multi-select not supported in notification mode, using terminal${NC}" >&2
+    present_multiselect "$context" "$timeout" "${options[@]}"
+}
+
 # Build JSON response
 build_response() {
     local id="$1"
@@ -274,15 +359,27 @@ process_decision() {
 
     case "$type" in
         yesno)
-            decision=$(present_yesno "$context" "$default" "$timeout")
+            if [[ "$PRESENTATION_MODE" == "notify" ]]; then
+                decision=$(present_yesno_notify "$context" "$default" "$timeout")
+            else
+                decision=$(present_yesno "$context" "$default" "$timeout")
+            fi
             ;;
         choice)
             mapfile -t options < <(json_get_array "$request" "options")
-            decision=$(present_choice "$context" "$default" "$timeout" "${options[@]}")
+            if [[ "$PRESENTATION_MODE" == "notify" ]]; then
+                decision=$(present_choice_notify "$context" "$default" "$timeout" "${options[@]}")
+            else
+                decision=$(present_choice "$context" "$default" "$timeout" "${options[@]}")
+            fi
             ;;
         multiselect)
             mapfile -t options < <(json_get_array "$request" "options")
-            decision=$(present_multiselect "$context" "$timeout" "${options[@]}")
+            if [[ "$PRESENTATION_MODE" == "notify" ]]; then
+                decision=$(present_multiselect_notify "$context" "$timeout" "${options[@]}")
+            else
+                decision=$(present_multiselect "$context" "$timeout" "${options[@]}")
+            fi
             ;;
         *)
             echo -e "${RED}Unknown decision type: $type${NC}" >&2
@@ -361,11 +458,13 @@ Commands:
     listen      Start listening for decisions on FIFO (default)
     oneshot     Process single decision from stdin
     test        Run interactive test with sample decisions
+    notify      Start in notification mode (macOS only)
     help        Show this help
 
 Environment:
     GT_DECISION_FIFO_IN   Input FIFO path (default: /tmp/gt-decisions.fifo)
     GT_DECISION_FIFO_OUT  Output FIFO path (default: /tmp/gt-decisions-out.fifo)
+    GT_DECISION_MODE      Presentation mode: terminal (default) or notify
 
 Example (agent side):
     # Send decision request
@@ -375,6 +474,13 @@ Example (agent side):
 
 Example (oneshot):
     echo '{"id":"1","type":"yesno","context":"Continue?"}' | $0 oneshot
+
+Example (notification mode):
+    # Start receiver with macOS notifications
+    $0 notify
+
+    # Or use environment variable
+    GT_DECISION_MODE=notify $0 listen
 EOF
 }
 
@@ -384,10 +490,19 @@ case "${1:-listen}" in
         setup_fifos
         main_loop
         ;;
+    notify)
+        PRESENTATION_MODE=notify
+        setup_fifos
+        main_loop
+        ;;
     oneshot)
         oneshot_mode
         ;;
     test)
+        test_mode
+        ;;
+    test-notify)
+        PRESENTATION_MODE=notify
         test_mode
         ;;
     help|--help|-h)
