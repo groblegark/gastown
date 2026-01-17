@@ -718,3 +718,70 @@ func TestAllocateName_ConcurrentAllocationUnique(t *testing.T) {
 		t.Errorf("expected %d unique names, got %d", numAllocs, len(allocatedNames))
 	}
 }
+
+// TestAllocateName_MultipleManagers verifies that concurrent allocations from
+// different Manager instances (simulating multiple processes) return unique names.
+// This is the core test for the cross-process race condition fix (gt-27eer).
+// Each Manager has its own in-memory NamePool, so this tests that the file lock
+// and disk reload properly synchronize across "processes".
+func TestAllocateName_MultipleManagers(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "multi-manager-alloc-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	r := &rig.Rig{
+		Name: "testrig",
+		Path: tmpDir,
+	}
+
+	// Create multiple managers to simulate multiple processes
+	// Each process would create its own Manager instance
+	const numManagers = 5
+	managers := make([]*Manager, numManagers)
+	for i := 0; i < numManagers; i++ {
+		managers[i] = NewManager(r, nil, nil)
+	}
+
+	// Run concurrent allocations from different managers
+	const allocsPerManager = 4
+	totalAllocs := numManagers * allocsPerManager
+	names := make(chan string, totalAllocs)
+	errs := make(chan error, totalAllocs)
+
+	for _, m := range managers {
+		m := m // capture for goroutine
+		for j := 0; j < allocsPerManager; j++ {
+			go func() {
+				name, err := m.AllocateName()
+				if err != nil {
+					errs <- err
+					return
+				}
+				names <- name
+			}()
+		}
+	}
+
+	// Collect results
+	allocatedNames := make(map[string]bool)
+	for i := 0; i < totalAllocs; i++ {
+		select {
+		case name := <-names:
+			if allocatedNames[name] {
+				t.Errorf("duplicate name allocated: %q (cross-process race condition!)", name)
+			}
+			allocatedNames[name] = true
+		case err := <-errs:
+			t.Errorf("allocation error: %v", err)
+		}
+	}
+
+	// Should have exactly totalAllocs unique names
+	if len(allocatedNames) != totalAllocs {
+		t.Errorf("expected %d unique names, got %d", totalAllocs, len(allocatedNames))
+	}
+}

@@ -507,7 +507,17 @@ func (m *Manager) AllocateName() (string, error) {
 
 	var name string
 	err := flock.WithLock(func() error {
-		// First reconcile pool with existing polecats to handle stale state
+		// Reload pool state from disk to see reservations from other processes.
+		// This is critical for cross-process synchronization: each process has
+		// its own Manager with its own NamePool in memory, so we must reload
+		// the persisted Reserved map to avoid allocating names that another
+		// process just reserved but hasn't created a directory for yet.
+		if loadErr := m.namePool.Load(); loadErr != nil {
+			// Non-fatal: proceed with in-memory state if load fails
+			// (e.g., state file doesn't exist yet)
+		}
+
+		// Reconcile pool with existing polecats to handle stale state
 		// This must happen inside the lock to get accurate filesystem state
 		m.ReconcilePool()
 
