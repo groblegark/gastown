@@ -4,8 +4,18 @@
 
 ## Overview
 
-This document describes how to make "session" (the agent's life between spawn/handoff
-events) a first-class object with identity, persistence, and queryability.
+This document describes how to make "session" a first-class object with identity,
+persistence, and queryability.
+
+**Key principle: A session IS a Claude Code session.** The session boundary is defined
+by Claude Code's own session lifecycle (the `CLAUDE_SESSION_ID`), not by Gas Town
+constructs like molecules or spawn/handoff events. Molecules, beads, and steps are
+work context that *enriches* the session record, but they don't define it.
+
+This distinction matters because:
+1. Claude Code sessions can exist without molecules (ad-hoc work, exploration)
+2. A single molecule might span multiple Claude Code sessions (handoffs)
+3. The authoritative session log is Claude Code's own telemetry, not our wrapper
 
 ## Background
 
@@ -29,21 +39,24 @@ Sessions exist implicitly through several mechanisms:
 
 | Requirement | Description |
 |-------------|-------------|
-| **Identity** | Unique ID, metadata (agent, rig, start time, work context) |
-| **Boundaries** | Clear start (spawn/handoff) and end (handoff/done/crash) |
+| **Identity** | Use Claude session ID as primary key, enrich with Gas Town metadata |
+| **Boundaries** | Defined by Claude Code session lifecycle, not molecule boundaries |
 | **Persistence** | Survive restarts; available for replay ("seance") |
 | **Querying** | Find sessions by agent, time range, outcome, work unit |
 | **Linking** | Track parent/child relationships across handoffs |
+| **Tool Capture** | Record tool calls with arguments (privacy-filtered) and results |
+| **Log Ingestion** | Ingest Claude Code's native conversation logs post-session |
 
 ## Data Model
 
 ### Session Object
 
 ```go
-// Session represents a first-class agent session.
+// Session represents a Claude Code session with Gas Town enrichment.
+// The session ID IS the Claude session ID - Gas Town doesn't create its own.
 type Session struct {
-    // Identity
-    ID          string    `json:"id"`           // UUID (prefer Claude session ID when available)
+    // Identity (from Claude Code)
+    ID          string    `json:"id"`           // Claude session ID (CLAUDE_SESSION_ID)
     TmuxSession string    `json:"tmux_session"` // e.g., "gt-gastown-Toast"
     Agent       string    `json:"agent"`        // e.g., "gastown/polecats/Toast"
     Rig         string    `json:"rig"`          // e.g., "gastown"
@@ -54,7 +67,7 @@ type Session struct {
     EndedAt     time.Time `json:"ended_at,omitempty"`
     Outcome     string    `json:"outcome,omitempty"` // "handoff", "done", "crash", "killed"
 
-    // Work Context
+    // Work Context (Gas Town enrichment - optional)
     WorkUnit    string    `json:"work_unit,omitempty"`    // Hooked bead ID
     MoleculeID  string    `json:"molecule_id,omitempty"`  // Attached molecule
     StepRef     string    `json:"step_ref,omitempty"`     // Current step being executed
@@ -68,6 +81,20 @@ type Session struct {
     CWD         string    `json:"cwd,omitempty"`          // Working directory
     Branch      string    `json:"branch,omitempty"`       // Git branch
     Commits     []string  `json:"commits,omitempty"`      // Commits made during session
+
+    // Tool Activity (captured from Claude Code logs)
+    ToolCalls   []ToolCall `json:"tool_calls,omitempty"` // Tool invocations during session
+}
+
+// ToolCall represents a single tool invocation with arguments.
+// Arguments are captured with privacy controls (see Privacy section).
+type ToolCall struct {
+    Timestamp  time.Time         `json:"timestamp"`
+    Tool       string            `json:"tool"`                  // e.g., "Bash", "Read", "Edit"
+    Arguments  map[string]any    `json:"arguments,omitempty"`   // Tool-specific args (redacted per policy)
+    Result     string            `json:"result,omitempty"`      // Truncated result summary
+    DurationMs int64             `json:"duration_ms,omitempty"` // Execution time
+    Success    bool              `json:"success"`               // Whether tool succeeded
 }
 ```
 
@@ -322,24 +349,33 @@ chain, _ := mgr.GetChain(currentSession.ChainID)
 
 ## Migration Path
 
-### Phase 1: Add session tracking (this design)
+### Phase 1: Session identity and index
 
 1. Create `internal/sessions` package
-2. Instrument session start/end in polecat manager
-3. Add `gt sessions` CLI commands
-4. Index file created automatically
+2. Use `CLAUDE_SESSION_ID` as primary session ID
+3. Instrument session start/end in polecat manager
+4. Add `gt sessions` CLI commands
+5. Index file created automatically
 
-### Phase 2: Enrich with step tracking
+### Phase 2: Claude Code log ingestion
+
+1. Implement `gt session ingest` command
+2. Parse Claude Code conversation files
+3. Extract tool calls with privacy filtering
+4. Store enriched session data
+
+### Phase 3: Step-level enrichment
 
 1. Emit `session_step_started`/`session_step_completed` events
-2. Store step history in session files
+2. Correlate molecule steps with Claude Code tool calls
 3. Enable step-level replay
 
-### Phase 3: Real-time streaming (optional)
+### Phase 4: Real-time streaming (optional)
 
-1. Add Unix socket listener for live session events
-2. Dashboard subscribes for live updates
-3. Witness reacts to events without polling
+1. Add Claude Code hooks for real-time tool call capture
+2. Unix socket listener for live session events
+3. Dashboard subscribes for live updates
+4. Witness reacts to events without polling
 
 ## File Structure
 
@@ -371,11 +407,208 @@ chain, _ := mgr.GetChain(currentSession.ChainID)
 | | Foundation for step-level tracking |
 | | Better debugging/observability |
 
+## Tool Call Argument Privacy
+
+Tool call arguments are valuable for debugging and replay, but may contain sensitive data.
+Gas Town implements a tiered privacy model for argument capture.
+
+### Privacy Tiers
+
+| Tier | Description | Example Tools |
+|------|-------------|---------------|
+| `full` | All arguments captured verbatim | `Glob`, `Grep` (search patterns) |
+| `redacted` | Sensitive values replaced with `[REDACTED]` | `Bash` (commands may contain secrets) |
+| `metadata` | Only argument names/types, no values | `Edit`, `Write` (file contents) |
+| `none` | Arguments not captured | Custom sensitive tools |
+
+### Default Policies
+
+```go
+var DefaultPrivacyPolicy = map[string]PrivacyTier{
+    // Full capture - search patterns are useful, rarely sensitive
+    "Glob":      PrivacyFull,
+    "Grep":      PrivacyFull,
+    "Read":      PrivacyFull,  // File paths captured
+
+    // Redacted - commands may contain env vars, secrets
+    "Bash":      PrivacyRedacted,
+
+    // Metadata only - file contents too large/sensitive
+    "Edit":      PrivacyMetadata,
+    "Write":     PrivacyMetadata,
+
+    // WebFetch - URLs captured, response summarized
+    "WebFetch":  PrivacyFull,
+}
+```
+
+### Redaction Rules
+
+For `redacted` tier tools:
+1. Environment variable patterns: `$VAR`, `${VAR}` → `[ENV:VAR]`
+2. Common secret patterns: `password=`, `token=`, `key=` → `[REDACTED]`
+3. Base64-encoded strings >50 chars → `[BASE64:len]`
+4. File paths in `/tmp`, home directories → preserved (useful for debugging)
+
+### Configuration Override
+
+Projects can customize privacy via `.gastown/privacy.yaml`:
+
+```yaml
+tool_privacy:
+  Bash: none           # Never capture bash commands (high-security project)
+  CustomTool: full     # Fully capture custom MCP tool
+```
+
+## Capturing Claude Code Logs
+
+This is the core challenge: Claude Code's native session logs are the authoritative
+record of what happened, but they're not directly exposed to Gas Town.
+
+### Claude Code Log Architecture
+
+Claude Code stores session data in:
+```
+~/.claude/
+├── projects/
+│   └── <project-hash>/
+│       └── .claude/
+│           └── conversations/       # Session conversations (JSON)
+└── settings.json                    # Global settings
+```
+
+The conversation files contain:
+- Full message history (user prompts, assistant responses)
+- Tool calls with arguments and results
+- Timestamps
+- Token usage
+
+### Capture Strategies
+
+#### Strategy 1: Post-Session Log Ingestion (Recommended)
+
+After a Claude Code session ends, ingest the conversation file:
+
+```go
+func IngestClaudeLog(sessionID string) (*SessionLog, error) {
+    // 1. Find conversation file by session ID
+    convPath := findConversationFile(sessionID)
+
+    // 2. Parse JSON conversation
+    conv, err := parseConversation(convPath)
+
+    // 3. Extract tool calls with privacy filtering
+    toolCalls := extractToolCalls(conv, privacyPolicy)
+
+    // 4. Build session enrichment
+    return &SessionLog{
+        ToolCalls:   toolCalls,
+        TokenUsage:  conv.Usage,
+        MessageCount: len(conv.Messages),
+    }, nil
+}
+```
+
+**Pros:**
+- Non-invasive (doesn't modify Claude Code behavior)
+- Full access to conversation after completion
+- Can apply privacy filtering before storage
+
+**Cons:**
+- Only available after session ends
+- Depends on Claude Code's internal file format (may change)
+
+#### Strategy 2: Real-Time Hook Streaming
+
+Use Claude Code's hook system to stream tool calls as they happen:
+
+```json
+// .claude/settings.json
+{
+  "hooks": {
+    "PostToolExecution": {
+      "command": "gt session log-tool --tool=$TOOL --session=$CLAUDE_SESSION_ID"
+    }
+  }
+}
+```
+
+**Pros:**
+- Real-time visibility
+- Works even if session crashes before completion
+- Explicit integration point
+
+**Cons:**
+- Requires hook configuration
+- Adds latency to each tool call
+- Hook environment may not expose all arguments
+
+#### Strategy 3: Conversation API Polling (Future)
+
+If Claude Code exposes a local API for session state:
+
+```go
+// Hypothetical API
+client := claude.NewLocalClient()
+session, _ := client.GetSession(sessionID)
+toolCalls := session.ToolCalls()
+```
+
+**Status:** Not currently available, but would be ideal.
+
+### Recommended Implementation
+
+**Phase 1: Post-session ingestion**
+- Implement `gt session ingest` to pull Claude Code logs after `gt done`
+- Apply privacy filtering during ingestion
+- Store in session file
+
+**Phase 2: Real-time hooks (optional)**
+- Add hook-based streaming for real-time dashboards
+- Supplement, don't replace, post-session ingestion
+
+### Claude Code Log Format (Observed)
+
+Based on inspection, conversation files use this structure:
+
+```json
+{
+  "id": "conv-uuid",
+  "messages": [
+    {
+      "role": "user",
+      "content": "...",
+      "timestamp": "2026-01-17T..."
+    },
+    {
+      "role": "assistant",
+      "content": "...",
+      "tool_calls": [
+        {
+          "name": "Bash",
+          "arguments": {"command": "git status"},
+          "result": "...",
+          "duration_ms": 150
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 1500,
+    "output_tokens": 800
+  }
+}
+```
+
+**Note:** This format may change. The ingestion code should handle format evolution gracefully.
+
 ## Open Questions
 
 1. **Session file retention** - How long to keep session files? Archive after N days?
 2. **Cross-machine sessions** - If polecats run on multiple machines, need distributed index?
 3. **Cost tracking integration** - Should session include token usage? Or separate concern?
+4. **Claude Code format stability** - How to handle conversation file format changes?
+5. **Privacy audit logging** - Should we log when redaction is applied for compliance?
 
 ## Related Documentation
 
