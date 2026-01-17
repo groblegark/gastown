@@ -40,6 +40,40 @@ type rigInfo struct {
 	beadsPath string // full path to beads directory relative to town root
 }
 
+// agentBeadExists checks if an agent bead exists, trying both the new (deduplicated)
+// and legacy (non-deduplicated) ID formats. Returns true if either format exists.
+// This handles backwards compatibility with beads created before commit 9fa027ed
+// which introduced deduplication logic when prefix == rig.
+func agentBeadExists(bd *beads.Beads, newID, legacyID string) bool {
+	// Try the new (deduplicated) format first
+	if _, err := bd.Show(newID); err == nil {
+		return true
+	}
+	// If legacy ID is different, try it
+	if legacyID != newID {
+		if _, err := bd.Show(legacyID); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// legacyWitnessID returns the legacy (non-deduplicated) witness bead ID.
+// Before commit 9fa027ed, IDs were always prefix-rig-role even when prefix == rig.
+func legacyWitnessID(prefix, rig string) string {
+	return prefix + "-" + rig + "-witness"
+}
+
+// legacyRefineryID returns the legacy (non-deduplicated) refinery bead ID.
+func legacyRefineryID(prefix, rig string) string {
+	return prefix + "-" + rig + "-refinery"
+}
+
+// legacyCrewID returns the legacy (non-deduplicated) crew bead ID.
+func legacyCrewID(prefix, rig, name string) string {
+	return prefix + "-" + rig + "-crew-" + name
+}
+
 // Run checks if agent beads exist for all expected agents.
 func (c *AgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 	// Load routes to get prefixes (routes.jsonl is source of truth for prefixes)
@@ -116,15 +150,15 @@ func (c *AgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 		rigName := info.name
 
 		// Check rig-specific agents (using canonical naming: prefix-rig-role-name)
+		// Try both new (deduplicated) and legacy ID formats for backwards compatibility
 		witnessID := beads.WitnessBeadIDWithPrefix(prefix, rigName)
-		refineryID := beads.RefineryBeadIDWithPrefix(prefix, rigName)
-
-		if _, err := bd.Show(witnessID); err != nil {
+		if !agentBeadExists(bd, witnessID, legacyWitnessID(prefix, rigName)) {
 			missing = append(missing, witnessID)
 		}
 		checked++
 
-		if _, err := bd.Show(refineryID); err != nil {
+		refineryID := beads.RefineryBeadIDWithPrefix(prefix, rigName)
+		if !agentBeadExists(bd, refineryID, legacyRefineryID(prefix, rigName)) {
 			missing = append(missing, refineryID)
 		}
 		checked++
@@ -133,7 +167,7 @@ func (c *AgentBeadsCheck) Run(ctx *CheckContext) *CheckResult {
 		crewWorkers := listCrewWorkers(ctx.TownRoot, rigName)
 		for _, workerName := range crewWorkers {
 			crewID := beads.CrewBeadIDWithPrefix(prefix, rigName, workerName)
-			if _, err := bd.Show(crewID); err != nil {
+			if !agentBeadExists(bd, crewID, legacyCrewID(prefix, rigName, workerName)) {
 				missing = append(missing, crewID)
 			}
 			checked++
@@ -225,8 +259,9 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 		rigName := info.name
 
 		// Create rig-specific agents if missing (using canonical naming: prefix-rig-role-name)
+		// Check both new and legacy ID formats to avoid creating duplicates
 		witnessID := beads.WitnessBeadIDWithPrefix(prefix, rigName)
-		if _, err := bd.Show(witnessID); err != nil {
+		if !agentBeadExists(bd, witnessID, legacyWitnessID(prefix, rigName)) {
 			fields := &beads.AgentFields{
 				RoleType:   "witness",
 				Rig:        rigName,
@@ -240,7 +275,7 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 		}
 
 		refineryID := beads.RefineryBeadIDWithPrefix(prefix, rigName)
-		if _, err := bd.Show(refineryID); err != nil {
+		if !agentBeadExists(bd, refineryID, legacyRefineryID(prefix, rigName)) {
 			fields := &beads.AgentFields{
 				RoleType:   "refinery",
 				Rig:        rigName,
@@ -257,7 +292,7 @@ func (c *AgentBeadsCheck) Fix(ctx *CheckContext) error {
 		crewWorkers := listCrewWorkers(ctx.TownRoot, rigName)
 		for _, workerName := range crewWorkers {
 			crewID := beads.CrewBeadIDWithPrefix(prefix, rigName, workerName)
-			if _, err := bd.Show(crewID); err != nil {
+			if !agentBeadExists(bd, crewID, legacyCrewID(prefix, rigName, workerName)) {
 				fields := &beads.AgentFields{
 					RoleType:   "crew",
 					Rig:        rigName,
