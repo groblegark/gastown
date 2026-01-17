@@ -11,14 +11,15 @@ import (
 // AgentFields holds structured fields for agent beads.
 // These are stored as "key: value" lines in the description.
 type AgentFields struct {
-	RoleType          string // polecat, witness, refinery, deacon, mayor
-	Rig               string // Rig name (empty for global agents like mayor/deacon)
-	AgentState        string // spawning, working, done, stuck
-	HookBead          string // Currently pinned work bead ID
-	RoleBead          string // Role definition bead ID (canonical location; may not exist yet)
-	CleanupStatus     string // ZFC: polecat self-reports git state (clean, has_uncommitted, has_stash, has_unpushed)
-	ActiveMR          string // Currently active merge request bead ID (for traceability)
-	NotificationLevel string // DND mode: verbose, normal, muted (default: normal)
+	RoleType          string   // polecat, witness, refinery, deacon, mayor, crew
+	Rig               string   // Rig name (empty for global agents like mayor/deacon)
+	AgentState        string   // spawning, working, done, stuck
+	HookBead          string   // Currently pinned work bead ID
+	RoleBead          string   // Role definition bead ID (canonical location; may not exist yet)
+	CleanupStatus     string   // ZFC: polecat self-reports git state (clean, has_uncommitted, has_stash, has_unpushed)
+	ActiveMR          string   // Currently active merge request bead ID (for traceability)
+	NotificationLevel string   // DND mode: verbose, normal, muted (default: normal)
+	OwnedFormulas     []string // Formulas this crew member owns/maintains (crew only)
 }
 
 // Notification level constants
@@ -77,6 +78,12 @@ func FormatAgentDescription(title string, fields *AgentFields) string {
 		lines = append(lines, "notification_level: null")
 	}
 
+	if len(fields.OwnedFormulas) > 0 {
+		lines = append(lines, fmt.Sprintf("owned_formulas: %s", strings.Join(fields.OwnedFormulas, ",")))
+	} else {
+		lines = append(lines, "owned_formulas: null")
+	}
+
 	return strings.Join(lines, "\n")
 }
 
@@ -118,6 +125,16 @@ func ParseAgentFields(description string) *AgentFields {
 			fields.ActiveMR = value
 		case "notification_level":
 			fields.NotificationLevel = value
+		case "owned_formulas":
+			if value != "" {
+				// Parse comma-separated list of formulas
+				for _, f := range strings.Split(value, ",") {
+					f = strings.TrimSpace(f)
+					if f != "" {
+						fields.OwnedFormulas = append(fields.OwnedFormulas, f)
+					}
+				}
+			}
 		}
 	}
 
@@ -417,6 +434,39 @@ func (b *Beads) GetAgentNotificationLevel(id string) (string, error) {
 		return NotifyNormal, nil
 	}
 	return fields.NotificationLevel, nil
+}
+
+// UpdateAgentOwnedFormulas updates the owned_formulas field for a crew agent bead.
+// Pass nil to clear the field. This is primarily for crew members who own
+// formulas they are responsible for maintaining.
+func (b *Beads) UpdateAgentOwnedFormulas(id string, formulas []string) error {
+	// First get current issue to preserve other fields
+	issue, err := b.Show(id)
+	if err != nil {
+		return err
+	}
+
+	// Parse existing fields
+	fields := ParseAgentFields(issue.Description)
+	fields.OwnedFormulas = formulas
+
+	// Format new description
+	description := FormatAgentDescription(issue.Title, fields)
+
+	return b.Update(id, UpdateOptions{Description: &description})
+}
+
+// GetAgentOwnedFormulas returns the owned formulas for an agent.
+// Returns nil if not set or not a crew member.
+func (b *Beads) GetAgentOwnedFormulas(id string) ([]string, error) {
+	_, fields, err := b.GetAgentBead(id)
+	if err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, nil
+	}
+	return fields.OwnedFormulas, nil
 }
 
 // DeleteAgentBead permanently deletes an agent bead.
