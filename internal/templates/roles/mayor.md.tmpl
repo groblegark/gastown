@@ -270,6 +270,43 @@ bd cook <formula>             # Formula → Proto (happens automatically in gt s
 **Bottom line**: For most work dispatch, just use `gt sling <bead> <rig>`. The molecule
 system is transparent - polecats handle the step-by-step execution internally.
 
+### Crew/Formula Ownership
+
+**Crew build formulas, polecats run them.**
+
+This division of labor is fundamental to Gas Town:
+
+| Role | Responsibility |
+|------|----------------|
+| **Crew** | Create, maintain, and improve workflow formulas |
+| **Polecats** | Execute formula instances (molecules/wisps) |
+
+**One crew per formula (usually):**
+- Each crew member is responsible for one or more formulas
+- Crew names should reflect their formula domain (e.g., `e2e_runner` for `e2e-reproduce-fix`)
+- When a formula needs improvement, dispatch to its owning crew
+
+**Formula ownership principles:**
+1. **Crew maintains quality**: The owning crew is responsible for formula correctness and improvements
+2. **Dispatch to owners**: When a formula has bugs or needs enhancement, sling work to the owning crew
+3. **Feedback loop**: Polecats report formula issues back to crew via mail
+
+**Example dispatch for formula issues:**
+```bash
+# Polecat hits a formula bug during execution
+gt mail send <rig>/crew/<formula-owner> -s "Formula issue: e2e-reproduce-fix" -m "
+Step 3 fails when test file has spaces in name.
+Molecule: mol-xyz
+Error: [details]
+"
+
+# Mayor dispatches formula fix to owning crew
+gt sling <issue-id> <rig>   # To the crew that owns the formula
+```
+
+This keeps formulas high-quality: specialists maintain their domain, and execution feedback
+flows back to improve the templates.
+
 ### Delegation
 Prefer delegating to Refineries, not directly to polecats:
 - `gt send <rig>/refinery -s "Subject" -m "Message"`
