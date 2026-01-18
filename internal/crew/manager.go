@@ -429,7 +429,19 @@ type PristineResult struct {
 // This eliminates the need for git sync between crew clones - all crew members share one database.
 func (m *Manager) setupSharedBeads(crewPath string) error {
 	townRoot := filepath.Dir(m.rig.Path)
-	return beads.SetupRedirect(townRoot, crewPath)
+	if err := beads.SetupRedirect(townRoot, crewPath); err != nil {
+		return err
+	}
+
+	// Set beads.role=maintainer to prevent beads from routing writes to ~/.beads-planning.
+	// Without this, HTTPS-cloned repos are treated as "contributor" and writes go to the
+	// wrong database, causing MR beads to be lost. See: gt-3ml66
+	crewGit := git.NewGit(crewPath)
+	if err := crewGit.SetConfig("beads.role", "maintainer"); err != nil {
+		return fmt.Errorf("setting beads.role config: %w", err)
+	}
+
+	return nil
 }
 
 // SessionName returns the tmux session name for a crew member.

@@ -375,6 +375,12 @@ func (g *Git) RemoteURL(remote string) (string, error) {
 	return g.run("remote", "get-url", remote)
 }
 
+// SetConfig sets a git config value in the repository.
+func (g *Git) SetConfig(key, value string) error {
+	_, err := g.run("config", key, value)
+	return err
+}
+
 // Remotes returns the list of configured remote names.
 func (g *Git) Remotes() ([]string, error) {
 	out, err := g.run("remote")
