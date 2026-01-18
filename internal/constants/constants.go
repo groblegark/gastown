@@ -83,12 +83,12 @@ const (
 	// BeadsCustomTypes is the comma-separated list of custom issue types that
 	// Gas Town registers with beads. These types were extracted from beads core
 	// in v0.46.0 and now require explicit configuration.
-	BeadsCustomTypes = "agent,role,rig,convoy,slot,queue"
+	BeadsCustomTypes = "agent,role,rig,convoy,slot,queue,message"
 )
 
 // BeadsCustomTypesList returns the custom types as a slice.
 func BeadsCustomTypesList() []string {
-	return []string{"agent", "role", "rig", "convoy", "slot", "queue"}
+	return []string{"agent", "role", "rig", "convoy", "slot", "queue", "message"}
 }
 
 // Git branch names.
