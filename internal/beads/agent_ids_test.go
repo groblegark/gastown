@@ -197,3 +197,90 @@ func TestCrewBeadIDWithPrefixDeduplication(t *testing.T) {
 		})
 	}
 }
+
+// TestPolecatBeadIDTown tests the town-level Polecat bead ID (fix for loc-1augh).
+func TestPolecatBeadIDTown(t *testing.T) {
+	tests := []struct {
+		rig   string
+		pname string
+		want  string
+	}{
+		{"gastown", "toast", "hq-gastown-polecat-toast"},
+		{"local", "marten", "hq-local-polecat-marten"},
+		{"fhc", "stoat", "hq-fhc-polecat-stoat"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.rig+"/"+tt.pname, func(t *testing.T) {
+			got := PolecatBeadIDTown(tt.rig, tt.pname)
+			if got != tt.want {
+				t.Errorf("PolecatBeadIDTown(%q, %q) = %q, want %q",
+					tt.rig, tt.pname, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestWitnessBeadIDTown tests the town-level Witness bead ID.
+func TestWitnessBeadIDTown(t *testing.T) {
+	tests := []struct {
+		rig  string
+		want string
+	}{
+		{"gastown", "hq-gastown-witness"},
+		{"local", "hq-local-witness"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.rig, func(t *testing.T) {
+			got := WitnessBeadIDTown(tt.rig)
+			if got != tt.want {
+				t.Errorf("WitnessBeadIDTown(%q) = %q, want %q",
+					tt.rig, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRefineryBeadIDTown tests the town-level Refinery bead ID.
+func TestRefineryBeadIDTown(t *testing.T) {
+	tests := []struct {
+		rig  string
+		want string
+	}{
+		{"gastown", "hq-gastown-refinery"},
+		{"local", "hq-local-refinery"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.rig, func(t *testing.T) {
+			got := RefineryBeadIDTown(tt.rig)
+			if got != tt.want {
+				t.Errorf("RefineryBeadIDTown(%q) = %q, want %q",
+					tt.rig, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCrewBeadIDTown tests the town-level Crew bead ID.
+func TestCrewBeadIDTown(t *testing.T) {
+	tests := []struct {
+		rig   string
+		cname string
+		want  string
+	}{
+		{"gastown", "max", "hq-gastown-crew-max"},
+		{"local", "dave", "hq-local-crew-dave"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.rig+"/"+tt.cname, func(t *testing.T) {
+			got := CrewBeadIDTown(tt.rig, tt.cname)
+			if got != tt.want {
+				t.Errorf("CrewBeadIDTown(%q, %q) = %q, want %q",
+					tt.rig, tt.cname, got, tt.want)
+			}
+		})
+	}
+}

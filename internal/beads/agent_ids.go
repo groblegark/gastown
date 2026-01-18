@@ -84,7 +84,52 @@ func CrewRoleBeadIDTown() string {
 	return RoleBeadIDTown("crew")
 }
 
-// ===== Rig-level agent bead ID helpers (gt- prefix) =====
+// ===== Town-level rig agent bead ID helpers (hq- prefix) =====
+//
+// These functions generate agent bead IDs for rig-level agents (witness, refinery, crew, polecats)
+// but stored in town beads with the hq- prefix. This fixes issue loc-1augh where agent beads
+// created with rig prefixes (gt-, loc-) fail when the beads database expects a different prefix.
+//
+// By storing all agent beads in town beads with hq- prefix:
+// - All agent beads use consistent prefix and location
+// - No prefix/database mismatch issues
+// - Agent beads are coordination artifacts accessible to all rigs
+//
+// Naming convention: hq-<rig>-<role>[-<name>]
+// Examples:
+//   - hq-gastown-witness (rig-level singleton)
+//   - hq-gastown-refinery (rig-level singleton)
+//   - hq-gastown-crew-max (rig-level named agent)
+//   - hq-gastown-polecat-Toast (rig-level named agent)
+
+// WitnessBeadIDTown returns a Witness agent bead ID for town-level storage.
+// Uses hq- prefix to avoid prefix/database mismatch issues.
+func WitnessBeadIDTown(rig string) string {
+	return fmt.Sprintf("%s-%s-witness", TownBeadsPrefix, rig)
+}
+
+// RefineryBeadIDTown returns a Refinery agent bead ID for town-level storage.
+// Uses hq- prefix to avoid prefix/database mismatch issues.
+func RefineryBeadIDTown(rig string) string {
+	return fmt.Sprintf("%s-%s-refinery", TownBeadsPrefix, rig)
+}
+
+// CrewBeadIDTown returns a Crew worker agent bead ID for town-level storage.
+// Uses hq- prefix to avoid prefix/database mismatch issues.
+func CrewBeadIDTown(rig, name string) string {
+	return fmt.Sprintf("%s-%s-crew-%s", TownBeadsPrefix, rig, name)
+}
+
+// PolecatBeadIDTown returns a Polecat agent bead ID for town-level storage.
+// Uses hq- prefix to avoid prefix/database mismatch issues.
+// This is the recommended function for creating polecat agent beads.
+func PolecatBeadIDTown(rig, name string) string {
+	return fmt.Sprintf("%s-%s-polecat-%s", TownBeadsPrefix, rig, name)
+}
+
+// ===== Legacy rig-level agent bead ID helpers (gt- prefix) =====
+// NOTE: These functions generate IDs with rig prefixes and are kept for backward compatibility.
+// New code should use the *Town() variants above which store agent beads in town beads.
 
 // Agent bead ID naming convention:
 //   prefix-rig-role-name
