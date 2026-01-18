@@ -997,9 +997,23 @@ func (m *Manager) loadFromBeads(name string) (*Polecat, error) {
 
 // setupSharedBeads creates a redirect file so the polecat uses the rig's shared .beads database.
 // This eliminates the need for git sync between polecat clones - all polecats share one database.
+// Also sets beads.role=maintainer in git config to ensure beads are written to the rig's database
+// instead of ~/.beads-planning (which is the default for HTTPS-cloned repos without credentials).
 func (m *Manager) setupSharedBeads(clonePath string) error {
 	townRoot := filepath.Dir(m.rig.Path)
-	return beads.SetupRedirect(townRoot, clonePath)
+	if err := beads.SetupRedirect(townRoot, clonePath); err != nil {
+		return err
+	}
+
+	// Set beads.role=maintainer to prevent beads from routing writes to ~/.beads-planning.
+	// Without this, HTTPS-cloned repos are treated as "contributor" and writes go to the
+	// wrong database, causing MR beads to be lost. See: gt-3ml66
+	polecatGit := git.NewGit(clonePath)
+	if err := polecatGit.SetConfig("beads.role", "maintainer"); err != nil {
+		return fmt.Errorf("setting beads.role config: %w", err)
+	}
+
+	return nil
 }
 
 // verifyWorktree checks that a worktree was actually created and is valid.
