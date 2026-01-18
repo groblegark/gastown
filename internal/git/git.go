@@ -931,31 +931,39 @@ func (g *Git) StashCount() (int, error) {
 }
 
 // UnpushedCommits returns the number of commits that are not pushed to the remote.
-// It checks if the current branch has an upstream and counts commits ahead.
-// Returns 0 if there is no upstream configured.
+// It checks if the current branch exists on origin and counts commits ahead.
+// For polecat branches created from origin/main, this correctly compares against
+// origin/<branch> rather than the upstream tracking branch (which may incorrectly
+// point to origin/main due to git's implicit --track behavior).
+// Returns 0 if the remote branch doesn't exist (benefit of the doubt for new branches).
 func (g *Git) UnpushedCommits() (int, error) {
-	// Get the upstream branch
-	upstream, err := g.run("rev-parse", "--abbrev-ref", "@{u}")
+	// Get current branch name
+	branch, err := g.CurrentBranch()
 	if err != nil {
-		// No upstream configured - this is common for polecat branches
-		// Check if we can compare against origin/main instead
-		// If we can't get any reference, return 0 (benefit of the doubt)
-		return 0, nil
+		return 0, nil // Can't determine branch, give benefit of doubt
 	}
 
-	// Count commits between upstream and HEAD
-	out, err := g.run("rev-list", "--count", upstream+"..HEAD")
-	if err != nil {
-		return 0, err
+	// Check if origin/<branch> exists - this is the correct comparison target
+	// for branches that have been pushed, regardless of tracking configuration
+	remoteBranch := "origin/" + branch
+	exists, err := g.RemoteBranchExists("origin", branch)
+	if err == nil && exists {
+		// Remote branch exists - compare against it
+		out, err := g.run("rev-list", "--count", remoteBranch+"..HEAD")
+		if err != nil {
+			return 0, err
+		}
+		var count int
+		_, err = fmt.Sscanf(out, "%d", &count)
+		if err != nil {
+			return 0, fmt.Errorf("parsing unpushed count: %w", err)
+		}
+		return count, nil
 	}
 
-	var count int
-	_, err = fmt.Sscanf(out, "%d", &count)
-	if err != nil {
-		return 0, fmt.Errorf("parsing unpushed count: %w", err)
-	}
-
-	return count, nil
+	// Remote branch doesn't exist - branch hasn't been pushed yet
+	// Return 0 (benefit of the doubt) since this is expected for new branches
+	return 0, nil
 }
 
 // UncommittedWorkStatus contains information about uncommitted work in a repo.
