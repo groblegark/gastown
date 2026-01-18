@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-17
+
+### Fixed
+
+- **Orphan cleanup skips valid tmux sessions** - `gt orphans kill` and automatic orphan cleanup now check for Claude processes belonging to valid Gas Town tmux sessions (gt-*/hq-*) before killing. This prevents false kills of witnesses, refineries, and deacon during startup when they may temporarily show TTY "?"
+
 ## [0.3.1] - 2026-01-17
 
 ### Fixed

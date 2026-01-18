@@ -19,6 +19,60 @@ import (
 // processes and avoids killing legitimate short-lived subagents.
 const minOrphanAge = 60
 
+// getGasTownSessionPIDs returns a set of PIDs belonging to valid Gas Town tmux sessions.
+// This prevents killing Claude processes that are part of witness/refinery/deacon sessions
+// even if they temporarily show TTY "?" during startup or session transitions.
+func getGasTownSessionPIDs() map[int]bool {
+	pids := make(map[int]bool)
+
+	// Get list of Gas Town tmux sessions (gt-* and hq-*)
+	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
+	if err != nil {
+		return pids // tmux not available or no sessions
+	}
+
+	var gasTownSessions []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.HasPrefix(line, "gt-") || strings.HasPrefix(line, "hq-") {
+			gasTownSessions = append(gasTownSessions, line)
+		}
+	}
+
+	// For each Gas Town session, get the PIDs of processes in its panes
+	for _, session := range gasTownSessions {
+		out, err := exec.Command("tmux", "list-panes", "-t", session, "-F", "#{pane_pid}").Output()
+		if err != nil {
+			continue
+		}
+		for _, pidStr := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
+				pids[pid] = true
+				// Also add child processes of the pane shell
+				addChildPIDs(pid, pids)
+			}
+		}
+	}
+
+	return pids
+}
+
+// addChildPIDs adds all descendant PIDs of a process to the set.
+// This catches Claude processes spawned by the shell in a tmux pane.
+func addChildPIDs(parentPID int, pids map[int]bool) {
+	// Use pgrep to find children (more reliable than parsing ps output)
+	out, err := exec.Command("pgrep", "-P", strconv.Itoa(parentPID)).Output()
+	if err != nil {
+		return
+	}
+	for _, pidStr := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
+			pids[pid] = true
+			// Recurse to get grandchildren
+			addChildPIDs(pid, pids)
+		}
+	}
+}
+
 // sigkillGracePeriod is how long (in seconds) we wait after sending SIGTERM
 // before escalating to SIGKILL. If a process was sent SIGTERM and is still
 // around after this period, we use SIGKILL on the next cleanup cycle.
@@ -166,6 +220,10 @@ type OrphanedProcess struct {
 // Additionally, processes must be older than minOrphanAge seconds to be considered
 // orphaned. This prevents race conditions with newly spawned processes.
 func FindOrphanedClaudeProcesses() ([]OrphanedProcess, error) {
+	// Get PIDs belonging to valid Gas Town tmux sessions.
+	// These should not be killed even if they show TTY "?" during startup.
+	gasTownPIDs := getGasTownSessionPIDs()
+
 	// Use ps to get PID, TTY, command, and elapsed time for all processes
 	// TTY "?" indicates no controlling terminal
 	// etime is elapsed time in [[DD-]HH:]MM:SS format (portable across Linux/macOS)
@@ -199,6 +257,13 @@ func FindOrphanedClaudeProcesses() ([]OrphanedProcess, error) {
 		// Match claude or codex command names
 		cmdLower := strings.ToLower(cmd)
 		if cmdLower != "claude" && cmdLower != "claude-code" && cmdLower != "codex" {
+			continue
+		}
+
+		// Skip processes that belong to valid Gas Town tmux sessions.
+		// This prevents killing witnesses/refineries/deacon during startup
+		// when they may temporarily show TTY "?".
+		if gasTownPIDs[pid] {
 			continue
 		}
 
