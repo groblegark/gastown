@@ -872,19 +872,50 @@ func getGitState(worktreePath string) (*GitState, error) {
 		state.Clean = false
 	}
 
-	// Check for unpushed commits (git log origin/main..HEAD)
-	// We check commits first, then verify if content differs.
-	// After squash merge, commits may differ but content may be identical.
-	mainRef := "origin/main"
-	logCmd := exec.Command("git", "log", mainRef+"..HEAD", "--oneline")
-	logCmd.Dir = worktreePath
-	output, err = logCmd.Output()
-	if err != nil {
-		// origin/main might not exist - try origin/master
-		mainRef = "origin/master"
-		logCmd = exec.Command("git", "log", mainRef+"..HEAD", "--oneline")
+	// Check for unpushed commits. First try the branch's own tracking ref
+	// (origin/<branch>), then fall back to origin/main or origin/master.
+	// This correctly handles polecat branches that are pushed to their own
+	// remote ref rather than merged to main.
+
+	// Get current branch name
+	branchCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	branchCmd.Dir = worktreePath
+	branchOutput, branchErr := branchCmd.Output()
+	currentBranch := strings.TrimSpace(string(branchOutput))
+
+	var compareRef string
+	if branchErr == nil && currentBranch != "" && currentBranch != "HEAD" {
+		// Try origin/<current-branch> first (the branch's tracking ref)
+		trackingRef := "origin/" + currentBranch
+		verifyCmd := exec.Command("git", "rev-parse", "--verify", trackingRef)
+		verifyCmd.Dir = worktreePath
+		if verifyCmd.Run() == nil {
+			compareRef = trackingRef
+		}
+	}
+
+	// Fall back to origin/main or origin/master if no tracking ref
+	if compareRef == "" {
+		verifyMainCmd := exec.Command("git", "rev-parse", "--verify", "origin/main")
+		verifyMainCmd.Dir = worktreePath
+		if verifyMainCmd.Run() == nil {
+			compareRef = "origin/main"
+		} else {
+			verifyMasterCmd := exec.Command("git", "rev-parse", "--verify", "origin/master")
+			verifyMasterCmd.Dir = worktreePath
+			if verifyMasterCmd.Run() == nil {
+				compareRef = "origin/master"
+			}
+		}
+	}
+
+	// Check for unpushed commits
+	if compareRef != "" {
+		logCmd := exec.Command("git", "log", compareRef+"..HEAD", "--oneline")
 		logCmd.Dir = worktreePath
 		output, _ = logCmd.Output() // non-fatal: might be a new repo without remote tracking
+	} else {
+		output = nil // No reference to compare against
 	}
 	if len(output) > 0 {
 		lines := splitLines(string(output))
@@ -895,14 +926,14 @@ func getGitState(worktreePath string) (*GitState, error) {
 			}
 		}
 		if count > 0 {
-			// Commits exist that aren't on main. But after squash merge,
+			// Commits exist that aren't on the compare ref. But after squash merge,
 			// the content may actually be on main with different commit SHAs.
-			// Check if there's any actual diff between HEAD and main.
-			diffCmd := exec.Command("git", "diff", mainRef, "HEAD", "--quiet")
+			// Check if there's any actual diff between HEAD and the compare ref.
+			diffCmd := exec.Command("git", "diff", compareRef, "HEAD", "--quiet")
 			diffCmd.Dir = worktreePath
 			diffErr := diffCmd.Run()
 			if diffErr == nil {
-				// Exit code 0 means no diff - content IS on main (squash merged)
+				// Exit code 0 means no diff - content is already there (squash merged)
 				// Don't count these as unpushed
 				state.UnpushedCommits = 0
 			} else {
