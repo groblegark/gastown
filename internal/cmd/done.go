@@ -12,7 +12,6 @@ import (
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/polecat"
-	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/townlog"
@@ -115,7 +114,7 @@ func runDone(cmd *cobra.Command, args []string) error {
 	}
 
 	// Find current rig
-	rigName, _, err := findCurrentRig(townRoot)
+	rigName, r, err := findCurrentRig(townRoot)
 	if err != nil {
 		return err
 	}
@@ -225,11 +224,8 @@ func runDone(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Get configured default branch for this rig
-	defaultBranch := "main" // fallback
-	if rigCfg, err := rig.LoadRigConfig(filepath.Join(townRoot, rigName)); err == nil && rigCfg.DefaultBranch != "" {
-		defaultBranch = rigCfg.DefaultBranch
-	}
+	// Get configured default branch for validation (can't submit default branch itself)
+	defaultBranch := r.DefaultBranch()
 
 	// For COMPLETED, we need an issue ID and branch must not be the default branch
 	var mrID string
@@ -291,8 +287,8 @@ func runDone(cmd *cobra.Command, args []string) error {
 		// Initialize beads
 		bd := beads.New(beads.ResolveBeadsDir(cwd))
 
-		// Determine target branch (auto-detect integration branch if applicable)
-		target := defaultBranch
+		// Determine target branch (use rig's target branch, may be a release branch)
+		target := r.TargetBranch()
 		autoTarget, err := detectIntegrationBranch(bd, g, issueID)
 		if err == nil && autoTarget != "" {
 			target = autoTarget

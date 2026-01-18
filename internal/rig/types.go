@@ -2,7 +2,10 @@
 package rig
 
 import (
+	"path/filepath"
+
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/wisp"
 )
 
 // Rig represents a managed repository in the workspace.
@@ -94,9 +97,19 @@ func (r *Rig) DefaultBranch() string {
 }
 
 // TargetBranch returns the branch to use for merge operations.
-// If target_branch is configured, returns that; otherwise falls back to DefaultBranch().
+// Checks in order: wisp layer (local override), config.json, then DefaultBranch().
 // This enables release branch workflows where merges go to a release branch instead of main.
+//
+// Use `gt rig config set <rig> target_branch <branch>` to set via wisp layer.
 func (r *Rig) TargetBranch() string {
+	// Check wisp layer first (local override)
+	townRoot := filepath.Dir(r.Path)
+	wispCfg := wisp.NewConfig(townRoot, r.Name)
+	if tb := wispCfg.GetString("target_branch"); tb != "" {
+		return tb
+	}
+
+	// Check static config.json
 	cfg, err := LoadRigConfig(r.Path)
 	if err != nil {
 		return r.DefaultBranch()
