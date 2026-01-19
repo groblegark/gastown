@@ -350,6 +350,17 @@ func runDone(cmd *cobra.Command, args []string) error {
 			}
 			mrID = mrIssue.ID
 
+			// Ensure gt:merge-request label is present (bd-hdzi)
+			// The Type field should auto-convert to this label, but we verify as a safety check.
+			// If the bead doesn't have the label, gt mq list won't find it.
+			if !hasLabel(mrIssue, "gt:merge-request") {
+				style.PrintWarning("MR bead missing gt:merge-request label, adding explicitly")
+				if _, err := bd.Run("label", "add", mrID, "gt:merge-request"); err != nil {
+					// Non-fatal but concerning - log warning
+					style.PrintWarning("could not add gt:merge-request label: %v", err)
+				}
+			}
+
 			// Update agent bead with active_mr reference (for traceability)
 			if agentBeadID != "" {
 				if err := bd.UpdateAgentActiveMR(agentBeadID, mrID); err != nil {
@@ -690,6 +701,20 @@ func getDispatcherFromBead(cwd, issueID string) string {
 	}
 
 	return fields.DispatchedBy
+}
+
+// hasLabel checks if an issue has a specific label.
+// Used to verify gt:merge-request label is present on MR beads (bd-hdzi).
+func hasLabel(issue *beads.Issue, label string) bool {
+	if issue == nil {
+		return false
+	}
+	for _, l := range issue.Labels {
+		if l == label {
+			return true
+		}
+	}
+	return false
 }
 
 // parseCleanupStatus converts a string flag value to a CleanupStatus.
