@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -152,39 +151,57 @@ func (w *ConvoyWatcher) processLine(line string) {
 
 // getTrackingConvoys returns convoy IDs that track the given issue.
 func (w *ConvoyWatcher) getTrackingConvoys(issueID string) []string {
-	townBeads := filepath.Join(w.townRoot, ".beads")
-	dbPath := filepath.Join(townBeads, "beads.db")
-
-	// Query for convoys that track this issue
-	// Handle both direct ID and external reference format
-	safeIssueID := strings.ReplaceAll(issueID, "'", "''")
-
-	// Query for dependencies where this issue is the target
-	// Convoys use "tracks" type: convoy -> tracked issue (depends_on_id)
-	query := fmt.Sprintf(`
-		SELECT DISTINCT issue_id FROM dependencies
-		WHERE type = 'tracks'
-		AND (depends_on_id = '%s' OR depends_on_id LIKE '%%:%s')
-	`, safeIssueID, safeIssueID)
-
-	queryCmd := exec.Command("sqlite3", "-json", dbPath, query)
+	// Use bd CLI instead of direct sqlite3 access to support both SQLite and Dolt backends
+	// Get all convoy-type issues, then filter for those that track this issue
+	cmd := exec.Command("bd", "list", "--type", "convoy", "--json", "--limit", "0")
+	cmd.Dir = w.townRoot
 	var stdout bytes.Buffer
-	queryCmd.Stdout = &stdout
+	cmd.Stdout = &stdout
 
-	if err := queryCmd.Run(); err != nil {
+	if err := cmd.Run(); err != nil {
 		return nil
 	}
 
-	var results []struct {
-		IssueID string `json:"issue_id"`
+	var convoys []struct {
+		ID           string   `json:"id"`
+		Dependencies []string `json:"dependencies,omitempty"`
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &results); err != nil {
+	if err := json.Unmarshal(stdout.Bytes(), &convoys); err != nil {
 		return nil
 	}
 
-	convoyIDs := make([]string, 0, len(results))
-	for _, r := range results {
-		convoyIDs = append(convoyIDs, r.IssueID)
+	// For each convoy, check if it tracks the given issue
+	convoyIDs := make([]string, 0)
+	for _, convoy := range convoys {
+		// Get dependencies for this convoy
+		depCmd := exec.Command("bd", "dep", "list", convoy.ID, "--json")
+		depCmd.Dir = w.townRoot
+		var depStdout bytes.Buffer
+		depCmd.Stdout = &depStdout
+
+		if err := depCmd.Run(); err != nil {
+			continue
+		}
+
+		var deps []struct {
+			DependsOnID string `json:"depends_on_id"`
+			Type        string `json:"type"`
+		}
+		if err := json.Unmarshal(depStdout.Bytes(), &deps); err != nil {
+			continue
+		}
+
+		// Check if any "tracks" dependency matches our issueID
+		for _, dep := range deps {
+			if dep.Type == "tracks" {
+				// Handle both direct ID and external reference format
+				dependsOn := dep.DependsOnID
+				if dependsOn == issueID || strings.HasSuffix(dependsOn, ":"+issueID) {
+					convoyIDs = append(convoyIDs, convoy.ID)
+					break
+				}
+			}
+		}
 	}
 	return convoyIDs
 }
@@ -192,29 +209,24 @@ func (w *ConvoyWatcher) getTrackingConvoys(issueID string) []string {
 // checkConvoyCompletion checks if all issues tracked by a convoy are closed.
 // If so, runs gt convoy check to close the convoy.
 func (w *ConvoyWatcher) checkConvoyCompletion(convoyID string) {
-	townBeads := filepath.Join(w.townRoot, ".beads")
-	dbPath := filepath.Join(townBeads, "beads.db")
-
-	// First check if the convoy is still open
-	convoyQuery := fmt.Sprintf(`SELECT status FROM issues WHERE id = '%s'`,
-		strings.ReplaceAll(convoyID, "'", "''"))
-
-	queryCmd := exec.Command("sqlite3", "-json", dbPath, convoyQuery)
+	// Use bd CLI instead of direct sqlite3 access to support both SQLite and Dolt backends
+	cmd := exec.Command("bd", "show", "--json", convoyID)
+	cmd.Dir = w.townRoot
 	var stdout bytes.Buffer
-	queryCmd.Stdout = &stdout
+	cmd.Stdout = &stdout
 
-	if err := queryCmd.Run(); err != nil {
+	if err := cmd.Run(); err != nil {
 		return
 	}
 
-	var convoyStatus []struct {
+	var convoy struct {
 		Status string `json:"status"`
 	}
-	if err := json.Unmarshal(stdout.Bytes(), &convoyStatus); err != nil || len(convoyStatus) == 0 {
+	if err := json.Unmarshal(stdout.Bytes(), &convoy); err != nil {
 		return
 	}
 
-	if convoyStatus[0].Status == "closed" {
+	if convoy.Status == "closed" {
 		return // Already closed
 	}
 
