@@ -324,24 +324,34 @@ func init() {
 // findCurrentRig determines the current rig from the working directory.
 // Returns the rig name and rig object, or an error if not in a rig.
 func findCurrentRig(townRoot string) (string, *rig.Rig, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", nil, fmt.Errorf("getting current directory: %w", err)
-	}
+	var rigName string
 
-	// Get relative path from town root to cwd
-	relPath, err := filepath.Rel(townRoot, cwd)
-	if err != nil {
-		return "", nil, fmt.Errorf("computing relative path: %w", err)
-	}
+	// Try GT_RIG environment variable first (rig-2c303f)
+	// This fixes mail routing where polecats were sending to wrong rig's witness
+	// because cwd detection was unreliable (e.g., worktree deleted, wrong location)
+	if envRig := os.Getenv("GT_RIG"); envRig != "" {
+		rigName = envRig
+	} else {
+		// Fallback: derive from current working directory
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", nil, fmt.Errorf("getting current directory: %w", err)
+		}
 
-	// The first component of the relative path should be the rig name
-	parts := strings.Split(relPath, string(filepath.Separator))
-	if len(parts) == 0 || parts[0] == "" || parts[0] == "." {
-		return "", nil, fmt.Errorf("not inside a rig directory")
-	}
+		// Get relative path from town root to cwd
+		relPath, err := filepath.Rel(townRoot, cwd)
+		if err != nil {
+			return "", nil, fmt.Errorf("computing relative path: %w", err)
+		}
 
-	rigName := parts[0]
+		// The first component of the relative path should be the rig name
+		parts := strings.Split(relPath, string(filepath.Separator))
+		if len(parts) == 0 || parts[0] == "" || parts[0] == "." {
+			return "", nil, fmt.Errorf("not inside a rig directory")
+		}
+
+		rigName = parts[0]
+	}
 
 	// Load rig manager and get the rig
 	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
