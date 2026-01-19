@@ -448,7 +448,7 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 	}
 	// Type is deprecated: convert to gt:<type> label
 	if opts.Type != "" {
-		args = append(args, "--labels=gt:"+opts.Type)
+		args = append(args, "--label=gt:"+opts.Type)
 	}
 	if opts.Priority >= 0 {
 		args = append(args, fmt.Sprintf("--priority=%d", opts.Priority))
@@ -499,7 +499,7 @@ func (b *Beads) CreateWithID(id string, opts CreateOptions) (*Issue, error) {
 	}
 	// Type is deprecated: convert to gt:<type> label
 	if opts.Type != "" {
-		args = append(args, "--labels=gt:"+opts.Type)
+		args = append(args, "--label=gt:"+opts.Type)
 	}
 	if opts.Priority >= 0 {
 		args = append(args, fmt.Sprintf("--priority=%d", opts.Priority))
