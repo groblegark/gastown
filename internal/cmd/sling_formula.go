@@ -215,8 +215,9 @@ func runSlingFormula(args []string) error {
 	fmt.Printf("%s Wisp created: %s\n", style.Bold.Render("✓"), wispRootID)
 
 	// Step 2.5: NOW spawn the polecat if we deferred it (race condition fix)
-	// The wisp exists, so the polecat will find work when it runs gt prime
+	// Set HookBead so agent bead is created with hook already set (atomic assignment)
 	if pendingRigSpawn != "" {
+		spawnOpts.HookBead = wispRootID
 		fmt.Printf("  Spawning polecat in rig '%s'...\n", pendingRigSpawn)
 		spawnInfo, spawnErr := SpawnPolecatForSling(pendingRigSpawn, spawnOpts)
 		if spawnErr != nil {
