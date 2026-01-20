@@ -97,12 +97,13 @@ const (
 	//   wisp         - Ephemeral workflow instances
 	//   merge-request - GitLab/GitHub MRs
 	//   gate         - Timer gates for workflows
-	BeadsCustomTypes = "agent,role,rig,convoy,slot,queue,message,molecule,event,wisp,merge-request,gate"
+	//   warrant      - Session termination warrants
+	BeadsCustomTypes = "agent,role,rig,convoy,slot,queue,message,molecule,event,wisp,merge-request,gate,warrant"
 )
 
 // BeadsCustomTypesList returns the custom types as a slice.
 func BeadsCustomTypesList() []string {
-	return []string{"agent", "role", "rig", "convoy", "slot", "queue", "message", "molecule", "event", "wisp", "merge-request", "gate"}
+	return []string{"agent", "role", "rig", "convoy", "slot", "queue", "message", "molecule", "event", "wisp", "merge-request", "gate", "warrant"}
 }
 
 // Git branch names.
