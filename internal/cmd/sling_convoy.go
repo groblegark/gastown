@@ -114,17 +114,19 @@ func createAutoConvoy(beadID, beadTitle string) (string, error) {
 //
 // Examples:
 //   - "hq-abc123" -> "hq-abc123" (HQ beads unchanged)
-//   - "gt-mol-xyz" -> "external:gt-mol:gt-mol-xyz"
-//   - "beads-task-123" -> "external:beads-task:beads-task-123"
+//   - "bd-28b703" -> "external:bd:bd-28b703"
+//   - "gt-mol-xyz" -> "external:gt:gt-mol-xyz"
 func formatTrackBeadID(beadID string) string {
 	if strings.HasPrefix(beadID, "hq-") {
 		return beadID
 	}
-	parts := strings.SplitN(beadID, "-", 3)
-	if len(parts) >= 2 {
-		rigPrefix := parts[0] + "-" + parts[1]
+	// Extract the rig prefix (first segment before hyphen)
+	// bd-28b703 -> "bd", gt-mol-xyz -> "gt"
+	parts := strings.SplitN(beadID, "-", 2)
+	if len(parts) >= 1 && parts[0] != "" {
+		rigPrefix := parts[0]
 		return fmt.Sprintf("external:%s:%s", rigPrefix, beadID)
 	}
-	// Fallback for malformed IDs (single segment)
+	// Fallback for malformed IDs (single segment or empty)
 	return beadID
 }

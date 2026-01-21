@@ -552,7 +552,7 @@ func defaultProcessNames(provider, command string) []string {
 
 func defaultReadyPromptPrefix(provider string) string {
 	if provider == "claude" {
-		return "> "
+		return "❯" // Claude Code uses Unicode heavy right-pointing angle (U+276F)
 	}
 	return ""
 }
