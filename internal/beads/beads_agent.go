@@ -551,9 +551,7 @@ func (b *Beads) GetAgentBead(id string) (*Issue, *AgentFields, error) {
 	if issue.HookBead != "" {
 		fields.HookBead = issue.HookBead
 	}
-	if issue.RoleBead != "" {
-		fields.RoleBead = issue.RoleBead
-	}
+	// Note: RoleBead removed - role definitions are now config-based
 	if issue.AgentState != "" {
 		fields.AgentState = issue.AgentState
 	}
