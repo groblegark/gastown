@@ -412,10 +412,27 @@ func updateAgentHookBead(agentID, beadID, workDir, townBeadsDir string) {
 
 // wakeRigAgents wakes the witness and refinery for a rig after polecat dispatch.
 // This ensures the patrol agents are ready to monitor and merge.
+//
+// Issue hq-cc7214.7: gt rig boot requires finding the workspace from cwd.
+// We must set bootCmd.Dir to townRoot so the subprocess can find the workspace.
 func wakeRigAgents(rigName string) {
+	// Find town root for setting working directory
+	townRoot, err := workspace.FindFromCwd()
+	if err != nil {
+		// Can't find workspace - log and skip boot
+		fmt.Fprintf(os.Stderr, "Warning: wakeRigAgents: can't find workspace: %v\n", err)
+		return
+	}
+
 	// Boot the rig (idempotent - no-op if already running)
+	// Must set Dir so gt rig boot can find the workspace via workspace.FindFromCwdOrError()
 	bootCmd := exec.Command("gt", "rig", "boot", rigName)
-	_ = bootCmd.Run() // Ignore errors - rig might already be running
+	bootCmd.Dir = townRoot
+	bootCmd.Stderr = os.Stderr // Surface any errors for debugging
+	if err := bootCmd.Run(); err != nil {
+		// Non-fatal: rig might already be running, or there may be transient issues
+		fmt.Fprintf(os.Stderr, "Warning: wakeRigAgents: gt rig boot %s failed: %v\n", rigName, err)
+	}
 
 	// Nudge witness and refinery to clear any backoff
 	t := tmux.NewTmux()
