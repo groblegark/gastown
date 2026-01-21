@@ -107,21 +107,21 @@ func TestFormatTrackBeadID(t *testing.T) {
 			expected: "hq-cv-xyz789",
 		},
 
-		// Cross-rig beads get external: prefix
+		// Cross-rig beads get external: prefix with rig prefix (first segment)
 		{
 			name:     "gastown rig bead",
 			beadID:   "gt-mol-abc123",
-			expected: "external:gt-mol:gt-mol-abc123",
+			expected: "external:gt:gt-mol-abc123",
 		},
 		{
 			name:     "beads rig task",
 			beadID:   "beads-task-xyz",
-			expected: "external:beads-task:beads-task-xyz",
+			expected: "external:beads:beads-task-xyz",
 		},
 		{
 			name:     "two segment ID",
 			beadID:   "foo-bar",
-			expected: "external:foo-bar:foo-bar",
+			expected: "external:foo:foo-bar",
 		},
 
 		// Edge cases
@@ -138,7 +138,7 @@ func TestFormatTrackBeadID(t *testing.T) {
 		{
 			name:     "many segments",
 			beadID:   "a-b-c-d-e-f",
-			expected: "external:a-b:a-b-c-d-e-f",
+			expected: "external:a:a-b-c-d-e-f",
 		},
 	}
 

@@ -121,7 +121,7 @@ func formatTrackBeadID(beadID string) string {
 	// Extract the rig prefix (first segment before hyphen)
 	// bd-28b703 -> "bd", gt-mol-xyz -> "gt"
 	parts := strings.SplitN(beadID, "-", 2)
-	if len(parts) >= 1 && parts[0] != "" {
+	if len(parts) >= 2 && parts[0] != "" {
 		rigPrefix := parts[0]
 		return fmt.Sprintf("external:%s:%s", rigPrefix, beadID)
 	}
