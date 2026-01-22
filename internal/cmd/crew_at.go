@@ -16,6 +16,9 @@ import (
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
+// crewAtRetried tracks if we've already retried after stale session cleanup
+var crewAtRetried bool
+
 func runCrewAt(cmd *cobra.Command, args []string) error {
 	var name string
 
@@ -210,19 +213,11 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 		if runtimeConfig.Session != nil && runtimeConfig.Session.ConfigDirEnv != "" && claudeConfigDir != "" {
 			startupCmd = config.PrependEnv(startupCmd, map[string]string{runtimeConfig.Session.ConfigDirEnv: claudeConfigDir})
 		}
-		// Kill all processes in the pane before respawning to prevent orphan leaks
-		// RespawnPane's -k flag only sends SIGHUP which Claude/Node may ignore
-		if err := t.KillPaneProcesses(paneID); err != nil {
-			// Non-fatal but log the warning
-			style.PrintWarning("could not kill pane processes: %v", err)
-		}
+		// Note: Don't call KillPaneProcesses here - this is a NEW session with just
+		// a fresh shell. Killing it would destroy the pane before we can respawn.
+		// KillPaneProcesses is only needed when restarting in an EXISTING session
+		// where Claude/Node processes might be running and ignoring SIGHUP.
 		if err := t.RespawnPane(paneID, startupCmd); err != nil {
-			// If pane is stale (session exists but pane doesn't), recreate the session
-			if strings.Contains(err.Error(), "can't find pane") {
-				fmt.Printf("Stale session detected, recreating...\n")
-				_ = t.KillSession(sessionID)
-				return runCrewAt(cmd, args) // Retry with fresh session
-			}
 			return fmt.Errorf("starting runtime: %w", err)
 		}
 
@@ -274,8 +269,15 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 			if err := t.RespawnPane(paneID, startupCmd); err != nil {
 				// If pane is stale (session exists but pane doesn't), recreate the session
 				if strings.Contains(err.Error(), "can't find pane") {
+					if crewAtRetried {
+						return fmt.Errorf("stale session persists after cleanup: %w", err)
+					}
 					fmt.Printf("Stale session detected, recreating...\n")
-					_ = t.KillSession(sessionID)
+					if killErr := t.KillSession(sessionID); killErr != nil {
+						return fmt.Errorf("failed to kill stale session: %w", killErr)
+					}
+					crewAtRetried = true
+					defer func() { crewAtRetried = false }()
 					return runCrewAt(cmd, args) // Retry with fresh session
 				}
 				return fmt.Errorf("restarting runtime: %w", err)
