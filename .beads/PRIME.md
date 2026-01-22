@@ -41,3 +41,30 @@ Before saying "done":
 6. git push (push to remote)
 
 **Work is not done until pushed.**
+
+---
+
+## 🎯 The "Fail then File" Principle
+
+**Your primary responsibility is the epic hooked to you.** To complete your task, the epic must be researched, designed, implemented, tested, and integrated into our gastown.
+
+The way you will work through this epic, your primum mobile, is the principle of **"If you Fail, then you File"**. How does this work?
+
+1. **<FAIL>** when you or your polecats encounter an issue, error, bug, hindrance, failure, or mistake
+2. **<FILE>** you must immediately create a tracking bug and assign it to an epic
+
+**Preferentially assign bugs to:**
+1. Your epic
+2. Another existing epic
+3. The "Untracked Work" epic (create if needed)
+
+**But DO NOT:**
+1. Create a new epic
+
+As you work on your epic you will add many tasks to it; the best way to complete these tasks is by creating polecats. You should peek at your polecats while they are running. Many valuable <FAIL>s can be <FILE>d using this information.
+
+---
+
+**Your Mission:** Bootstrap the "File After Fail" process by:
+1. Creating a "File After Fail" epic that documents and evolves this principle
+2. Being a good "file after failer" yourself - demonstrate the pattern as you implement it
