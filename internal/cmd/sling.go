@@ -9,8 +9,13 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/constants"
+	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/events"
+	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mail"
+	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -299,6 +304,51 @@ func runSling(cmd *cobra.Command, args []string) error {
 						wakeRigAgents(rigName)
 					} else {
 						return fmt.Errorf("resolving target: %w", err)
+					}
+				} else if rigName, crewName, ok := parseCrewTarget(target); ok {
+					// FIX (hq-cc7214.25): Auto-start crew session if not running
+					fmt.Printf("Target crew %s/%s has no active session, starting...\n", rigName, crewName)
+
+					// Get rig and crew manager
+					rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
+					rigsConfig, configErr := config.LoadRigsConfig(rigsConfigPath)
+					if configErr != nil {
+						return fmt.Errorf("loading rigs config: %w", configErr)
+					}
+					g := git.NewGit(townRoot)
+					rigMgr := rig.NewManager(townRoot, rigsConfig, g)
+					r, rigErr := rigMgr.GetRig(rigName)
+					if rigErr != nil {
+						return fmt.Errorf("getting rig %s: %w", rigName, rigErr)
+					}
+
+					crewGit := git.NewGit(r.Path)
+					crewMgr := crew.NewManager(r, crewGit)
+
+					// Resolve account config
+					accountsPath := constants.MayorAccountsPath(townRoot)
+					claudeConfigDir, _, accountErr := config.ResolveAccountConfigDir(accountsPath, slingAccount)
+					if accountErr != nil {
+						return fmt.Errorf("resolving account: %w", accountErr)
+					}
+
+					// Start the crew session
+					startOpts := crew.StartOptions{
+						Account:         slingAccount,
+						ClaudeConfigDir: claudeConfigDir,
+						AgentOverride:   slingAgent,
+					}
+					if startErr := crewMgr.Start(crewName, startOpts); startErr != nil {
+						return fmt.Errorf("starting crew session %s/%s: %w", rigName, crewName, startErr)
+					}
+
+					// Retry resolving the target now that session is running
+					targetAgent, targetPane, targetWorkDir, err = resolveTargetAgent(target)
+					if err != nil {
+						return fmt.Errorf("resolving target after starting crew: %w", err)
+					}
+					if targetWorkDir != "" {
+						hookWorkDir = targetWorkDir
 					}
 				} else {
 					return fmt.Errorf("resolving target: %w", err)
