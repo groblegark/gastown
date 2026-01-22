@@ -79,7 +79,7 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 
 	// Clean up orphaned state for this polecat before creation/repair
 	// This prevents contamination from previous failed spawns (hq-gsk9g, hq-cv-bn5ug)
-	cleanupOrphanPolecatState(rigName, polecatName, townRoot, tmux.NewTmux())
+	cleanupOrphanPolecatState(rigName, polecatName, r.Path, tmux.NewTmux())
 
 	// Check if polecat already exists (shouldn't happen - indicates stale state needing repair)
 	existingPolecat, err := polecatMgr.Get(polecatName)
@@ -234,9 +234,9 @@ func IsRigName(target string) (string, bool) {
 // - Kills orphan tmux sessions without corresponding directories
 // - Prunes stale git worktree registrations
 // - Clears hook_bead on respawn (via fresh agent bead creation)
-func cleanupOrphanPolecatState(rigName, polecatName, townRoot string, tm *tmux.Tmux) {
-	polecatDir := filepath.Join(townRoot, "polecats", polecatName)
-	sessionName := fmt.Sprintf("gt-%s-p-%s", rigName, polecatName)
+func cleanupOrphanPolecatState(rigName, polecatName, rigPath string, tm *tmux.Tmux) {
+	polecatDir := filepath.Join(rigPath, "polecats", polecatName)
+	sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
 
 	// Step 1: Kill orphan tmux session if it exists
 	if err := tm.KillSession(sessionName); err == nil {
@@ -253,7 +253,7 @@ func cleanupOrphanPolecatState(rigName, polecatName, townRoot string, tm *tmux.T
 	}
 
 	// Step 3: Prune stale git worktree entries (non-fatal cleanup)
-	repoGit := git.NewGit(townRoot)
+	repoGit := git.NewGit(rigPath)
 	_ = repoGit.WorktreePrune()
 }
 
