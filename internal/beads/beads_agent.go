@@ -210,6 +210,14 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 		return nil, fmt.Errorf("parsing bd create output: %w", err)
 	}
 
+	// FIX bd-3q6.5-1: bd create --pinned sets Pinned=true but Status="open".
+	// AttachMolecule requires Status="pinned", so we must explicitly update.
+	// This mirrors the fix in CreateOrReopenAgentBead for reopened beads.
+	pinnedStatus := StatusPinned
+	if err := b.Update(id, UpdateOptions{Status: &pinnedStatus}); err != nil {
+		return nil, fmt.Errorf("setting agent bead status to pinned: %w", err)
+	}
+
 	// Note: role slot no longer set - role definitions are config-based
 
 	// Set the hook slot if specified (this is the authoritative storage)
