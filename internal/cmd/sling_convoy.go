@@ -3,6 +3,7 @@ package cmd
 import (
 	"crypto/rand"
 	"encoding/base32"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -104,6 +105,71 @@ func createAutoConvoy(beadID, beadTitle string) (string, error) {
 	}
 
 	return convoyID, nil
+}
+
+// addToConvoy adds a bead to an existing convoy.
+// If the convoy is closed, it will be reopened.
+func addToConvoy(convoyID, beadID string) error {
+	townRoot, err := workspace.FindFromCwd()
+	if err != nil {
+		return fmt.Errorf("finding town root: %w", err)
+	}
+
+	// Check if convoy exists and get its status
+	showArgs := []string{"--no-daemon", "show", convoyID, "--json"}
+	showCmd := exec.Command("bd", showArgs...)
+	showCmd.Dir = townRoot
+	out, err := showCmd.Output()
+	if err != nil {
+		return fmt.Errorf("convoy '%s' not found", convoyID)
+	}
+
+	// Parse convoy data to check status
+	var convoys []struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+		Type   string `json:"issue_type"`
+	}
+	if err := parseJSON(out, &convoys); err != nil || len(convoys) == 0 {
+		return fmt.Errorf("convoy '%s' not found", convoyID)
+	}
+
+	convoy := convoys[0]
+	if convoy.Type != "convoy" {
+		return fmt.Errorf("'%s' is not a convoy (type: %s)", convoyID, convoy.Type)
+	}
+
+	// If convoy is closed, reopen it
+	if convoy.Status == "closed" {
+		reopenArgs := []string{"--no-daemon", "update", convoyID, "--status=open"}
+		reopenCmd := exec.Command("bd", reopenArgs...)
+		reopenCmd.Dir = townRoot
+		if err := reopenCmd.Run(); err != nil {
+			return fmt.Errorf("couldn't reopen convoy: %w", err)
+		}
+		fmt.Printf("%s Reopened convoy %s\n", style.Bold.Render("↺"), convoyID)
+	}
+
+	// Add tracking relation: convoy tracks the issue
+	trackBeadID := formatTrackBeadID(beadID)
+	depArgs := []string{"--no-daemon", "dep", "add", convoyID, trackBeadID, "--type=tracks"}
+	depCmd := exec.Command("bd", depArgs...)
+	depCmd.Dir = townRoot
+	depCmd.Stderr = os.Stderr
+
+	if err := depCmd.Run(); err != nil {
+		return fmt.Errorf("adding tracking relation: %w", err)
+	}
+
+	return nil
+}
+
+// parseJSON is a helper to unmarshal JSON into a target.
+func parseJSON(data []byte, target interface{}) error {
+	if len(data) == 0 {
+		return fmt.Errorf("empty data")
+	}
+	return json.Unmarshal(data, target)
 }
 
 // formatTrackBeadID formats a bead ID for use in convoy tracking dependencies.

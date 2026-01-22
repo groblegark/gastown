@@ -36,6 +36,17 @@ Auto-Convoy:
   gt sling gt-abc gastown              # Creates "Work: <issue-title>" convoy
   gt sling gt-abc gastown --no-convoy  # Skip auto-convoy creation
 
+Convoy Batching:
+  Use --convoy to add multiple issues to a single convoy instead of creating
+  separate convoys for each. This is recommended when slinging related work.
+
+  # Create convoy first, then add issues to it
+  gt convoy create "Release v2.0" gt-abc
+  gt sling gt-def gastown --convoy hq-cv-xyz
+  gt sling gt-ghi gastown --convoy hq-cv-xyz
+
+  Use 'gt workload <agent>' to see all hooked issues for an agent.
+
 Target Resolution:
   gt sling gt-abc                       # Self (current agent)
   gt sling gt-abc crew                  # Crew worker in current rig
@@ -95,6 +106,7 @@ var (
 	slingAccount  string // --account: Claude Code account handle to use
 	slingAgent    string // --agent: override runtime agent for this sling/spawn
 	slingNoConvoy bool   // --no-convoy: skip auto-convoy creation
+	slingConvoy   string // --convoy: add to existing convoy instead of creating new one
 )
 
 func init() {
@@ -111,6 +123,7 @@ func init() {
 	slingCmd.Flags().StringVar(&slingAccount, "account", "", "Claude Code account handle to use")
 	slingCmd.Flags().StringVar(&slingAgent, "agent", "", "Override agent/runtime for this sling (e.g., claude, gemini, codex, or custom alias)")
 	slingCmd.Flags().BoolVar(&slingNoConvoy, "no-convoy", false, "Skip auto-convoy creation for single-issue sling")
+	slingCmd.Flags().StringVar(&slingConvoy, "convoy", "", "Add to existing convoy instead of creating new one (e.g., hq-cv-abc)")
 
 	rootCmd.AddCommand(slingCmd)
 }
@@ -325,26 +338,52 @@ func runSling(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("bead %s is already pinned to %s\nUse --force to re-sling", beadID, assignee)
 	}
 
-	// Auto-convoy: check if issue is already tracked by a convoy
-	// If not, create one for dashboard visibility (unless --no-convoy is set)
+	// Workload warning: check if target already has many hooked issues
+	// Threshold of 3 hooked issues triggers a warning to suggest batching
+	const workloadThreshold = 3
+	existingWorkload := countHookedBeadsForAgent(townRoot, targetAgent)
+	if existingWorkload >= workloadThreshold && slingConvoy == "" {
+		fmt.Printf("%s %s already has %d hooked issues\n", style.Warning.Render("⚠"), targetAgent, existingWorkload)
+		fmt.Printf("  Consider using --convoy to batch related work:\n")
+		fmt.Printf("    gt convoy create \"Batch name\" %s\n", beadID)
+		fmt.Printf("    gt sling <next-bead> %s --convoy <convoy-id>\n", targetAgent)
+		fmt.Printf("  Or use 'gt workload %s' to see full queue\n\n", targetAgent)
+	}
+
+	// Convoy handling: add to existing convoy, create auto-convoy, or skip
+	// Priority: --convoy flag > existing convoy > auto-create
 	if !slingNoConvoy && formulaName == "" {
-		existingConvoy := isTrackedByConvoy(beadID)
-		if existingConvoy == "" {
+		if slingConvoy != "" {
+			// User specified convoy to add to
 			if slingDryRun {
-				fmt.Printf("Would create convoy 'Work: %s'\n", info.Title)
-				fmt.Printf("Would add tracking relation to %s\n", beadID)
+				fmt.Printf("Would add %s to convoy %s\n", beadID, slingConvoy)
 			} else {
-				convoyID, err := createAutoConvoy(beadID, info.Title)
-				if err != nil {
-					// Log warning but don't fail - convoy is optional
-					fmt.Printf("%s Could not create auto-convoy: %v\n", style.Dim.Render("Warning:"), err)
+				if err := addToConvoy(slingConvoy, beadID); err != nil {
+					fmt.Printf("%s Could not add to convoy %s: %v\n", style.Dim.Render("Warning:"), slingConvoy, err)
 				} else {
-					fmt.Printf("%s Created convoy 🚚 %s\n", style.Bold.Render("→"), convoyID)
-					fmt.Printf("  Tracking: %s\n", beadID)
+					fmt.Printf("%s Added to convoy 🚚 %s\n", style.Bold.Render("→"), slingConvoy)
 				}
 			}
 		} else {
-			fmt.Printf("%s Already tracked by convoy %s\n", style.Dim.Render("○"), existingConvoy)
+			// Check if already tracked by a convoy
+			existingConvoy := isTrackedByConvoy(beadID)
+			if existingConvoy == "" {
+				if slingDryRun {
+					fmt.Printf("Would create convoy 'Work: %s'\n", info.Title)
+					fmt.Printf("Would add tracking relation to %s\n", beadID)
+				} else {
+					convoyID, err := createAutoConvoy(beadID, info.Title)
+					if err != nil {
+						// Log warning but don't fail - convoy is optional
+						fmt.Printf("%s Could not create auto-convoy: %v\n", style.Dim.Render("Warning:"), err)
+					} else {
+						fmt.Printf("%s Created convoy 🚚 %s\n", style.Bold.Render("→"), convoyID)
+						fmt.Printf("  Tracking: %s\n", beadID)
+					}
+				}
+			} else {
+				fmt.Printf("%s Already tracked by convoy %s\n", style.Dim.Render("○"), existingConvoy)
+			}
 		}
 	}
 
