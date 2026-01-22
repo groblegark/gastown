@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -357,9 +358,10 @@ func detectActor() string {
 }
 
 // agentIDToBeadID converts an agent ID to its corresponding agent bead ID.
-// All agent beads use the "hq" prefix and are stored at town level to avoid
-// prefix/database mismatch issues (fix for loc-1augh, hq-cc7214.2).
-// This matches polecat/manager.go which creates agent beads with *Town functions.
+// Agent bead prefixes vary by role:
+// - Mayor, Deacon: hq- prefix (town-level)
+// - Witness, Refinery, Polecat: hq- prefix (town-level, fix for loc-1augh)
+// - Crew: rig prefix (e.g., gt- for gastown) - created by crew_add.go with rig prefix
 func agentIDToBeadID(agentID, townRoot string) string {
 	// Normalize: strip trailing slash (resolveSelfTarget returns "mayor/" not "mayor")
 	agentID = strings.TrimSuffix(agentID, "/")
@@ -380,17 +382,22 @@ func agentIDToBeadID(agentID, townRoot string) string {
 
 	rig := parts[0]
 
-	// All agent beads are stored at town level with hq- prefix to avoid
-	// prefix/database mismatch issues (fix for loc-1augh, hq-cc7214.2).
-	// This matches polecat/manager.go which creates agent beads with townBeads.
+	// Get the rig's prefix for crew beads (they use rig prefix, not hq-)
+	rigPrefix := config.GetRigPrefix(townRoot, rig)
+
 	switch {
 	case len(parts) == 2 && parts[1] == "witness":
+		// Witness uses hq- prefix (town-level)
 		return beads.WitnessBeadIDTown(rig)
 	case len(parts) == 2 && parts[1] == "refinery":
+		// Refinery uses hq- prefix (town-level)
 		return beads.RefineryBeadIDTown(rig)
 	case len(parts) == 3 && parts[1] == "crew":
-		return beads.CrewBeadIDTown(rig, parts[2])
+		// FIX (hq-8af330.6): Crew beads use rig prefix, not hq-.
+		// Crew beads are created by crew_add.go with CrewBeadIDWithPrefix(prefix, rig, name).
+		return beads.CrewBeadIDWithPrefix(rigPrefix, rig, parts[2])
 	case len(parts) == 3 && parts[1] == "polecats":
+		// Polecats use hq- prefix (town-level, fix for loc-1augh)
 		return beads.PolecatBeadIDTown(rig, parts[2])
 	default:
 		return ""
