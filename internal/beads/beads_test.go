@@ -1953,8 +1953,9 @@ func TestAgentBeadCloseReopenWorkaround(t *testing.T) {
 
 // TestCreateOrReopenAgentBead_ClosedBead tests that CreateOrReopenAgentBead
 // successfully reopens a closed agent bead and updates its fields.
+// This test validates the fix for bd-3q6.5-1: molecule attachment fails when polecat issue is closed.
 func TestCreateOrReopenAgentBead_ClosedBead(t *testing.T) {
-	t.Skip("bd CLI 0.47.2 bug: database writes don't commit")
+	// Previously skipped for bd CLI 0.47.2 - database writes bug is fixed in 0.48.0
 
 	tmpDir := t.TempDir()
 	bd := NewIsolated(tmpDir)

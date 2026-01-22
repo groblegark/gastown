@@ -210,6 +210,17 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 		return nil, fmt.Errorf("parsing bd create output: %w", err)
 	}
 
+	// bd create --pinned sets pinned:true but status:"open".
+	// For AttachMolecule to work, status must be "pinned".
+	// (Fix for bd-3q6.5-1: molecule attachment fails when polecat issue is closed)
+	if issue.Status != StatusPinned {
+		pinnedStatus := StatusPinned
+		if updateErr := b.Update(id, UpdateOptions{Status: &pinnedStatus}); updateErr != nil {
+			return nil, fmt.Errorf("setting pinned status: %w", updateErr)
+		}
+		issue.Status = StatusPinned
+	}
+
 	// Note: role slot no longer set - role definitions are config-based
 
 	// Set the hook slot if specified (this is the authoritative storage)
@@ -534,7 +545,8 @@ func (b *Beads) CloseAndClearAgentBead(id, reason string) error {
 	issue, err := b.Show(id)
 	if err != nil {
 		// If we can't read the issue, still attempt to close
-		args := []string{"close", id}
+		// Use --force because agent beads have status="pinned" which normally blocks close
+		args := []string{"close", id, "--force"}
 		if reason != "" {
 			args = append(args, "--reason="+reason)
 		}
@@ -560,7 +572,9 @@ func (b *Beads) CloseAndClearAgentBead(id, reason string) error {
 		// Non-fatal
 	}
 
-	args := []string{"close", id}
+	// Use --force because agent beads have status="pinned" which normally blocks close
+	// (Fix for bd-3q6.5-1: agent beads now properly use pinned status)
+	args := []string{"close", id, "--force"}
 	if reason != "" {
 		args = append(args, "--reason="+reason)
 	}
