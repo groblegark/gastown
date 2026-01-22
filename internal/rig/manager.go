@@ -418,7 +418,14 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 		// beads.db is gitignored so it won't exist after clone - we need to create it.
 		// bd init --prefix will create the database and auto-import from issues.jsonl.
 		if _, err := os.Stat(sourceBeadsDB); os.IsNotExist(err) {
-			cmd := exec.Command("bd", "init", "--prefix", opts.BeadsPrefix) // opts.BeadsPrefix validated earlier
+			// Check if town-level beads uses Dolt backend - inherit it
+			townBeadsDir := filepath.Join(m.townRoot, ".beads")
+			townBackend := beads.GetStorageBackend(townBeadsDir)
+			initArgs := []string{"init", "--prefix", opts.BeadsPrefix} // opts.BeadsPrefix validated earlier
+			if townBackend == "dolt" {
+				initArgs = append(initArgs, "--backend", "dolt")
+			}
+			cmd := exec.Command("bd", initArgs...)
 			cmd.Dir = mayorRigPath
 			if output, err := cmd.CombinedOutput(); err != nil {
 				fmt.Printf("  Warning: Could not init bd database: %v (%s)\n", err, strings.TrimSpace(string(output)))
@@ -650,8 +657,16 @@ func (m *Manager) initBeads(rigPath, prefix string) error {
 	}
 	filteredEnv = append(filteredEnv, "BEADS_DIR="+beadsDir)
 
+	// Check if town-level beads uses Dolt backend - inherit it for new rigs
+	townBeadsDir := filepath.Join(m.townRoot, ".beads")
+	townBackend := beads.GetStorageBackend(townBeadsDir)
+
 	// Run bd init if available
-	cmd := exec.Command("bd", "init", "--prefix", prefix)
+	initArgs := []string{"init", "--prefix", prefix}
+	if townBackend == "dolt" {
+		initArgs = append(initArgs, "--backend", "dolt")
+	}
+	cmd := exec.Command("bd", initArgs...)
 	cmd.Dir = rigPath
 	cmd.Env = filteredEnv
 	_, err := cmd.CombinedOutput()

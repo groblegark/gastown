@@ -862,3 +862,38 @@ func ProvisionPrimeMDForWorktree(worktreePath string) error {
 	// Provision PRIME.md in the target directory
 	return ProvisionPrimeMD(beadsDir)
 }
+
+// GetStorageBackend returns the storage backend configured for a beads directory.
+// Returns "dolt" if Dolt backend is configured, "sqlite" otherwise (default).
+// Checks metadata.json first (backend field), falls back to config.yaml (storage-backend field).
+func GetStorageBackend(beadsDir string) string {
+	// Try metadata.json first (JSON format)
+	metadataPath := filepath.Join(beadsDir, "metadata.json")
+	if data, err := os.ReadFile(metadataPath); err == nil {
+		var metadata struct {
+			Backend string `json:"backend"`
+		}
+		if err := json.Unmarshal(data, &metadata); err == nil && metadata.Backend != "" {
+			return metadata.Backend
+		}
+	}
+
+	// Fall back to config.yaml (simple string matching to avoid yaml dependency)
+	configPath := filepath.Join(beadsDir, "config.yaml")
+	if data, err := os.ReadFile(configPath); err == nil {
+		content := string(data)
+		// Look for "storage-backend: dolt" pattern
+		for _, line := range strings.Split(content, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "storage-backend:") {
+				value := strings.TrimSpace(strings.TrimPrefix(line, "storage-backend:"))
+				if value != "" {
+					return value
+				}
+			}
+		}
+	}
+
+	// Default to sqlite
+	return "sqlite"
+}
