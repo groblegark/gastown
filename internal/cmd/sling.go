@@ -372,7 +372,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 					fmt.Printf("Would create convoy 'Work: %s'\n", info.Title)
 					fmt.Printf("Would add tracking relation to %s\n", beadID)
 				} else {
-					convoyID, err := createAutoConvoy(beadID, info.Title)
+					convoyID, err := createAutoConvoy(beadID, info.Title, targetAgent)
 					if err != nil {
 						// Log warning but don't fail - convoy is optional
 						fmt.Printf("%s Could not create auto-convoy: %v\n", style.Dim.Render("Warning:"), err)

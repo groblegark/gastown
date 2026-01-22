@@ -58,8 +58,9 @@ func isTrackedByConvoy(beadID string) string {
 }
 
 // createAutoConvoy creates an auto-convoy for a single issue and tracks it.
+// The convoy is assigned to the same agent that is working on the tracked bead.
 // Returns the created convoy ID.
-func createAutoConvoy(beadID, beadTitle string) (string, error) {
+func createAutoConvoy(beadID, beadTitle, assignee string) (string, error) {
 	townRoot, err := workspace.FindFromCwd()
 	if err != nil {
 		return "", fmt.Errorf("finding town root: %w", err)
@@ -79,6 +80,9 @@ func createAutoConvoy(beadID, beadTitle string) (string, error) {
 		"--id=" + convoyID,
 		"--title=" + convoyTitle,
 		"--description=" + description,
+	}
+	if assignee != "" {
+		createArgs = append(createArgs, "--assignee="+assignee)
 	}
 	if beads.NeedsForceForID(convoyID) {
 		createArgs = append(createArgs, "--force")
