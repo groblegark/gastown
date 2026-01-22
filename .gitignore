@@ -55,6 +55,7 @@ CLAUDE.md
 
 # Gas Town (added by gt)
 .beads/
+!.beads/routes.jsonl
 .logs/
 logs/
 settings/
