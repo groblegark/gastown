@@ -35,6 +35,14 @@ type AgentEnvConfig struct {
 	// BeadsNoDaemon sets BEADS_NO_DAEMON=1 if true
 	// Used for polecats that should bypass the beads daemon
 	BeadsNoDaemon bool
+
+	// AuthToken is the API authentication token (ANTHROPIC_AUTH_TOKEN)
+	// If set, enables API key authentication instead of OAuth.
+	AuthToken string
+
+	// BaseURL is the custom API base URL (ANTHROPIC_BASE_URL)
+	// If set, overrides the default API endpoint.
+	BaseURL string
 }
 
 // AgentEnv returns all environment variables for an agent based on the config.
@@ -108,6 +116,16 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 	// Add session ID env var name if provided
 	if cfg.SessionIDEnv != "" {
 		env["GT_SESSION_ID_ENV"] = cfg.SessionIDEnv
+	}
+
+	// Add API authentication if configured (alternative to OAuth)
+	if cfg.AuthToken != "" {
+		env["ANTHROPIC_AUTH_TOKEN"] = cfg.AuthToken
+	}
+
+	// Add custom API base URL if configured
+	if cfg.BaseURL != "" {
+		env["ANTHROPIC_BASE_URL"] = cfg.BaseURL
 	}
 
 	return env

@@ -903,16 +903,26 @@ func runStartCrew(cmd *cobra.Command, args []string) error {
 	crewGit := git.NewGit(r.Path)
 	crewMgr := crew.NewManager(r, crewGit)
 
-	// Resolve account for Claude config
+	// Resolve account for Claude config (including auth credentials)
 	accountsPath := constants.MayorAccountsPath(townRoot)
-	claudeConfigDir, accountHandle, err := config.ResolveAccountConfigDir(accountsPath, startCrewAccount)
+	resolvedAccount, err := config.ResolveAccountFull(accountsPath, startCrewAccount)
 	if err != nil {
 		return fmt.Errorf("resolving account: %w", err)
 	}
 
+	// Extract account details (may be nil if no account configured)
+	var claudeConfigDir, accountHandle, authToken, baseURL string
+	if resolvedAccount != nil {
+		claudeConfigDir = resolvedAccount.ConfigDir
+		accountHandle = resolvedAccount.Handle
+		authToken = resolvedAccount.AuthToken
+		baseURL = resolvedAccount.BaseURL
+	}
+
 	// Validate that the account has credentials before starting
 	// This prevents OAuth prompts from appearing in crew sessions
-	if err := config.ValidateAccountCredentials(claudeConfigDir, accountHandle); err != nil {
+	// Accounts with auth_token don't need .credentials.json
+	if err := config.ValidateAccountCredentials(claudeConfigDir, accountHandle, authToken); err != nil {
 		return err
 	}
 
@@ -925,6 +935,8 @@ func runStartCrew(cmd *cobra.Command, args []string) error {
 		Account:         startCrewAccount,
 		ClaudeConfigDir: claudeConfigDir,
 		AgentOverride:   startCrewAgentOverride,
+		AuthToken:       authToken,
+		BaseURL:         baseURL,
 	})
 	if err != nil {
 		if errors.Is(err, crew.ErrSessionRunning) {

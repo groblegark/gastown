@@ -97,14 +97,23 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("finding town root: %w", err)
 	}
 	accountsPath := constants.MayorAccountsPath(townRoot)
-	claudeConfigDir, accountHandle, err := config.ResolveAccountConfigDir(accountsPath, crewAccount)
+	resolvedAccount, err := config.ResolveAccountFull(accountsPath, crewAccount)
 	if err != nil {
 		return fmt.Errorf("resolving account: %w", err)
 	}
 
+	// Extract account details (may be nil if no account configured)
+	var claudeConfigDir, accountHandle, authToken string
+	if resolvedAccount != nil {
+		claudeConfigDir = resolvedAccount.ConfigDir
+		accountHandle = resolvedAccount.Handle
+		authToken = resolvedAccount.AuthToken
+	}
+
 	// Validate that the account has credentials before starting
 	// This prevents OAuth prompts from appearing in crew sessions
-	if err := config.ValidateAccountCredentials(claudeConfigDir, accountHandle); err != nil {
+	// Accounts with auth_token don't need .credentials.json
+	if err := config.ValidateAccountCredentials(claudeConfigDir, accountHandle, authToken); err != nil {
 		return err
 	}
 

@@ -134,16 +134,26 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 		}
 	}
 
-	// Resolve account for runtime config
+	// Resolve account for runtime config (including auth credentials)
 	accountsPath := constants.MayorAccountsPath(townRoot)
-	claudeConfigDir, accountHandle, err := config.ResolveAccountConfigDir(accountsPath, opts.Account)
+	resolvedAccount, err := config.ResolveAccountFull(accountsPath, opts.Account)
 	if err != nil {
 		return nil, fmt.Errorf("resolving account: %w", err)
 	}
 
+	// Extract account details (may be nil if no account configured)
+	var claudeConfigDir, accountHandle, authToken, baseURL string
+	if resolvedAccount != nil {
+		claudeConfigDir = resolvedAccount.ConfigDir
+		accountHandle = resolvedAccount.Handle
+		authToken = resolvedAccount.AuthToken
+		baseURL = resolvedAccount.BaseURL
+	}
+
 	// Validate that the account has credentials before spawning
 	// This prevents OAuth prompts from appearing in polecat sessions
-	if err := config.ValidateAccountCredentials(claudeConfigDir, accountHandle); err != nil {
+	// Accounts with auth_token don't need .credentials.json
+	if err := config.ValidateAccountCredentials(claudeConfigDir, accountHandle, authToken); err != nil {
 		return nil, err
 	}
 
@@ -160,6 +170,8 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 		fmt.Printf("Starting session for %s/%s...\n", rigName, polecatName)
 		startOpts := polecat.SessionStartOptions{
 			RuntimeConfigDir: claudeConfigDir,
+			AuthToken:        authToken,
+			BaseURL:          baseURL,
 		}
 		if opts.Agent != "" {
 			cmd, err := config.BuildPolecatStartupCommandWithAgentOverride(rigName, polecatName, r.Path, "", opts.Agent)

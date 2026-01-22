@@ -579,19 +579,91 @@ func ResolveAccountConfigDir(accountsPath, accountFlag string) (configDir, handl
 }
 
 // ValidateAccountCredentials checks if an account has valid credentials.
-// Returns an error if the account's config directory doesn't have .credentials.json.
+// An account is valid if it has EITHER:
+//   - An API auth token (authToken parameter)
+//   - A .credentials.json file in its config directory (OAuth)
+//
+// Returns an error if neither credential type is available.
 // Returns nil if configDir is empty (no account configured).
-func ValidateAccountCredentials(configDir, handle string) error {
+func ValidateAccountCredentials(configDir, handle, authToken string) error {
 	if configDir == "" {
 		return nil // No account configured, nothing to validate
 	}
 
+	// API token authentication takes precedence
+	if authToken != "" {
+		return nil // Account uses API token, no need for credentials file
+	}
+
+	// Fall back to OAuth credentials check
 	credentialsPath := filepath.Join(configDir, ".credentials.json")
 	if _, err := os.Stat(credentialsPath); os.IsNotExist(err) {
-		return fmt.Errorf("account '%s' is not authenticated (no credentials in %s)\n\nTo authenticate this account, run:\n  CLAUDE_CONFIG_DIR=%s claude\n\nThen use /login to complete the OAuth flow.",
+		return fmt.Errorf("account '%s' is not authenticated (no credentials in %s)\n\nTo authenticate this account, either:\n  1. Set auth_token in accounts.json for API key authentication\n  2. Run: CLAUDE_CONFIG_DIR=%s claude\n     Then use /login to complete the OAuth flow.",
 			handle, configDir, configDir)
 	}
 	return nil
+}
+
+// ResolvedAccount contains all resolved account information including credentials.
+type ResolvedAccount struct {
+	ConfigDir string // CLAUDE_CONFIG_DIR path
+	Handle    string // Account handle
+	AuthToken string // API auth token (if configured)
+	BaseURL   string // Custom API base URL (if configured)
+}
+
+// ResolveAccountFull resolves an account and returns all its configuration.
+// Priority order:
+//  1. GT_ACCOUNT environment variable
+//  2. accountFlag (from --account command flag)
+//  3. Default account from config
+//
+// Returns nil if no account configured or resolved.
+func ResolveAccountFull(accountsPath, accountFlag string) (*ResolvedAccount, error) {
+	// Load accounts config
+	cfg, loadErr := LoadAccountsConfig(accountsPath)
+	if loadErr != nil {
+		// No accounts configured - that's OK, return nil
+		return nil, nil
+	}
+
+	var acct *Account
+	var handle string
+
+	// Priority 1: GT_ACCOUNT env var
+	if envAccount := os.Getenv("GT_ACCOUNT"); envAccount != "" {
+		acct = cfg.GetAccount(envAccount)
+		if acct == nil {
+			return nil, fmt.Errorf("GT_ACCOUNT '%s' not found in accounts config", envAccount)
+		}
+		handle = envAccount
+	}
+
+	// Priority 2: --account flag
+	if acct == nil && accountFlag != "" {
+		acct = cfg.GetAccount(accountFlag)
+		if acct == nil {
+			return nil, fmt.Errorf("account '%s' not found in accounts config", accountFlag)
+		}
+		handle = accountFlag
+	}
+
+	// Priority 3: Default account
+	if acct == nil && cfg.Default != "" {
+		acct = cfg.GetDefaultAccount()
+		handle = cfg.Default
+	}
+
+	if acct == nil {
+		return nil, nil
+	}
+
+	return &ResolvedAccount{
+		ConfigDir: expandPath(acct.ConfigDir),
+		Handle:    handle,
+		AuthToken: acct.AuthToken,
+		BaseURL:   acct.BaseURL,
+	}, nil
 }
 
 // expandPath expands ~ to home directory.

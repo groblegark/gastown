@@ -567,7 +567,7 @@ func TestValidateAccountCredentials(t *testing.T) {
 	t.Parallel()
 
 	t.Run("empty configDir returns nil", func(t *testing.T) {
-		err := ValidateAccountCredentials("", "")
+		err := ValidateAccountCredentials("", "", "")
 		if err != nil {
 			t.Errorf("ValidateAccountCredentials with empty configDir should return nil, got %v", err)
 		}
@@ -575,7 +575,7 @@ func TestValidateAccountCredentials(t *testing.T) {
 
 	t.Run("missing credentials returns error", func(t *testing.T) {
 		dir := t.TempDir()
-		err := ValidateAccountCredentials(dir, "testaccount")
+		err := ValidateAccountCredentials(dir, "testaccount", "")
 		if err == nil {
 			t.Error("ValidateAccountCredentials should return error when credentials are missing")
 		}
@@ -597,9 +597,18 @@ func TestValidateAccountCredentials(t *testing.T) {
 			t.Fatalf("failed to create test credentials file: %v", err)
 		}
 
-		err := ValidateAccountCredentials(dir, "testaccount")
+		err := ValidateAccountCredentials(dir, "testaccount", "")
 		if err != nil {
 			t.Errorf("ValidateAccountCredentials with valid credentials should return nil, got %v", err)
+		}
+	})
+
+	t.Run("auth token bypasses credentials check", func(t *testing.T) {
+		dir := t.TempDir()
+		// No .credentials.json file, but auth token is provided
+		err := ValidateAccountCredentials(dir, "testaccount", "sk-ant-test-token")
+		if err != nil {
+			t.Errorf("ValidateAccountCredentials with auth token should return nil, got %v", err)
 		}
 	})
 }

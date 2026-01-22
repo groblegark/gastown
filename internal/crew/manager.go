@@ -52,6 +52,14 @@ type StartOptions struct {
 
 	// AgentOverride specifies an alternate agent alias (e.g., for testing).
 	AgentOverride string
+
+	// AuthToken is the API authentication token (ANTHROPIC_AUTH_TOKEN).
+	// If set, enables API key authentication instead of OAuth.
+	AuthToken string
+
+	// BaseURL is the custom API base URL (ANTHROPIC_BASE_URL).
+	// If set, overrides the default API endpoint.
+	BaseURL string
 }
 
 // validateCrewName checks that a crew name is safe and valid.
@@ -611,6 +619,8 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 		TownRoot:         townRoot,
 		RuntimeConfigDir: opts.ClaudeConfigDir,
 		BeadsNoDaemon:    true,
+		AuthToken:        opts.AuthToken,
+		BaseURL:          opts.BaseURL,
 	})
 	for k, v := range envVars {
 		_ = t.SetEnvironment(sessionID, k, v)

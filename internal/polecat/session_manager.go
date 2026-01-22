@@ -63,6 +63,14 @@ type SessionStartOptions struct {
 	// RuntimeConfigDir is resolved config directory for the runtime account.
 	// If set, this is injected as an environment variable.
 	RuntimeConfigDir string
+
+	// AuthToken is the API authentication token (ANTHROPIC_AUTH_TOKEN).
+	// If set, enables API key authentication instead of OAuth.
+	AuthToken string
+
+	// BaseURL is the custom API base URL (ANTHROPIC_BASE_URL).
+	// If set, overrides the default API endpoint.
+	BaseURL string
 }
 
 // SessionInfo contains information about a running polecat session.
@@ -189,6 +197,17 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	if runtimeConfig.Session != nil && runtimeConfig.Session.ConfigDirEnv != "" && opts.RuntimeConfigDir != "" {
 		command = config.PrependEnv(command, map[string]string{runtimeConfig.Session.ConfigDirEnv: opts.RuntimeConfigDir})
 	}
+	// Prepend API auth env vars if configured (for API key authentication)
+	authEnvVars := make(map[string]string)
+	if opts.AuthToken != "" {
+		authEnvVars["ANTHROPIC_AUTH_TOKEN"] = opts.AuthToken
+	}
+	if opts.BaseURL != "" {
+		authEnvVars["ANTHROPIC_BASE_URL"] = opts.BaseURL
+	}
+	if len(authEnvVars) > 0 {
+		command = config.PrependEnv(command, authEnvVars)
+	}
 
 	// Create session with command directly to avoid send-keys race condition.
 	// See: https://github.com/anthropics/gastown/issues/280
@@ -206,6 +225,8 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		TownRoot:         townRoot,
 		RuntimeConfigDir: opts.RuntimeConfigDir,
 		BeadsNoDaemon:    true,
+		AuthToken:        opts.AuthToken,
+		BaseURL:          opts.BaseURL,
 	})
 	for k, v := range envVars {
 		debugSession("SetEnvironment "+k, m.tmux.SetEnvironment(sessionID, k, v))
