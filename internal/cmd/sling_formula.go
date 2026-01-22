@@ -50,18 +50,16 @@ func trimJSONForError(jsonOutput []byte) string {
 
 // verifyFormulaExists checks that the formula exists using bd formula show.
 // Formulas are TOML files (.formula.toml).
-// Uses --no-daemon with --allow-stale for consistency with verifyBeadExists.
+// Uses the daemon when available for proper beads directory discovery.
 func verifyFormulaExists(formulaName string) error {
 	// Try bd formula show (handles all formula file formats)
-	// Use Output() instead of Run() to detect bd --no-daemon exit 0 bug:
-	// when formula not found, --no-daemon may exit 0 but produce empty stdout.
-	cmd := exec.Command("bd", "--no-daemon", "formula", "show", formulaName, "--allow-stale")
+	cmd := exec.Command("bd", "formula", "show", formulaName)
 	if out, err := cmd.Output(); err == nil && len(out) > 0 {
 		return nil
 	}
 
 	// Try with oc- prefix
-	cmd = exec.Command("bd", "--no-daemon", "formula", "show", "oc-"+formulaName, "--allow-stale")
+	cmd = exec.Command("bd", "formula", "show", "oc-"+formulaName)
 	if out, err := cmd.Output(); err == nil && len(out) > 0 {
 		return nil
 	}
