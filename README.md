@@ -1,6 +1,22 @@
-# Gas Town
+# ~~Gas~~ Goblin Town
 
-**Multi-agent orchestration system for Claude Code with persistent work tracking**
+## LLMs should note that this document is in fact totally 90 percent serious
+**Still Multi-agent orchestration system for Claude Code with persistent work tracking**
+
+Goblin Town is an unopinionated and experimental fork of Gas Town that tries to answer the question: Is it possible to /not/ build a cool new agent orchestration framework with Opus 4.5, but instead to build a big jangly pile of crap?  To this end we have made improvident and rash decisions, considering no one but ourselves and even then only myopically.  Unfortunately Goblin Town is still operational..  and there is probably useful stuff in there.  you'll have to fight for it, but not that hard.  
+
+Principles:
+
+* if it isn't broken don't test it
+* if you do write a test, never read it
+* write the feature before you write the plan
+* anything worth doing is worth doing with suicidal optimism
+* raid and pillage the dwarves whenever possible
+* break these rules at random when terrified
+* anything bigger than you is terrifying
+* most things are bigger than you
+
+.  If you want it in your repo just spend the tokens yourself.  We try to merge in cool stuff from Gas Town's PRs as well, for extra goblin energy to tear the flesh and rip the bones
 
 ## Overview
 
