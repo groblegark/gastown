@@ -85,18 +85,18 @@ func TestNewManager_PathConstruction(t *testing.T) {
 	}{
 		{
 			name:           "standard path",
-			townRoot:       "/home/user/gt",
-			wantKennelPath: "/home/user/gt/deacon/dogs",
+			townRoot:       filepath.Join("/home", "user", "gt"),
+			wantKennelPath: filepath.Join("/home", "user", "gt", "deacon", "dogs"),
 		},
 		{
 			name:           "path with trailing slash",
-			townRoot:       "/tmp/town/",
-			wantKennelPath: "/tmp/town/deacon/dogs",
+			townRoot:       filepath.Join("/tmp", "town") + string(filepath.Separator),
+			wantKennelPath: filepath.Join("/tmp", "town", "deacon", "dogs"),
 		},
 		{
 			name:           "nested path",
-			townRoot:       "/a/b/c/d/e",
-			wantKennelPath: "/a/b/c/d/e/deacon/dogs",
+			townRoot:       filepath.Join("/a", "b", "c", "d", "e"),
+			wantKennelPath: filepath.Join("/a", "b", "c", "d", "e", "deacon", "dogs"),
 		},
 	}
 
