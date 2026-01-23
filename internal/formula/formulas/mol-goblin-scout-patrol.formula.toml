@@ -1,0 +1,511 @@
+description = """
+Goblin Scout patrol loop - surveys GitHub forks for interesting divergences.
+
+The Goblin Scout is a research agent that monitors GitHub forks of configured
+repositories, identifying valuable commits worth cherry-picking or interesting
+divergent development that the upstream maintainers should know about.
+
+## Purpose
+
+Many forks contain valuable work that never gets upstreamed:
+- Bug fixes the author didn't PR
+- Features in active development
+- Performance improvements
+- Documentation enhancements
+
+The Goblin Scout finds these hidden gems and creates research beads for review.
+
+## Design Philosophy
+
+- **Discovery over tracking**: Score forks fresh each cycle using GitHub API
+- **Threshold-based interest**: Only flag forks scoring >= 5 points
+- **Differential updates**: Track new and trending forks since last scan
+- **Research beads**: Create beads for forks worth investigating
+- **Daily digest**: Summarize findings for the Mayor
+
+## Patrol Shape (Linear)
+
+```
+load-state -> fetch-forks -> analyze-divergence -> detect-changes
+                                                        |
+     +--------------------------------------------------+
+     v
+create-beads -> generate-report -> send-digest -> save-state -> schedule-next
+```
+
+## Scoring Heuristics
+
+| Factor                     | Points    |
+|---------------------------|-----------|
+| Commits ahead >20         | +3        |
+| Commits ahead >50         | +5        |
+| Commits ahead >100        | +10       |
+| Recent commit (<7 days)   | +3        |
+| Recent commit (<30 days)  | +2        |
+| 'feat' in commit msg      | +1 each   |
+| 'add' in commit msg       | +1 each   |
+| New directory added       | +3 each   |
+
+**Threshold**: Score >= 5 = "interesting"
+"""
+formula = "mol-goblin-scout-patrol"
+version = 1
+
+[[steps]]
+id = "load-state"
+title = "Load or initialize state"
+description = """
+Load the goblin scout state file, or initialize it if first run.
+
+**State file location**: `.beads/goblin_scout_state.json`
+
+**Step 1: Check if state file exists**
+```bash
+cat .beads/goblin_scout_state.json 2>/dev/null || echo "NOT_FOUND"
+```
+
+**Step 2: If NOT_FOUND, initialize default state**
+```bash
+mkdir -p .beads
+cat > .beads/goblin_scout_state.json << 'EOF'
+{
+  "repos": {},
+  "config": {
+    "min_score_threshold": 5,
+    "scan_repos": ["steveyegge/beads", "steveyegge/gastown"]
+  },
+  "last_scan": null,
+  "scan_count": 0
+}
+EOF
+```
+
+**Step 3: Parse state into working variables**
+- Extract `scan_repos` list for iteration
+- Extract `min_score_threshold` for scoring decisions
+- Note `last_scan` timestamp for differential detection
+
+**State Schema**:
+```json
+{
+  "repos": {
+    "<owner>/<repo>": {
+      "forks": {
+        "<fork-owner>/<fork-repo>": {
+          "score": 7,
+          "last_commit_sha": "abc123",
+          "commits_ahead": 45,
+          "research_bead": "gt-xyz789",
+          "first_seen": "2026-01-20T00:00:00Z",
+          "last_seen": "2026-01-23T00:00:00Z"
+        }
+      }
+    }
+  },
+  "config": {
+    "min_score_threshold": 5,
+    "scan_repos": ["steveyegge/beads", "steveyegge/gastown"]
+  },
+  "last_scan": "2026-01-22T00:00:00Z",
+  "scan_count": 42
+}
+```
+"""
+
+[[steps]]
+id = "fetch-forks"
+title = "Fetch forks from GitHub"
+needs = ["load-state"]
+description = """
+Query GitHub API for forks of each configured repository.
+
+**For each repo in scan_repos**:
+
+**Step 1: List all forks**
+```bash
+gh api repos/<owner>/<repo>/forks --paginate -q '.[] | {full_name, pushed_at, stargazers_count}'
+```
+
+This returns JSON with:
+- `full_name`: The fork's full name (e.g., "user/beads")
+- `pushed_at`: Last push timestamp
+- `stargazers_count`: Fork's stars (popularity signal)
+
+**Step 2: Filter out stale forks**
+Skip forks with no pushes in the last 180 days (6 months):
+```bash
+gh api repos/<owner>/<repo>/forks --paginate -q \
+  '.[] | select(.pushed_at > (now - 15552000 | strftime("%Y-%m-%dT%H:%M:%SZ"))) | .full_name'
+```
+
+**Step 3: Build fork list for analysis**
+Store list of active forks for the analyze-divergence step.
+
+**Rate limiting**: GitHub API has rate limits. If you encounter rate limiting:
+```bash
+gh api rate_limit -q '.rate.remaining'
+```
+If remaining < 100, wait before continuing or spread work across cycles.
+
+**Parallelism**: If scanning multiple repos, you can use Task tool subagents
+to fetch forks in parallel (one subagent per repo).
+"""
+
+[[steps]]
+id = "analyze-divergence"
+title = "Score forks by divergence"
+needs = ["fetch-forks"]
+description = """
+For each active fork, calculate an interest score based on divergence metrics.
+
+**For each fork in the active forks list**:
+
+**Step 1: Get divergence info**
+```bash
+gh api repos/<fork-owner>/<fork-repo>/compare/<upstream-owner>:main...<fork-owner>:main \
+  -q '{ahead_by: .ahead_by, behind_by: .behind_by, commits: [.commits[] | {sha: .sha, message: .commit.message, date: .commit.author.date}]}'
+```
+
+If the fork uses a different default branch (e.g., master):
+```bash
+gh api repos/<fork-owner>/<fork-repo> -q '.default_branch'
+```
+
+**Step 2: Calculate score**
+
+Initialize score = 0
+
+Commits ahead scoring:
+- If ahead_by > 100: score += 10
+- Else if ahead_by > 50: score += 5
+- Else if ahead_by > 20: score += 3
+
+Recent activity scoring (based on most recent commit date):
+- If most_recent_commit < 7 days ago: score += 3
+- Else if most_recent_commit < 30 days ago: score += 2
+
+Commit message analysis (for each commit message):
+- If contains 'feat': score += 1 (max 5)
+- If contains 'add': score += 1 (max 5)
+- If contains 'fix': score += 0.5 (max 2)
+
+**Step 3: Check for new directories**
+```bash
+gh api repos/<fork-owner>/<fork-repo>/compare/<upstream-owner>:main...<fork-owner>:main \
+  -q '.files[] | select(.status == "added") | .filename' | \
+  cut -d'/' -f1 | sort -u
+```
+If new top-level directories exist: score += 3 per new directory (max 9)
+
+**Step 4: Store fork data**
+For forks scoring >= min_score_threshold, record:
+- full_name
+- score
+- commits_ahead (ahead_by)
+- last_commit_sha (most recent commit)
+- key_commits (list of interesting commit messages)
+
+**Parallelism**: Use Task tool subagents to analyze multiple forks concurrently.
+Each fork analysis is independent - ideal for parallel execution.
+"""
+
+[[steps]]
+id = "detect-changes"
+title = "Detect new and trending forks"
+needs = ["analyze-divergence"]
+description = """
+Compare current scan results to previous state to identify changes.
+
+**Step 1: Identify NEW interesting forks**
+Forks that:
+- Score >= threshold now
+- Were NOT in previous state OR scored < threshold before
+
+Mark these as `new_forks` for bead creation.
+
+**Step 2: Identify TRENDING forks**
+Forks that:
+- Were interesting before (in state)
+- Commits ahead increased by >= 10 since last scan
+- Score increased by >= 3 since last scan
+
+Mark these as `trending_forks` for potential bead update.
+
+**Step 3: Identify GRADUATED forks**
+Forks that:
+- Were interesting before
+- Now score < threshold (went stale)
+
+These should be noted but no action needed.
+
+**Step 4: Compile change summary**
+```
+New interesting forks: N
+Trending forks: M
+Graduated (stale): P
+Total interesting: Q
+```
+
+This summary will be used for the digest email.
+"""
+
+[[steps]]
+id = "create-beads"
+title = "Create research beads for findings"
+needs = ["detect-changes"]
+description = """
+Create research beads for new interesting forks.
+
+**For each fork in new_forks**:
+
+**Step 1: Create a research bead**
+```bash
+bd create --title "Fork research: <fork-full-name>" \
+  --description "Interesting fork of <upstream-repo> with <commits-ahead> commits ahead.
+
+## Key Commits
+<list of interesting commits with messages>
+
+## Scoring
+- Score: <score>
+- Commits ahead: <ahead_by>
+- Last activity: <last_commit_date>
+- New directories: <list if any>
+
+## Investigation Notes
+_To be filled by researcher_
+
+## Decision
+[ ] Cherry-pick specific commits
+[ ] Watch for future development
+[ ] Contact fork author
+[ ] Not actionable
+" \
+  --type=research \
+  --labels="goblin:fork,upstream:<upstream-repo>,fork:<fork-owner>"
+```
+
+**Step 2: Record bead ID in state**
+Store the bead ID in the fork's `research_bead` field for future reference.
+
+**For trending forks with existing beads**:
+
+Consider adding a comment to existing bead:
+```bash
+bd comment <research-bead-id> "Update: Fork now has <new-commits-ahead> commits ahead (+<delta>). Score: <new-score> (+<score-delta>)"
+```
+
+**Batching**: If many new forks, consider creating beads in batches to avoid
+overwhelming the research queue. Priority order by score (highest first).
+"""
+
+[[steps]]
+id = "generate-report"
+title = "Generate markdown report"
+needs = ["create-beads"]
+description = """
+Generate a markdown report of this scan's findings.
+
+**Step 1: Create reports directory if needed**
+```bash
+mkdir -p .beads/reports
+```
+
+**Step 2: Generate report file**
+```bash
+DATE=$(date +%Y-%m-%d)
+cat > .beads/reports/goblin_scout_${DATE}.md << 'EOF'
+# Goblin Scout Report - ${DATE}
+
+## Summary
+- Repositories scanned: <count>
+- Total forks analyzed: <count>
+- Interesting forks found: <count>
+- New since last scan: <count>
+- Trending forks: <count>
+
+## New Interesting Forks
+
+### <fork-full-name> (Score: <score>)
+- **Upstream**: <upstream-repo>
+- **Commits ahead**: <ahead_by>
+- **Last activity**: <last_commit_date>
+- **Research bead**: <bead-id>
+- **Key commits**:
+  - <commit-sha[:7]>: <commit-message>
+  - ...
+
+---
+
+## Trending Forks
+
+### <fork-full-name> (Score: <score>, +<delta>)
+- **Commits ahead**: <ahead_by> (+<commits-delta>)
+- **Last activity**: <last_commit_date>
+
+---
+
+## All Interesting Forks
+
+| Fork | Upstream | Score | Ahead | Last Activity |
+|------|----------|-------|-------|---------------|
+| <fork> | <upstream> | <score> | <ahead> | <date> |
+| ... | ... | ... | ... | ... |
+
+---
+
+Generated by Goblin Scout at <timestamp>
+EOF
+```
+
+**Step 3: Symlink latest report**
+```bash
+ln -sf goblin_scout_${DATE}.md .beads/reports/goblin_scout_latest.md
+```
+"""
+
+[[steps]]
+id = "send-digest"
+title = "Send digest to Mayor"
+needs = ["generate-report"]
+description = """
+If there are findings worth reporting, send a digest email to the Mayor.
+
+**Step 1: Check if digest is needed**
+Skip if:
+- No new interesting forks
+- No trending forks
+- Nothing notable changed
+
+**Step 2: Compose digest mail**
+```bash
+gt mail send mayor/ -s "GOBLIN_SCOUT: Fork digest - <date>" -m "
+# Fork Scan Summary
+
+**Repositories scanned**: <count>
+**New interesting forks**: <new_count>
+**Trending forks**: <trending_count>
+
+## Highlights
+
+### New Forks Worth Investigating
+<for each new fork>
+- **<fork-full-name>** (score: <score>)
+  - <commits_ahead> commits ahead of <upstream>
+  - Research bead: <bead-id>
+</for>
+
+### Trending Activity
+<for each trending fork>
+- **<fork-full-name>**: +<commit-delta> commits, score now <score>
+</for>
+
+---
+
+Full report: .beads/reports/goblin_scout_<date>.md
+"
+```
+
+**Step 3: Archive any replies**
+Check inbox for Mayor responses:
+```bash
+gt mail inbox
+```
+Handle any configuration changes or priority overrides from Mayor.
+"""
+
+[[steps]]
+id = "save-state"
+title = "Persist state for next scan"
+needs = ["send-digest"]
+description = """
+Save the updated state file for the next patrol cycle.
+
+**Step 1: Update state structure**
+- Update `repos.<repo>.forks` with current scan data
+- Update `last_scan` to current timestamp
+- Increment `scan_count`
+- Preserve fork history (first_seen dates, research_bead IDs)
+
+**Step 2: Write state file**
+```bash
+cat > .beads/goblin_scout_state.json << 'EOF'
+{
+  "repos": {
+    <updated repos data>
+  },
+  "config": {
+    "min_score_threshold": 5,
+    "scan_repos": ["steveyegge/beads", "steveyegge/gastown"]
+  },
+  "last_scan": "<current-timestamp>",
+  "scan_count": <previous + 1>
+}
+EOF
+```
+
+**Step 3: Validate state file**
+```bash
+jq . .beads/goblin_scout_state.json > /dev/null && echo "State valid"
+```
+
+**Cleanup old data**:
+- Remove forks from state that haven't been seen in 30+ days
+- This keeps state file manageable over time
+"""
+
+[[steps]]
+id = "schedule-next"
+title = "Schedule next patrol cycle"
+needs = ["save-state"]
+description = """
+End of patrol cycle - decide whether to continue or handoff.
+
+**Step 1: Check context usage**
+If context is HIGH (>80%):
+- Write handoff mail with scan summary
+- Exit for respawn
+
+If context is LOW:
+- Can continue to next cycle
+
+**Step 2: Calculate next scan time**
+Default: Daily scans (every 24 hours)
+If last scan was < 20 hours ago, sleep until 24h mark.
+
+**Step 3a: If context LOW and not time for next scan**
+Create a timer gate to wake up for next scan:
+```bash
+# Calculate seconds until next scan
+NEXT_SCAN=$(date -d "tomorrow 06:00" +%s)
+NOW=$(date +%s)
+SLEEP_SECS=$((NEXT_SCAN - NOW))
+
+# Handoff with wake time
+gt handoff -s "Goblin Scout sleeping until next scan" \
+  -m "Scan complete. <findings-summary>
+
+Next scan scheduled for: $(date -d @$NEXT_SCAN)
+
+State saved to: .beads/goblin_scout_state.json
+Latest report: .beads/reports/goblin_scout_latest.md"
+```
+
+**Step 3b: If time for next scan now**
+1. Squash current wisp:
+```bash
+bd mol squash <mol-id> --summary "<scan-summary>"
+```
+
+2. Create new patrol wisp:
+```bash
+bd mol wisp mol-goblin-scout-patrol
+```
+
+3. Continue from load-state step
+
+**IMPORTANT**: Never leave session idle. Either:
+- Continue patrol loop (context LOW, scan time)
+- Handoff with scheduled wake (context LOW, not scan time)
+- Exit for respawn (context HIGH)
+"""
