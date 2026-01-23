@@ -218,8 +218,17 @@ func validateRigSettings(c *RigSettings) error {
 // ErrInvalidOnConflict indicates an invalid on_conflict strategy.
 var ErrInvalidOnConflict = errors.New("invalid on_conflict strategy")
 
+// ErrInvalidMergeStrategy indicates an invalid merge strategy.
+var ErrInvalidMergeStrategy = errors.New("invalid merge strategy")
+
 // validateMergeQueueConfig validates a MergeQueueConfig.
 func validateMergeQueueConfig(c *MergeQueueConfig) error {
+	// Validate merge strategy if specified
+	if c.Strategy != "" && !IsValidMergeStrategy(c.Strategy) {
+		return fmt.Errorf("%w: got '%s', valid values are: %v",
+			ErrInvalidMergeStrategy, c.Strategy, ValidMergeStrategies())
+	}
+
 	// Validate on_conflict strategy
 	if c.OnConflict != "" && c.OnConflict != OnConflictAssignBack && c.OnConflict != OnConflictAutoRebase {
 		return fmt.Errorf("%w: got '%s', want '%s' or '%s'",
@@ -239,6 +248,11 @@ func validateMergeQueueConfig(c *MergeQueueConfig) error {
 	}
 	if c.MaxConcurrent < 0 {
 		return fmt.Errorf("%w: max_concurrent must be non-negative", ErrMissingField)
+	}
+
+	// Validate PR options only apply to PR strategies
+	if c.PROptions != nil && !IsPRStrategy(c.Strategy) && c.Strategy != "" {
+		return fmt.Errorf("pr_options can only be used with PR strategies (pr_to_main, pr_to_branch), got strategy '%s'", c.Strategy)
 	}
 
 	return nil

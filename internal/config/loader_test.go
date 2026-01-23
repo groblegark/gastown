@@ -341,6 +341,63 @@ func TestRigSettingsValidation(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "valid merge strategy direct_merge",
+			settings: &RigSettings{
+				Type:    "rig-settings",
+				Version: 1,
+				MergeQueue: &MergeQueueConfig{
+					Strategy: StrategyDirectMerge,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid merge strategy pr_to_main",
+			settings: &RigSettings{
+				Type:    "rig-settings",
+				Version: 1,
+				MergeQueue: &MergeQueueConfig{
+					Strategy: StrategyPRToMain,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid merge strategy",
+			settings: &RigSettings{
+				Type:    "rig-settings",
+				Version: 1,
+				MergeQueue: &MergeQueueConfig{
+					Strategy: "invalid_strategy",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "pr_options with non-PR strategy",
+			settings: &RigSettings{
+				Type:    "rig-settings",
+				Version: 1,
+				MergeQueue: &MergeQueueConfig{
+					Strategy:  StrategyDirectMerge,
+					PROptions: &PROptions{AutoMerge: true},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "pr_options with PR strategy is valid",
+			settings: &RigSettings{
+				Type:    "rig-settings",
+				Version: 1,
+				MergeQueue: &MergeQueueConfig{
+					Strategy:  StrategyPRToMain,
+					PROptions: &PROptions{AutoMerge: true, Labels: []string{"automated"}},
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -359,6 +416,9 @@ func TestDefaultMergeQueueConfig(t *testing.T) {
 
 	if !cfg.Enabled {
 		t.Error("Enabled should be true by default")
+	}
+	if cfg.Strategy != StrategyDirectMerge {
+		t.Errorf("Strategy = %q, want %q", cfg.Strategy, StrategyDirectMerge)
 	}
 	if cfg.TargetBranch != "main" {
 		t.Errorf("TargetBranch = %q, want 'main'", cfg.TargetBranch)
