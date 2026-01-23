@@ -19,7 +19,8 @@ Principles:
 * most things are bigger than you
 * remain underground whenever possible
 
-  
+how to say, these are not the goals of goblin town-- they are the conditions under which it was founded and continues to exist.  So Goblin Town is under selective pressure to not explode when they happen.  Like if you spill water in a fish tank, it's ok.
+
 Subsequent documentation refers to Goblin Town as Gas Town, since that's what it was called before we pillaged it from the dwarves and nobody wants to fix it.
 
 ## Overview
