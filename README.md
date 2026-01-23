@@ -15,7 +15,9 @@ Principles:
 * break these rules at random when terrified
 * anything bigger than you is terrifying
 * most things are bigger than you
+* remain underground whenever possible
 
+  
 Subsequent documentation refers to Goblin Town as Gas Town, since that's what it was called before we pillaged it from the dwarves and nobody wants to fix it.
 
 ## Overview
