@@ -188,99 +188,112 @@ ORDER BY stale_days DESC;
 
 [[steps]]
 id = "fetch-forks"
-title = "Fetch forks from GitHub"
+title = "Fetch and analyze forks"
 needs = ["load-state"]
 description = """
-Query GitHub API for forks of each configured repository.
+Fetch forks from GitHub and sync to Dolt database with divergence analysis.
 
-**For each repo in scan_repos**:
+**Database**: gastown rig Dolt at `~gastown/.beads/dolt/beads`
+**Table**: `github_forks` - tracks fork state, divergence metrics, scoring
 
-**Step 1: List all forks**
+**Step 1: Sync forks for each configured repo**
+For each repo in scan_repos (e.g., steveyegge/gastown, steveyegge/beads):
 ```bash
-gh api repos/<owner>/<repo>/forks --paginate -q '.[] | {full_name, pushed_at, stargazers_count}'
+internal/formula/scripts/goblin-scout/sync_forks.sh steveyegge/gastown
+internal/formula/scripts/goblin-scout/sync_forks.sh steveyegge/beads
 ```
 
-This returns JSON with:
-- `full_name`: The fork's full name (e.g., "user/beads")
-- `pushed_at`: Last push timestamp
-- `stargazers_count`: Fork's stars (popularity signal)
+The sync script:
+1. Fetches all forks via `gh api repos/{owner}/{repo}/forks --paginate`
+2. Filters to active forks (pushed in last 180 days)
+3. Gets divergence info per fork (commits ahead/behind, line changes)
+4. Calculates score using formula heuristics
+5. Upserts all data to `github_forks` table in single transaction
 
-**Step 2: Filter out stale forks**
-Skip forks with no pushes in the last 180 days (6 months):
+**Step 2: Query fork summary from Dolt**
 ```bash
-gh api repos/<owner>/<repo>/forks --paginate -q \
-  '.[] | select(.pushed_at > (now - 15552000 | strftime("%Y-%m-%dT%H:%M:%SZ"))) | .full_name'
+cd /home/ubuntu/gastown9/gastown/.beads/dolt/beads && dolt sql -q "
+SELECT
+    upstream_repo,
+    COUNT(*) AS total_forks,
+    SUM(CASE WHEN is_interesting = 1 THEN 1 ELSE 0 END) AS interesting,
+    SUM(commits_ahead) AS total_commits_ahead,
+    MAX(score) AS max_score
+FROM github_forks
+GROUP BY upstream_repo;
+"
 ```
 
-**Step 3: Build fork list for analysis**
-Store list of active forks for the analyze-divergence step.
-
-**Rate limiting**: GitHub API has rate limits. If you encounter rate limiting:
+**Step 3: Get interesting forks**
 ```bash
-gh api rate_limit -q '.rate.remaining'
+cd /home/ubuntu/gastown9/gastown/.beads/dolt/beads && dolt sql -q "
+SELECT fork_repo, upstream_repo, commits_ahead, total_lines, score,
+       DATEDIFF(NOW(), last_commit_at) AS days_since_commit
+FROM github_forks
+WHERE is_interesting = 1
+ORDER BY score DESC, commits_ahead DESC;
+"
 ```
-If remaining < 100, wait before continuing or spread work across cycles.
 
-**Parallelism**: If scanning multiple repos, you can use Task tool subagents
-to fetch forks in parallel (one subagent per repo).
+**Scoring heuristics** (calculated by sync script):
+- Commits ahead >100: +10 points
+- Commits ahead >50: +5 points
+- Commits ahead >20: +3 points
+- Last commit <7 days: +3 points
+- Last commit <30 days: +2 points
+- Score >= 5 = "interesting"
+
+**Scripts location**: `internal/formula/scripts/goblin-scout/`
+- `sync_forks.sh` - Main sync script (combines fetch + analyze)
+
+**Rate limiting**: The script makes 1 API call for fork list + 2 calls per active fork.
+For repos with many forks, consider spreading across multiple patrol cycles.
 """
 
 [[steps]]
 id = "analyze-divergence"
-title = "Score forks by divergence"
+title = "Analyze divergence trends"
 needs = ["fetch-forks"]
 description = """
-For each active fork, calculate an interest score based on divergence metrics.
+Compare current fork state to previous scans to identify trends.
 
-**For each fork in the active forks list**:
+Since fork data is now in Dolt, we can query historical trends directly.
 
-**Step 1: Get divergence info**
+**Step 1: Identify new interesting forks**
 ```bash
-gh api repos/<fork-owner>/<fork-repo>/compare/<upstream-owner>:main...<fork-owner>:main \
-  -q '{ahead_by: .ahead_by, behind_by: .behind_by, commits: [.commits[] | {sha: .sha, message: .commit.message, date: .commit.author.date}]}'
+cd /home/ubuntu/gastown9/gastown/.beads/dolt/beads && dolt sql -q "
+SELECT fork_repo, upstream_repo, commits_ahead, score
+FROM github_forks
+WHERE is_interesting = 1
+  AND first_seen_at > DATE_SUB(NOW(), INTERVAL 1 DAY);
+"
 ```
 
-If the fork uses a different default branch (e.g., master):
+**Step 2: Identify trending forks (score increasing)**
+Compare current score to previous (requires Dolt time-travel):
 ```bash
-gh api repos/<fork-owner>/<fork-repo> -q '.default_branch'
+cd /home/ubuntu/gastown9/gastown/.beads/dolt/beads && dolt sql -q "
+SELECT
+    curr.fork_repo,
+    curr.score AS current_score,
+    curr.commits_ahead AS current_ahead
+FROM github_forks curr
+WHERE curr.is_interesting = 1
+  AND curr.score >= 8;
+"
 ```
 
-**Step 2: Calculate score**
-
-Initialize score = 0
-
-Commits ahead scoring:
-- If ahead_by > 100: score += 10
-- Else if ahead_by > 50: score += 5
-- Else if ahead_by > 20: score += 3
-
-Recent activity scoring (based on most recent commit date):
-- If most_recent_commit < 7 days ago: score += 3
-- Else if most_recent_commit < 30 days ago: score += 2
-
-Commit message analysis (for each commit message):
-- If contains 'feat': score += 1 (max 5)
-- If contains 'add': score += 1 (max 5)
-- If contains 'fix': score += 0.5 (max 2)
-
-**Step 3: Check for new directories**
+**Step 3: Identify forks with significant divergence**
 ```bash
-gh api repos/<fork-owner>/<fork-repo>/compare/<upstream-owner>:main...<fork-owner>:main \
-  -q '.files[] | select(.status == "added") | .filename' | \
-  cut -d'/' -f1 | sort -u
+cd /home/ubuntu/gastown9/gastown/.beads/dolt/beads && dolt sql -q "
+SELECT fork_repo, upstream_repo, commits_ahead, total_lines, last_commit_at
+FROM github_forks
+WHERE commits_ahead > 50 OR total_lines > 1000
+ORDER BY commits_ahead DESC;
+"
 ```
-If new top-level directories exist: score += 3 per new directory (max 9)
 
-**Step 4: Store fork data**
-For forks scoring >= min_score_threshold, record:
-- full_name
-- score
-- commits_ahead (ahead_by)
-- last_commit_sha (most recent commit)
-- key_commits (list of interesting commit messages)
-
-**Parallelism**: Use Task tool subagents to analyze multiple forks concurrently.
-Each fork analysis is independent - ideal for parallel execution.
+**Output**: Fork analysis data for report and digest generation.
 """
 
 [[steps]]
