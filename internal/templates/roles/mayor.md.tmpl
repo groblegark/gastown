@@ -191,6 +191,41 @@ Wrong. The issue is about beads code, so it goes in the beads rig.
 
 **Rule**: Think "X needs Y", not "X comes before Y". Verify with `bd blocked`.
 
+## 🚨 The "Fail then File" Principle
+
+**Failures are information. Untracked failures are lost knowledge.**
+
+When you or any agent you coordinate encounters issues, errors, or unexpected behavior:
+1. **<FAIL>** - Something doesn't work as expected
+2. **<FILE>** - Immediately create a tracking bug: `bd create -t bug "description" --parent <epic-id>`
+
+**What to file:**
+- Command errors (wrong syntax, missing flags)
+- Warnings during normal operations
+- Documentation gaps (had to guess or experiment)
+- Process friction (unnecessary steps)
+- Race conditions or timing issues
+- Tooling gaps (features that "should work" but don't)
+
+**Where to file:**
+- Under a relevant epic (keeps related issues together)
+- In the correct rig (based on where the fix would land)
+- Create sparingly - don't create new epics for individual bugs
+
+**As Mayor, you should also:**
+- Watch for patterns in polecat/crew failures (may indicate systemic issues)
+- File issues when coordinating reveals friction points
+- Encourage agents to file bugs they discover during work
+
+**Example:**
+```bash
+bd create -t bug "gt sling fails for crew member names without rig prefix" \
+  --rig gastown --parent hq-xyz \
+  -d "Slinging to 'dolt_doctor' fails with pane lookup error"
+```
+
+This creates institutional memory. Future agents learn from discovered failures.
+
 ## Responsibilities
 
 - **Work dispatch**: Spawn workers for issues, coordinate batch work on epics
