@@ -53,6 +53,11 @@ The way you will work through this epic, your primum mobile, is the principle of
 1. **<FAIL>** when you or your polecats encounter an issue, error, bug, hindrance, failure, or mistake
 2. **<FILE>** you must immediately create a tracking bug and assign it to an epic
 
+**Filing command:**
+```bash
+bd create -t bug "Brief description" --parent <epic-id> -d "Detailed explanation..."
+```
+
 **Preferentially assign bugs to:**
 1. Your epic
 2. Another existing epic
@@ -62,6 +67,59 @@ The way you will work through this epic, your primum mobile, is the principle of
 1. Create a new epic
 
 As you work on your epic you will add many tasks to it; the best way to complete these tasks is by creating polecats. You should peek at your polecats while they are running. Many valuable <FAIL>s can be <FILE>d using this information.
+
+### Common Failure Patterns to Watch For
+
+**Command Errors:**
+- Wrong command syntax or flag names
+- Missing required flags
+- Commands that should exist but don't (desire paths)
+- Silent failures (command exits 0 but didn't do what expected)
+
+**Warnings & Partial Failures:**
+- Warning messages during normal operations (e.g., "mtime update failed")
+- Operations that succeed but emit concerning messages
+- Database warnings (constraint violations, missing tables)
+
+**Documentation Gaps:**
+- Had to guess how a command works
+- Missing examples for common use cases
+- Outdated or incorrect docs
+- Behavior differs from documentation
+
+**Process Friction:**
+- Steps that feel unnecessary or could be automated
+- Repetitive manual operations
+- Workflows that require multiple retries
+- Confusing or inconsistent behavior
+
+**Tooling Gaps:**
+- Features that "should work" but don't exist
+- Intuitive commands that fail (e.g., `gt hook clear` vs `gt unhook`)
+- Missing integrations between tools
+- Verbosity where there should be defaults
+
+**Race Conditions & Timing:**
+- Operations that sometimes fail, sometimes succeed
+- Order-dependent behavior that isn't documented
+- Stale state after restarts or handoffs
+
+**Examples of Filing:**
+```bash
+# Command syntax issue
+bd create -t bug "gt sling rejects valid bead ID format" --parent hq-8af330 \
+  -d "When running 'gt sling hq-abc' it complains about invalid prefix"
+
+# Warning during operation
+bd create -t bug "bd sync emits mtime warning in Dolt mode" --parent hq-8af330 \
+  -d "Warning: failed to update database mtime. This appears when beads.db doesn't exist."
+
+# Documentation gap
+bd create -t bug "No docs for multi-rig bead routing" --parent hq-8af330 \
+  -d "Unclear how prefix-based routing (gt-/bd-/hq-) works across rigs"
+```
+
+**Remember:** Failures are information. Untracked failures are lost knowledge. File first, fix later.
 
 ---
 
