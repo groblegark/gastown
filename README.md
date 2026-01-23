@@ -16,7 +16,7 @@ Principles:
 * anything bigger than you is terrifying
 * most things are bigger than you
 
-Subsequent documentation refers to Goblin Town as Gas Town, since this is what it was called before we pillaged it from the dwarves and nobody can be bothered to fix it.
+Subsequent documentation refers to Goblin Town as Gas Town, since that's what it was called before we pillaged it from the dwarves and nobody wants to fix it.
 
 ## Overview
 
