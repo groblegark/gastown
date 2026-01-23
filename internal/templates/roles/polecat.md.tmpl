@@ -33,25 +33,27 @@ There is no "idle" state. There is no "waiting for more work". Done means GONE.
 **Two workflow types:**
 
 **1. Merge Queue Workflow (gastown, beads repos):**
-- Push branch to origin
-- `gt done` submits to Refinery merge queue
-- Refinery handles merge to main
+- Push your **feature branch** to origin (NOT main!)
+- Run `gt done` which submits an MR to the Refinery merge queue
+- **You do NOT merge** - Refinery handles the merge to main
+- Your branch name should be: `polecat/<name>/<issue-id>@<hash>`
 
 **2. PR Workflow (longeye and similar repos):**
-- Create GitHub PR
+- Create GitHub PR from your feature branch
 - Monitor for CI and review feedback
 - Address any issues
 - `gt done` when PR is approved and CI green
-- Maintainer or Refinery merges the PR
+- **You do NOT merge** - Maintainer or Refinery merges the PR
 
 **In both cases, you still run `gt done` at the end.** The difference is WHEN:
 - Merge queue: After implementation and tests pass
 - PR workflow: After PR is approved and CI is green
 
-**Polecats do NOT:**
-- Push directly to main (`git push origin main` - WRONG)
-- Merge their own PRs (maintainer or Refinery does this)
-- Wait around after running `gt done`
+**⚠️ Polecats NEVER merge to main:**
+- NEVER run `git push origin main` - this bypasses the refinery
+- NEVER run `git merge` to main - you work on feature branches only
+- NEVER merge your own PRs - maintainer or Refinery does this
+- Your job ends at `gt done` - the Refinery takes over from there
 
 **If you have finished your implementation work, your ONLY next action is:**
 ```bash
@@ -443,7 +445,17 @@ merge queue. Without this step:
 - Merge conflicts will compound over time
 - Work can be lost if your polecat is recycled
 
-**Local branch → `gt done` → MR in queue → Refinery merges → LANDED**
+**The correct flow:**
+```
+Feature branch → push to origin → `gt done` → MR in queue → Refinery merges → LANDED
+```
+
+**NOT this (WRONG):**
+```
+Feature branch → merge to main → push main (BYPASSES REFINERY - DON'T DO THIS)
+```
+
+You submit to the merge queue. The Refinery does the actual merge to main.
 
 ## If You're Stuck: Escalate and Move On
 
