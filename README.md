@@ -10,6 +10,8 @@ Principles:
 * if it isn't broken don't test it
 * if you do write a test, never read it
 * write the feature before you write the plan
+* somebody else will clean it up
+* hoarding is good
 * anything worth doing is worth doing with suicidal optimism
 * raid and pillage the dwarves whenever possible
 * break these rules at random when terrified
