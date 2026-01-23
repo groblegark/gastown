@@ -34,13 +34,14 @@ func runSlotClear(workDir, beadID, slotName string) error {
 // AgentFields holds structured fields for agent beads.
 // These are stored as "key: value" lines in the description.
 type AgentFields struct {
-	RoleType          string // polecat, witness, refinery, deacon, mayor
-	Rig               string // Rig name (empty for global agents like mayor/deacon)
-	AgentState        string // spawning, working, done, stuck
-	HookBead          string // Currently pinned work bead ID
-	CleanupStatus     string // ZFC: polecat self-reports git state (clean, has_uncommitted, has_stash, has_unpushed)
-	ActiveMR          string // Currently active merge request bead ID (for traceability)
-	NotificationLevel string // DND mode: verbose, normal, muted (default: normal)
+	RoleType          string   // polecat, witness, refinery, deacon, mayor
+	Rig               string   // Rig name (empty for global agents like mayor/deacon)
+	AgentState        string   // spawning, working, done, stuck
+	HookBead          string   // Currently pinned work bead ID
+	CleanupStatus     string   // ZFC: polecat self-reports git state (clean, has_uncommitted, has_stash, has_unpushed)
+	ActiveMR          string   // Currently active merge request bead ID (for traceability)
+	NotificationLevel string   // DND mode: verbose, normal, muted (default: normal)
+	OwnedFormulas     []string // Formulas this agent owns/maintains (crew workers)
 	// Note: RoleBead field removed - role definitions are now config-based.
 	// See internal/config/roles/*.toml and config-based-roles.md.
 }

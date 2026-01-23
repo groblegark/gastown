@@ -589,6 +589,21 @@ func expandPath(path string) string {
 	return path
 }
 
+// ValidateAccountCredentials checks if an account has valid credentials.
+// Returns nil if credentials are valid or if no account is specified.
+// This prevents OAuth prompts from appearing in automated agent sessions.
+func ValidateAccountCredentials(configDir, accountHandle string) error {
+	if configDir == "" {
+		return nil // No account configured, let Claude handle auth
+	}
+	// Check for credentials.json in the config directory
+	credPath := filepath.Join(configDir, "credentials.json")
+	if _, err := os.Stat(credPath); os.IsNotExist(err) {
+		return fmt.Errorf("account '%s' has no credentials - run 'claude login' first", accountHandle)
+	}
+	return nil
+}
+
 // LoadMessagingConfig loads and validates a messaging configuration file.
 func LoadMessagingConfig(path string) (*MessagingConfig, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed internally, not from user input

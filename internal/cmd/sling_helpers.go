@@ -459,6 +459,18 @@ func isPolecatTarget(target string) bool {
 	return len(parts) >= 3 && parts[1] == "polecats"
 }
 
+// parseCrewTarget parses a crew target string and returns the rig name and crew name.
+// Returns (rigName, crewName, true) if the target is a valid crew target format "rig/crew/name".
+// Returns ("", "", false) otherwise.
+// This is used to detect and auto-start stopped crew sessions when slinging work.
+func parseCrewTarget(target string) (rigName, crewName string, ok bool) {
+	parts := strings.Split(target, "/")
+	if len(parts) == 3 && parts[1] == "crew" {
+		return parts[0], parts[2], true
+	}
+	return "", "", false
+}
+
 // FormulaOnBeadResult contains the result of instantiating a formula on a bead.
 type FormulaOnBeadResult struct {
 	WispRootID string // The wisp root ID (compound root after bonding)

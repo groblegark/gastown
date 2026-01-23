@@ -420,7 +420,7 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 		if _, err := os.Stat(sourceBeadsDB); os.IsNotExist(err) {
 			// Check if town-level beads uses Dolt backend - inherit it
 			townBeadsDir := filepath.Join(m.townRoot, ".beads")
-			townBackend := beads.GetStorageBackend(townBeadsDir)
+			townBackend := beads.DetectBackend(townBeadsDir)
 			initArgs := []string{"init", "--prefix", opts.BeadsPrefix, "--no-auto-import"} // opts.BeadsPrefix validated earlier
 			if townBackend == "dolt" {
 				initArgs = append(initArgs, "--backend", "dolt")
@@ -685,7 +685,7 @@ func (m *Manager) initBeads(rigPath, prefix string) error {
 
 	// Check if town-level beads uses Dolt backend - inherit it for new rigs
 	// Note: townBeadsDir is declared earlier for server mode check
-	townBackend := beads.GetStorageBackend(townBeadsDir)
+	townBackend := beads.DetectBackend(townBeadsDir)
 
 	// Run bd init with --no-auto-import to create database WITHOUT importing from JSONL.
 	// This allows us to configure custom types BEFORE the import runs (bd-3q6.10).
