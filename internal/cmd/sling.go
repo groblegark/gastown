@@ -487,6 +487,16 @@ func runSling(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Skill validation: check if target agent has required skills (soft warning)
+	skillResult := CheckSkillValidation(beadID, targetAgent)
+	if len(skillResult.MissingSkills) > 0 {
+		fmt.Printf("%s Target agent may lack required skills:\n", style.Warning.Render("⚠"))
+		for _, skill := range skillResult.MissingSkills {
+			fmt.Printf("  - %s (%s)\n", skill.Title, skill.ID)
+		}
+		fmt.Printf("  Use 'bd skill add %s <skill>' to register agent skills\n\n", targetAgent)
+	}
+
 	// Issue #288: Auto-apply mol-polecat-work when slinging bare bead to polecat.
 	// This ensures polecats get structured work guidance through formula-on-bead.
 	// Use --hook-raw-bead to bypass for expert/debugging scenarios.
