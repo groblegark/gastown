@@ -82,7 +82,11 @@ type PROptions struct {
 	Draft bool `json:"draft,omitempty"`
 }
 
-// Merge strategy constants
+// Merge queue strategies determine how the refinery lands completed work.
+// - direct_merge: Merge directly to target branch (no PR)
+// - pr_to_main: Create GitHub PR targeting main
+// - pr_to_branch: Create GitHub PR targeting specific branch
+// - direct_to_branch: Merge directly to specific branch (no PR)
 const (
 	StrategyDirectMerge    = "direct_merge"
 	StrategyPRToMain       = "pr_to_main"
