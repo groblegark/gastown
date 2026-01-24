@@ -187,10 +187,13 @@ func (t *Tmux) KillSessionWithProcesses(name string) error {
 		if pgid != "" && pgid != "0" && pgid != "1" {
 			// Kill process group with negative PGID (POSIX convention)
 			// Use SIGTERM first for graceful shutdown
-			_ = exec.Command("kill", "-TERM", "-"+pgid).Run()
+			// NOTE: The "--" is CRITICAL! Without it, procps-ng kill misparses
+			// "-PGID" as an option and ends up calling kill(-1) which kills
+			// ALL processes! See MURDER_INVESTIGATION.md for the full story.
+			_ = exec.Command("kill", "-TERM", "--", "-"+pgid).Run()
 			time.Sleep(100 * time.Millisecond)
 			// Force kill any remaining processes in the group
-			_ = exec.Command("kill", "-KILL", "-"+pgid).Run()
+			_ = exec.Command("kill", "-KILL", "--", "-"+pgid).Run()
 		}
 
 		// Also walk the process tree for any descendants that might have called setsid()
@@ -388,9 +391,12 @@ func (t *Tmux) KillPaneProcesses(pane string) error {
 	pgid := getProcessGroupID(pid)
 	if pgid != "" && pgid != "0" && pgid != "1" {
 		// Kill process group with negative PGID (POSIX convention)
-		_ = exec.Command("kill", "-TERM", "-"+pgid).Run()
+		// NOTE: The "--" is CRITICAL! Without it, procps-ng kill misparses
+		// "-PGID" as an option and ends up calling kill(-1) which kills
+		// ALL processes! See MURDER_INVESTIGATION.md for the full story.
+		_ = exec.Command("kill", "-TERM", "--", "-"+pgid).Run()
 		time.Sleep(100 * time.Millisecond)
-		_ = exec.Command("kill", "-KILL", "-"+pgid).Run()
+		_ = exec.Command("kill", "-KILL", "--", "-"+pgid).Run()
 	}
 
 	// Also walk the process tree for any descendants that might have called setsid()
@@ -820,29 +826,36 @@ func (t *Tmux) GetPanePID(session string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-// hasClaudeChild checks if a process has a child running claude/node.
+// hasClaudeChild checks if a process has a descendant running claude/node.
 // Used when the pane command is a shell (bash, zsh) that launched claude.
+//
+// IMPORTANT: This checks ALL descendants, not just direct children.
+// Claude is often started via wrapper scripts like:
+//   bash (pane) -> bash -c 'export ... && claude' -> claude
+// In this case, Claude is a grandchild, not a direct child.
+// Using only pgrep -P (direct children) would miss this case and cause
+// CleanupOrphanedSessions to kill sessions with running Claude agents.
 func hasClaudeChild(pid string) bool {
-	// Use pgrep to find child processes
-	cmd := exec.Command("pgrep", "-P", pid, "-l")
-	out, err := cmd.Output()
-	if err != nil {
+	// Get all descendant PIDs recursively
+	descendants := getAllDescendants(pid)
+	if len(descendants) == 0 {
 		return false
 	}
-	// Check if any child is node or claude
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
+
+	// Check each descendant's command name
+	for _, dpid := range descendants {
+		// Get the command name for this PID
+		out, err := exec.Command("ps", "-o", "comm=", "-p", dpid).Output()
+		if err != nil {
 			continue
 		}
-		// Format: "PID name" e.g., "29677 node"
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			name := parts[1]
-			if name == "node" || name == "claude" {
-				return true
-			}
+		name := strings.TrimSpace(string(out))
+		if name == "node" || name == "claude" {
+			return true
+		}
+		// Also check for version pattern (Claude Code shows version as process name)
+		if versionPattern.MatchString(name) {
+			return true
 		}
 	}
 	return false

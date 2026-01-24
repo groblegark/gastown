@@ -1,4 +1,4 @@
-.PHONY: build install clean test generate deploy
+.PHONY: build install clean test test-safe generate deploy
 
 BINARY := gt
 BUILD_DIR := .
@@ -53,3 +53,7 @@ clean:
 
 test:
 	go test ./...
+
+# Resource-constrained test mode: runs one package at a time with limited CPUs
+test-safe:
+	GOMAXPROCS=2 go test -p 1 -v ./...
