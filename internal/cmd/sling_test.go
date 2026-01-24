@@ -1310,3 +1310,123 @@ exit /b 0
 			"Log output:\n%s\nAttached log:\n%s", string(logBytes), attachedLog)
 	}
 }
+
+// TestCheckSkillValidation verifies the skill validation helper function.
+// It tests that when a bead requires skills and the target agent doesn't
+// provide them, the missing skills are correctly identified.
+func TestCheckSkillValidation(t *testing.T) {
+	townRoot := t.TempDir()
+
+	// Minimal workspace marker
+	if err := os.MkdirAll(filepath.Join(townRoot, "mayor", "rig"), 0755); err != nil {
+		t.Fatalf("mkdir mayor/rig: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(townRoot, ".beads"), 0755); err != nil {
+		t.Fatalf("mkdir .beads: %v", err)
+	}
+
+	// Create bin directory for stub
+	binDir := filepath.Join(townRoot, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("mkdir binDir: %v", err)
+	}
+
+	// Create a stub bd script that returns skill data
+	bdScript := `#!/bin/sh
+cmd="$1"
+if [ "$1" = "--no-daemon" ]; then
+  shift
+  cmd="$1"
+fi
+shift || true
+
+case "$cmd" in
+  skill)
+    sub="$1"
+    shift || true
+    case "$sub" in
+      required)
+        # Return two skills required
+        echo '[{"id":"skill-go-testing","title":"Go Testing"},{"id":"skill-pr-review","title":"PR Review"}]'
+        ;;
+      providers)
+        skill_id="$1"
+        if [ "$skill_id" = "skill-go-testing" ]; then
+          # Only gastown/crew/alpha provides go-testing
+          echo '[{"id":"gastown/crew/alpha","title":"Alpha"}]'
+        else
+          # No one provides pr-review
+          echo '[]'
+        fi
+        ;;
+    esac
+    ;;
+esac
+exit 0
+`
+	bdPath := writeBDStub(t, binDir, bdScript, "")
+
+	// Prepend our bin directory to PATH
+	oldPath := os.Getenv("PATH")
+	_ = os.Setenv("PATH", binDir+string(os.PathListSeparator)+oldPath)
+	t.Cleanup(func() { _ = os.Setenv("PATH", oldPath) })
+
+	// Change to town root so workspace.FindFromCwd() succeeds
+	oldWd, _ := os.Getwd()
+	_ = os.Chdir(townRoot)
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	// Verify stub is callable
+	if _, err := os.Stat(bdPath); err != nil {
+		t.Fatalf("bd stub not found: %v", err)
+	}
+
+	tests := []struct {
+		name          string
+		beadID        string
+		targetAgent   string
+		wantMissing   int
+		wantMissingID string
+	}{
+		{
+			name:          "agent missing one skill",
+			beadID:        "gt-abc123",
+			targetAgent:   "gastown/crew/alpha",
+			wantMissing:   1,
+			wantMissingID: "skill-pr-review",
+		},
+		{
+			name:          "different agent missing both skills",
+			beadID:        "gt-abc123",
+			targetAgent:   "gastown/crew/beta",
+			wantMissing:   2,
+			wantMissingID: "skill-go-testing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := CheckSkillValidation(tt.beadID, tt.targetAgent)
+
+			if len(result.RequiredSkills) != 2 {
+				t.Errorf("expected 2 required skills, got %d", len(result.RequiredSkills))
+			}
+
+			if len(result.MissingSkills) != tt.wantMissing {
+				t.Errorf("expected %d missing skills, got %d", tt.wantMissing, len(result.MissingSkills))
+			}
+
+			// Check that the expected missing skill is in the list
+			found := false
+			for _, s := range result.MissingSkills {
+				if s.ID == tt.wantMissingID {
+					found = true
+					break
+				}
+			}
+			if !found && tt.wantMissing > 0 {
+				t.Errorf("expected missing skill %s not found in results", tt.wantMissingID)
+			}
+		})
+	}
+}

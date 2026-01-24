@@ -554,3 +554,97 @@ func CookFormula(formulaName, workDir string) error {
 	cookCmd.Stderr = os.Stderr
 	return cookCmd.Run()
 }
+
+// skillInfo represents a skill from bd skill required/providers --json output.
+type skillInfo struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// SkillValidationResult contains the result of skill validation.
+type SkillValidationResult struct {
+	RequiredSkills []skillInfo // Skills required by the bead
+	MissingSkills  []skillInfo // Skills the target agent doesn't provide
+}
+
+// getRequiredSkills returns the skills required by a bead.
+// Returns empty slice if no skills required or on error (fail gracefully).
+func getRequiredSkills(beadID string) []skillInfo {
+	cmd := exec.Command("bd", "--no-daemon", "skill", "required", beadID, "--json", "--allow-stale")
+	if townRoot, err := workspace.FindFromCwd(); err == nil {
+		cmd.Dir = townRoot
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return nil // Graceful failure - no skills required
+	}
+	if len(out) == 0 {
+		return nil
+	}
+
+	var skills []skillInfo
+	if err := json.Unmarshal(out, &skills); err != nil {
+		return nil
+	}
+	return skills
+}
+
+// getSkillProviders returns the agents that provide a skill.
+// Returns empty slice if no providers or on error.
+func getSkillProviders(skillID string) []string {
+	cmd := exec.Command("bd", "--no-daemon", "skill", "providers", skillID, "--json", "--allow-stale")
+	if townRoot, err := workspace.FindFromCwd(); err == nil {
+		cmd.Dir = townRoot
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	if len(out) == 0 {
+		return nil
+	}
+
+	var providers []skillInfo
+	if err := json.Unmarshal(out, &providers); err != nil {
+		return nil
+	}
+
+	// Extract agent IDs
+	var agentIDs []string
+	for _, p := range providers {
+		agentIDs = append(agentIDs, p.ID)
+	}
+	return agentIDs
+}
+
+// CheckSkillValidation checks if target agent has all skills required by the bead.
+// Returns a result with required and missing skills.
+// This is a soft check - missing skills generate warnings, not errors.
+func CheckSkillValidation(beadID, targetAgent string) *SkillValidationResult {
+	result := &SkillValidationResult{}
+
+	// Get skills required by the bead
+	requiredSkills := getRequiredSkills(beadID)
+	if len(requiredSkills) == 0 {
+		return result // No skills required
+	}
+	result.RequiredSkills = requiredSkills
+
+	// For each required skill, check if target agent provides it
+	for _, skill := range requiredSkills {
+		providers := getSkillProviders(skill.ID)
+		agentProvides := false
+		for _, provider := range providers {
+			// Match agent ID exactly or as a suffix (for path-style IDs)
+			if provider == targetAgent || strings.HasSuffix(targetAgent, "/"+provider) || strings.HasSuffix(provider, "/"+targetAgent) {
+				agentProvides = true
+				break
+			}
+		}
+		if !agentProvides {
+			result.MissingSkills = append(result.MissingSkills, skill)
+		}
+	}
+
+	return result
+}
