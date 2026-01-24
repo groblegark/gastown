@@ -2,7 +2,8 @@
 # Sync PRs from GitHub to Dolt database (batch optimized)
 # Usage: sync_prs.sh <owner/repo>
 #
-# Makes ONE GitHub API call, then ONE batch SQL transaction.
+# Uses REST API (not GraphQL) to avoid separate rate limit exhaustion.
+# Makes 1 API call to list PRs, then 1 call per PR for details.
 
 set -euo pipefail
 
@@ -12,10 +13,11 @@ TMP_SQL="/tmp/pr_sync_$$.sql"
 
 echo "Syncing open PRs from $REPO..."
 
-# Single API call - fetch all PRs with review info
-PRS=$(gh pr list --repo "$REPO" --state open \
-  --json number,title,author,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,reviews \
-  2>/dev/null) || { echo "GitHub API call failed (rate limited?)"; exit 1; }
+# REST API call - fetch open PRs (basic info)
+PRS=$(gh api "repos/$REPO/pulls?state=open&per_page=100" --paginate 2>/dev/null) || {
+    echo "GitHub REST API call failed (rate limited?)"
+    exit 1
+}
 
 # Count PRs
 PR_COUNT=$(echo "$PRS" | jq 'length')
@@ -32,16 +34,24 @@ echo "BEGIN;" >> "$TMP_SQL"
 
 echo "$PRS" | jq -c '.[]' | while read -r pr; do
     NUMBER=$(echo "$pr" | jq -r '.number')
+
+    # Get detailed PR info (includes additions/deletions)
+    DETAIL=$(gh api "repos/$REPO/pulls/$NUMBER" 2>/dev/null) || DETAIL="$pr"
+
     # Escape single quotes and backslashes for SQL
-    TITLE=$(echo "$pr" | jq -r '.title' | sed "s/'/''/g; s/\\\\/\\\\\\\\/g")
-    AUTHOR=$(echo "$pr" | jq -r '.author.login // "unknown"')
-    CREATED=$(echo "$pr" | jq -r '.createdAt' | cut -c1-19 | tr 'T' ' ')
-    UPDATED=$(echo "$pr" | jq -r '.updatedAt' | cut -c1-19 | tr 'T' ' ')
-    ADDITIONS=$(echo "$pr" | jq -r '.additions // 0')
-    DELETIONS=$(echo "$pr" | jq -r '.deletions // 0')
-    FILES=$(echo "$pr" | jq -r '.changedFiles // 0')
-    DRAFT=$(echo "$pr" | jq -r 'if .isDraft then 1 else 0 end')
-    REVIEWS=$(echo "$pr" | jq -r '.reviews | length')
+    TITLE=$(echo "$DETAIL" | jq -r '.title' | sed "s/'/''/g; s/\\\\/\\\\\\\\/g")
+    AUTHOR=$(echo "$DETAIL" | jq -r '.user.login // "unknown"')
+    CREATED=$(echo "$DETAIL" | jq -r '.created_at' | cut -c1-19 | tr 'T' ' ')
+    UPDATED=$(echo "$DETAIL" | jq -r '.updated_at' | cut -c1-19 | tr 'T' ' ')
+    ADDITIONS=$(echo "$DETAIL" | jq -r '.additions // 0')
+    DELETIONS=$(echo "$DETAIL" | jq -r '.deletions // 0')
+    FILES=$(echo "$DETAIL" | jq -r '.changed_files // 0')
+    DRAFT=$(echo "$DETAIL" | jq -r 'if .draft then 1 else 0 end')
+
+    # Get review count via separate endpoint
+    REVIEWS=$(gh api "repos/$REPO/pulls/$NUMBER/reviews" -q 'length' 2>/dev/null) || REVIEWS=0
+
+    echo "  PR #$NUMBER: $AUTHOR - $(echo "$TITLE" | head -c 50)..."
 
     cat >> "$TMP_SQL" << EOF
 INSERT INTO github_prs (
@@ -129,7 +139,7 @@ if [ "$STUCK" -gt 0 ]; then
     cd "$DOLT_DB" && dolt sql -q "
     SELECT pr_number AS '#', title, author,
            DATEDIFF(NOW(), gh_created_at) AS age_days,
-           (additions + deletions) AS lines
+           (additions + deletions) AS total_lines
     FROM github_prs
     WHERE repo = '$REPO' AND is_stuck = 1
     ORDER BY gh_created_at ASC
