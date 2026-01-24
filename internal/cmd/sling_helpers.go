@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -427,8 +428,11 @@ func updateAgentHookBead(agentID, beadID, workDir, townBeadsDir string) {
 	// For cross-database scenarios, slot set may fail gracefully (warning only).
 	bd := beads.New(agentWorkDir)
 	if err := bd.SetHookBead(agentBeadID, beadID); err != nil {
-		// Log warning instead of silent ignore - helps debug cross-beads issues
-		fmt.Fprintf(os.Stderr, "Warning: couldn't set agent %s hook: %v\n", agentBeadID, err)
+		// Only warn if error is NOT "issue not found" - agent beads may not exist yet
+		// and that's expected for agents spawned before agent beads were implemented.
+		if !errors.Is(err, beads.ErrNotFound) {
+			fmt.Fprintf(os.Stderr, "Warning: couldn't set agent %s hook: %v\n", agentBeadID, err)
+		}
 		return
 	}
 }

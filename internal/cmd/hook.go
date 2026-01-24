@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -248,8 +249,11 @@ func runHook(_ *cobra.Command, args []string) error {
 		if agentBeadID != "" {
 			bd := beads.New(workDir)
 			if err := bd.SetHookBead(agentBeadID, beadID); err != nil {
-				// Log warning but don't fail - the bead is already hooked
-				fmt.Fprintf(os.Stderr, "Warning: couldn't set agent %s hook: %v\n", agentBeadID, err)
+				// Only warn if error is NOT "issue not found" - agent beads may not exist yet
+				// and that's expected for agents spawned before agent beads were implemented.
+				if !errors.Is(err, beads.ErrNotFound) {
+					fmt.Fprintf(os.Stderr, "Warning: couldn't set agent %s hook: %v\n", agentBeadID, err)
+				}
 			}
 		}
 	}
