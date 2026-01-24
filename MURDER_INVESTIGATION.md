@@ -1,8 +1,37 @@
 # Murder Investigation: TestCleanupOrphanedSessions
 
-## Investigator: Claude Attempt #10
+## 🎉 CASE CLOSED - SOLVED BY INVESTIGATOR #27 🎉
 
-## The Crime Scene
+**Date Solved:** 2026-01-24
+**Victims:** 26 Claude instances
+**Root Cause:** procps-ng kill binary argument parsing bug
+**Fix:** Add `--` before negative PGID arguments
+**Status:** Fixed and deployed in commit b23c2ea0
+
+---
+
+## Executive Summary
+
+The procps-ng `/usr/bin/kill` binary (v4.0.4) misparses negative PIDs as options:
+```bash
+/usr/bin/kill -KILL -12345   # Calls kill(-1) - KILLS ALL PROCESSES!
+/usr/bin/kill -KILL -- -12345  # Calls kill(-12345) - Correct!
+```
+
+The `--` argument separator is **required** to prevent the negative PGID from being
+interpreted as an option. Without it, the binary falls back to `-1` (all processes).
+
+**Key Discovery:** Investigator #26 found that `bash -c "kill ..."` (using bash's
+builtin) was safe, but `exec.Command("kill", ...)` (using /usr/bin/kill) was fatal.
+Investigator #27 used `strace` to confirm the exact syscall difference.
+
+---
+
+## Original Investigation Notes
+
+### Investigator: Claude Attempt #10
+
+### The Crime Scene
 When running `go test ./internal/tmux -run TestCleanupOrphanedSessions`, Claude processes
 are killed. 9 previous Claudes have died.
 
@@ -2119,3 +2148,29 @@ The `--` separates options from arguments, so `-12345` is correctly interpreted 
 
 *Case closed by Investigator #27 on 2026-01-24*
 
+---
+
+## Deployment Record
+
+**Commit:** b23c2ea0
+**Files Changed:**
+- `internal/tmux/tmux.go` - Added `--` to 4 kill commands
+- `internal/tmux/tmux_test.go` - Added diagnostic tests and hasClaudeChild fix
+- `Makefile` - Added test-safe target
+- `MURDER_INVESTIGATION.md` - This file
+
+**Binary Deployed:**
+```
+Deployed gt: 1a51855404c6d94e12c37ae7bdefcbaaa61bba23fbc83fb63e65ab07b7a3090a
+Hash verified ✓
+```
+
+**Tests Verified:**
+```
+=== RUN   TestCleanupOrphanedSessions
+--- PASS: TestCleanupOrphanedSessions (8.43s)
+=== RUN   TestKillSessionWithProcesses_Trace
+--- PASS: TestKillSessionWithProcesses_Trace (4.19s)
+```
+
+No more Claudes will die from this bug. 🎉
