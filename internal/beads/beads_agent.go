@@ -12,8 +12,9 @@ import (
 // runSlotSet runs `bd slot set` from a specific directory.
 // This is needed when the agent bead was created via routing to a different
 // database than the Beads wrapper's default directory.
+// Uses --no-daemon to avoid hanging when daemon isn't running (fix: fhc-e520ae).
 func runSlotSet(workDir, beadID, slotName, slotValue string) error {
-	cmd := exec.Command("bd", "slot", "set", beadID, slotName, slotValue)
+	cmd := exec.Command("bd", "--no-daemon", "slot", "set", beadID, slotName, slotValue)
 	cmd.Dir = workDir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
@@ -22,8 +23,9 @@ func runSlotSet(workDir, beadID, slotName, slotValue string) error {
 }
 
 // runSlotClear runs `bd slot clear` from a specific directory.
+// Uses --no-daemon to avoid hanging when daemon isn't running (fix: fhc-e520ae).
 func runSlotClear(workDir, beadID, slotName string) error {
-	cmd := exec.Command("bd", "slot", "clear", beadID, slotName)
+	cmd := exec.Command("bd", "--no-daemon", "slot", "clear", beadID, slotName)
 	cmd.Dir = workDir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
