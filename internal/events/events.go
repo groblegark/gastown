@@ -68,6 +68,10 @@ const (
 	TypeMerged       = "merged"
 	TypeMergeFailed  = "merge_failed"
 	TypeMergeSkipped = "merge_skipped"
+
+	// Decision events
+	TypeDecisionRequested = "decision_requested"
+	TypeDecisionResolved  = "decision_resolved"
 )
 
 // EventsFile is the name of the raw events log.
