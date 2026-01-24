@@ -239,6 +239,13 @@ func runPrime(cmd *cobra.Command, args []string) error {
 		explain(true, "bd prime: skipped in dry-run mode")
 	}
 
+	// Run bd skill prime to inject skill documentation
+	if !primeDryRun {
+		runBdSkillPrime(cwd)
+	} else {
+		explain(true, "bd skill prime: skipped in dry-run mode")
+	}
+
 	// Run gt mail check --inject to inject any pending mail
 	if !primeDryRun {
 		runMailCheckInject(cwd)
@@ -361,6 +368,32 @@ func runBdPrime(workDir string) {
 		// But log stderr if present for debugging
 		if errMsg := strings.TrimSpace(stderr.String()); errMsg != "" {
 			fmt.Fprintf(os.Stderr, "bd prime: %s\n", errMsg)
+		}
+		return
+	}
+
+	output := strings.TrimSpace(stdout.String())
+	if output != "" {
+		fmt.Println()
+		fmt.Println(output)
+	}
+}
+
+// runBdSkillPrime runs `bd skill prime` and outputs the result.
+// This injects skill documentation (SKILL.md files) into the agent's context.
+func runBdSkillPrime(workDir string) {
+	cmd := exec.Command("bd", "skill", "prime")
+	cmd.Dir = workDir
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		// Skip if bd skill prime fails (agent may not have skills)
+		// But log stderr if present for debugging
+		if errMsg := strings.TrimSpace(stderr.String()); errMsg != "" {
+			fmt.Fprintf(os.Stderr, "bd skill prime: %s\n", errMsg)
 		}
 		return
 	}
