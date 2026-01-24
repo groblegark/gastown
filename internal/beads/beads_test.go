@@ -2,6 +2,7 @@ package beads
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -2133,6 +2134,51 @@ func TestCreateOrReopenAgentBead_ClosedBead(t *testing.T) {
 	}
 
 	t.Log("LIFECYCLE TEST PASSED: spawn → nuke → respawn works with close/reopen")
+}
+
+// TestIsDuplicateKeyError tests the helper function that detects duplicate key errors
+// from both SQLite and Dolt/MySQL backends.
+func TestIsDuplicateKeyError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "SQLite UNIQUE constraint failed",
+			err:  errors.New("UNIQUE constraint failed: issues.id"),
+			want: true,
+		},
+		{
+			name: "Dolt/MySQL duplicate primary key",
+			err:  errors.New("Error 1062 (HY000): duplicate primary key given: [hq-gastown-polecat-furiosa]"),
+			want: true,
+		},
+		{
+			name: "unrelated error",
+			err:  errors.New("connection refused"),
+			want: false,
+		},
+		{
+			name: "partial match - UNIQUE but not constraint",
+			err:  errors.New("UNIQUE index problem"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isDuplicateKeyError(tt.err)
+			if got != tt.want {
+				t.Errorf("isDuplicateKeyError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
 }
 
 // TestCloseAndClearAgentBead_FieldClearing tests that CloseAndClearAgentBead clears all mutable
