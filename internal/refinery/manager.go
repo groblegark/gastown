@@ -239,8 +239,8 @@ func (m *Manager) Stop() error {
 		return ErrNotRunning
 	}
 
-	// Kill the tmux session
-	return t.KillSession(sessionID)
+	// Kill the tmux session - use KillSessionWithProcesses to prevent orphan Claude processes.
+	return t.KillSessionWithProcesses(sessionID)
 }
 
 // Queue returns the current merge queue.
