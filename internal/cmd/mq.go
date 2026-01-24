@@ -16,6 +16,9 @@ import (
 	"github.com/steveyegge/gastown/internal/style"
 )
 
+// MQVersion is the version of the merge queue API.
+const MQVersion = "1.0.0"
+
 // MQ command flags
 var (
 	// Submit flags
