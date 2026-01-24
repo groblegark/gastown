@@ -157,11 +157,19 @@ func runSQLiteQuery(beadsDir, query string) ([]QueryResult, error) {
 // runDoltQuery executes a query using dolt sql CLI.
 // Note: dolt sql must be run from within the Dolt database directory.
 func runDoltQuery(beadsDir, query string) ([]QueryResult, error) {
+	// The Dolt database can be at either:
+	// - beadsDir/dolt (simple setup)
+	// - beadsDir/dolt/beads (server setup with nested database)
 	doltPath := filepath.Join(beadsDir, "dolt")
+	nestedPath := filepath.Join(doltPath, "beads")
 
-	// Verify dolt directory exists
-	if _, err := os.Stat(doltPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("Dolt database not found: %s", doltPath)
+	// Check for nested database directory first (common in Dolt server setups)
+	// The actual database has a .dolt/noms directory
+	if _, err := os.Stat(filepath.Join(nestedPath, ".dolt", "noms")); err == nil {
+		doltPath = nestedPath
+	} else if _, err := os.Stat(filepath.Join(doltPath, ".dolt", "noms")); os.IsNotExist(err) {
+		// Neither location has a valid Dolt database
+		return nil, fmt.Errorf("Dolt database not found: %s or %s", doltPath, nestedPath)
 	}
 
 	cmd := exec.Command("dolt", "sql", "-q", query, "--result-format", "json") //nolint:gosec // G204: query is controlled

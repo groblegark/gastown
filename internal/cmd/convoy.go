@@ -1413,29 +1413,36 @@ type convoyDependency struct {
 	Type        string `json:"type"`
 }
 
-// getConvoyDependenciesFromSQLite reads the convoy's 'tracks' dependencies from SQLite.
-// Dependencies are stored in the dependencies table, not embedded in JSONL issue records.
+// getConvoyDependenciesFromDB reads the convoy's 'tracks' dependencies from the beads backend.
+// Uses beads.RunQuery which supports both SQLite and Dolt backends.
 func getConvoyDependenciesFromSQLite(townBeads, convoyID string) []convoyDependency {
-	beadsDB := filepath.Join(townBeads, "beads.db")
-	if _, err := os.Stat(beadsDB); err != nil {
-		return nil
-	}
-
 	// Query for 'tracks' type dependencies where the convoy is the issue_id
+	// Escape convoyID to prevent SQL injection
+	escapedID := strings.ReplaceAll(convoyID, "'", "''")
 	query := fmt.Sprintf(
 		`SELECT issue_id, depends_on_id, type FROM dependencies WHERE issue_id = '%s' AND type = 'tracks'`,
-		strings.ReplaceAll(convoyID, "'", "''"))
+		escapedID)
 
-	queryCmd := exec.Command("sqlite3", "-json", beadsDB, query)
-	var stdout bytes.Buffer
-	queryCmd.Stdout = &stdout
-	if err := queryCmd.Run(); err != nil {
+	// Use backend-aware query (works with SQLite or Dolt)
+	results, err := beads.RunQuery(townBeads, query)
+	if err != nil || len(results) == 0 {
 		return nil
 	}
 
+	// Convert results to convoyDependency slice
 	var deps []convoyDependency
-	if err := json.Unmarshal(stdout.Bytes(), &deps); err != nil {
-		return nil
+	for _, row := range results {
+		dep := convoyDependency{}
+		if id, ok := row["issue_id"].(string); ok {
+			dep.IssueID = id
+		}
+		if depOn, ok := row["depends_on_id"].(string); ok {
+			dep.DependsOnID = depOn
+		}
+		if t, ok := row["type"].(string); ok {
+			dep.Type = t
+		}
+		deps = append(deps, dep)
 	}
 
 	return deps
