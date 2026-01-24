@@ -31,6 +31,24 @@ func runSlotClear(workDir, beadID, slotName string) error {
 	return nil
 }
 
+// isDuplicateKeyError checks if an error is a duplicate key/unique constraint error.
+// This handles both SQLite ("UNIQUE constraint failed") and Dolt/MySQL ("duplicate primary key").
+func isDuplicateKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// SQLite error
+	if strings.Contains(errStr, "UNIQUE constraint failed") {
+		return true
+	}
+	// Dolt/MySQL error (Error 1062)
+	if strings.Contains(errStr, "duplicate primary key") {
+		return true
+	}
+	return false
+}
+
 // AgentFields holds structured fields for agent beads.
 // These are stored as "key: value" lines in the description.
 type AgentFields struct {
@@ -229,8 +247,8 @@ func (b *Beads) CreateOrReopenAgentBead(id, title string, fields *AgentFields) (
 		return issue, nil
 	}
 
-	// Check if it's a UNIQUE constraint error
-	if !strings.Contains(err.Error(), "UNIQUE constraint failed") {
+	// Check if it's a duplicate key error (SQLite or Dolt/MySQL)
+	if !isDuplicateKeyError(err) {
 		return nil, err
 	}
 
