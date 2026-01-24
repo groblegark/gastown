@@ -131,16 +131,21 @@ func storeArgsInBead(beadID, args string) error {
 
 // storeDispatcherInBead stores the dispatcher agent ID in the bead's description.
 // This enables polecats to notify the dispatcher when work is complete.
+// Uses --no-daemon to avoid hanging when daemon isn't running (fix: fhc-e520ae).
 func storeDispatcherInBead(beadID, dispatcher string) error {
 	if dispatcher == "" {
 		return nil
 	}
 
 	// Get the bead to preserve existing description content
-	showCmd := exec.Command("bd", "show", beadID, "--json")
+	showCmd := exec.Command("bd", "--no-daemon", "show", beadID, "--json", "--allow-stale")
 	out, err := showCmd.Output()
 	if err != nil {
 		return fmt.Errorf("fetching bead: %w", err)
+	}
+	// Handle bd --no-daemon exit 0 bug: empty stdout means not found
+	if len(out) == 0 {
+		return fmt.Errorf("bead not found")
 	}
 
 	// Parse the bead
@@ -166,7 +171,7 @@ func storeDispatcherInBead(beadID, dispatcher string) error {
 	newDesc := beads.SetAttachmentFields(issue, fields)
 
 	// Update the bead
-	updateCmd := exec.Command("bd", "update", beadID, "--description="+newDesc)
+	updateCmd := exec.Command("bd", "--no-daemon", "update", beadID, "--description="+newDesc)
 	updateCmd.Stderr = os.Stderr
 	if err := updateCmd.Run(); err != nil {
 		return fmt.Errorf("updating bead description: %w", err)
@@ -178,6 +183,7 @@ func storeDispatcherInBead(beadID, dispatcher string) error {
 // storeAttachedMoleculeInBead sets the attached_molecule field in a bead's description.
 // This is required for gt hook to recognize that a molecule is attached to the bead.
 // Called after bonding a formula wisp to a bead via "gt sling <formula> --on <bead>".
+// Uses --no-daemon to avoid hanging when daemon isn't running (fix: fhc-e520ae).
 func storeAttachedMoleculeInBead(beadID, moleculeID string) error {
 	if moleculeID == "" {
 		return nil
@@ -190,10 +196,14 @@ func storeAttachedMoleculeInBead(beadID, moleculeID string) error {
 	issue := &beads.Issue{}
 	if logPath == "" {
 		// Get the bead to preserve existing description content
-		showCmd := exec.Command("bd", "show", beadID, "--json")
+		showCmd := exec.Command("bd", "--no-daemon", "show", beadID, "--json", "--allow-stale")
 		out, err := showCmd.Output()
 		if err != nil {
 			return fmt.Errorf("fetching bead: %w", err)
+		}
+		// Handle bd --no-daemon exit 0 bug: empty stdout means not found
+		if len(out) == 0 {
+			return fmt.Errorf("bead not found")
 		}
 
 		// Parse the bead
@@ -226,7 +236,7 @@ func storeAttachedMoleculeInBead(beadID, moleculeID string) error {
 	}
 
 	// Update the bead
-	updateCmd := exec.Command("bd", "update", beadID, "--description="+newDesc)
+	updateCmd := exec.Command("bd", "--no-daemon", "update", beadID, "--description="+newDesc)
 	updateCmd.Stderr = os.Stderr
 	if err := updateCmd.Run(); err != nil {
 		return fmt.Errorf("updating bead description: %w", err)
