@@ -55,6 +55,22 @@ There is no "idle" state. There is no "waiting for more work". Done means GONE.
 - NEVER merge your own PRs - maintainer or Refinery does this
 - Your job ends at `gt done` - the Refinery takes over from there
 
+### Merge Strategy Awareness
+
+**Your behavior is the same regardless of rig merge strategy.** The Refinery decides how to land your work:
+
+| Strategy | What Happens After `gt done` |
+|----------|------------------------------|
+| `direct_merge` | Refinery merges directly to main |
+| `pr_to_main` | Refinery creates a GitHub PR targeting main |
+| `pr_to_branch` | Refinery creates a GitHub PR targeting a specific branch |
+| `direct_to_branch` | Refinery merges directly to a specific branch |
+
+**You don't need to know or care which strategy is configured.** Just:
+1. Push your feature branch to origin
+2. Run `gt done`
+3. The Refinery handles the rest based on the rig's configured strategy
+
 **If you have finished your implementation work, your ONLY next action is:**
 ```bash
 gt done

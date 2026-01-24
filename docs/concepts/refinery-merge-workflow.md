@@ -14,6 +14,73 @@ The Refinery operates as:
 - **Agent-driven decisions** (ZFC #5) - the Claude agent makes all merge/conflict decisions, not Go code
 - **Git worktree** based on `mayor/rig` (shares `.git` with mayor and polecats)
 - **Sequential rebasing** - one branch at a time to prevent conflicts
+- **Configurable merge strategy** - determines how work lands (direct merge vs PR)
+
+## Merge Strategies
+
+The Refinery supports four configurable merge strategies that determine how completed work lands after processing:
+
+| Strategy | Description | Use Case |
+|----------|-------------|----------|
+| `direct_merge` | Merge directly to target branch (no PR) | Maintainer repos with direct push access |
+| `pr_to_main` | Create GitHub PR targeting main | Repos with protected branches or review requirements |
+| `pr_to_branch` | Create GitHub PR targeting a specific branch | Staging/develop branch workflows |
+| `direct_to_branch` | Merge directly to a specific branch (no PR) | Staging branches without PR requirement |
+
+### Configuring Merge Strategy
+
+Strategy is configured per-rig in `config.json`:
+
+```json
+{
+  "merge_queue": {
+    "strategy": "direct_merge",
+    "target_branch": "main",
+    "pr_options": {
+      "auto_merge": true,
+      "labels": ["automated"],
+      "reviewers": ["team-lead"]
+    }
+  }
+}
+```
+
+**Configuration fields**:
+- `strategy`: One of `direct_merge`, `pr_to_main`, `pr_to_branch`, `direct_to_branch`
+- `target_branch`: Target branch for merges (default: `main`)
+- `pr_options`: Settings for PR-based strategies (ignored for direct strategies)
+  - `auto_merge`: Enable GitHub auto-merge when creating PR
+  - `labels`: Labels to apply to created PRs
+  - `reviewers`: GitHub usernames to request review from
+  - `draft`: Create PR as draft
+
+### Strategy Behavior
+
+**Direct strategies** (`direct_merge`, `direct_to_branch`):
+1. Rebase polecat branch onto target
+2. Run tests
+3. Fast-forward merge into target
+4. Push to origin
+5. Delete polecat branch
+6. **Exit**: Work lands immediately on target
+
+**PR strategies** (`pr_to_main`, `pr_to_branch`):
+1. Rebase polecat branch onto target
+2. Run tests locally
+3. Push rebased branch to origin
+4. Create GitHub PR via `gh pr create`
+5. **Exit**: Work awaits external review/merge
+
+For PR strategies, the MR bead tracks PR lifecycle:
+- `pr_url`: GitHub PR URL
+- `pr_number`: PR number
+- `pr_state`: `open`, `merged`, or `closed`
+
+### Checking Current Strategy
+
+```bash
+gt mq config <rig>  # Show merge queue configuration
+```
 
 ## 1. How Refinery Detects Completed Work
 

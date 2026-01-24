@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -190,6 +191,29 @@ Example:
 	RunE: runMqStatus,
 }
 
+var mqConfigCmd = &cobra.Command{
+	Use:   "config [rig]",
+	Short: "Show merge queue configuration",
+	Long: `Display merge queue configuration for a rig.
+
+Shows the configured merge strategy, target branch, and PR options.
+
+Merge Strategies:
+  direct_merge     - Merge directly to target (default, for maintainer repos)
+  pr_to_main       - Create PR targeting main
+  pr_to_branch     - Create PR targeting a specific branch
+  direct_to_branch - Merge directly to a specific branch
+
+Examples:
+  gt mq config gastown       # Show gastown's merge queue config
+  gt mq config               # Show current rig's config
+  gt mq config --json        # Output as JSON`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runMqConfig,
+}
+
+var mqConfigJSON bool
+
 var mqIntegrationCmd = &cobra.Command{
 	Use:   "integration",
 	Short: "Manage integration branches for epics",
@@ -316,6 +340,9 @@ func init() {
 	// Status flags
 	mqStatusCmd.Flags().BoolVar(&mqStatusJSON, "json", false, "Output as JSON")
 
+	// Config flags
+	mqConfigCmd.Flags().BoolVar(&mqConfigJSON, "json", false, "Output as JSON")
+
 	// Add subcommands
 	mqCmd.AddCommand(mqSubmitCmd)
 	mqCmd.AddCommand(mqRetryCmd)
@@ -323,6 +350,7 @@ func init() {
 	mqCmd.AddCommand(mqRejectCmd)
 	mqCmd.AddCommand(mqCloseCmd)
 	mqCmd.AddCommand(mqStatusCmd)
+	mqCmd.AddCommand(mqConfigCmd)
 
 	// Integration branch subcommands
 	mqIntegrationCreateCmd.Flags().StringVar(&mqIntegrationCreateBranch, "branch", "", "Override branch name template (supports {epic}, {prefix}, {user})")
@@ -493,4 +521,98 @@ func runMQClose(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("%s Closed: %s (reason: %s)\n", style.Bold.Render("✓"), mrID, closeReason)
 	return nil
+}
+
+func runMqConfig(cmd *cobra.Command, args []string) error {
+	var rigName string
+	if len(args) > 0 {
+		rigName = args[0]
+	}
+
+	mgr, r, rigName, err := getRefineryManager(rigName)
+	if err != nil {
+		return err
+	}
+
+	// Load config to get merge queue settings
+	if err := mgr.LoadConfig(); err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	cfg := mgr.Config()
+
+	if mqConfigJSON {
+		// JSON output
+		output := struct {
+			Rig          string                    `json:"rig"`
+			Enabled      bool                      `json:"enabled"`
+			Strategy     string                    `json:"strategy"`
+			TargetBranch string                    `json:"target_branch"`
+			PROptions    *refinery.PROptions       `json:"pr_options,omitempty"`
+		}{
+			Rig:          rigName,
+			Enabled:      cfg.Enabled,
+			Strategy:     cfg.Strategy,
+			TargetBranch: cfg.TargetBranch,
+			PROptions:    cfg.PROptions,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(output)
+	}
+
+	// Human-readable output
+	fmt.Printf("%s Merge Queue Configuration\n\n", style.Bold.Render("⚙"))
+	fmt.Printf("  Rig:           %s\n", rigName)
+	fmt.Printf("  Path:          %s\n", r.Path)
+	fmt.Println()
+	fmt.Printf("  %s\n", style.Bold.Render("Strategy"))
+	fmt.Printf("  Strategy:      %s\n", strategyDescription(cfg.Strategy))
+	fmt.Printf("  Target branch: %s\n", cfg.TargetBranch)
+	fmt.Printf("  Enabled:       %v\n", cfg.Enabled)
+
+	// Show PR options if using a PR strategy
+	if refinery.IsPRStrategy(cfg.Strategy) && cfg.PROptions != nil {
+		fmt.Println()
+		fmt.Printf("  %s\n", style.Bold.Render("PR Options"))
+		if cfg.PROptions.AutoMerge {
+			fmt.Printf("  Auto-merge:    enabled\n")
+		}
+		if cfg.PROptions.Draft {
+			fmt.Printf("  Draft:         enabled\n")
+		}
+		if len(cfg.PROptions.Labels) > 0 {
+			fmt.Printf("  Labels:        %s\n", strings.Join(cfg.PROptions.Labels, ", "))
+		}
+		if len(cfg.PROptions.Reviewers) > 0 {
+			fmt.Printf("  Reviewers:     %s\n", strings.Join(cfg.PROptions.Reviewers, ", "))
+		}
+	}
+
+	// Show other settings
+	fmt.Println()
+	fmt.Printf("  %s\n", style.Bold.Render("Processing"))
+	fmt.Printf("  Run tests:     %v\n", cfg.RunTests)
+	if cfg.TestCommand != "" {
+		fmt.Printf("  Test command:  %s\n", cfg.TestCommand)
+	}
+	fmt.Printf("  Delete branches after merge: %v\n", cfg.DeleteMergedBranches)
+
+	return nil
+}
+
+// strategyDescription returns a human-readable description of a merge strategy.
+func strategyDescription(strategy string) string {
+	switch strategy {
+	case refinery.StrategyDirectMerge:
+		return "direct_merge (merge directly to target, no PR)"
+	case refinery.StrategyPRToMain:
+		return "pr_to_main (create PR targeting main)"
+	case refinery.StrategyPRToBranch:
+		return "pr_to_branch (create PR targeting specific branch)"
+	case refinery.StrategyDirectToBranch:
+		return "direct_to_branch (merge directly to specific branch)"
+	default:
+		return strategy
+	}
 }
