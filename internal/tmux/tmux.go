@@ -220,10 +220,11 @@ func (t *Tmux) KillSessionWithProcesses(name string) error {
 	}
 
 	// Kill the tmux session
-	// Ignore "session not found" - killing the pane process may have already
-	// caused tmux to destroy the session automatically
+	// Ignore "session not found" or "no server" - killing the pane process may have already
+	// caused tmux to destroy the session automatically. If it was the last session,
+	// the tmux server itself shuts down, resulting in "no server" instead of "session not found".
 	err = t.KillSession(name)
-	if err == ErrSessionNotFound {
+	if err == ErrSessionNotFound || err == ErrNoServer {
 		return nil
 	}
 	return err
@@ -300,10 +301,11 @@ func (t *Tmux) KillSessionWithProcessesExcluding(name string, excludePIDs []stri
 	}
 
 	// Kill the tmux session - this will terminate the excluded process too
-	// Ignore "session not found" - if we killed all non-excluded processes,
-	// tmux may have already destroyed the session automatically
+	// Ignore "session not found" or "no server" - if we killed all non-excluded processes,
+	// tmux may have already destroyed the session automatically. If it was the last session,
+	// the tmux server itself shuts down, resulting in "no server" instead of "session not found".
 	err = t.KillSession(name)
-	if err == ErrSessionNotFound {
+	if err == ErrSessionNotFound || err == ErrNoServer {
 		return nil
 	}
 	return err
