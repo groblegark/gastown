@@ -471,8 +471,9 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 	if opts.Title != "" {
 		args = append(args, "--title="+opts.Title)
 	}
-	// Type is deprecated: convert to gt:<type> label
+	// Set issue type AND add gt:<type> label for backwards compatibility
 	if opts.Type != "" {
+		args = append(args, "--type="+opts.Type)
 		args = append(args, "--labels=gt:"+opts.Type)
 	}
 	if opts.Priority >= 0 {
@@ -522,8 +523,9 @@ func (b *Beads) CreateWithID(id string, opts CreateOptions) (*Issue, error) {
 	if opts.Title != "" {
 		args = append(args, "--title="+opts.Title)
 	}
-	// Type is deprecated: convert to gt:<type> label
+	// Set issue type AND add gt:<type> label for backwards compatibility
 	if opts.Type != "" {
+		args = append(args, "--type="+opts.Type)
 		args = append(args, "--labels=gt:"+opts.Type)
 	}
 	if opts.Priority >= 0 {
