@@ -271,13 +271,16 @@ bd diff <commit1> <commit2>
 
 ### "database is read only" (Dolt)
 
-**Cause:** Another process holds the Dolt lock file.
+**Cause:** Another process holds the Dolt lock file OR you're using direct mode (--no-daemon).
 
 **Solutions:**
-1. Wait for other process to complete
-2. Use `--no-daemon` flag: `bd list --no-daemon`
+1. **Ensure daemon is running**: `bd daemon start` - Direct mode uses SQLite queries that fail on Dolt
+2. Wait for other process to complete
 3. Check for stale lock: `ls -la .beads/dolt/beads/.dolt/noms/LOCK`
 4. Remove stale lock (if process is dead): `rm .beads/dolt/beads/.dolt/noms/LOCK`
+
+**WARNING:** Do NOT use `--no-daemon` with Dolt backend! Direct mode sends SQLite-specific
+PRAGMA commands that Dolt (MySQL-compatible) cannot process. Always use daemon mode with Dolt.
 
 ### "Auto-import failed" (Dolt)
 
@@ -332,10 +335,45 @@ curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | ba
 ### Configuration Guidelines
 
 1. **Set `no-auto-import: true`** for Dolt backend
-2. **Use `--no-daemon`** when experiencing readonly errors
+2. **NEVER use `--no-daemon`** with Dolt - daemon mode is required (see [Daemon Policy](#daemon-policy-dolt))
 3. **Commit regularly** with Dolt to build history
 4. **Run `gt doctor`** to verify backend health
 5. **Backup before migration** - always export to JSONL first
+
+## Daemon Policy (Dolt)
+
+**When using Dolt backend, daemon mode is REQUIRED for bd commands.**
+
+### Why Daemon Mode is Required
+
+Direct mode (`--no-daemon`) uses an internal SQLite driver that sends SQLite-specific
+commands (like `PRAGMA`) to the database. Dolt is MySQL-compatible, not SQLite-compatible.
+When these PRAGMA commands hit Dolt, you get errors like:
+
+```
+syntax error at position 7 near 'PRAGMA'
+```
+
+The daemon mode properly routes queries through Dolt's MySQL-compatible interface.
+
+### Symptoms of Incorrect Direct Mode Usage
+
+- `bd list` returns 0 issues even though data exists
+- `bd status` shows empty counts
+- Dolt server logs show PRAGMA syntax errors
+- `bd show <id>` may work (uses JSONL fallback) while `bd list` fails
+
+### For Tests: --no-daemon is Acceptable
+
+Tests legitimately use `--no-daemon` for isolation:
+- Each test gets its own clean database state
+- Avoids interference with shared daemon
+- Tests typically use SQLite backend anyway
+
+When writing tests that use `--no-daemon`:
+1. Ensure test uses SQLite backend, not Dolt
+2. Add a comment explaining why `--no-daemon` is used
+3. Don't use `--no-daemon` in production code paths
 
 ### Development Guidelines
 
@@ -351,6 +389,8 @@ curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | ba
 - **rig-9bb08e** - Fixed convoy fetcher to use bd CLI instead of sqlite3
 - **rig-508d0d** - Added backend detection to gt doctor
 - **rig-358fc7** - Add Dolt lock retry logic (planned)
+- **hq-5e4a58** - Emergency fix: removed --no-daemon from production code
+- **hq-f33de4** - Document daemon-only policy for Dolt backend
 
 ## References
 
@@ -361,6 +401,6 @@ curl -L https://github.com/dolthub/dolt/releases/latest/download/install.sh | ba
 
 ---
 
-**Last Updated:** 2026-01-19
+**Last Updated:** 2026-01-25
 **Author:** furiosa (via dolt_doctor)
 **Related Epic:** gt-0686b8 (Dolt-native gastown fork)
