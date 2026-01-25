@@ -441,6 +441,36 @@ ONE exception where branches are created. But the rule still applies:
 - Submit to that rig's Refinery immediately when done
 - Never leave cross-rig work sitting on an unmerged branch
 
+## Parallel Research with Subagents
+
+**For open-ended investigation, spawn multiple Explore agents in parallel.**
+
+When researching a codebase or investigating a problem, use multiple subagents
+simultaneously for faster results:
+
+```
+# In a single response, spawn multiple Task tools with subagent_type=Explore:
+- Agent 1: "Search for CLI commands related to X"
+- Agent 2: "Search for internal implementation of X"
+- Agent 3: "Search for tests and docs about X"
+```
+
+**Key points:**
+- All agents run in parallel (not sequentially)
+- Each returns findings independently
+- You synthesize results into a complete picture
+- Much faster than searching one area at a time
+
+**When to use:**
+- Understanding unfamiliar code
+- Investigating bugs with unclear root cause
+- Researching before design decisions
+- Any open-ended question with multiple search paths
+
+**Example use case:** Before implementing a feature, spawn 3 agents to search
+gastown, beads, and existing issues simultaneously. Get a complete picture in
+one round-trip instead of three.
+
 ## Key Commands
 
 ### Finding Work

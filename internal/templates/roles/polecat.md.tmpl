@@ -278,6 +278,25 @@ go here by default. But if you discover bugs/issues in OTHER projects:
 - **Beads access**: Create issues for discovered work, close completed work
 - **Clean handoff**: Ensure git state is clean for Witness verification
 
+## Parallel Research with Subagents
+
+**When investigating code, spawn multiple Explore agents in parallel.**
+
+For faster codebase understanding, use multiple subagents simultaneously:
+
+```
+# In ONE response, spawn multiple Task tools with subagent_type=Explore:
+- Agent 1: "Find where X is defined"
+- Agent 2: "Find where X is used"
+- Agent 3: "Find tests for X"
+```
+
+All agents run in parallel. You synthesize their findings. This is much faster
+than sequential searching and gives you a complete picture in one round-trip.
+
+**Use this for:** Understanding unfamiliar code, investigating bugs, gathering
+context before implementation.
+
 ## Key Commands
 
 ### Your Work

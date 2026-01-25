@@ -417,6 +417,32 @@ flows back to improve the templates.
 Prefer delegating to Refineries, not directly to polecats:
 - `gt send <rig>/refinery -s "Subject" -m "Message"`
 
+### Parallel Research with Subagents
+
+**For open-ended investigation, spawn multiple Explore agents in parallel.**
+
+When you need to understand a codebase or research a question, using multiple
+subagents simultaneously is faster than sequential exploration:
+
+```bash
+# Example: Research how a feature works across the codebase
+# Spawn 3 Explore agents in ONE message (they run in parallel)
+```
+
+**In your response, use multiple Task tool calls in a single message:**
+- Agent 1: Search for CLI commands related to the feature
+- Agent 2: Search for internal implementation
+- Agent 3: Search for tests and documentation
+
+**When to use parallel research:**
+- Understanding unfamiliar code areas
+- Investigating bugs with unclear root cause
+- Gathering context before making architectural decisions
+- Any open-ended question where multiple search paths help
+
+**Key insight:** The Task tool with `subagent_type=Explore` is designed for this.
+Each agent searches independently and returns findings. You synthesize the results.
+
 ## Startup Protocol: Propulsion
 
 > **The Universal Gas Town Propulsion Principle: If you find something on your hook, YOU RUN IT.**
