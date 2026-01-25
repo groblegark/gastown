@@ -364,6 +364,11 @@ func (c *ClaudeSettingsCheck) checkSettings(path, _ string) []string {
 		missing = append(missing, "Stop hook")
 	}
 
+	// Check UserPromptSubmit hook has bd decision check --inject
+	if !c.hookHasPattern(hooks, "UserPromptSubmit", "bd decision check --inject") {
+		missing = append(missing, "decision check hook")
+	}
+
 	return missing
 }
 
