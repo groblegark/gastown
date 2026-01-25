@@ -129,6 +129,34 @@ func StartBdDaemonIfNeeded(workDir string) error {
 	return cmd.Run()
 }
 
+// EnsureDaemonForSling ensures the bd daemon is running for sling operations.
+// Returns true if daemon is confirmed running, false if fallback to --no-daemon is needed.
+// This is the daemon-first approach: try to use daemon, fall back to direct mode.
+func EnsureDaemonForSling(workDir string) bool {
+	// Quick check: is daemon already running?
+	checkCmd := exec.Command("bd", "daemon", "status")
+	checkCmd.Dir = workDir
+	if err := checkCmd.Run(); err == nil {
+		return true // Daemon is running
+	}
+
+	// Daemon not running - try to start it
+	startCmd := exec.Command("bd", "daemon", "start")
+	startCmd.Dir = workDir
+	if err := startCmd.Run(); err != nil {
+		// Failed to start daemon - caller should use --no-daemon
+		return false
+	}
+
+	// Wait briefly for daemon to be ready
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify daemon is now running
+	verifyCmd := exec.Command("bd", "daemon", "status")
+	verifyCmd.Dir = workDir
+	return verifyCmd.Run() == nil
+}
+
 // StopAllBdProcesses stops all bd daemon and activity processes.
 // Returns (daemonsKilled, activityKilled, error).
 // If dryRun is true, returns counts without stopping anything.

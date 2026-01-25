@@ -14,6 +14,43 @@ import (
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
+// slingDaemonAvailable tracks whether the bd daemon is available for sling operations.
+// Set at sling start via ensureSlingDaemon(). If false, bd commands use --no-daemon.
+var slingDaemonAvailable bool
+
+// ensureSlingDaemon ensures the bd daemon is running for sling operations.
+// Sets slingDaemonAvailable and returns whether daemon is available.
+// This implements the daemon-first approach: try daemon, fall back to direct mode.
+func ensureSlingDaemon(townRoot string) bool {
+	slingDaemonAvailable = beads.EnsureDaemonForSling(townRoot)
+	return slingDaemonAvailable
+}
+
+// bdCmd creates an exec.Command for bd with appropriate daemon mode.
+// If daemon is available (slingDaemonAvailable=true), uses daemon mode.
+// Otherwise, uses --no-daemon for direct mode fallback.
+func bdCmd(args ...string) *exec.Cmd {
+	if slingDaemonAvailable {
+		return exec.Command("bd", args...)
+	}
+	// Prepend --no-daemon for direct mode
+	fullArgs := append([]string{"--no-daemon"}, args...)
+	return exec.Command("bd", fullArgs...)
+}
+
+// bdCmdWithStale creates a bd command with --allow-stale for read operations.
+// Uses daemon mode if available, otherwise --no-daemon.
+func bdCmdWithStale(args ...string) *exec.Cmd {
+	if slingDaemonAvailable {
+		fullArgs := append(args, "--allow-stale")
+		return exec.Command("bd", fullArgs...)
+	}
+	// Prepend --no-daemon and append --allow-stale for direct mode
+	fullArgs := append([]string{"--no-daemon"}, args...)
+	fullArgs = append(fullArgs, "--allow-stale")
+	return exec.Command("bd", fullArgs...)
+}
+
 // beadInfo holds status and assignee for a bead.
 type beadInfo struct {
 	Title    string `json:"title"`
@@ -131,14 +168,14 @@ func storeArgsInBead(beadID, args string) error {
 
 // storeDispatcherInBead stores the dispatcher agent ID in the bead's description.
 // This enables polecats to notify the dispatcher when work is complete.
-// Uses --no-daemon to avoid hanging when daemon isn't running (fix: fhc-e520ae).
+// Uses daemon-first approach: daemon mode if available, --no-daemon fallback.
 func storeDispatcherInBead(beadID, dispatcher string) error {
 	if dispatcher == "" {
 		return nil
 	}
 
 	// Get the bead to preserve existing description content
-	showCmd := exec.Command("bd", "--no-daemon", "show", beadID, "--json", "--allow-stale")
+	showCmd := bdCmdWithStale("show", beadID, "--json")
 	out, err := showCmd.Output()
 	if err != nil {
 		return fmt.Errorf("fetching bead: %w", err)
@@ -171,7 +208,7 @@ func storeDispatcherInBead(beadID, dispatcher string) error {
 	newDesc := beads.SetAttachmentFields(issue, fields)
 
 	// Update the bead
-	updateCmd := exec.Command("bd", "--no-daemon", "update", beadID, "--description="+newDesc)
+	updateCmd := bdCmd("update", beadID, "--description="+newDesc)
 	updateCmd.Stderr = os.Stderr
 	if err := updateCmd.Run(); err != nil {
 		return fmt.Errorf("updating bead description: %w", err)
@@ -183,7 +220,7 @@ func storeDispatcherInBead(beadID, dispatcher string) error {
 // storeAttachedMoleculeInBead sets the attached_molecule field in a bead's description.
 // This is required for gt hook to recognize that a molecule is attached to the bead.
 // Called after bonding a formula wisp to a bead via "gt sling <formula> --on <bead>".
-// Uses --no-daemon to avoid hanging when daemon isn't running (fix: fhc-e520ae).
+// Uses daemon-first approach: daemon mode if available, --no-daemon fallback.
 func storeAttachedMoleculeInBead(beadID, moleculeID string) error {
 	if moleculeID == "" {
 		return nil
@@ -196,7 +233,7 @@ func storeAttachedMoleculeInBead(beadID, moleculeID string) error {
 	issue := &beads.Issue{}
 	if logPath == "" {
 		// Get the bead to preserve existing description content
-		showCmd := exec.Command("bd", "--no-daemon", "show", beadID, "--json", "--allow-stale")
+		showCmd := bdCmdWithStale("show", beadID, "--json")
 		out, err := showCmd.Output()
 		if err != nil {
 			return fmt.Errorf("fetching bead: %w", err)
@@ -236,7 +273,7 @@ func storeAttachedMoleculeInBead(beadID, moleculeID string) error {
 	}
 
 	// Update the bead
-	updateCmd := exec.Command("bd", "--no-daemon", "update", beadID, "--description="+newDesc)
+	updateCmd := bdCmd("update", beadID, "--description="+newDesc)
 	updateCmd.Stderr = os.Stderr
 	if err := updateCmd.Run(); err != nil {
 		return fmt.Errorf("updating bead description: %w", err)

@@ -149,6 +149,13 @@ func runSling(cmd *cobra.Command, args []string) error {
 	}
 	townBeadsDir := filepath.Join(townRoot, ".beads")
 
+	// Daemon-first approach: ensure bd daemon is running for write operations.
+	// If daemon can't be started, slingDaemonAvailable=false and commands use --no-daemon.
+	if !ensureSlingDaemon(townRoot) {
+		// Non-fatal: proceed with --no-daemon fallback, but warn user
+		fmt.Printf("%s bd daemon not available, using direct mode\n", style.Dim.Render("○"))
+	}
+
 	// --var is only for standalone formula mode, not formula-on-bead mode
 	if slingOnTarget != "" && len(slingVars) > 0 {
 		return fmt.Errorf("--var cannot be used with --on (formula-on-bead mode doesn't support variables)")
