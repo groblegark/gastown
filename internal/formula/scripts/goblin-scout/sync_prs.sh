@@ -8,7 +8,7 @@
 set -euo pipefail
 
 REPO="${1:-steveyegge/gastown}"
-DOLT_DB="/home/ubuntu/gastown9/gastown/.beads/dolt/beads"
+DOLT_DB="${GT_ROOT:?GT_ROOT must be set}/.beads/dolt/beads"
 TMP_SQL="/tmp/pr_sync_$$.sql"
 
 echo "Syncing open PRs from $REPO..."
