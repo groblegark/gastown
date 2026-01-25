@@ -164,8 +164,40 @@ Examples:
 	RunE: runDecisionAwait,
 }
 
+var decisionRemindCmd = &cobra.Command{
+	Use:   "remind",
+	Short: "Remind to offer a decision at session end",
+	Long: `Check for session work and remind to offer a decision.
+
+Designed for Claude Code Stop hooks. When work is detected (uncommitted
+changes, in-progress beads, etc.), outputs a reminder to offer a decision
+about next steps before the session ends.
+
+FLAGS:
+  --inject     Output as <system-reminder> for Claude Code hooks
+
+Exit codes (normal mode):
+  0 - Work detected, reminder printed
+  1 - No work detected
+
+Exit codes (--inject mode):
+  0 - Always (hooks should never block)
+  Output: <system-reminder> if work exists, silent otherwise
+
+Examples:
+  # For Claude Code Stop hook
+  gt decision remind --inject
+
+  # Human-readable check
+  gt decision remind`,
+	RunE: runDecisionRemind,
+}
+
 // Dashboard-specific flags
 var decisionDashboardJSON bool
+
+// Remind-specific flags
+var decisionRemindInject bool
 
 func init() {
 	// Request subcommand flags
@@ -205,6 +237,9 @@ func init() {
 	decisionAwaitCmd.Flags().StringVar(&decisionAwaitTimeout, "timeout", "", "Maximum time to wait (e.g., '5m', '1h')")
 	decisionAwaitCmd.Flags().BoolVar(&decisionJSON, "json", false, "Output as JSON")
 
+	// Remind subcommand flags
+	decisionRemindCmd.Flags().BoolVar(&decisionRemindInject, "inject", false, "Output as <system-reminder> for Claude Code hooks")
+
 	// Add subcommands
 	decisionCmd.AddCommand(decisionRequestCmd)
 	decisionCmd.AddCommand(decisionListCmd)
@@ -212,6 +247,7 @@ func init() {
 	decisionCmd.AddCommand(decisionResolveCmd)
 	decisionCmd.AddCommand(decisionDashboardCmd)
 	decisionCmd.AddCommand(decisionAwaitCmd)
+	decisionCmd.AddCommand(decisionRemindCmd)
 
 	rootCmd.AddCommand(decisionCmd)
 }

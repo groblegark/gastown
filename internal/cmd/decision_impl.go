@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -724,5 +725,136 @@ func runDecisionAwait(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("decision not found: %s", decisionID)
 		}
 	}
+}
+
+func runDecisionRemind(cmd *cobra.Command, args []string) error {
+	// Detect if there's work in the session that warrants a decision
+	hasWork := false
+	var workIndicators []string
+
+	// Check 1: Git status - uncommitted changes
+	gitChanges := checkGitChanges()
+	if gitChanges != "" {
+		hasWork = true
+		workIndicators = append(workIndicators, gitChanges)
+	}
+
+	// Check 2: Hooked work
+	hookedWork := checkHookedWork()
+	if hookedWork != "" {
+		hasWork = true
+		workIndicators = append(workIndicators, hookedWork)
+	}
+
+	// Check 3: In-progress beads
+	inProgressBeads := checkInProgressBeads()
+	if inProgressBeads != "" {
+		hasWork = true
+		workIndicators = append(workIndicators, inProgressBeads)
+	}
+
+	if !hasWork {
+		if decisionRemindInject {
+			// Silent exit - no reminder needed
+			return nil
+		}
+		fmt.Println("No session work detected - no decision reminder needed")
+		return nil
+	}
+
+	// Format the reminder
+	reminderText := formatDecisionReminder(workIndicators)
+
+	if decisionRemindInject {
+		// Output as system-reminder for Claude Code hooks
+		fmt.Printf("<system-reminder>\n%s\n</system-reminder>\n", reminderText)
+		return nil
+	}
+
+	// Human-readable output
+	fmt.Println(reminderText)
+	return nil
+}
+
+func checkGitChanges() string {
+	// Check for uncommitted changes using git status
+	out, err := runGitCommand("status", "--porcelain")
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
+		return ""
+	}
+	return fmt.Sprintf("uncommitted changes (%d files)", len(lines))
+}
+
+func checkHookedWork() string {
+	// Check for hooked work via gt hook
+	out, err := runCommand("gt", "hook", "--json")
+	if err != nil {
+		return ""
+	}
+	// Parse JSON to check if there's a hooked bead
+	var hookData map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &hookData); err != nil {
+		return ""
+	}
+	if beadID, ok := hookData["bead_id"].(string); ok && beadID != "" {
+		return fmt.Sprintf("hooked work: %s", beadID)
+	}
+	return ""
+}
+
+func checkInProgressBeads() string {
+	// Check for in-progress beads
+	out, err := runCommand("bd", "list", "--status=in_progress", "--json")
+	if err != nil {
+		return ""
+	}
+	var beadsList []interface{}
+	if err := json.Unmarshal([]byte(out), &beadsList); err != nil {
+		return ""
+	}
+	if len(beadsList) > 0 {
+		return fmt.Sprintf("in-progress beads (%d)", len(beadsList))
+	}
+	return ""
+}
+
+func runGitCommand(args ...string) (string, error) {
+	cmd := execCommand("git", args...)
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+func runCommand(name string, args ...string) (string, error) {
+	cmd := execCommand(name, args...)
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+// execCommand is a wrapper for os/exec.Command
+func execCommand(name string, args ...string) *exec.Cmd {
+	return exec.Command(name, args...) //nolint:gosec // trusted internal commands
+}
+
+func formatDecisionReminder(workIndicators []string) string {
+	var sb strings.Builder
+	sb.WriteString("DECISION OFFERING REMINDER\n")
+	sb.WriteString("\n")
+	sb.WriteString("Session work detected:\n")
+	for _, indicator := range workIndicators {
+		sb.WriteString(fmt.Sprintf("  - %s\n", indicator))
+	}
+	sb.WriteString("\n")
+	sb.WriteString("Before ending this session, consider offering a decision point:\n")
+	sb.WriteString("1. What was accomplished in this session?\n")
+	sb.WriteString("2. What are the next steps or options?\n")
+	sb.WriteString("3. Are there architectural choices or scope decisions needed?\n")
+	sb.WriteString("\n")
+	sb.WriteString("Use 'gt decision request' to create a decision, or proceed with handoff if\n")
+	sb.WriteString("the work is self-contained and no human input is needed.\n")
+	return sb.String()
 }
 
