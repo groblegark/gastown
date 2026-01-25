@@ -633,10 +633,25 @@ func (m *Manager) initBeads(rigPath, prefix string) error {
 	beadsDir := filepath.Join(rigPath, ".beads")
 	mayorRigBeads := filepath.Join(rigPath, "mayor", "rig", ".beads")
 
+	// Check if town-level uses dolt-native mode (shared database via symlinks).
+	townBeadsDir := filepath.Join(m.townRoot, ".beads")
+	townIsDoltNative := beads.IsDoltNative(townBeadsDir)
+
 	// Check if source repo has tracked .beads/ (cloned into mayor/rig).
 	// If so, create a redirect file instead of a new database.
 	if _, err := os.Stat(mayorRigBeads); err == nil {
-		// Tracked beads exist - create redirect to mayor/rig/.beads
+		// Tracked beads exist
+
+		// If town is dolt-native, set up symlinks to shared database.
+		// This keeps tracked config/formulas but shares the dolt database.
+		if townIsDoltNative {
+			if err := beads.SetupDoltNativeSymlinks(mayorRigBeads, townBeadsDir); err != nil {
+				fmt.Printf("   Warning: Could not setup dolt-native symlinks: %v\n", err)
+				// Continue - rig will work but with isolated database
+			}
+		}
+
+		// Create redirect to mayor/rig/.beads
 		if err := os.MkdirAll(beadsDir, 0755); err != nil {
 			return err
 		}
@@ -649,7 +664,7 @@ func (m *Manager) initBeads(rigPath, prefix string) error {
 
 	// Check if town-level uses Dolt server mode (centralized database).
 	// If so, create a redirect to town-level .beads instead of local database.
-	townBeadsDir := filepath.Join(m.townRoot, ".beads")
+	// Note: townBeadsDir was declared earlier for dolt-native check.
 	if beads.IsDoltServerMode(townBeadsDir) {
 		if err := os.MkdirAll(beadsDir, 0755); err != nil {
 			return err
@@ -684,7 +699,7 @@ func (m *Manager) initBeads(rigPath, prefix string) error {
 	filteredEnv = append(filteredEnv, "BEADS_DIR="+beadsDir)
 
 	// Check if town-level beads uses Dolt backend - inherit it for new rigs
-	// Note: townBeadsDir is declared earlier for server mode check
+	// Note: townBeadsDir is declared earlier for dolt-native check
 	townBackend := beads.DetectBackend(townBeadsDir)
 
 	// Run bd init with --no-auto-import to create database WITHOUT importing from JSONL.

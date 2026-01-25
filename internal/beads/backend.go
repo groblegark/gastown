@@ -48,6 +48,94 @@ func IsDoltServerMode(beadsDir string) bool {
 	return config.Backend == BackendDolt && config.DoltServerEnabled
 }
 
+// IsDoltNative returns true if beads uses dolt-native mode (shared via symlinks).
+// Dolt-native mode is characterized by dolt/.dolt being a symlink to a shared database.
+func IsDoltNative(beadsDir string) bool {
+	if !IsDoltServerMode(beadsDir) {
+		return false
+	}
+	// Check if dolt/.dolt is a symlink (characteristic of dolt-native)
+	doltMetaPath := filepath.Join(beadsDir, "dolt", ".dolt")
+	fi, err := os.Lstat(doltMetaPath)
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeSymlink != 0
+}
+
+// SetupDoltNativeSymlinks creates symlinks from rig's dolt/ to town's dolt/.
+// This allows rigs with tracked .beads/ to share the town-level Dolt database.
+// It preserves the rig's config.yaml and formulas but replaces the dolt/ directory
+// with symlinks to the town-level database.
+func SetupDoltNativeSymlinks(rigBeadsDir, townBeadsDir string) error {
+	rigDoltDir := filepath.Join(rigBeadsDir, "dolt")
+
+	// Remove existing dolt/ directory (from tracked beads)
+	if err := os.RemoveAll(rigDoltDir); err != nil {
+		return fmt.Errorf("removing existing dolt directory: %w", err)
+	}
+
+	// Create new dolt/ directory
+	if err := os.MkdirAll(rigDoltDir, 0755); err != nil {
+		return fmt.Errorf("creating dolt directory: %w", err)
+	}
+
+	// Calculate relative path from rig's dolt/ to town's dolt/
+	townDoltDir := filepath.Join(townBeadsDir, "dolt")
+	relPath, err := filepath.Rel(rigDoltDir, townDoltDir)
+	if err != nil {
+		return fmt.Errorf("calculating relative path: %w", err)
+	}
+
+	// Create symlinks for .dolt, .doltcfg, and beads
+	symlinks := []string{".dolt", ".doltcfg", "beads"}
+	for _, name := range symlinks {
+		linkPath := filepath.Join(rigDoltDir, name)
+		target := filepath.Join(relPath, name)
+		if err := os.Symlink(target, linkPath); err != nil {
+			return fmt.Errorf("creating symlink %s: %w", name, err)
+		}
+	}
+
+	// Copy dolt server settings from town's metadata.json to rig's metadata.json
+	townMetadataPath := filepath.Join(townBeadsDir, "metadata.json")
+	townData, err := os.ReadFile(townMetadataPath) //nolint:gosec // G304: path is constructed internally
+	if err != nil {
+		return fmt.Errorf("reading town metadata: %w", err)
+	}
+
+	var townConfig MetadataConfig
+	if err := json.Unmarshal(townData, &townConfig); err != nil {
+		return fmt.Errorf("parsing town metadata: %w", err)
+	}
+
+	// Read rig's existing metadata (if any) or create new
+	rigMetadataPath := filepath.Join(rigBeadsDir, "metadata.json")
+	var rigConfig MetadataConfig
+	if rigData, err := os.ReadFile(rigMetadataPath); err == nil { //nolint:gosec // G304: path is constructed internally
+		_ = json.Unmarshal(rigData, &rigConfig)
+	}
+
+	// Copy dolt server settings from town
+	rigConfig.Backend = townConfig.Backend
+	rigConfig.Database = townConfig.Database
+	rigConfig.DoltServerEnabled = townConfig.DoltServerEnabled
+	rigConfig.DoltServerHost = townConfig.DoltServerHost
+	rigConfig.DoltServerPort = townConfig.DoltServerPort
+	rigConfig.DoltServerUser = townConfig.DoltServerUser
+
+	// Write updated metadata
+	rigData, err := json.MarshalIndent(rigConfig, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling rig metadata: %w", err)
+	}
+	if err := os.WriteFile(rigMetadataPath, rigData, 0644); err != nil {
+		return fmt.Errorf("writing rig metadata: %w", err)
+	}
+
+	return nil
+}
+
 // GetStorageBackend detects the storage backend from metadata.json or config.yaml.
 // Priority order:
 // 1. metadata.json "backend" field (takes precedence)
