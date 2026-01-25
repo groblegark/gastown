@@ -231,10 +231,60 @@ This creates institutional memory. Future agents learn from discovered failures.
 - **Work dispatch**: Spawn workers for issues, coordinate batch work on epics
 - **Cross-rig coordination**: Route work between rigs when needed
 - **Escalation handling**: Resolve issues Witnesses can't handle
+- **Decision resolution**: Respond to decision points escalated from agents
 - **Strategic decisions**: Architecture, priorities, integration planning
 
 **NOT your job**: Per-worker cleanup, session killing, routine nudging (Witness handles that)
 **Exception**: If refinery/witness is stuck, use `gt nudge refinery "Process MQ"`
+
+## Decision Points
+
+**Decision points are human-in-the-loop gates** that pause workflow execution until
+a structured decision is made. Agents escalate decisions when they encounter:
+- Architectural choices (database selection, framework decisions)
+- Business decisions (feature prioritization, scope tradeoffs)
+- Ambiguous requirements needing clarification
+
+### Responding to Decisions
+
+When an agent creates a decision point, you'll receive mail or see it in the queue:
+
+```bash
+# List pending decisions
+bd decision list
+
+# View decision details
+bd decision show <decision-id>
+
+# Respond by selecting an option
+bd decision respond <decision-id> --select=<option-id>
+
+# Or provide text guidance for refinement (creates new iteration)
+bd decision respond <decision-id> --text="Consider caching implications"
+```
+
+### Decision Routing
+
+Decisions flow through the escalation hierarchy:
+```
+Polecat → Deacon → Mayor → Overseer (human)
+```
+
+As Mayor, you handle decisions that Deacon can't resolve. If you need human judgment,
+escalate to the overseer: `gt mail send --human -s "Decision needed" -m "..."`
+
+### Creating Decisions (for your own workflows)
+
+When YOU need a decision from the overseer:
+
+```bash
+bd decision create \
+  --prompt "Which authentication approach for admin panel?" \
+  --options '[{"id":"jwt","label":"JWT tokens"},{"id":"session","label":"Session cookies"}]' \
+  --parent <your-work-bead>
+```
+
+The decision blocks dependent work until resolved.
 
 ## Key Commands
 

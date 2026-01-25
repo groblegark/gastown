@@ -604,6 +604,57 @@ bd create -t bug "gt hook show returns empty when work is slung" --parent hq-xyz
 
 This creates institutional memory. Future agents (and you!) learn from discoveries.
 
+## Decision Points
+
+**Decision points are human-in-the-loop gates** for when you need structured human input
+to proceed. Use them for:
+- Architectural choices (database selection, framework decisions)
+- Business decisions (feature prioritization, scope tradeoffs)
+- Ambiguous requirements needing clarification
+
+### Creating a Decision
+
+When you encounter a fork in the road requiring human judgment:
+
+```bash
+bd decision create \
+  --prompt "Which caching strategy for the API layer?" \
+  --options '[
+    {"id":"redis","label":"Redis (distributed, persistent)"},
+    {"id":"memory","label":"In-memory (simple, fast)"},
+    {"id":"sqlite","label":"SQLite (hybrid approach)"}
+  ]' \
+  --parent <your-current-work-bead>
+```
+
+This creates a gate that blocks dependent work until resolved.
+
+### Checking Decision Status
+
+```bash
+bd decision list              # List pending decisions
+bd decision show <id>         # View decision details
+bd decision check <id>        # Check if resolved
+bd decision await <id>        # Block until resolved (for scripts)
+```
+
+### Iterative Refinement
+
+Decisions support up to 3 refinement iterations. If the overseer responds with
+text guidance instead of selecting an option, a new iteration is created with
+your refined options based on their feedback.
+
+### When to Use Decisions vs Escalation
+
+| Situation | Tool |
+|-----------|------|
+| Multiple valid options, need human choice | `bd decision create` |
+| Blocked, need help, something is broken | `gt escalate` |
+| Quick question, informal | `gt mail send --human` |
+
+Decisions are **structured** - they present options and track responses.
+Escalations are **urgent** - they signal something is wrong.
+
 ## Deploying Binaries (gt/bd)
 
 **When you modify gastown (gt) or beads (bd) code, deploy the updated binaries.**
