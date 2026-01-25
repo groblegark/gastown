@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"$HOME/go/bin:$HOME/bin:$PATH\" && gt mail check --inject"
+            "command": "export PATH=\"$HOME/go/bin:$HOME/bin:$PATH\" && gt mail check --inject && bd decision check --inject"
           }
         ]
       }
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"$HOME/go/bin:$HOME/bin:$PATH\" && gt costs record"
+            "command": "export PATH=\"$HOME/go/bin:$HOME/bin:$PATH\" && gt costs record && gt decision remind --nudge"
           }
         ]
       }
