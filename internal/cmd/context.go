@@ -211,9 +211,9 @@ func autoDetectSession(tmuxClient *tmux.Tmux) (string, error) {
 }
 
 // runContextUsage checks current context usage (stub implementation)
-func runContextUsage(session string, tmuxClient *tmux.Tmux) error {
+func runContextUsage(_ string, _ *tmux.Tmux) error {
 	// TODO: Implement actual context usage detection via Claude Code API
-	// For now, return stub value
+	// For now, return stub value (session and tmuxClient will be used then)
 	if contextJSON {
 		fmt.Println(`{"usage_percent": 0, "message": "stub implementation"}`)
 	} else {
@@ -290,17 +290,10 @@ func triggerEscalation(state *ContextLimitState) error {
 	return nil
 }
 
-// triggerHandoff attempts to restart the agent via gt handoff
-func triggerHandoff() error {
-	// Check if handoff is available by checking if we're in a tmux session
-	// and if gt handoff command exists
-	cmd := exec.Command("gt", "handoff")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	// Run in background? Handoff will replace this process.
-	// For safety, just log and let user decide.
+// triggerHandoff prints advice to restart agent via gt handoff.
+// This is a stub that just prints guidance - actual handoff requires user action.
+func triggerHandoff() {
 	fmt.Println("⚠️  Context limit error detected. Consider running 'gt handoff' to restart agent with fresh context.")
-	return nil
 }
 
 // runContextErrors detects context limit errors in session output
@@ -345,9 +338,7 @@ func runContextErrors(session string, tmuxClient *tmux.Tmux) error {
 					fmt.Printf("Warning: Failed to trigger escalation: %v\n", err)
 				}
 				// Also suggest handoff to restart agent with fresh context
-				if err := triggerHandoff(); err != nil {
-					fmt.Printf("Warning: Failed to trigger handoff: %v\n", err)
-				}
+				triggerHandoff()
 			}
 		}
 	} else {
