@@ -330,7 +330,7 @@ func init() {
 	decisionTurnCheckCmd.Flags().BoolVar(&decisionTurnCheckSoft, "soft", false, "Soft mode: don't block, just allow")
 
 	// Cancel flags
-	decisionCancelCmd.Flags().StringVar(&decisionCancelReason, "reason", "Cancelled", "Reason for cancellation")
+	decisionCancelCmd.Flags().StringVar(&decisionCancelReason, "reason", "Canceled", "Reason for cancellation")
 
 	// Add subcommands
 	decisionCmd.AddCommand(decisionRequestCmd)

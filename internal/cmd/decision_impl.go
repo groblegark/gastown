@@ -1087,19 +1087,19 @@ func runDecisionCancel(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s is not a pending decision (may already be resolved)", decisionID)
 	}
 
-	// Build new labels: remove decision:pending, add decision:cancelled
+	// Build new labels: remove decision:pending, add decision:canceled
 	newLabels := []string{}
 	for _, label := range issue.Labels {
 		if label != "decision:pending" {
 			newLabels = append(newLabels, label)
 		}
 	}
-	newLabels = append(newLabels, "decision:cancelled")
+	newLabels = append(newLabels, "decision:canceled")
 
 	// Close the decision with cancellation reason
 	reason := decisionCancelReason
 	if reason == "" {
-		reason = "Cancelled"
+		reason = "Canceled"
 	}
 
 	if err := bd.CloseWithReason(reason, decisionID); err != nil {
@@ -1112,7 +1112,7 @@ func runDecisionCancel(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to update labels: %v\n", err)
 	}
 
-	fmt.Printf("✓ Cancelled %s: %s\n", decisionID, reason)
+	fmt.Printf("✓ Canceled %s: %s\n", decisionID, reason)
 	return nil
 }
 

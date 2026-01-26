@@ -641,9 +641,4 @@ func (m *Model) View() string {
 	return m.renderView()
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
+// Using built-in max() from Go 1.21+
