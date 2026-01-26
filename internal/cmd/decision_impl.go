@@ -376,10 +376,17 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 	// Send notification to requestor
 	if fields.RequestedBy != "" && fields.RequestedBy != "unknown" {
 		router := mail.NewRouter(townRoot)
+
+		// Build subject - include rationale so agents see it in mail notifications
+		subject := fmt.Sprintf("[DECISION RESOLVED] %s → %s", truncateString(fields.Question, 30), chosenOption.Label)
+		if decisionRationale != "" {
+			subject += fmt.Sprintf(": %s", truncateString(decisionRationale, 40))
+		}
+
 		msg := &mail.Message{
 			From:     resolvedBy,
 			To:       fields.RequestedBy,
-			Subject:  fmt.Sprintf("[DECISION RESOLVED] %s → %s", truncateString(fields.Question, 30), chosenOption.Label),
+			Subject:  subject,
 			Body:     formatResolutionMailBody(decisionID, fields.Question, chosenOption.Label, decisionRationale, resolvedBy),
 			Type:     mail.TypeTask,
 			Priority: mail.PriorityNormal,
