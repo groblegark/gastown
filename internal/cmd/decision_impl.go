@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,7 +14,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/events"
+	"github.com/steveyegge/gastown/internal/inject"
 	"github.com/steveyegge/gastown/internal/mail"
+	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/style"
 	decisionTUI "github.com/steveyegge/gastown/internal/tui/decision"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -1123,5 +1126,117 @@ func runDecisionCancel(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("✓ Canceled %s: %s\n", decisionID, reason)
 	return nil
+}
+
+func runDecisionCheck(cmd *cobra.Command, args []string) error {
+	// Determine identity (priority: --identity flag, auto-detect)
+	identity := ""
+	if decisionCheckIdentity != "" {
+		identity = decisionCheckIdentity
+	} else {
+		identity = detectSender()
+	}
+
+	// Find workspace
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		if decisionCheckInject {
+			// Inject mode: always exit 0, silent on error
+			return nil
+		}
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	bd := beads.New(beads.ResolveBeadsDir(townRoot))
+
+	// Get pending decisions
+	issues, err := bd.ListDecisions()
+	if err != nil {
+		if decisionCheckInject {
+			return nil
+		}
+		return fmt.Errorf("listing decisions: %w", err)
+	}
+
+	// Filter to decisions requested by this identity (or all if identity is overseer/human)
+	var relevant []*beads.Issue
+	for _, issue := range issues {
+		fields := beads.ParseDecisionFields(issue.Description)
+		// Include if:
+		// 1. Requested by this identity
+		// 2. Identity is "overseer" or "human" (sees all)
+		// 3. Has this identity in blockers (waiting on decision to unblock)
+		if fields.RequestedBy == identity ||
+			identity == "overseer" ||
+			identity == "human" ||
+			containsString(fields.Blockers, identity) {
+			relevant = append(relevant, issue)
+		}
+	}
+
+	// JSON output
+	if decisionCheckJSON {
+		result := map[string]interface{}{
+			"identity": identity,
+			"pending":  len(relevant),
+			"has_new":  len(relevant) > 0,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(result)
+	}
+
+	// Inject mode: queue system-reminder if decisions exist
+	if decisionCheckInject {
+		if len(relevant) > 0 {
+			// Build the system-reminder content
+			var buf bytes.Buffer
+			buf.WriteString("<system-reminder>\n")
+			buf.WriteString(fmt.Sprintf("You have %d pending decision(s) awaiting resolution.\n\n", len(relevant)))
+
+			for _, issue := range relevant {
+				fields := beads.ParseDecisionFields(issue.Description)
+				emoji := urgencyEmoji(fields.Urgency)
+				buf.WriteString(fmt.Sprintf("- %s %s [%s]: %s\n", emoji, issue.ID, strings.ToUpper(fields.Urgency), truncateString(fields.Question, 50)))
+			}
+
+			buf.WriteString("\n")
+			buf.WriteString("Run 'gt decision list' to see details, or 'gt decision resolve <id> --choice N' to resolve.\n")
+			buf.WriteString("</system-reminder>\n")
+
+			// Check if we should queue or output directly
+			sessionID := runtime.SessionIDFromEnv()
+			if sessionID != "" {
+				// Session ID available - use queue
+				queue := inject.NewQueue(townRoot, sessionID)
+				if err := queue.Enqueue(inject.TypeDecision, buf.String()); err != nil {
+					// Fall back to direct output on queue error
+					fmt.Print(buf.String())
+				}
+			} else {
+				// No session ID - output directly (legacy behavior)
+				fmt.Print(buf.String())
+			}
+		}
+		return nil
+	}
+
+	// Normal mode
+	if len(relevant) > 0 {
+		fmt.Printf("%s %d pending decision(s)\n", style.Bold.Render("📋"), len(relevant))
+		return NewSilentExit(0)
+	}
+	fmt.Println("No pending decisions")
+	return NewSilentExit(1)
+}
+
+// containsString checks if a slice contains a string.
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
 }
 

@@ -263,6 +263,29 @@ Examples:
 	RunE: runDecisionCancel,
 }
 
+var decisionCheckCmd = &cobra.Command{
+	Use:   "check",
+	Short: "Check for pending decisions (for hooks)",
+	Long: `Check for pending decisions assigned to you.
+
+Exit codes (normal mode):
+  0 - Pending decisions exist
+  1 - No pending decisions
+
+Exit codes (--inject mode):
+  0 - Always (hooks should never block)
+  Output: system-reminder if decisions exist, silent if none
+
+Use --identity to explicitly specify which agent's decisions to check.
+By default, auto-detects from environment.
+
+Examples:
+  gt decision check                           # Simple check
+  gt decision check --inject                  # For hooks
+  gt decision check --identity gastown/crew/joe  # Explicit identity`,
+	RunE: runDecisionCheck,
+}
+
 // Watch-specific flags
 var decisionWatchUrgentOnly bool
 var decisionWatchNotify bool
@@ -279,6 +302,11 @@ var decisionRemindNudge bool
 
 // Cancel-specific flags
 var decisionCancelReason string
+
+// Check-specific flags
+var decisionCheckInject bool
+var decisionCheckJSON bool
+var decisionCheckIdentity string
 
 func init() {
 	// Request subcommand flags
@@ -332,6 +360,12 @@ func init() {
 	// Cancel flags
 	decisionCancelCmd.Flags().StringVar(&decisionCancelReason, "reason", "Canceled", "Reason for cancellation")
 
+	// Check flags
+	decisionCheckCmd.Flags().BoolVar(&decisionCheckInject, "inject", false, "Output format for Claude Code hooks (queues content)")
+	decisionCheckCmd.Flags().BoolVar(&decisionCheckJSON, "json", false, "Output as JSON")
+	decisionCheckCmd.Flags().StringVar(&decisionCheckIdentity, "identity", "", "Explicit identity for decisions (e.g., gastown/crew/joe)")
+	decisionCheckCmd.Flags().StringVar(&decisionCheckIdentity, "address", "", "Alias for --identity")
+
 	// Add subcommands
 	decisionCmd.AddCommand(decisionRequestCmd)
 	decisionCmd.AddCommand(decisionListCmd)
@@ -345,6 +379,7 @@ func init() {
 	decisionCmd.AddCommand(decisionTurnMarkCmd)
 	decisionCmd.AddCommand(decisionTurnCheckCmd)
 	decisionCmd.AddCommand(decisionCancelCmd)
+	decisionCmd.AddCommand(decisionCheckCmd)
 
 	rootCmd.AddCommand(decisionCmd)
 }
