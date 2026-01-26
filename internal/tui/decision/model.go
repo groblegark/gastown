@@ -393,7 +393,7 @@ func (m *Model) resolveDecision(decisionID string, choice int, rationale string)
 }
 
 // getSessionName converts a RequestedBy path to a tmux session name
-// e.g., "gastown/crew/decision_point" -> "gt-gastown-decision_point"
+// e.g., "gastown/crew/decision_point" -> "gt-gastown-crew-decision_point"
 func getSessionName(requestedBy string) (string, error) {
 	if requestedBy == "" {
 		return "", fmt.Errorf("no requestor specified")
@@ -410,11 +410,9 @@ func getSessionName(requestedBy string) (string, error) {
 		return "", fmt.Errorf("invalid requestor format: %s", requestedBy)
 	}
 
-	rig := parts[0]
-	agentName := parts[len(parts)-1]
-
-	// Construct session name: gt-<rig>-<agent>
-	return fmt.Sprintf("gt-%s-%s", rig, agentName), nil
+	// Construct session name: gt-<rig>-<type>-<name>
+	// e.g., "gastown/crew/decision_point" -> "gt-gastown-crew-decision_point"
+	return "gt-" + strings.ReplaceAll(requestedBy, "/", "-"), nil
 }
 
 // captureTerminal captures the content of an agent's terminal

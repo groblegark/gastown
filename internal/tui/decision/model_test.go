@@ -514,9 +514,9 @@ func TestGetSessionName(t *testing.T) {
 		expected    string
 		shouldErr   bool
 	}{
-		{"gastown/crew/decision_point", "gt-gastown-decision_point", false},
-		{"beads/crew/wolf", "gt-beads-wolf", false},
-		{"myrig/polecats/alpha", "gt-myrig-alpha", false},
+		{"gastown/crew/decision_point", "gt-gastown-crew-decision_point", false},
+		{"beads/crew/wolf", "gt-beads-crew-wolf", false},
+		{"myrig/polecats/alpha", "gt-myrig-polecats-alpha", false},
 		{"overseer", "", true},   // Cannot peek human
 		{"human", "", true},      // Cannot peek human
 		{"", "", true},           // Empty
