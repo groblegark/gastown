@@ -203,7 +203,8 @@ func runDecisionList(cmd *cobra.Command, args []string) error {
 	if decisionListAll {
 		issues, err = bd.ListAllDecisions()
 	} else {
-		issues, err = bd.ListDecisions()
+		// Use ListAllPendingDecisions to include both gt and bd decisions
+		issues, err = bd.ListAllPendingDecisions()
 	}
 	if err != nil {
 		return fmt.Errorf("listing decisions: %w", err)

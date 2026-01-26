@@ -361,18 +361,30 @@ func (b *Beads) CreateDecisionBead(title string, fields *DecisionFields) (*Issue
 }
 
 // ResolveDecision marks a decision as resolved with the chosen option.
+// Handles both gt decisions (with gt:decision label) and bd decisions (from decision_points table).
 func (b *Beads) ResolveDecision(id string, chosenIndex int, rationale, resolvedBy string) error {
-	// First get current issue to preserve other fields
+	// First get current issue to check what type of decision it is
 	issue, err := b.Show(id)
 	if err != nil {
 		return err
 	}
 
-	// Verify it's a decision
-	if !HasLabel(issue, "gt:decision") {
-		return fmt.Errorf("issue %s is not a decision bead (missing gt:decision label)", id)
+	// Check if it's a gt decision (has gt:decision label)
+	if HasLabel(issue, "gt:decision") {
+		return b.resolveGtDecision(issue, id, chosenIndex, rationale, resolvedBy)
 	}
 
+	// Try as a bd decision (from decision_points table)
+	bdDecision, err := b.GetBdDecision(id)
+	if err != nil || bdDecision == nil {
+		return fmt.Errorf("issue %s is not a decision (no gt:decision label and not in decision_points)", id)
+	}
+
+	return b.resolveBdDecision(bdDecision, id, chosenIndex, rationale, resolvedBy)
+}
+
+// resolveGtDecision resolves a gt decision (with gt:decision label).
+func (b *Beads) resolveGtDecision(issue *Issue, id string, chosenIndex int, rationale, resolvedBy string) error {
 	// Parse existing fields
 	fields := ParseDecisionFields(issue.Description)
 
@@ -407,12 +419,36 @@ func (b *Beads) ResolveDecision(id string, chosenIndex int, rationale, resolvedB
 	}
 
 	// Close the issue
-	_, err = b.run("close", id, "--reason=Resolved: "+fields.Options[chosenIndex-1].Label)
+	_, err := b.run("close", id, "--reason=Resolved: "+fields.Options[chosenIndex-1].Label)
+	return err
+}
+
+// resolveBdDecision resolves a bd decision (from decision_points table).
+func (b *Beads) resolveBdDecision(dp *BdDecisionPoint, id string, chosenIndex int, rationale, resolvedBy string) error {
+	// Validate choice
+	if chosenIndex < 1 || chosenIndex > len(dp.Options) {
+		return fmt.Errorf("invalid choice %d: must be between 1 and %d", chosenIndex, len(dp.Options))
+	}
+
+	// Get the option ID (bd uses string IDs like "a", "b" or custom)
+	optionID := dp.Options[chosenIndex-1].ID
+
+	// Build respond command
+	args := []string{"decision", "respond", id, "--select=" + optionID, "--no-daemon"}
+	if rationale != "" {
+		args = append(args, "--text="+rationale)
+	}
+	if resolvedBy != "" {
+		args = append(args, "--by="+resolvedBy)
+	}
+
+	_, err := b.run(args...)
 	return err
 }
 
 // GetDecisionBead retrieves a decision bead by ID.
 // Returns nil if not found.
+// Supports both gt decisions (with gt:decision label) and bd decisions (from decision_points table).
 func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 	issue, err := b.Show(id)
 	if err != nil {
@@ -422,12 +458,50 @@ func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 		return nil, nil, err
 	}
 
-	if !HasLabel(issue, "gt:decision") {
+	// Check if it's a gt decision (has gt:decision label)
+	if HasLabel(issue, "gt:decision") {
+		fields := ParseDecisionFields(issue.Description)
+		return issue, fields, nil
+	}
+
+	// Try to get it as a bd decision (from decision_points table)
+	bdDecision, err := b.GetBdDecision(id)
+	if err != nil || bdDecision == nil || bdDecision.DecisionPoint == nil {
+		// Not found in decision_points either - not a decision
 		return nil, nil, fmt.Errorf("issue %s is not a decision bead (missing gt:decision label)", id)
 	}
 
-	fields := ParseDecisionFields(issue.Description)
+	// Convert bd decision to DecisionFields format
+	fields := &DecisionFields{
+		Question:    bdDecision.DecisionPoint.Prompt,
+		RequestedAt: bdDecision.DecisionPoint.CreatedAt,
+		ChosenIndex: 0, // Pending
+	}
+
+	// Parse options from bd decision
+	for _, opt := range bdDecision.Options {
+		fields.Options = append(fields.Options, DecisionOption{
+			Label:       opt.Label,
+			Description: opt.Description,
+		})
+	}
+
 	return issue, fields, nil
+}
+
+// GetBdDecision retrieves a decision from the decision_points table by issue ID.
+func (b *Beads) GetBdDecision(id string) (*BdDecisionPoint, error) {
+	out, err := b.run("decision", "show", id, "--json", "--no-daemon")
+	if err != nil {
+		return nil, err
+	}
+
+	var dp BdDecisionPoint
+	if err := json.Unmarshal(out, &dp); err != nil {
+		return nil, err
+	}
+
+	return &dp, nil
 }
 
 // ListDecisions returns all pending decision beads.
@@ -480,6 +554,126 @@ func (b *Beads) ListDecisionsByUrgency(urgency string) ([]*Issue, error) {
 	}
 
 	return issues, nil
+}
+
+// BdDecisionOption represents an option in a bd decision
+type BdDecisionOption struct {
+	ID          string `json:"id"`
+	Short       string `json:"short"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+// BdDecisionPointData is the nested decision_point data from bd decision show
+type BdDecisionPointData struct {
+	IssueID   string `json:"issue_id"`
+	Prompt    string `json:"prompt"`
+	Options   string `json:"options"` // JSON string of options (raw)
+	CreatedAt string `json:"created_at"`
+}
+
+// BdDecisionShowResponse represents the response from bd decision show
+type BdDecisionShowResponse struct {
+	ID            string               `json:"id"`
+	DecisionPoint *BdDecisionPointData `json:"decision_point"`
+	Options       []BdDecisionOption   `json:"options"` // Parsed options at top level
+	Issue         *Issue               `json:"issue"`
+}
+
+// BdDecisionListItem represents a decision from bd decision list (flat format)
+type BdDecisionListItem struct {
+	IssueID       string             `json:"issue_id"`
+	Prompt        string             `json:"prompt"`
+	Options       string             `json:"options"` // JSON string of options (raw)
+	OptionsParsed []BdDecisionOption `json:"options_parsed"`
+	CreatedAt     string             `json:"created_at"`
+	Issue         *Issue             `json:"issue"`
+}
+
+// BdDecisionPoint is an alias for BdDecisionShowResponse for backward compatibility
+type BdDecisionPoint = BdDecisionShowResponse
+
+// ListBdDecisions returns pending decisions from the decision_points table.
+// These are decisions created with `bd decision create` (not `gt decision request`).
+func (b *Beads) ListBdDecisions() ([]*Issue, error) {
+	// Note: bd decision list shows pending by default (no --pending flag)
+	// Use --no-daemon since daemon doesn't support Dolt backend
+	out, err := b.run("decision", "list", "--json", "--no-daemon")
+	if err != nil {
+		// If bd decision list fails, return empty (not all beads DBs have decision_points)
+		return nil, nil
+	}
+
+	var decisions []BdDecisionListItem
+	if err := json.Unmarshal(out, &decisions); err != nil {
+		return nil, nil // Return empty on parse error
+	}
+
+	// Convert to Issue format
+	var issues []*Issue
+	for _, dp := range decisions {
+		if dp.Issue == nil {
+			continue
+		}
+		// Skip if already closed
+		if dp.Issue.Status == "closed" {
+			continue
+		}
+		// Build description from options
+		var desc strings.Builder
+		desc.WriteString("## Question\n")
+		desc.WriteString(dp.Prompt)
+		desc.WriteString("\n\n## Options\n\n")
+		for i, opt := range dp.OptionsParsed {
+			desc.WriteString(fmt.Sprintf("### %d. %s\n", i+1, opt.Label))
+			if opt.Description != "" {
+				desc.WriteString(opt.Description)
+				desc.WriteString("\n")
+			}
+			desc.WriteString("\n")
+		}
+
+		issue := dp.Issue
+		issue.Description = desc.String()
+		issues = append(issues, issue)
+	}
+
+	return issues, nil
+}
+
+// ListAllPendingDecisions returns decisions from both gt decision and bd decision.
+func (b *Beads) ListAllPendingDecisions() ([]*Issue, error) {
+	// Get gt decisions (beads with decision:pending label)
+	gtDecisions, err := b.ListDecisions()
+	if err != nil {
+		gtDecisions = nil
+	}
+
+	// Get bd decisions (from decision_points table)
+	bdDecisions, err := b.ListBdDecisions()
+	if err != nil {
+		bdDecisions = nil
+	}
+
+	// Merge, avoiding duplicates by ID
+	seen := make(map[string]bool)
+	var all []*Issue
+
+	for _, d := range gtDecisions {
+		if !seen[d.ID] {
+			seen[d.ID] = true
+			all = append(all, d)
+		}
+	}
+
+	for _, d := range bdDecisions {
+		if !seen[d.ID] {
+			seen[d.ID] = true
+			all = append(all, d)
+		}
+	}
+
+	return all, nil
 }
 
 // AddDecisionBlocker adds a blocker dependency to a decision.
