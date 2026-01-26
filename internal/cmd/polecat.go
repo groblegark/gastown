@@ -19,6 +19,7 @@ import (
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
+	"github.com/steveyegge/gastown/internal/witness"
 )
 
 // Polecat command flags
@@ -252,6 +253,11 @@ var (
 	polecatStaleCleanup   bool
 )
 
+var (
+	polecatOrphansJSON    bool
+	polecatOrphansRespawn bool
+)
+
 var polecatStaleCmd = &cobra.Command{
 	Use:   "stale <rig>",
 	Short: "Detect stale polecats that may need cleanup",
@@ -275,6 +281,24 @@ Examples:
   gt polecat stale greenplace --cleanup --dry-run`,
 	Args: cobra.ExactArgs(1),
 	RunE: runPolecatStale,
+}
+
+var polecatOrphansCmd = &cobra.Command{
+	Use:   "orphans <rig>",
+	Short: "Detect polecats with hooked work but no active session",
+	Long: `Detect orphaned polecats that have hooked work but no running tmux session.
+
+These are polecats whose sessions died (API errors, crashes, etc.) but still have
+work assigned to them. Without intervention, this work remains orphaned.
+
+Use --respawn to automatically respawn these polecats to process their hooked work.
+
+Examples:
+  gt polecat orphans gastown               # Detect orphans
+  gt polecat orphans gastown --json        # JSON output
+  gt polecat orphans gastown --respawn     # Detect and respawn`,
+	Args: cobra.ExactArgs(1),
+	RunE: runPolecatOrphans,
 }
 
 func init() {
@@ -312,6 +336,10 @@ func init() {
 	polecatStaleCmd.Flags().IntVar(&polecatStaleThreshold, "threshold", 20, "Commits behind main to consider stale")
 	polecatStaleCmd.Flags().BoolVar(&polecatStaleCleanup, "cleanup", false, "Automatically nuke stale polecats")
 
+	// Orphans flags
+	polecatOrphansCmd.Flags().BoolVar(&polecatOrphansJSON, "json", false, "Output as JSON")
+	polecatOrphansCmd.Flags().BoolVar(&polecatOrphansRespawn, "respawn", false, "Automatically respawn orphaned polecats")
+
 	// Add subcommands
 	polecatCmd.AddCommand(polecatListCmd)
 	polecatCmd.AddCommand(polecatAddCmd)
@@ -323,6 +351,7 @@ func init() {
 	polecatCmd.AddCommand(polecatGCCmd)
 	polecatCmd.AddCommand(polecatNukeCmd)
 	polecatCmd.AddCommand(polecatStaleCmd)
+	polecatCmd.AddCommand(polecatOrphansCmd)
 
 	rootCmd.AddCommand(polecatCmd)
 }
@@ -1395,6 +1424,75 @@ func runPolecatStale(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Printf("\n%s Nuked %d stale polecat(s).\n", style.SuccessPrefix, nuked)
 		}
+	}
+
+	return nil
+}
+
+// OrphanInfo represents an orphaned polecat with hooked work.
+type OrphanInfo struct {
+	Rig      string `json:"rig"`
+	Polecat  string `json:"polecat"`
+	HookBead string `json:"hook_bead"`
+}
+
+func runPolecatOrphans(cmd *cobra.Command, args []string) error {
+	rigName := args[0]
+	workDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting working directory: %w", err)
+	}
+
+	// Find polecats with hooked work but no active session
+	orphans, err := witness.FindPolecatsWithHookedWork(workDir, rigName)
+	if err != nil {
+		return fmt.Errorf("finding orphaned polecats: %w", err)
+	}
+
+	// Convert to output format
+	var orphanInfos []OrphanInfo
+	for _, o := range orphans {
+		orphanInfos = append(orphanInfos, OrphanInfo{
+			Rig:      o.RigName,
+			Polecat:  o.PolecatName,
+			HookBead: o.HookBead,
+		})
+	}
+
+	// JSON output
+	if polecatOrphansJSON {
+		return json.NewEncoder(os.Stdout).Encode(orphanInfos)
+	}
+
+	// Human-readable output
+	if len(orphanInfos) == 0 {
+		fmt.Printf("No orphaned polecats found in %s.\n", rigName)
+		return nil
+	}
+
+	fmt.Printf("Found %d orphaned polecat(s) in %s:\n\n", len(orphanInfos), rigName)
+	for _, o := range orphanInfos {
+		fmt.Printf("%s %s\n", style.Warning.Render("○"), style.Bold.Render(o.Polecat))
+		fmt.Printf("    Hooked work: %s\n", o.HookBead)
+		fmt.Println()
+	}
+
+	// Respawn if requested
+	if polecatOrphansRespawn {
+		fmt.Printf("Respawning %d orphaned polecat(s)...\n", len(orphanInfos))
+		respawned := 0
+		for _, o := range orphanInfos {
+			fmt.Printf("  Respawning %s...", o.Polecat)
+			if err := witness.RespawnPolecatWithHookedWork(workDir, o.Rig, o.Polecat); err != nil {
+				fmt.Printf(" %s (%v)\n", style.Error.Render("failed"), err)
+			} else {
+				fmt.Printf(" %s\n", style.Success.Render("done"))
+				respawned++
+			}
+		}
+		fmt.Printf("\n%s Respawned %d orphaned polecat(s).\n", style.SuccessPrefix, respawned)
+	} else {
+		fmt.Println("Use --respawn to respawn these polecats.")
 	}
 
 	return nil
