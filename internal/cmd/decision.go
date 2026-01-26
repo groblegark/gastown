@@ -275,6 +275,21 @@ var decisionTurnCheckCmd = &cobra.Command{
 	RunE:   runDecisionTurnCheck,
 }
 
+var decisionCancelCmd = &cobra.Command{
+	Use:   "cancel <decision-id>",
+	Short: "Cancel a pending decision",
+	Long: `Cancel a pending decision without resolving it.
+
+Use this to clean up stale, test, or no-longer-needed decisions.
+The decision will be closed with a cancellation reason.
+
+Examples:
+  gt decision cancel hq-dec-abc123
+  gt decision cancel hq-dec-abc123 --reason "No longer needed"`,
+	Args: cobra.ExactArgs(1),
+	RunE: runDecisionCancel,
+}
+
 // Watch-specific flags
 var decisionWatchUrgentOnly bool
 var decisionWatchNotify bool
@@ -288,6 +303,9 @@ var decisionDashboardJSON bool
 // Remind-specific flags
 var decisionRemindInject bool
 var decisionRemindNudge bool
+
+// Cancel-specific flags
+var decisionCancelReason string
 
 func init() {
 	// Request subcommand flags
@@ -343,6 +361,9 @@ func init() {
 	// Turn-check flags
 	decisionTurnCheckCmd.Flags().BoolVar(&decisionTurnCheckSoft, "soft", false, "Soft mode: don't block, just allow")
 
+	// Cancel flags
+	decisionCancelCmd.Flags().StringVar(&decisionCancelReason, "reason", "Cancelled", "Reason for cancellation")
+
 	// Add subcommands
 	decisionCmd.AddCommand(decisionRequestCmd)
 	decisionCmd.AddCommand(decisionListCmd)
@@ -355,6 +376,7 @@ func init() {
 	decisionCmd.AddCommand(decisionTurnClearCmd)
 	decisionCmd.AddCommand(decisionTurnMarkCmd)
 	decisionCmd.AddCommand(decisionTurnCheckCmd)
+	decisionCmd.AddCommand(decisionCancelCmd)
 
 	rootCmd.AddCommand(decisionCmd)
 }

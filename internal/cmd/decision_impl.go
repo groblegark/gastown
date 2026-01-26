@@ -1155,3 +1155,66 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func runDecisionCancel(cmd *cobra.Command, args []string) error {
+	decisionID := args[0]
+
+	// Find workspace
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a workspace: %w", err)
+	}
+
+	// Connect to beads
+	bd := beads.New(beads.ResolveBeadsDir(townRoot))
+
+	// Get the decision to verify it exists
+	issue, _, err := bd.GetDecisionBead(decisionID)
+	if err != nil {
+		return fmt.Errorf("failed to get decision %s: %w", decisionID, err)
+	}
+	if issue == nil {
+		return fmt.Errorf("decision not found: %s", decisionID)
+	}
+
+	// Verify it's a pending decision (has decision:pending label)
+	isPending := false
+	for _, label := range issue.Labels {
+		if label == "decision:pending" {
+			isPending = true
+			break
+		}
+	}
+
+	if !isPending {
+		return fmt.Errorf("%s is not a pending decision (may already be resolved)", decisionID)
+	}
+
+	// Build new labels: remove decision:pending, add decision:cancelled
+	newLabels := []string{}
+	for _, label := range issue.Labels {
+		if label != "decision:pending" {
+			newLabels = append(newLabels, label)
+		}
+	}
+	newLabels = append(newLabels, "decision:cancelled")
+
+	// Close the decision with cancellation reason
+	reason := decisionCancelReason
+	if reason == "" {
+		reason = "Cancelled"
+	}
+
+	if err := bd.CloseWithReason(reason, decisionID); err != nil {
+		return fmt.Errorf("failed to cancel decision: %w", err)
+	}
+
+	// Update labels
+	if err := bd.Update(decisionID, beads.UpdateOptions{SetLabels: newLabels}); err != nil {
+		// Non-fatal, decision is already closed
+		fmt.Fprintf(os.Stderr, "Warning: failed to update labels: %v\n", err)
+	}
+
+	fmt.Printf("✓ Cancelled %s: %s\n", decisionID, reason)
+	return nil
+}
+
