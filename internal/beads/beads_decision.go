@@ -431,8 +431,9 @@ func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 }
 
 // ListDecisions returns all pending decision beads.
+// Note: --include-gates is required because decisions are gate-type issues (hq-3q571.1)
 func (b *Beads) ListDecisions() ([]*Issue, error) {
-	out, err := b.run("list", "--label=gt:decision", "--label=decision:pending", "--status=open", "--json")
+	out, err := b.run("list", "--label=gt:decision", "--label=decision:pending", "--status=open", "--include-gates", "--json")
 	if err != nil {
 		return nil, err
 	}
