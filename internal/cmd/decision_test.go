@@ -600,3 +600,183 @@ func TestDecisionTurnCmdExists(t *testing.T) {
 		}
 	}
 }
+
+// --- Fail-then-File validation tests ---
+
+// TestHasFailureContext tests failure keyword detection.
+func TestHasFailureContext(t *testing.T) {
+	tests := []struct {
+		name    string
+		prompt  string
+		context string
+		want    bool
+	}{
+		{
+			name:   "error in prompt",
+			prompt: "API call failed with 400 error. What next?",
+			want:   true,
+		},
+		{
+			name:   "fail in prompt",
+			prompt: "Build fails intermittently",
+			want:   true,
+		},
+		{
+			name:   "bug in prompt",
+			prompt: "Found a bug in the auth flow",
+			want:   true,
+		},
+		{
+			name:   "broken in prompt",
+			prompt: "Tests are broken after merge",
+			want:   true,
+		},
+		{
+			name:    "error in context",
+			prompt:  "What should we do?",
+			context: "Getting 500 error from the API",
+			want:    true,
+		},
+		{
+			name:   "http error code",
+			prompt: "API returns 404",
+			want:   true,
+		},
+		{
+			name:   "no failure",
+			prompt: "Which authentication method should we use?",
+			want:   false,
+		},
+		{
+			name:   "no failure positive words",
+			prompt: "The feature is working great. What's next?",
+			want:   false,
+		},
+		{
+			name:   "case insensitive",
+			prompt: "Getting ERROR from server",
+			want:   true,
+		},
+		{
+			name:   "doesn't work",
+			prompt: "The login doesn't work",
+			want:   true,
+		},
+		{
+			name:   "unable to",
+			prompt: "Unable to connect to database",
+			want:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasFailureContext(tt.prompt, tt.context)
+			if got != tt.want {
+				t.Errorf("hasFailureContext(%q, %q) = %v, want %v", tt.prompt, tt.context, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestHasFileOption tests FILE option detection.
+func TestHasFileOption(t *testing.T) {
+	tests := []struct {
+		name    string
+		options []beads.DecisionOption
+		want    bool
+	}{
+		{
+			name: "file in label",
+			options: []beads.DecisionOption{
+				{Label: "Retry"},
+				{Label: "File bug"},
+			},
+			want: true,
+		},
+		{
+			name: "track in description",
+			options: []beads.DecisionOption{
+				{Label: "Skip", Description: "Skip and track for later"},
+			},
+			want: true,
+		},
+		{
+			name: "bd create in description",
+			options: []beads.DecisionOption{
+				{Label: "Track", Description: "Use bd create to log issue"},
+			},
+			want: true,
+		},
+		{
+			name: "investigate in label",
+			options: []beads.DecisionOption{
+				{Label: "Retry"},
+				{Label: "Investigate root cause"},
+			},
+			want: true,
+		},
+		{
+			name: "no file option",
+			options: []beads.DecisionOption{
+				{Label: "Retry with backoff"},
+				{Label: "Skip this operation"},
+			},
+			want: false,
+		},
+		{
+			name: "create issue",
+			options: []beads.DecisionOption{
+				{Label: "Create issue", Description: "Open issue for this"},
+			},
+			want: true,
+		},
+		{
+			name:    "empty options",
+			options: nil,
+			want:    false,
+		},
+		{
+			name: "case insensitive",
+			options: []beads.DecisionOption{
+				{Label: "FILE BUG"},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasFileOption(tt.options)
+			if got != tt.want {
+				t.Errorf("hasFileOption() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSuggestFileOption tests the suggested option text.
+func TestSuggestFileOption(t *testing.T) {
+	suggestion := suggestFileOption()
+	if suggestion == "" {
+		t.Error("suggestFileOption() should not return empty string")
+	}
+	// Should contain file-related keywords
+	lower := strings.ToLower(suggestion)
+	if !strings.Contains(lower, "file") && !strings.Contains(lower, "bug") && !strings.Contains(lower, "track") {
+		t.Errorf("suggestFileOption() = %q, should contain file/bug/track keyword", suggestion)
+	}
+}
+
+// TestDecisionRequestNoFileCheckFlag tests that --no-file-check flag exists.
+func TestDecisionRequestNoFileCheckFlag(t *testing.T) {
+	if decisionRequestCmd == nil {
+		t.Fatal("decisionRequestCmd is nil")
+	}
+
+	flags := decisionRequestCmd.Flags()
+	noFileCheckFlag := flags.Lookup("no-file-check")
+	if noFileCheckFlag == nil {
+		t.Error("missing --no-file-check flag")
+	}
+}

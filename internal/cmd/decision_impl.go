@@ -80,6 +80,17 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 		options = append(options, opt)
 	}
 
+	// Validate FILE option when failure context detected (Fail-then-File principle)
+	if !decisionNoFileCheck && hasFailureContext(decisionPrompt, decisionContext) {
+		if !hasFileOption(options) {
+			return fmt.Errorf("failure context detected but no FILE option provided.\n\n"+
+				"The prompt mentions an error/failure. Per the 'Fail then File' principle,\n"+
+				"decisions about failures should include an option to file a tracking bug.\n\n"+
+				"Suggested option:\n  --option \"%s\"\n\n"+
+				"Use --no-file-check to skip this validation.", suggestFileOption())
+		}
+	}
+
 	// Build decision fields
 	fields := &beads.DecisionFields{
 		Question:    decisionPrompt,
@@ -1244,5 +1255,50 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// --- Fail-then-File validation ---
+
+// failureKeywords are patterns that indicate a failure context in the prompt or context.
+var failureKeywords = []string{
+	"error", "fail", "bug", "broke", "broken", "issue", "problem",
+	"stuck", "crash", "exception", "panic", "fatal", "cannot", "unable",
+	"doesn't work", "does not work", "not working", "won't", "will not",
+	"400", "401", "403", "404", "500", "502", "503", "504", // HTTP error codes
+}
+
+// fileKeywords are patterns that indicate an option mentions filing/tracking.
+var fileKeywords = []string{
+	"file", "bug", "track", "bd create", "investigate", "report",
+	"create issue", "create bead", "open issue", "log issue",
+}
+
+// hasFailureContext checks if the prompt or context contains failure indicators.
+func hasFailureContext(prompt, context string) bool {
+	combined := strings.ToLower(prompt + " " + context)
+	for _, keyword := range failureKeywords {
+		if strings.Contains(combined, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasFileOption checks if any option mentions filing/tracking bugs.
+func hasFileOption(options []beads.DecisionOption) bool {
+	for _, opt := range options {
+		combined := strings.ToLower(opt.Label + " " + opt.Description)
+		for _, keyword := range fileKeywords {
+			if strings.Contains(combined, keyword) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// suggestFileOption returns a suggested option text for filing a bug.
+func suggestFileOption() string {
+	return "File bug: Create tracking bead to investigate root cause"
 }
 

@@ -308,6 +308,9 @@ var decisionCheckInject bool
 var decisionCheckJSON bool
 var decisionCheckIdentity string
 
+// Request validation flags
+var decisionNoFileCheck bool
+
 func init() {
 	// Request subcommand flags
 	// Primary flags
@@ -319,6 +322,7 @@ func init() {
 	decisionRequestCmd.Flags().StringVar(&decisionParent, "parent", "", "Parent bead for hierarchy")
 	decisionRequestCmd.Flags().StringVarP(&decisionUrgency, "urgency", "u", "medium", "Urgency level: high, medium, low")
 	decisionRequestCmd.Flags().BoolVar(&decisionJSON, "json", false, "Output as JSON")
+	decisionRequestCmd.Flags().BoolVar(&decisionNoFileCheck, "no-file-check", false, "Skip FILE option validation for failure contexts")
 
 	// Aliases for backward compatibility
 	decisionRequestCmd.Flags().StringVarP(&decisionPrompt, "question", "q", "", "Alias for --prompt (deprecated)")
