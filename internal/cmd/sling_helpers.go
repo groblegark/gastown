@@ -438,7 +438,8 @@ func agentIDToBeadID(agentID, townRoot string) string {
 	case len(parts) == 3 && parts[1] == "crew":
 		return beads.CrewBeadIDWithPrefix(prefix, rig, parts[2])
 	case len(parts) == 3 && parts[1] == "polecats":
-		return beads.PolecatBeadIDWithPrefix(prefix, rig, parts[2])
+		// Polecat agent beads use hq- prefix for town beads (fix for gt-qub)
+		return beads.PolecatBeadIDTown(rig, parts[2])
 	default:
 		return ""
 	}
