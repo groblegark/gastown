@@ -262,20 +262,30 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		if err == nil && dead {
 			// Capture diagnostic output before cleanup
 			diagnosticOutput := m.tmux.CaptureDeadPaneOutput(sessionID, 50)
+			// Try to get the pane's exit status for additional diagnostics
+			exitStatus := m.tmux.GetPaneExitStatus(sessionID)
 			// Kill the zombie session
 			_ = m.tmux.KillSession(sessionID)
 			// Return error with diagnostics
 			if diagnosticOutput != "" {
+				if exitStatus != "" {
+					return fmt.Errorf("session %s died during startup (exit status: %s). Diagnostic output:\n%s", sessionID, exitStatus, diagnosticOutput)
+				}
 				return fmt.Errorf("session %s died during startup. Diagnostic output:\n%s", sessionID, diagnosticOutput)
 			}
-			return fmt.Errorf("session %s died during startup (agent command may have failed)", sessionID)
+			// Pane died but no output captured - provide more specific error
+			if exitStatus != "" {
+				return fmt.Errorf("session %s died during startup (exit status: %s, no diagnostic output captured - check agent binary and credentials)", sessionID, exitStatus)
+			}
+			return fmt.Errorf("session %s died during startup (pane dead, no diagnostic output - check agent binary and credentials)", sessionID)
 		}
 		// Session is alive and pane is not dead - success
 		return nil
 	}
 
 	// Session doesn't exist at all (remain-on-exit may not have taken effect)
-	return fmt.Errorf("session %s died during startup (agent command may have failed)", sessionID)
+	// This is a different failure mode than pane death - the session was destroyed entirely
+	return fmt.Errorf("session %s died during startup (session destroyed, remain-on-exit may have failed - check tmux version)", sessionID)
 }
 
 // Stop terminates a polecat session.
