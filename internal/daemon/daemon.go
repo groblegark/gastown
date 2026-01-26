@@ -57,6 +57,11 @@ type Daemon struct {
 	// See: https://github.com/steveyegge/gastown/issues/567
 	// Note: Only accessed from heartbeat loop goroutine - no sync needed.
 	deaconLastStarted time.Time
+
+	// Track rigs we've already warned about missing wisp config.
+	// Only warn once per rig per daemon session to avoid log spam.
+	// Note: Only accessed from heartbeat loop goroutine - no sync needed.
+	wispWarned map[string]bool
 }
 
 // sessionDeath records a detected session death for mass death analysis.
@@ -111,6 +116,7 @@ func New(config *Config) (*Daemon, error) {
 		ctx:          ctx,
 		cancel:       cancel,
 		doltServer:   doltServer,
+		wispWarned:   make(map[string]bool),
 	}, nil
 }
 
@@ -613,8 +619,12 @@ func (d *Daemon) isRigOperational(rigName string) (bool, string) {
 	cfg := wisp.NewConfig(d.config.TownRoot, rigName)
 
 	// Warn if wisp config is missing - parked/docked state may have been lost
+	// Only warn once per rig per daemon session to avoid log spam
 	if _, err := os.Stat(cfg.ConfigPath()); os.IsNotExist(err) {
-		d.logger.Printf("Warning: no wisp config for %s - parked state may have been lost", rigName)
+		if !d.wispWarned[rigName] {
+			d.wispWarned[rigName] = true
+			d.logger.Printf("Warning: no wisp config for %s - parked state may have been lost", rigName)
+		}
 	}
 
 	// Check wisp layer first (local/ephemeral overrides)
