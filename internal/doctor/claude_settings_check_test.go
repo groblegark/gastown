@@ -56,13 +56,35 @@ func createValidSettings(t *testing.T, path string) {
 					},
 				},
 			},
+			"UserPromptSubmit": []any{
+				map[string]any{
+					"matcher": "**",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "bd decision check --inject && gt decision turn-clear",
+						},
+					},
+				},
+			},
+			"PostToolUse": []any{
+				map[string]any{
+					"matcher": "Bash",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "gt decision turn-mark",
+						},
+					},
+				},
+			},
 			"Stop": []any{
 				map[string]any{
 					"matcher": "**",
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "gt costs record --session $CLAUDE_SESSION_ID",
+							"command": "gt costs record && gt decision turn-check",
 						},
 					},
 				},

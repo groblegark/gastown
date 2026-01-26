@@ -364,9 +364,24 @@ func (c *ClaudeSettingsCheck) checkSettings(path, _ string) []string {
 		missing = append(missing, "Stop hook")
 	}
 
+	// Check Stop hook has turn-check (turn enforcement)
+	if !c.hookHasPattern(hooks, "Stop", "gt decision turn-check") {
+		missing = append(missing, "turn-check hook")
+	}
+
 	// Check UserPromptSubmit hook has bd decision check --inject
 	if !c.hookHasPattern(hooks, "UserPromptSubmit", "bd decision check --inject") {
 		missing = append(missing, "decision check hook")
+	}
+
+	// Check UserPromptSubmit hook has turn-clear (turn enforcement)
+	if !c.hookHasPattern(hooks, "UserPromptSubmit", "gt decision turn-clear") {
+		missing = append(missing, "turn-clear hook")
+	}
+
+	// Check PostToolUse hook has turn-mark (turn enforcement)
+	if !c.hookHasPattern(hooks, "PostToolUse", "gt decision turn-mark") {
+		missing = append(missing, "turn-mark hook")
 	}
 
 	return missing
