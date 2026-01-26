@@ -364,9 +364,20 @@ func (m *Model) renderPeekMode() string {
 	// Handle empty content gracefully
 	if m.peekContent == "" {
 		b.WriteString(helpStyle.Render("(No terminal content captured)"))
-	} else {
-		b.WriteString(m.peekViewport.View())
+		b.WriteString("\n\n")
+		b.WriteString(strings.Repeat("─", m.width-2))
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("Press any key to close"))
+		return b.String()
 	}
+
+	// Ensure viewport has valid dimensions before rendering
+	if m.peekViewport.Width == 0 || m.peekViewport.Height == 0 {
+		m.peekViewport.Width = m.width - 4
+		m.peekViewport.Height = m.height - 6
+	}
+
+	b.WriteString(m.peekViewport.View())
 	b.WriteString("\n")
 
 	// Footer with scroll position
