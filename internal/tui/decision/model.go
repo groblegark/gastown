@@ -286,6 +286,7 @@ func New() *Model {
 		help:           h,
 		textInput:      ta,
 		detailViewport: viewport.New(0, 0),
+		peekViewport:   viewport.New(0, 0),
 		filter:         "all",
 		done:           make(chan struct{}),
 	}
@@ -454,12 +455,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textInput.SetWidth(msg.Width - 10)
 
 	case tea.KeyMsg:
-		// Handle peek mode - any key dismisses
+		// Handle peek mode - arrow keys scroll, other keys dismiss
 		if m.peeking {
-			m.peeking = false
-			m.peekContent = ""
-			m.peekSessionName = ""
-			return m, nil
+			switch {
+			case key.Matches(msg, m.keys.Up):
+				m.peekViewport.LineUp(1)
+				return m, nil
+			case key.Matches(msg, m.keys.Down):
+				m.peekViewport.LineDown(1)
+				return m, nil
+			case key.Matches(msg, m.keys.PageUp):
+				m.peekViewport.HalfViewUp()
+				return m, nil
+			case key.Matches(msg, m.keys.PageDown):
+				m.peekViewport.HalfViewDown()
+				return m, nil
+			default:
+				// Any other key dismisses peek
+				m.peeking = false
+				m.peekContent = ""
+				m.peekSessionName = ""
+				return m, nil
+			}
 		}
 
 		// Handle input mode first
@@ -609,9 +626,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.peeking = true
 			m.peekSessionName = msg.sessionName
 			m.peekContent = msg.content
+			// Set viewport dimensions for scrolling
+			m.peekViewport.Width = m.width - 4
+			m.peekViewport.Height = m.height - 6 // Leave room for header/footer
 			m.peekViewport.SetContent(msg.content)
 			m.peekViewport.GotoBottom()
-			m.status = fmt.Sprintf("Peeking: %s (press any key to close)", msg.sessionName)
+			m.status = fmt.Sprintf("Peeking: %s (↑/↓ scroll, any other key to close)", msg.sessionName)
 		}
 	}
 

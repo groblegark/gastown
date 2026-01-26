@@ -355,34 +355,18 @@ func (m *Model) renderPeekMode() string {
 	b.WriteString(titleStyle.Render(header))
 	b.WriteString("\n\n")
 
-	// Content - show last lines that fit in the viewport
-	lines := strings.Split(m.peekContent, "\n")
-	maxLines := m.height - 6 // Leave room for header and footer
-	if maxLines < 5 {
-		maxLines = 5
-	}
-
-	startLine := 0
-	if len(lines) > maxLines {
-		startLine = len(lines) - maxLines
-	}
-
-	for i := startLine; i < len(lines); i++ {
-		line := lines[i]
-		// Truncate long lines
-		if len(line) > m.width-2 {
-			line = line[:m.width-5] + "..."
-		}
-		b.WriteString(detailValueStyle.Render(line))
-		b.WriteString("\n")
-	}
-
-	// Footer
+	// Content - use viewport for scrolling
+	b.WriteString(m.peekViewport.View())
 	b.WriteString("\n")
-	footer := strings.Repeat("─", m.width-2)
-	b.WriteString(helpStyle.Render(footer))
+
+	// Footer with scroll position
+	scrollPercent := m.peekViewport.ScrollPercent() * 100
+	scrollInfo := fmt.Sprintf(" %.0f%% ", scrollPercent)
+	footerLeft := strings.Repeat("─", (m.width-len(scrollInfo))/2)
+	footerRight := strings.Repeat("─", m.width-len(footerLeft)-len(scrollInfo)-2)
+	b.WriteString(helpStyle.Render(footerLeft + scrollInfo + footerRight))
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Press any key to close"))
+	b.WriteString(helpStyle.Render("↑/↓/j/k: scroll  pgup/pgdn: page  any other key: close"))
 
 	return b.String()
 }
