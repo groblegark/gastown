@@ -3,6 +3,8 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -908,6 +910,143 @@ func runDecisionWatch(cmd *cobra.Command, args []string) error {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("error running decision watch: %w", err)
+	}
+
+	return nil
+}
+
+// --- Turn enforcement functions ---
+
+// turnMarkerPath returns the path to the turn marker file for a session.
+func turnMarkerPath(sessionID string) string {
+	return fmt.Sprintf("/tmp/.decision-offered-%s", sessionID)
+}
+
+// turnMarkerExists checks if the turn marker exists.
+func turnMarkerExists(sessionID string) bool {
+	_, err := os.Stat(turnMarkerPath(sessionID))
+	return err == nil
+}
+
+// createTurnMarker creates the turn marker file.
+func createTurnMarker(sessionID string) error {
+	f, err := os.Create(turnMarkerPath(sessionID))
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// clearTurnMarker removes the turn marker file.
+func clearTurnMarker(sessionID string) {
+	_ = os.Remove(turnMarkerPath(sessionID))
+}
+
+// isDecisionCommand checks if a command creates a decision.
+func isDecisionCommand(command string) bool {
+	return strings.Contains(command, "gt decision request") ||
+		strings.Contains(command, "bd decision create")
+}
+
+// TurnBlockResult is the JSON response for blocking a turn.
+type TurnBlockResult struct {
+	Decision string `json:"decision"`
+	Reason   string `json:"reason"`
+}
+
+// checkTurnMarker checks if a decision was offered this turn.
+// Returns nil if allowed, or a TurnBlockResult if blocked.
+// If soft is true, never blocks (just returns nil).
+func checkTurnMarker(sessionID string, soft bool) *TurnBlockResult {
+	if turnMarkerExists(sessionID) {
+		// Decision was offered - allow and clean up
+		clearTurnMarker(sessionID)
+		return nil
+	}
+
+	// No decision offered
+	if soft {
+		// Soft mode - don't block
+		return nil
+	}
+
+	// Strict mode - block
+	return &TurnBlockResult{
+		Decision: "block",
+		Reason:   "You must offer a formal decision point using 'gt decision request' before ending this turn. This ensures humans stay informed about progress and can provide guidance.",
+	}
+}
+
+// turnHookInput represents the JSON input from Claude Code hooks for turn enforcement.
+type turnHookInput struct {
+	SessionID string `json:"session_id"`
+	ToolInput struct {
+		Command string `json:"command"`
+	} `json:"tool_input"`
+}
+
+// readTurnHookInput reads and parses hook JSON from stdin.
+func readTurnHookInput() (*turnHookInput, error) {
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return nil, err
+	}
+	var input turnHookInput
+	if err := json.Unmarshal(data, &input); err != nil {
+		return nil, err
+	}
+	return &input, nil
+}
+
+func runDecisionTurnClear(cmd *cobra.Command, args []string) error {
+	input, err := readTurnHookInput()
+	if err != nil {
+		// Hooks should never fail - just exit cleanly
+		return nil
+	}
+
+	if input.SessionID != "" {
+		clearTurnMarker(input.SessionID)
+	}
+	return nil
+}
+
+func runDecisionTurnMark(cmd *cobra.Command, args []string) error {
+	input, err := readTurnHookInput()
+	if err != nil {
+		// Hooks should never fail
+		return nil
+	}
+
+	if input.SessionID == "" {
+		return nil
+	}
+
+	// Check if this is a decision command
+	if isDecisionCommand(input.ToolInput.Command) {
+		_ = createTurnMarker(input.SessionID)
+	}
+
+	return nil
+}
+
+func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
+	input, err := readTurnHookInput()
+	if err != nil {
+		// Hooks should never fail
+		return nil
+	}
+
+	if input.SessionID == "" {
+		return nil
+	}
+
+	result := checkTurnMarker(input.SessionID, decisionTurnCheckSoft)
+
+	if result != nil {
+		// Output block JSON
+		out, _ := json.Marshal(result)
+		fmt.Println(string(out))
 	}
 
 	return nil

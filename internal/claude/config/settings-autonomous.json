@@ -60,7 +60,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"$HOME/go/bin:$HOME/bin:$PATH\" && gt mail check --inject && bd decision check --inject"
+            "command": "export PATH=\"$HOME/go/bin:$HOME/bin:$PATH\" && gt mail check --inject && bd decision check --inject && gt decision turn-clear"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export PATH=\"$HOME/go/bin:$HOME/bin:$PATH\" && gt decision turn-mark"
           }
         ]
       }
@@ -71,7 +82,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"$HOME/go/bin:$HOME/bin:$PATH\" && gt costs record"
+            "command": "export PATH=\"$HOME/go/bin:$HOME/bin:$PATH\" && gt costs record && gt decision turn-check --soft"
           }
         ]
       }

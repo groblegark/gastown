@@ -227,9 +227,33 @@ Examples:
 	RunE: runDecisionWatch,
 }
 
+var decisionTurnClearCmd = &cobra.Command{
+	Use:    "turn-clear",
+	Short:  "Clear turn marker (for hooks)",
+	Hidden: true,
+	RunE:   runDecisionTurnClear,
+}
+
+var decisionTurnMarkCmd = &cobra.Command{
+	Use:    "turn-mark",
+	Short:  "Mark decision offered (for hooks)",
+	Hidden: true,
+	RunE:   runDecisionTurnMark,
+}
+
+var decisionTurnCheckCmd = &cobra.Command{
+	Use:    "turn-check",
+	Short:  "Check turn marker (for hooks)",
+	Hidden: true,
+	RunE:   runDecisionTurnCheck,
+}
+
 // Watch-specific flags
 var decisionWatchUrgentOnly bool
 var decisionWatchNotify bool
+
+// Turn-check flags
+var decisionTurnCheckSoft bool
 
 // Dashboard-specific flags
 var decisionDashboardJSON bool
@@ -284,6 +308,9 @@ func init() {
 	decisionWatchCmd.Flags().BoolVar(&decisionWatchUrgentOnly, "urgent-only", false, "Show only high urgency decisions")
 	decisionWatchCmd.Flags().BoolVar(&decisionWatchNotify, "notify", false, "Enable desktop notifications for new decisions")
 
+	// Turn-check flags
+	decisionTurnCheckCmd.Flags().BoolVar(&decisionTurnCheckSoft, "soft", false, "Soft mode: don't block, just allow")
+
 	// Add subcommands
 	decisionCmd.AddCommand(decisionRequestCmd)
 	decisionCmd.AddCommand(decisionListCmd)
@@ -293,6 +320,9 @@ func init() {
 	decisionCmd.AddCommand(decisionAwaitCmd)
 	decisionCmd.AddCommand(decisionRemindCmd)
 	decisionCmd.AddCommand(decisionWatchCmd)
+	decisionCmd.AddCommand(decisionTurnClearCmd)
+	decisionCmd.AddCommand(decisionTurnMarkCmd)
+	decisionCmd.AddCommand(decisionTurnCheckCmd)
 
 	rootCmd.AddCommand(decisionCmd)
 }

@@ -438,3 +438,165 @@ func TestFormatDecisionsListEmpty(t *testing.T) {
 		t.Errorf("formatDecisionsList([]) = %v, want nil", result)
 	}
 }
+
+// --- Turn enforcement tests ---
+
+// TestTurnMarkerPath tests marker path generation.
+func TestTurnMarkerPath(t *testing.T) {
+	path := turnMarkerPath("test-session-123")
+	if path != "/tmp/.decision-offered-test-session-123" {
+		t.Errorf("turnMarkerPath() = %q, want '/tmp/.decision-offered-test-session-123'", path)
+	}
+}
+
+// TestTurnClear tests clearing the turn marker.
+func TestTurnClear(t *testing.T) {
+	sessionID := "test-clear-session"
+
+	// Create marker
+	if err := createTurnMarker(sessionID); err != nil {
+		t.Fatalf("createTurnMarker failed: %v", err)
+	}
+
+	// Verify it exists
+	if !turnMarkerExists(sessionID) {
+		t.Fatal("marker should exist after creation")
+	}
+
+	// Clear it
+	clearTurnMarker(sessionID)
+
+	// Verify it's gone
+	if turnMarkerExists(sessionID) {
+		t.Error("marker should not exist after clear")
+	}
+}
+
+// TestTurnMark tests marking a decision was offered.
+func TestTurnMark(t *testing.T) {
+	sessionID := "test-mark-session"
+
+	// Clear any existing marker
+	clearTurnMarker(sessionID)
+
+	// Verify not exists
+	if turnMarkerExists(sessionID) {
+		t.Fatal("marker should not exist initially")
+	}
+
+	// Create marker
+	if err := createTurnMarker(sessionID); err != nil {
+		t.Fatalf("createTurnMarker failed: %v", err)
+	}
+
+	// Verify exists
+	if !turnMarkerExists(sessionID) {
+		t.Error("marker should exist after creation")
+	}
+
+	// Cleanup
+	clearTurnMarker(sessionID)
+}
+
+// TestIsDecisionCommand tests detection of decision commands.
+func TestIsDecisionCommand(t *testing.T) {
+	tests := []struct {
+		command string
+		want    bool
+	}{
+		{"gt decision request --prompt 'test'", true},
+		{"gt decision request", true},
+		{"bd decision create --question 'test'", true},
+		{"bd decision create", true},
+		{"git status", false},
+		{"echo hello", false},
+		{"gt mail send", false},
+		{"gt decision list", false}, // list is not creating a decision
+		{"gt decision resolve", false},
+		{"some-command && gt decision request --prompt 'x'", true}, // chained
+		{"GT DECISION REQUEST", false}, // case sensitive
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			got := isDecisionCommand(tt.command)
+			if got != tt.want {
+				t.Errorf("isDecisionCommand(%q) = %v, want %v", tt.command, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestTurnCheckStrict tests strict mode blocking.
+func TestTurnCheckStrict(t *testing.T) {
+	sessionID := "test-check-strict"
+
+	// Clear marker
+	clearTurnMarker(sessionID)
+
+	// Check without marker (strict) - should return block JSON
+	result := checkTurnMarker(sessionID, false)
+	if result == nil {
+		t.Fatal("strict mode should return block result when no marker")
+	}
+	if result.Decision != "block" {
+		t.Errorf("result.Decision = %q, want 'block'", result.Decision)
+	}
+	if result.Reason == "" {
+		t.Error("result.Reason should not be empty")
+	}
+}
+
+// TestTurnCheckSoft tests soft mode allowing.
+func TestTurnCheckSoft(t *testing.T) {
+	sessionID := "test-check-soft"
+
+	// Clear marker
+	clearTurnMarker(sessionID)
+
+	// Check without marker (soft) - should return nil (allow)
+	result := checkTurnMarker(sessionID, true)
+	if result != nil {
+		t.Errorf("soft mode should return nil when no marker, got %+v", result)
+	}
+}
+
+// TestTurnCheckWithMarker tests that marker allows through.
+func TestTurnCheckWithMarker(t *testing.T) {
+	sessionID := "test-check-marker"
+
+	// Create marker
+	if err := createTurnMarker(sessionID); err != nil {
+		t.Fatalf("createTurnMarker failed: %v", err)
+	}
+
+	// Check with marker - should return nil (allow) and remove marker
+	result := checkTurnMarker(sessionID, false)
+	if result != nil {
+		t.Errorf("should return nil when marker exists, got %+v", result)
+	}
+
+	// Marker should be removed
+	if turnMarkerExists(sessionID) {
+		t.Error("marker should be removed after check")
+	}
+}
+
+// TestDecisionTurnCmdExists tests that turn commands exist.
+func TestDecisionTurnCmdExists(t *testing.T) {
+	subCommands := decisionCmd.Commands()
+
+	wantSubs := []string{"turn-clear", "turn-mark", "turn-check"}
+	for _, want := range wantSubs {
+		found := false
+		for _, cmd := range subCommands {
+			if cmd.Use == want || strings.HasPrefix(cmd.Use, want+" ") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing subcommand: %s", want)
+		}
+	}
+}
