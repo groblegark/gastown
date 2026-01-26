@@ -210,6 +210,14 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 		return nil, fmt.Errorf("parsing bd create output: %w", err)
 	}
 
+	// Set status to pinned - agent beads are permanent records like role definitions.
+	// This is required for AttachMolecule to work (bd-3q6.5-1: molecule attachment
+	// fails when polecat agent bead is not pinned).
+	pinnedStatus := StatusPinned
+	if err := b.Update(id, UpdateOptions{Status: &pinnedStatus}); err != nil {
+		return nil, fmt.Errorf("setting agent bead to pinned: %w", err)
+	}
+
 	// Note: role slot no longer set - role definitions are config-based
 
 	// Set the hook slot if specified (this is the authoritative storage)
@@ -266,11 +274,16 @@ func (b *Beads) CreateOrReopenAgentBead(id, title string, fields *AgentFields) (
 		}
 	}
 
-	// Update the bead with new fields
+	// Update the bead with new fields and set status to pinned.
+	// Agent beads are permanent records like role definitions and must be pinned
+	// for AttachMolecule to work (bd-3q6.5-1: molecule attachment fails when
+	// polecat agent bead is not pinned).
 	description := FormatAgentDescription(title, fields)
+	pinnedStatus := StatusPinned
 	updateOpts := UpdateOptions{
 		Title:       &title,
 		Description: &description,
+		Status:      &pinnedStatus,
 	}
 	if err := b.Update(id, updateOpts); err != nil {
 		return nil, fmt.Errorf("updating reopened agent bead: %w", err)
