@@ -597,6 +597,12 @@ func (b *Beads) Update(id string, opts UpdateOptions) error {
 	return err
 }
 
+// AddLabel adds a label to an issue.
+func (b *Beads) AddLabel(id, label string) error {
+	_, err := b.run("label", "add", id, label)
+	return err
+}
+
 // Close closes one or more issues.
 // If a runtime session ID is set in the environment, it is passed to bd close
 // for work attribution tracking (see decision 009-session-events-architecture.md).
