@@ -365,7 +365,7 @@ func (m *Model) renderPeekMode() string {
 	if m.peekContent == "" {
 		b.WriteString(helpStyle.Render("(No terminal content captured)"))
 		b.WriteString("\n\n")
-		b.WriteString(strings.Repeat("─", m.width-2))
+		b.WriteString(strings.Repeat("─", max(0, m.width-2)))
 		b.WriteString("\n")
 		b.WriteString(helpStyle.Render("Press any key to close"))
 		return b.String()
@@ -383,8 +383,8 @@ func (m *Model) renderPeekMode() string {
 	// Footer with scroll position
 	scrollPercent := m.peekViewport.ScrollPercent() * 100
 	scrollInfo := fmt.Sprintf(" %.0f%% ", scrollPercent)
-	footerLeft := strings.Repeat("─", (m.width-len(scrollInfo))/2)
-	footerRight := strings.Repeat("─", m.width-len(footerLeft)-len(scrollInfo)-2)
+	footerLeft := strings.Repeat("─", max(0, (m.width-len(scrollInfo))/2))
+	footerRight := strings.Repeat("─", max(0, m.width-len(footerLeft)-len(scrollInfo)-2))
 	b.WriteString(helpStyle.Render(footerLeft + scrollInfo + footerRight))
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("↑/↓/j/k: scroll  pgup/pgdn: page  any other key: close"))
