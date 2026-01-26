@@ -189,6 +189,7 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 		"--description=" + description,
 		"--type=agent",
 		"--labels=gt:agent",
+		"--pinned", // Agent beads must be pinned for molecule attachment (fix: bd-3q6.5-1)
 	}
 	if NeedsForceForID(id) {
 		args = append(args, "--force")
@@ -266,11 +267,15 @@ func (b *Beads) CreateOrReopenAgentBead(id, title string, fields *AgentFields) (
 		}
 	}
 
-	// Update the bead with new fields
+	// Update the bead with new fields and set status to pinned.
+	// Agent beads must be pinned for molecule attachment (fix: bd-3q6.5-1).
+	// After reopen, status is "open" - we need to explicitly pin it.
 	description := FormatAgentDescription(title, fields)
+	pinnedStatus := StatusPinned
 	updateOpts := UpdateOptions{
 		Title:       &title,
 		Description: &description,
+		Status:      &pinnedStatus,
 	}
 	if err := b.Update(id, updateOpts); err != nil {
 		return nil, fmt.Errorf("updating reopened agent bead: %w", err)
