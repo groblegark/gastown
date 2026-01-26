@@ -244,10 +244,11 @@ type Model struct {
 	selected       int
 	selectedOption int // 0 = none, 1-4 = option number
 
-	// Input
-	inputMode InputMode
-	textInput textarea.Model
-	rationale string
+	// Input state - locked to a specific decision to prevent hijacking
+	inputMode        InputMode
+	textInput        textarea.Model
+	rationale        string
+	activeDecisionID string // ID of decision being actively worked on (locks input)
 
 	// UI state
 	keys           KeyMap
@@ -407,30 +408,35 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Up):
 			if m.selected > 0 {
 				m.selected--
-				m.selectedOption = 0
+				m.clearActiveDecision() // Clear lock when navigating away
 			}
 
 		case key.Matches(msg, m.keys.Down):
 			if m.selected < len(m.decisions)-1 {
 				m.selected++
-				m.selectedOption = 0
+				m.clearActiveDecision() // Clear lock when navigating away
 			}
 
 		case key.Matches(msg, m.keys.Select1):
 			m.selectedOption = 1
+			m.lockActiveDecision()
 
 		case key.Matches(msg, m.keys.Select2):
 			m.selectedOption = 2
+			m.lockActiveDecision()
 
 		case key.Matches(msg, m.keys.Select3):
 			m.selectedOption = 3
+			m.lockActiveDecision()
 
 		case key.Matches(msg, m.keys.Select4):
 			m.selectedOption = 4
+			m.lockActiveDecision()
 
 		case key.Matches(msg, m.keys.Rationale):
 			if m.selectedOption > 0 {
 				m.inputMode = ModeRationale
+				m.lockActiveDecision()
 				m.textInput.Focus()
 				m.textInput.SetValue("")
 				m.textInput.Placeholder = "Enter rationale (optional)..."
@@ -445,7 +451,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Confirm):
 			if m.selectedOption > 0 && len(m.decisions) > 0 && m.selected < len(m.decisions) {
 				d := m.decisions[m.selected]
-				if m.selectedOption <= len(d.Options) {
+				// Verify we're resolving the locked decision (prevents hijacking)
+				if m.activeDecisionID != "" && m.activeDecisionID != d.ID {
+					m.err = fmt.Errorf("decision changed - was %s, now %s", m.activeDecisionID, d.ID)
+					m.status = "Error: Decision changed during input. Please reselect."
+					m.clearActiveDecision()
+				} else if m.selectedOption <= len(d.Options) {
 					cmds = append(cmds, m.resolveDecision(d.ID, m.selectedOption, m.rationale))
 					m.status = fmt.Sprintf("Resolving %s...", d.ID)
 				}
@@ -467,10 +478,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			m.err = nil
+			oldDecisions := m.decisions
 			m.decisions = m.filterDecisions(msg.decisions)
-			if m.selected >= len(m.decisions) {
+
+			// Preserve selection if we have an active decision locked
+			if m.activeDecisionID != "" {
+				newIndex := m.findDecisionIndex(m.activeDecisionID)
+				if newIndex >= 0 {
+					// Decision still exists, update selection to track it
+					m.selected = newIndex
+				} else {
+					// Decision disappeared (resolved elsewhere) - clear input state
+					m.clearActiveDecision()
+					m.status = fmt.Sprintf("Decision %s was resolved elsewhere", m.activeDecisionID)
+				}
+			} else if m.selected >= len(m.decisions) {
+				// No active decision, just clamp selection
 				m.selected = max(0, len(m.decisions)-1)
+			} else if len(oldDecisions) > 0 && m.selected < len(oldDecisions) {
+				// Try to preserve selection by ID even without active lock
+				oldID := oldDecisions[m.selected].ID
+				if newIndex := m.findDecisionIndex(oldID); newIndex >= 0 {
+					m.selected = newIndex
+				}
 			}
+
 			m.status = fmt.Sprintf("Updated: %d pending", len(m.decisions))
 		}
 
@@ -484,8 +516,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("Error: %v", msg.err)
 		} else {
 			m.status = fmt.Sprintf("Resolved: %s", msg.id)
-			m.selectedOption = 0
-			m.rationale = ""
+			m.clearActiveDecision() // Clear all input state after resolution
 			cmds = append(cmds, m.fetchDecisions())
 		}
 	}
@@ -502,8 +533,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEsc:
+		// Cancel input but keep option selection (just exit input mode)
 		m.inputMode = ModeNormal
 		m.textInput.Blur()
+		// Note: We don't clear activeDecisionID here so user can still confirm
+		// their option selection. They need to navigate away to fully clear.
 		return m, nil
 
 	case tea.KeyEnter:
@@ -515,6 +549,13 @@ func (m *Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Auto-confirm if we have an option selected
 			if m.selectedOption > 0 && len(m.decisions) > 0 && m.selected < len(m.decisions) {
 				d := m.decisions[m.selected]
+				// Verify we're resolving the locked decision (prevents hijacking)
+				if m.activeDecisionID != "" && m.activeDecisionID != d.ID {
+					m.err = fmt.Errorf("decision changed during rationale input")
+					m.status = "Error: Decision changed during input. Please reselect."
+					m.clearActiveDecision()
+					return m, nil
+				}
 				if m.selectedOption <= len(d.Options) {
 					return m, m.resolveDecision(d.ID, m.selectedOption, m.rationale)
 				}
@@ -559,6 +600,32 @@ func (m *Model) filterDecisions(decisions []DecisionItem) []DecisionItem {
 	})
 
 	return result
+}
+
+// lockActiveDecision locks input state to the currently selected decision
+func (m *Model) lockActiveDecision() {
+	if m.selected >= 0 && m.selected < len(m.decisions) {
+		m.activeDecisionID = m.decisions[m.selected].ID
+	}
+}
+
+// clearActiveDecision clears all input state and unlocks
+func (m *Model) clearActiveDecision() {
+	m.activeDecisionID = ""
+	m.selectedOption = 0
+	m.rationale = ""
+	m.inputMode = ModeNormal
+	m.textInput.Blur()
+}
+
+// findDecisionIndex finds the index of a decision by ID, returns -1 if not found
+func (m *Model) findDecisionIndex(id string) int {
+	for i, d := range m.decisions {
+		if d.ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 // View renders the TUI
