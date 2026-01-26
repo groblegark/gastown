@@ -364,8 +364,14 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 
 	chosenOption := fields.Options[decisionChoice-1]
 
+	// Use option description as fallback rationale if none provided
+	effectiveRationale := decisionRationale
+	if effectiveRationale == "" && chosenOption.Description != "" {
+		effectiveRationale = chosenOption.Description
+	}
+
 	// Resolve the decision
-	if err := bd.ResolveDecision(decisionID, decisionChoice, decisionRationale, resolvedBy); err != nil {
+	if err := bd.ResolveDecision(decisionID, decisionChoice, effectiveRationale, resolvedBy); err != nil {
 		return fmt.Errorf("resolving decision: %w", err)
 	}
 
@@ -382,15 +388,15 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 
 		// Build subject - include rationale so agents see it in mail notifications
 		subject := fmt.Sprintf("[DECISION RESOLVED] %s → %s", truncateString(fields.Question, 30), chosenOption.Label)
-		if decisionRationale != "" {
-			subject += fmt.Sprintf(": %s", truncateString(decisionRationale, 40))
+		if effectiveRationale != "" {
+			subject += fmt.Sprintf(": %s", truncateString(effectiveRationale, 40))
 		}
 
 		msg := &mail.Message{
 			From:     resolvedBy,
 			To:       fields.RequestedBy,
 			Subject:  subject,
-			Body:     formatResolutionMailBody(decisionID, fields.Question, chosenOption.Label, decisionRationale, resolvedBy),
+			Body:     formatResolutionMailBody(decisionID, fields.Question, chosenOption.Label, effectiveRationale, resolvedBy),
 			Type:     mail.TypeTask,
 			Priority: mail.PriorityNormal,
 		}
@@ -401,8 +407,8 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 
 		// Nudge the requesting agent so they see the resolution immediately
 		nudgeMsg := fmt.Sprintf("[DECISION RESOLVED] %s: Chose \"%s\"", decisionID, chosenOption.Label)
-		if decisionRationale != "" {
-			nudgeMsg += fmt.Sprintf(" - %s", decisionRationale)
+		if effectiveRationale != "" {
+			nudgeMsg += fmt.Sprintf(" - %s", effectiveRationale)
 		}
 		nudgeCmd := execCommand("gt", "nudge", fields.RequestedBy, nudgeMsg)
 		if err := nudgeCmd.Run(); err != nil {
@@ -419,8 +425,8 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 		"chosen_label": chosenOption.Label,
 		"resolved_by":  resolvedBy,
 	}
-	if decisionRationale != "" {
-		payload["rationale"] = decisionRationale
+	if effectiveRationale != "" {
+		payload["rationale"] = effectiveRationale
 	}
 	_ = events.LogFeed(events.TypeDecisionResolved, resolvedBy, payload)
 
@@ -430,7 +436,7 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 			"id":           decisionID,
 			"chosen_index": decisionChoice,
 			"chosen_label": chosenOption.Label,
-			"rationale":    decisionRationale,
+			"rationale":    effectiveRationale,
 			"resolved_by":  resolvedBy,
 			"unblocked":    fields.Blockers,
 		}
@@ -438,8 +444,8 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 		fmt.Println(string(out))
 	} else {
 		fmt.Printf("✓ Resolved %s: %s\n", decisionID, chosenOption.Label)
-		if decisionRationale != "" {
-			fmt.Printf("  Rationale: %s\n", decisionRationale)
+		if effectiveRationale != "" {
+			fmt.Printf("  Rationale: %s\n", effectiveRationale)
 		}
 		if len(fields.Blockers) > 0 {
 			fmt.Printf("\n→ Unblocked: %s\n", strings.Join(fields.Blockers, ", "))
