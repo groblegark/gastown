@@ -242,10 +242,12 @@ var decisionTurnMarkCmd = &cobra.Command{
 }
 
 var decisionTurnCheckCmd = &cobra.Command{
-	Use:    "turn-check",
-	Short:  "Check turn marker (for hooks)",
-	Hidden: true,
-	RunE:   runDecisionTurnCheck,
+	Use:           "turn-check",
+	Short:         "Check turn marker (for hooks)",
+	Hidden:        true,
+	RunE:          runDecisionTurnCheck,
+	SilenceUsage:  true, // Exit codes signal status, not errors
+	SilenceErrors: true, // Suppress "Error: exit 1" message
 }
 
 var decisionCancelCmd = &cobra.Command{

@@ -1088,6 +1088,10 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		// Output block JSON
 		out, _ := json.Marshal(result)
 		fmt.Println(string(out))
+		// Exit non-zero to fail the hook (unless soft mode)
+		if !decisionTurnCheckSoft {
+			return NewSilentExit(1)
+		}
 	}
 
 	return nil
