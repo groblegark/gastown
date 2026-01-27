@@ -229,7 +229,7 @@ func runDecisionList(cmd *cobra.Command, args []string) error {
 		status := "PENDING"
 		if beads.HasLabel(issue, "decision:resolved") {
 			status = "RESOLVED"
-		} else if beads.HasLabel(issue, "decision:canceled") || beads.HasLabel(issue, "decision:cancelled") {
+		} else if beads.HasLabel(issue, "decision:canceled") {
 			status = "CANCELED"
 		}
 

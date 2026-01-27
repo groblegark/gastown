@@ -3,6 +3,7 @@ package tmux
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,10 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 )
+
+// DefaultTimeout is the default timeout for tmux commands.
+// Most tmux operations should complete quickly; hangs indicate issues.
+const DefaultTimeout = 10 * time.Second
 
 // sessionNudgeLocks serializes nudges to the same session.
 // This prevents interleaving when multiple nudges arrive concurrently,
@@ -43,14 +48,27 @@ func NewTmux() *Tmux {
 }
 
 // run executes a tmux command and returns stdout.
+// Uses a default timeout to prevent hangs from blocking operations.
 func (t *Tmux) run(args ...string) (string, error) {
-	cmd := exec.Command("tmux", args...)
+	return t.runWithTimeout(DefaultTimeout, args...)
+}
+
+// runWithTimeout executes a tmux command with a custom timeout.
+func (t *Tmux) runWithTimeout(timeout time.Duration, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "tmux", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
 	if err != nil {
+		// Check if the error was due to context timeout
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("tmux command timed out after %v: %v", timeout, args)
+		}
 		return "", t.wrapError(err, stderr.String(), args)
 	}
 

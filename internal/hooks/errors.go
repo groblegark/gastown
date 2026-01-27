@@ -241,8 +241,12 @@ func (el *ErrorLog) writeErrors(errors []HookError) error {
 		if err != nil {
 			continue
 		}
-		f.Write(data)
-		f.Write([]byte("\n"))
+		if _, err := f.Write(data); err != nil {
+			return err
+		}
+		if _, err := f.Write([]byte("\n")); err != nil {
+			return err
+		}
 	}
 
 	return nil

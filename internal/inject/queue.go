@@ -93,7 +93,7 @@ func (q *Queue) Enqueue(entryType EntryType, content string) error {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		return fmt.Errorf("acquiring file lock: %w", err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
 
 	if _, err := f.Write(append(data, '\n')); err != nil {
 		return fmt.Errorf("writing to queue: %w", err)
@@ -119,7 +119,7 @@ func (q *Queue) Drain() ([]Entry, error) {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		return nil, fmt.Errorf("acquiring file lock: %w", err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
 
 	// Read queue file
 	data, err := os.ReadFile(q.queueFile())
@@ -168,7 +168,7 @@ func (q *Queue) Peek() ([]Entry, error) {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH); err != nil {
 		return nil, fmt.Errorf("acquiring file lock: %w", err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
 
 	// Read queue file
 	data, err := os.ReadFile(q.queueFile())
