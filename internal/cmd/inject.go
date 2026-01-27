@@ -59,7 +59,9 @@ Examples:
   gt inject drain                    # Output and clear queue
   gt inject drain --quiet            # Silent if empty
   gt inject drain --session abc123   # Explicit session ID`,
-	RunE: runInjectDrain,
+	RunE:          runInjectDrain,
+	SilenceUsage:  true, // Exit codes signal status, not errors
+	SilenceErrors: true, // Suppress "Error: exit 1" message
 }
 
 var injectStatusCmd = &cobra.Command{
