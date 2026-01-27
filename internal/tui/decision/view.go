@@ -79,7 +79,7 @@ func (m *Model) renderView() string {
 		b.WriteString(m.help.View(m.keys))
 	} else {
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("j/k: navigate  1-4: select  r: rationale  p: peek  c: crew  enter: confirm  ?: help  q: quit"))
+		b.WriteString(helpStyle.Render("j/k: navigate  1-4: select  r: rationale  d: dismiss  p: peek  c: crew  enter: confirm  ?: help  q: quit"))
 	}
 
 	return b.String()
