@@ -24,7 +24,6 @@ var (
 	crewDebug         bool
 	crewSync          bool // Sync from origin before starting (default: true)
 	crewNoSync        bool // Disable sync before starting
-	crewTUI           bool // Launch TUI wizard for crew add
 )
 
 var crewCmd = &cobra.Command{
@@ -60,7 +59,7 @@ Commands:
 }
 
 var crewAddCmd = &cobra.Command{
-	Use:   "add [name...]",
+	Use:   "add <name>",
 	Short: "Create a new crew workspace",
 	Long: `Create new crew workspace(s) with a clone of the rig repository.
 
@@ -70,23 +69,12 @@ Each workspace is created at <rig>/crew/<name>/ with:
 - CLAUDE.md with crew worker prompting
 - Optional feature branch (crew/<name>)
 
-Use --tui to launch an interactive wizard for creating a crew workspace.
-
 Examples:
   gt crew add dave                       # Create single workspace
   gt crew add murgen croaker goblin      # Create multiple at once
   gt crew add emma --rig greenplace      # Create in specific rig
-  gt crew add fred --branch              # Create with feature branch
-  gt crew add --tui                      # Launch interactive wizard`,
-	Args: func(cmd *cobra.Command, args []string) error {
-		if crewTUI {
-			return nil // TUI mode doesn't need args
-		}
-		if len(args) < 1 {
-			return fmt.Errorf("requires at least 1 argument (or --tui for interactive mode)")
-		}
-		return nil
-	},
+  gt crew add fred --branch              # Create with feature branch`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: runCrewAdd,
 }
 
@@ -349,7 +337,6 @@ func init() {
 	// Add flags
 	crewAddCmd.Flags().StringVar(&crewRig, "rig", "", "Rig to create crew workspace in")
 	crewAddCmd.Flags().BoolVar(&crewBranch, "branch", false, "Create a feature branch (crew/<name>)")
-	crewAddCmd.Flags().BoolVar(&crewTUI, "tui", false, "Launch interactive wizard")
 
 	crewListCmd.Flags().StringVar(&crewRig, "rig", "", "Filter by rig name")
 	crewListCmd.Flags().BoolVar(&crewListAll, "all", false, "List crew workspaces in all rigs")
