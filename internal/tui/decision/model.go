@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	crewTUI "github.com/steveyegge/gastown/internal/tui/crew"
 )
 
 // pollInterval is how often we check for new decisions
@@ -224,6 +225,12 @@ type Model struct {
 	peekSessionName string
 	peekViewport    viewport.Model
 
+	// Crew wizard state
+	creatingCrew bool
+	crewWizard   *crewTUI.AddModel
+	townRoot     string
+	currentRig   string
+
 	// Polling
 	pollTicker *time.Ticker
 	done       chan struct{}
@@ -255,6 +262,12 @@ func (m *Model) SetFilter(filter string) {
 	m.filter = filter
 }
 
+// SetWorkspace sets the workspace info for crew creation
+func (m *Model) SetWorkspace(townRoot, currentRig string) {
+	m.townRoot = townRoot
+	m.currentRig = currentRig
+}
+
 // SetNotify enables desktop notifications
 func (m *Model) SetNotify(notify bool) {
 	m.notify = notify
@@ -280,6 +293,12 @@ type tickMsg time.Time
 
 // resolvedMsg is sent when a decision is resolved
 type resolvedMsg struct {
+	id  string
+	err error
+}
+
+// dismissedMsg is sent when a decision is dismissed/canceled
+type dismissedMsg struct {
 	id  string
 	err error
 }
@@ -351,6 +370,29 @@ func (m *Model) resolveDecision(decisionID string, choice int, rationale string)
 	}
 }
 
+// dismissDecision cancels/dismisses a decision
+func (m *Model) dismissDecision(decisionID string, reason string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		args := []string{"decision", "cancel", decisionID}
+		if reason != "" {
+			args = append(args, "--reason", reason)
+		}
+
+		cmd := exec.CommandContext(ctx, "gt", args...)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			return dismissedMsg{id: decisionID, err: fmt.Errorf("%s", stderr.String())}
+		}
+
+		return dismissedMsg{id: decisionID}
+	}
+}
+
 // getSessionName converts a RequestedBy path to a tmux session name
 // e.g., "gastown/crew/decision_point" -> "gt-gastown-crew-decision_point"
 func getSessionName(requestedBy string) (string, error) {
@@ -413,8 +455,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.peekViewport.Width = msg.Width - 4
 		m.peekViewport.Height = msg.Height - 6
 		m.textInput.SetWidth(msg.Width - 10)
+		// Forward to crew wizard if active
+		if m.crewWizard != nil {
+			m.crewWizard.SetSize(msg.Width, msg.Height)
+		}
 
 	case tea.KeyMsg:
+		// Handle crew wizard mode - delegate all input
+		if m.creatingCrew && m.crewWizard != nil {
+			updated, cmd := m.crewWizard.Update(msg)
+			if wizard, ok := updated.(*crewTUI.AddModel); ok {
+				m.crewWizard = wizard
+				// Check if wizard completed or was cancelled
+				if wizard.IsDone() {
+					m.creatingCrew = false
+					m.crewWizard = nil
+					// Refresh decisions after crew creation
+					return m, m.fetchDecisions()
+				}
+			}
+			return m, cmd
+		}
+
 		// Handle peek mode - arrow keys scroll, other keys dismiss
 		if m.peeking {
 			switch {
@@ -445,7 +507,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch {
-		case key.Matches(msg, m.keys.Quit):
+		case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Cancel):
 			close(m.done)
 			return m, tea.Quit
 
@@ -515,11 +577,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.fetchDecisions())
 			m.status = "Refreshing..."
 
+		case key.Matches(msg, m.keys.Dismiss):
+			if len(m.decisions) > 0 && m.selected < len(m.decisions) {
+				d := m.decisions[m.selected]
+				cmds = append(cmds, m.dismissDecision(d.ID, "Dismissed via TUI"))
+				m.status = fmt.Sprintf("Dismissing %s...", d.ID)
+			}
+
 		case key.Matches(msg, m.keys.FilterHigh):
 			m.filter = "high"
 
 		case key.Matches(msg, m.keys.FilterAll):
 			m.filter = "all"
+
+		case key.Matches(msg, m.keys.CreateCrew):
+			if m.townRoot != "" {
+				m.crewWizard = crewTUI.NewAddModel(m.townRoot, m.currentRig)
+				m.crewWizard.SetSize(m.width, m.height) // Pass dimensions to wizard
+				m.creatingCrew = true
+				return m, m.crewWizard.Init()
+			} else {
+				m.status = "Cannot create crew: workspace not configured"
+			}
 		}
 
 	case fetchDecisionsMsg:
@@ -549,6 +628,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.fetchDecisions())
 		}
 
+	case dismissedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.status = fmt.Sprintf("Dismiss error: %v", msg.err)
+		} else {
+			m.status = fmt.Sprintf("Dismissed: %s", msg.id)
+			m.selectedOption = 0
+			cmds = append(cmds, m.fetchDecisions())
+		}
+
 	case peekMsg:
 		if msg.err != nil {
 			m.status = fmt.Sprintf("Peek failed: %v", msg.err)
@@ -562,6 +651,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.peekViewport.SetContent(msg.content)
 			m.peekViewport.GotoBottom()
 			m.status = fmt.Sprintf("Peeking: %s (↑/↓ scroll, any other key to close)", msg.sessionName)
+		}
+
+	default:
+		// Forward unknown messages to crew wizard if active
+		// This handles the wizard's internal messages (rigsLoadedMsg, crewCreatedMsg, etc.)
+		if m.creatingCrew && m.crewWizard != nil {
+			updated, cmd := m.crewWizard.Update(msg)
+			if wizard, ok := updated.(*crewTUI.AddModel); ok {
+				m.crewWizard = wizard
+				if wizard.IsDone() {
+					m.creatingCrew = false
+					m.crewWizard = nil
+					return m, m.fetchDecisions()
+				}
+			}
+			cmds = append(cmds, cmd)
 		}
 	}
 
@@ -595,7 +700,9 @@ func (m *Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		} else if m.inputMode == ModeText {
-			// Text mode would trigger iteration - for now just cancel
+			// Custom text iteration is not yet implemented
+			// For now, show a status message explaining this
+			m.status = "Custom text iteration not yet implemented. Use number keys (1-4) to select an option, or 'd' to dismiss."
 			m.inputMode = ModeNormal
 			m.textInput.Blur()
 		}

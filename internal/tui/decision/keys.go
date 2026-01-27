@@ -21,12 +21,16 @@ type KeyMap struct {
 	Rationale key.Binding
 	Text      key.Binding
 	Peek      key.Binding // Peek at agent's terminal
-	Cancel    key.Binding
+	Cancel    key.Binding // Exit TUI without making selection
+	Dismiss   key.Binding // Dismiss/defer decision
 	Refresh   key.Binding
 
 	// Filtering
 	FilterHigh key.Binding
 	FilterAll  key.Binding
+
+	// Crew management
+	CreateCrew key.Binding
 
 	// General
 	Help key.Binding
@@ -78,7 +82,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Text: key.NewBinding(
 			key.WithKeys("t"),
-			key.WithHelp("t", "text input"),
+			key.WithHelp("t", "text (stub)"),
 		),
 		Peek: key.NewBinding(
 			key.WithKeys("p"),
@@ -86,7 +90,11 @@ func DefaultKeyMap() KeyMap {
 		),
 		Cancel: key.NewBinding(
 			key.WithKeys("esc"),
-			key.WithHelp("esc", "cancel"),
+			key.WithHelp("esc", "exit"),
+		),
+		Dismiss: key.NewBinding(
+			key.WithKeys("d", "D"),
+			key.WithHelp("d", "dismiss"),
 		),
 		Refresh: key.NewBinding(
 			key.WithKeys("R"),
@@ -99,6 +107,10 @@ func DefaultKeyMap() KeyMap {
 		FilterAll: key.NewBinding(
 			key.WithKeys("a"),
 			key.WithHelp("a", "show all"),
+		),
+		CreateCrew: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "create crew"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
@@ -113,7 +125,7 @@ func DefaultKeyMap() KeyMap {
 
 // ShortHelp returns key bindings for the short help view.
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Select1, k.Confirm, k.Rationale, k.Peek, k.Quit, k.Help}
+	return []key.Binding{k.Up, k.Down, k.Select1, k.Confirm, k.Rationale, k.Dismiss, k.Peek, k.CreateCrew, k.Quit, k.Help}
 }
 
 // FullHelp returns key bindings for the full help view.
@@ -122,7 +134,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.PageUp, k.PageDown},
 		{k.Select1, k.Select2, k.Select3, k.Select4},
 		{k.Confirm, k.Rationale, k.Text, k.Peek, k.Cancel},
-		{k.Refresh, k.FilterHigh, k.FilterAll},
+		{k.Refresh, k.FilterHigh, k.FilterAll, k.CreateCrew},
 		{k.Help, k.Quit},
 	}
 }

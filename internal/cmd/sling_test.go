@@ -156,16 +156,16 @@ func TestFormatTrackBeadID(t *testing.T) {
 			expected: "external:gastown:gt-abc",
 		},
 
-		// Beads without routes fall back to legacy prefix-based format
+		// Beads without routes return unchanged - let bd handle routing
 		{
-			name:     "unknown prefix fallback two segments",
+			name:     "unknown prefix two segments returns unchanged",
 			beadID:   "foo-bar",
-			expected: "external:foo-bar:foo-bar",
+			expected: "foo-bar",
 		},
 		{
-			name:     "unknown prefix fallback three segments",
+			name:     "unknown prefix three segments returns unchanged",
 			beadID:   "unk-mol-abc123",
-			expected: "external:unk-mol:unk-mol-abc123",
+			expected: "unk-mol-abc123",
 		},
 
 		// Edge cases
@@ -1011,7 +1011,6 @@ func TestSlingFormulaRigTargetCreatesWispBeforeSpawn(t *testing.T) {
 		t.Fatalf("mkdir binDir: %v", err)
 	}
 	logPath := filepath.Join(townRoot, "bd.log")
-	bdPath := filepath.Join(binDir, "bd")
 	// The stub logs each command with a sequence number for order verification
 	bdScript := `#!/bin/sh
 set -e
@@ -1051,9 +1050,35 @@ case "$cmd" in
 esac
 exit 0
 `
-	if err := os.WriteFile(bdPath, []byte(bdScript), 0755); err != nil {
-		t.Fatalf("write bd stub: %v", err)
-	}
+	bdScriptWindows := `@echo off
+setlocal enableextensions enabledelayedexpansion
+rem Count lines in log file to get sequence number
+set "seq=0"
+if exist "%BD_LOG%" (
+  for /f %%a in ('type "%BD_LOG%" ^| find /c /v ""') do set "seq=%%a"
+)
+echo !seq!^|%*>>"%BD_LOG%"
+set "cmd=%1"
+set "sub=%2"
+if "%cmd%"=="--no-daemon" (
+  set "cmd=%2"
+  set "sub=%3"
+)
+if "%cmd%"=="formula" (
+  echo {"name":"mol-polecat-work"}
+  exit /b 0
+)
+if "%cmd%"=="cook" exit /b 0
+if "%cmd%"=="mol" (
+  if "%sub%"=="wisp" (
+    echo {"new_epic_id":"gt-wisp-race-test"}
+    exit /b 0
+  )
+)
+if "%cmd%"=="update" exit /b 0
+exit /b 0
+`
+	_ = writeBDStub(t, binDir, bdScript, bdScriptWindows)
 
 	t.Setenv("BD_LOG", logPath)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

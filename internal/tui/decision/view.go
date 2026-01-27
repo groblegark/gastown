@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/steveyegge/gastown/internal/ui"
 )
 
 // renderView renders the entire view
@@ -13,6 +15,11 @@ func (m *Model) renderView() string {
 	// Check terminal size
 	if m.width < 40 || m.height < 10 {
 		return "Terminal too small. Please resize."
+	}
+
+	// Crew wizard mode - show wizard instead of normal view
+	if m.creatingCrew && m.crewWizard != nil {
+		return m.crewWizard.View()
 	}
 
 	// Peek mode - show terminal content instead of normal view
@@ -72,7 +79,7 @@ func (m *Model) renderView() string {
 		b.WriteString(m.help.View(m.keys))
 	} else {
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("j/k: navigate  1-4: select  r: rationale  p: peek terminal  enter: confirm  ?: help  q: quit"))
+		b.WriteString(helpStyle.Render("j/k: navigate  1-4: select  r: rationale  p: peek  c: crew  enter: confirm  ?: help  q: quit"))
 	}
 
 	return b.String()
@@ -147,15 +154,17 @@ func (m *Model) renderDetailPane() string {
 	b.WriteString(helpStyle.Render(header))
 	b.WriteString("\n\n")
 
-	// Question
-	b.WriteString(detailTitleStyle.Render(d.Prompt))
+	// Question (wrap to terminal width)
+	wrappedPrompt := ui.WrapText(d.Prompt, m.width-4)
+	b.WriteString(detailTitleStyle.Render(wrappedPrompt))
 	b.WriteString("\n\n")
 
-	// Context if available
+	// Context if available (wrap to terminal width)
 	if d.Context != "" {
 		b.WriteString(detailLabelStyle.Render("Context:"))
 		b.WriteString("\n")
-		b.WriteString(detailValueStyle.Render(d.Context))
+		wrappedContext := ui.WrapText(d.Context, m.width-4)
+		b.WriteString(detailValueStyle.Render(wrappedContext))
 		b.WriteString("\n\n")
 	}
 
@@ -176,21 +185,27 @@ func (m *Model) renderDetailPane() string {
 			label = opt.Short + ": " + label
 		}
 
-		// Option description
-		desc := ""
-		if opt.Description != "" {
-			desc = " - " + optionDescStyle.Render(opt.Description)
-		}
-
-		line := fmt.Sprintf("  %s %s%s", numStr, label, desc)
+		// Build option line (number + label)
+		optLine := fmt.Sprintf("  %s %s", numStr, label)
 
 		if isSelected {
-			b.WriteString(selectedOptionStyle.Render(line))
+			b.WriteString(selectedOptionStyle.Render(optLine))
 			b.WriteString(" ←")
 		} else {
-			b.WriteString(optionLabelStyle.Render(line))
+			b.WriteString(optionLabelStyle.Render(optLine))
 		}
 		b.WriteString("\n")
+
+		// Option description on separate line, wrapped and indented
+		if opt.Description != "" {
+			wrappedDesc := ui.WrapText(opt.Description, m.width-10)
+			// Indent each line of the wrapped description
+			for _, descLine := range strings.Split(wrappedDesc, "\n") {
+				b.WriteString("       ")
+				b.WriteString(optionDescStyle.Render(descLine))
+				b.WriteString("\n")
+			}
+		}
 	}
 
 	// Show selected option instructions
@@ -223,11 +238,11 @@ func (m *Model) renderInputMode(b *strings.Builder) string {
 		b.WriteString(helpStyle.Render("Enter: confirm  Esc: cancel"))
 
 	case ModeText:
-		b.WriteString(inputLabelStyle.Render("Enter custom response (triggers iteration):"))
+		b.WriteString(inputLabelStyle.Render("Custom text response (not yet implemented):"))
 		b.WriteString("\n\n")
 		b.WriteString(m.textInput.View())
 		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("Enter: submit  Esc: cancel"))
+		b.WriteString(helpStyle.Render("Enter: (will show message)  Esc: cancel"))
 	}
 
 	return b.String()

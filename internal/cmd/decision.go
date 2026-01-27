@@ -242,10 +242,12 @@ var decisionTurnMarkCmd = &cobra.Command{
 }
 
 var decisionTurnCheckCmd = &cobra.Command{
-	Use:    "turn-check",
-	Short:  "Check turn marker (for hooks)",
-	Hidden: true,
-	RunE:   runDecisionTurnCheck,
+	Use:           "turn-check",
+	Short:         "Check turn marker (for hooks)",
+	Hidden:        true,
+	RunE:          runDecisionTurnCheck,
+	SilenceUsage:  true, // Exit codes signal status, not errors
+	SilenceErrors: true, // Suppress "Error: exit 1" message
 }
 
 var decisionCancelCmd = &cobra.Command{
@@ -313,9 +315,6 @@ var decisionCheckIdentity string
 // Request validation flags
 var decisionNoFileCheck bool
 
-// Show-specific flags
-var decisionShowFull bool
-
 func init() {
 	// Request subcommand flags
 	// Primary flags
@@ -341,7 +340,6 @@ func init() {
 
 	// Show subcommand flags
 	decisionShowCmd.Flags().BoolVar(&decisionJSON, "json", false, "Output as JSON")
-	decisionShowCmd.Flags().BoolVarP(&decisionShowFull, "full", "f", false, "Show complete text without truncation")
 
 	// Resolve subcommand flags
 	decisionResolveCmd.Flags().IntVar(&decisionChoice, "choice", 0, "Option number to select (1-indexed)")

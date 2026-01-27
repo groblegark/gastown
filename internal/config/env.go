@@ -35,6 +35,14 @@ type AgentEnvConfig struct {
 	// BeadsNoDaemon sets BEADS_NO_DAEMON=1 if true
 	// Used for polecats that should bypass the beads daemon
 	BeadsNoDaemon bool
+
+	// AuthToken is an optional ANTHROPIC_AUTH_TOKEN for API authentication.
+	// If set, this takes precedence over OAuth credentials.
+	AuthToken string
+
+	// BaseURL is an optional ANTHROPIC_BASE_URL for custom API endpoints.
+	// Used with AuthToken for alternative API providers (e.g., LiteLLM).
+	BaseURL string
 }
 
 // AgentEnv returns all environment variables for an agent based on the config.
@@ -42,39 +50,46 @@ type AgentEnvConfig struct {
 func AgentEnv(cfg AgentEnvConfig) map[string]string {
 	env := make(map[string]string)
 
-	env["GT_ROLE"] = cfg.Role
-
 	// Set role-specific variables
+	// GT_ROLE is set in compound format (e.g., "beads/crew/jane") so that
+	// beads can parse it without knowing about Gas Town role types.
 	switch cfg.Role {
 	case "mayor":
+		env["GT_ROLE"] = "mayor"
 		env["BD_ACTOR"] = "mayor"
 		env["GIT_AUTHOR_NAME"] = "mayor"
 
 	case "deacon":
+		env["GT_ROLE"] = "deacon"
 		env["BD_ACTOR"] = "deacon"
 		env["GIT_AUTHOR_NAME"] = "deacon"
 
 	case "boot":
+		env["GT_ROLE"] = "deacon/boot"
 		env["BD_ACTOR"] = "deacon-boot"
 		env["GIT_AUTHOR_NAME"] = "boot"
 
 	case "witness":
+		env["GT_ROLE"] = fmt.Sprintf("%s/witness", cfg.Rig)
 		env["GT_RIG"] = cfg.Rig
 		env["BD_ACTOR"] = fmt.Sprintf("%s/witness", cfg.Rig)
 		env["GIT_AUTHOR_NAME"] = fmt.Sprintf("%s/witness", cfg.Rig)
 
 	case "refinery":
+		env["GT_ROLE"] = fmt.Sprintf("%s/refinery", cfg.Rig)
 		env["GT_RIG"] = cfg.Rig
 		env["BD_ACTOR"] = fmt.Sprintf("%s/refinery", cfg.Rig)
 		env["GIT_AUTHOR_NAME"] = fmt.Sprintf("%s/refinery", cfg.Rig)
 
 	case "polecat":
+		env["GT_ROLE"] = fmt.Sprintf("%s/polecats/%s", cfg.Rig, cfg.AgentName)
 		env["GT_RIG"] = cfg.Rig
 		env["GT_POLECAT"] = cfg.AgentName
 		env["BD_ACTOR"] = fmt.Sprintf("%s/polecats/%s", cfg.Rig, cfg.AgentName)
 		env["GIT_AUTHOR_NAME"] = cfg.AgentName
 
 	case "crew":
+		env["GT_ROLE"] = fmt.Sprintf("%s/crew/%s", cfg.Rig, cfg.AgentName)
 		env["GT_RIG"] = cfg.Rig
 		env["GT_CREW"] = cfg.AgentName
 		env["BD_ACTOR"] = fmt.Sprintf("%s/crew/%s", cfg.Rig, cfg.AgentName)
@@ -108,6 +123,16 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 	// Add session ID env var name if provided
 	if cfg.SessionIDEnv != "" {
 		env["GT_SESSION_ID_ENV"] = cfg.SessionIDEnv
+	}
+
+	// Add optional Anthropic API auth token (for API key authentication)
+	if cfg.AuthToken != "" {
+		env["ANTHROPIC_AUTH_TOKEN"] = cfg.AuthToken
+	}
+
+	// Add optional Anthropic API base URL (for custom endpoints like LiteLLM)
+	if cfg.BaseURL != "" {
+		env["ANTHROPIC_BASE_URL"] = cfg.BaseURL
 	}
 
 	return env

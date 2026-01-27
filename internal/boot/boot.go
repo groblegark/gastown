@@ -90,9 +90,34 @@ func (b *Boot) IsSessionAlive() bool {
 	return err == nil && has
 }
 
+// IsCurrentSession checks if we're already running inside the Boot tmux session.
+// This handles the case where Claude inside gt-boot runs `gt boot triage` - we
+// ARE the boot session, so we shouldn't fail the lock check.
+func (b *Boot) IsCurrentSession() bool {
+	currentSession, err := b.tmux.GetCurrentSessionName()
+	if err != nil {
+		return false
+	}
+	return currentSession == session.BootSessionName()
+}
+
 // AcquireLock creates the marker file to indicate Boot is starting.
-// Returns error if Boot is already running.
+// Returns error if Boot is already running (unless we ARE the current boot session).
+// FIX (hq-yitkgc): Skip lock check if we're already inside the boot session.
 func (b *Boot) AcquireLock() error {
+	// If we're already the boot session, we don't need to check/acquire lock
+	if b.IsCurrentSession() {
+		// Still create the marker file for consistency
+		if err := b.EnsureDir(); err != nil {
+			return fmt.Errorf("ensuring boot dir: %w", err)
+		}
+		f, err := os.Create(b.markerPath())
+		if err != nil {
+			return fmt.Errorf("creating marker: %w", err)
+		}
+		return f.Close()
+	}
+
 	if b.IsRunning() {
 		return fmt.Errorf("boot is already running (session exists)")
 	}

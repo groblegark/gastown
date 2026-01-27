@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-//go:embed config/*.json
+//go:embed config/*.json config/*.md
 var configFS embed.FS
 
 // RoleType indicates whether a role is autonomous or interactive.
@@ -89,6 +89,31 @@ func EnsureSettingsForRole(workDir, role string) error {
 // EnsureSettingsForRoleAt is a convenience function that combines RoleTypeFor and EnsureSettingsAt.
 func EnsureSettingsForRoleAt(workDir, role, settingsDir, settingsFile string) error {
 	return EnsureSettingsAt(workDir, RoleTypeFor(role), settingsDir, settingsFile)
+}
+
+// ProvisionFileAfterFail copies FILE_AFTER_FAIL.md to a crew workspace.
+// This template documents the "Fail then File" principle for crew workers.
+// If the file already exists, it's left unchanged.
+func ProvisionFileAfterFail(workDir string) error {
+	destPath := filepath.Join(workDir, "FILE_AFTER_FAIL.md")
+
+	// If file already exists, don't overwrite
+	if _, err := os.Stat(destPath); err == nil {
+		return nil
+	}
+
+	// Read template from embedded filesystem
+	content, err := configFS.ReadFile("config/FILE_AFTER_FAIL.md")
+	if err != nil {
+		return fmt.Errorf("reading FILE_AFTER_FAIL.md template: %w", err)
+	}
+
+	// Write the file
+	if err := os.WriteFile(destPath, content, 0644); err != nil {
+		return fmt.Errorf("writing FILE_AFTER_FAIL.md: %w", err)
+	}
+
+	return nil
 }
 
 // EnsureSettingsForAccount ensures settings.json exists for a specific account.

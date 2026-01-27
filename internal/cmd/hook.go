@@ -264,7 +264,7 @@ func runHook(_ *cobra.Command, args []string) error {
 			if !hookDryRun {
 				if hasAttachment {
 					// Close completed molecule bead (use bd close --force for pinned)
-					closeArgs := []string{"close", existing.ID, "--force",
+					closeArgs := []string{"--no-daemon", "close", existing.ID, "--force",
 						"--reason=Auto-replaced by gt hook (molecule complete)"}
 					if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
 						closeArgs = append(closeArgs, "--session="+sessionID)
@@ -329,8 +329,18 @@ func runHook(_ *cobra.Command, args []string) error {
 		if agentBeadID != "" {
 			bd := beads.New(workDir)
 			if err := bd.SetHookBead(agentBeadID, beadID); err != nil {
-				// Log warning but don't fail - the bead is already hooked
-				fmt.Fprintf(os.Stderr, "Warning: couldn't set agent %s hook: %v\n", agentBeadID, err)
+				// Fix for hq-cc7214.26: If agent bead doesn't exist or is closed,
+				// try to create/reopen it and retry setting the hook.
+				if strings.Contains(err.Error(), "not found") {
+					if ensureErr := ensureAgentBeadExists(bd, agentID, agentBeadID, townRoot); ensureErr != nil {
+						fmt.Fprintf(os.Stderr, "Warning: couldn't create agent bead %s: %v\n", agentBeadID, ensureErr)
+					} else if retryErr := bd.SetHookBead(agentBeadID, beadID); retryErr != nil {
+						fmt.Fprintf(os.Stderr, "Warning: couldn't set agent %s hook after create: %v\n", agentBeadID, retryErr)
+					}
+				} else {
+					// Log warning but don't fail - the bead is already hooked
+					fmt.Fprintf(os.Stderr, "Warning: couldn't set agent %s hook: %v\n", agentBeadID, err)
+				}
 			}
 		}
 	}
@@ -345,7 +355,7 @@ func runHook(_ *cobra.Command, args []string) error {
 // doHook performs the actual hook operation and logs the event.
 // It uses the bd CLI for discovery-based bead routing.
 func doHook(beadID, agentID string) error {
-	hookCmd := exec.Command("bd", "update", beadID, "--status=hooked", "--assignee="+agentID)
+	hookCmd := exec.Command("bd", "--no-daemon", "update", beadID, "--status=hooked", "--assignee="+agentID)
 	hookCmd.Stderr = os.Stderr
 	if err := hookCmd.Run(); err != nil {
 		return fmt.Errorf("hooking bead: %w", err)

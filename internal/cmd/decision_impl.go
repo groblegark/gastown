@@ -19,7 +19,6 @@ import (
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/style"
 	decisionTUI "github.com/steveyegge/gastown/internal/tui/decision"
-	"github.com/steveyegge/gastown/internal/ui"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -297,12 +296,7 @@ func runDecisionShow(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Question: %s\n\n", fields.Question)
 
 	if fields.Context != "" {
-		context := fields.Context
-		// Truncate long context unless --full is specified
-		if !decisionShowFull && ui.ShouldTruncate(context, ui.DefaultMaxLines, 0) {
-			context = ui.TruncateLines(context, ui.DefaultMaxLines, ui.DefaultContextLines)
-		}
-		fmt.Printf("Context:\n  %s\n\n", strings.ReplaceAll(context, "\n", "\n  "))
+		fmt.Printf("Context:\n  %s\n\n", strings.ReplaceAll(fields.Context, "\n", "\n  "))
 	}
 
 	fmt.Printf("Options:\n")
@@ -926,13 +920,22 @@ func formatDecisionReminder(workIndicators []string) string {
 
 func runDecisionWatch(cmd *cobra.Command, args []string) error {
 	// Verify we're in a Gas Town workspace
-	_, err := workspace.FindFromCwdOrError()
+	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {
 		return fmt.Errorf("not in a Gas Town workspace: %w", err)
 	}
 
+	// Try to infer current rig
+	currentRig, _ := inferRigFromCwd(townRoot)
+	if currentRig == "" {
+		currentRig = "gastown" // fallback
+	}
+
 	// Create the TUI model
 	m := decisionTUI.New()
+
+	// Set workspace info for crew creation
+	m.SetWorkspace(townRoot, currentRig)
 
 	// Apply flags
 	if decisionWatchUrgentOnly {
@@ -993,10 +996,12 @@ type TurnBlockResult struct {
 // checkTurnMarker checks if a decision was offered this turn.
 // Returns nil if allowed, or a TurnBlockResult if blocked.
 // If soft is true, never blocks (just returns nil).
+// NOTE: This does NOT clear the marker - that's done by turn-clear at the
+// start of the next turn. This allows Stop hook to fire multiple times
+// without incorrectly blocking on subsequent checks.
 func checkTurnMarker(sessionID string, soft bool) *TurnBlockResult {
 	if turnMarkerExists(sessionID) {
-		// Decision was offered - allow and clean up
-		clearTurnMarker(sessionID)
+		// Decision was offered - allow (don't clear; turn-clear handles that)
 		return nil
 	}
 
@@ -1083,6 +1088,10 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		// Output block JSON
 		out, _ := json.Marshal(result)
 		fmt.Println(string(out))
+		// Exit non-zero to fail the hook (unless soft mode)
+		if !decisionTurnCheckSoft {
+			return NewSilentExit(1)
+		}
 	}
 
 	return nil

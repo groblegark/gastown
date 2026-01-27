@@ -64,6 +64,14 @@ type SessionStartOptions struct {
 	// RuntimeConfigDir is resolved config directory for the runtime account.
 	// If set, this is injected as an environment variable.
 	RuntimeConfigDir string
+
+	// AuthToken is an optional ANTHROPIC_AUTH_TOKEN for API authentication.
+	// If set, this takes precedence over OAuth credentials.
+	AuthToken string
+
+	// BaseURL is an optional ANTHROPIC_BASE_URL for custom API endpoints.
+	// Used with AuthToken for alternative API providers (e.g., LiteLLM).
+	BaseURL string
 }
 
 // SessionInfo contains information about a running polecat session.
@@ -194,9 +202,19 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	if command == "" {
 		command = config.BuildPolecatStartupCommand(m.rig.Name, polecat, m.rig.Path, beacon)
 	}
-	// Prepend runtime config dir env if needed
+	// Prepend account-related env vars if needed
+	prependEnvVars := make(map[string]string)
 	if runtimeConfig.Session != nil && runtimeConfig.Session.ConfigDirEnv != "" && opts.RuntimeConfigDir != "" {
-		command = config.PrependEnv(command, map[string]string{runtimeConfig.Session.ConfigDirEnv: opts.RuntimeConfigDir})
+		prependEnvVars[runtimeConfig.Session.ConfigDirEnv] = opts.RuntimeConfigDir
+	}
+	if opts.AuthToken != "" {
+		prependEnvVars["ANTHROPIC_AUTH_TOKEN"] = opts.AuthToken
+	}
+	if opts.BaseURL != "" {
+		prependEnvVars["ANTHROPIC_BASE_URL"] = opts.BaseURL
+	}
+	if len(prependEnvVars) > 0 {
+		command = config.PrependEnv(command, prependEnvVars)
 	}
 
 	// Create session with command directly to avoid send-keys race condition.
@@ -215,6 +233,8 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		TownRoot:         townRoot,
 		RuntimeConfigDir: opts.RuntimeConfigDir,
 		BeadsNoDaemon:    true,
+		AuthToken:        opts.AuthToken,
+		BaseURL:          opts.BaseURL,
 	})
 	for k, v := range envVars {
 		debugSession("SetEnvironment "+k, m.tmux.SetEnvironment(sessionID, k, v))
@@ -262,20 +282,30 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		if err == nil && dead {
 			// Capture diagnostic output before cleanup
 			diagnosticOutput := m.tmux.CaptureDeadPaneOutput(sessionID, 50)
+			// Try to get the pane's exit status for additional diagnostics
+			exitStatus := m.tmux.GetPaneExitStatus(sessionID)
 			// Kill the zombie session
 			_ = m.tmux.KillSession(sessionID)
 			// Return error with diagnostics
 			if diagnosticOutput != "" {
+				if exitStatus != "" {
+					return fmt.Errorf("session %s died during startup (exit status: %s). Diagnostic output:\n%s", sessionID, exitStatus, diagnosticOutput)
+				}
 				return fmt.Errorf("session %s died during startup. Diagnostic output:\n%s", sessionID, diagnosticOutput)
 			}
-			return fmt.Errorf("session %s died during startup (agent command may have failed)", sessionID)
+			// Pane died but no output captured - provide more specific error
+			if exitStatus != "" {
+				return fmt.Errorf("session %s died during startup (exit status: %s, no diagnostic output captured - check agent binary and credentials)", sessionID, exitStatus)
+			}
+			return fmt.Errorf("session %s died during startup (pane dead, no diagnostic output - check agent binary and credentials)", sessionID)
 		}
 		// Session is alive and pane is not dead - success
 		return nil
 	}
 
 	// Session doesn't exist at all (remain-on-exit may not have taken effect)
-	return fmt.Errorf("session %s died during startup (agent command may have failed)", sessionID)
+	// This is a different failure mode than pane death - the session was destroyed entirely
+	return fmt.Errorf("session %s died during startup (session destroyed, remain-on-exit may have failed - check tmux version)", sessionID)
 }
 
 // Stop terminates a polecat session.

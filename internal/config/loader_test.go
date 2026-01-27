@@ -562,6 +562,41 @@ func TestAccountsConfigRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAccountsConfigWithAuthToken(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mayor", "accounts.json")
+
+	original := NewAccountsConfig()
+	original.Accounts["litellm"] = Account{
+		Description: "LiteLLM proxy account",
+		ConfigDir:   "~/.claude-accounts/litellm",
+		AuthToken:   "sk-test-12345",
+		BaseURL:     "http://localhost:4000",
+	}
+	original.Default = "litellm"
+
+	if err := SaveAccountsConfig(path, original); err != nil {
+		t.Fatalf("SaveAccountsConfig: %v", err)
+	}
+
+	loaded, err := LoadAccountsConfig(path)
+	if err != nil {
+		t.Fatalf("LoadAccountsConfig: %v", err)
+	}
+
+	litellm := loaded.GetAccount("litellm")
+	if litellm == nil {
+		t.Fatal("GetAccount('litellm') returned nil")
+	}
+	if litellm.AuthToken != "sk-test-12345" {
+		t.Errorf("litellm.AuthToken = %q, want 'sk-test-12345'", litellm.AuthToken)
+	}
+	if litellm.BaseURL != "http://localhost:4000" {
+		t.Errorf("litellm.BaseURL = %q, want 'http://localhost:4000'", litellm.BaseURL)
+	}
+}
+
 func TestAccountsConfigValidation(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -623,6 +658,115 @@ func TestLoadAccountsConfigNotFound(t *testing.T) {
 	_, err := LoadAccountsConfig("/nonexistent/path.json")
 	if err == nil {
 		t.Fatal("expected error for nonexistent file")
+	}
+}
+
+func TestValidateAccountAuth(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		account *ResolvedAccount
+		wantErr bool
+	}{
+		{
+			name:    "nil account is valid",
+			account: nil,
+			wantErr: false,
+		},
+		{
+			name: "auth token is valid credentials",
+			account: &ResolvedAccount{
+				Handle:    "litellm",
+				AuthToken: "sk-test-12345",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty config dir with auth token is valid",
+			account: &ResolvedAccount{
+				Handle:    "litellm",
+				AuthToken: "sk-test-12345",
+				BaseURL:   "http://localhost:4000",
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty config dir without auth token is valid (let Claude handle)",
+			account: &ResolvedAccount{
+				Handle: "test",
+			},
+			wantErr: false,
+		},
+		{
+			name: "config dir without credentials file fails",
+			account: &ResolvedAccount{
+				Handle:    "test",
+				ConfigDir: "/nonexistent/path",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateAccountAuth(tt.account)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateAccountAuth() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveAccount(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mayor", "accounts.json")
+
+	cfg := NewAccountsConfig()
+	cfg.Accounts["work"] = Account{
+		Email:     "work@example.com",
+		ConfigDir: "~/.claude-accounts/work",
+	}
+	cfg.Accounts["litellm"] = Account{
+		Description: "LiteLLM proxy",
+		ConfigDir:   "~/.claude-accounts/litellm",
+		AuthToken:   "sk-test-12345",
+		BaseURL:     "http://localhost:4000",
+	}
+	cfg.Default = "work"
+
+	if err := SaveAccountsConfig(path, cfg); err != nil {
+		t.Fatalf("SaveAccountsConfig: %v", err)
+	}
+
+	// Test resolving default account
+	resolved, err := ResolveAccount(path, "")
+	if err != nil {
+		t.Fatalf("ResolveAccount: %v", err)
+	}
+	if resolved == nil {
+		t.Fatal("ResolveAccount returned nil")
+	}
+	if resolved.Handle != "work" {
+		t.Errorf("Handle = %q, want 'work'", resolved.Handle)
+	}
+	if resolved.AuthToken != "" {
+		t.Errorf("AuthToken should be empty for work account")
+	}
+
+	// Test resolving specific account with auth token
+	resolved, err = ResolveAccount(path, "litellm")
+	if err != nil {
+		t.Fatalf("ResolveAccount: %v", err)
+	}
+	if resolved.Handle != "litellm" {
+		t.Errorf("Handle = %q, want 'litellm'", resolved.Handle)
+	}
+	if resolved.AuthToken != "sk-test-12345" {
+		t.Errorf("AuthToken = %q, want 'sk-test-12345'", resolved.AuthToken)
+	}
+	if resolved.BaseURL != "http://localhost:4000" {
+		t.Errorf("BaseURL = %q, want 'http://localhost:4000'", resolved.BaseURL)
 	}
 }
 
@@ -1048,8 +1192,8 @@ func TestBuildAgentStartupCommand(t *testing.T) {
 	if !strings.Contains(cmd, "exec env") {
 		t.Error("expected 'exec env' in command")
 	}
-	if !strings.Contains(cmd, "GT_ROLE=witness") {
-		t.Error("expected GT_ROLE=witness in command")
+	if !strings.Contains(cmd, "GT_ROLE=gastown/witness") {
+		t.Error("expected GT_ROLE=gastown/witness in command")
 	}
 	if !strings.Contains(cmd, "BD_ACTOR=gastown/witness") {
 		t.Error("expected BD_ACTOR in command")
@@ -1063,8 +1207,8 @@ func TestBuildPolecatStartupCommand(t *testing.T) {
 	t.Parallel()
 	cmd := BuildPolecatStartupCommand("gastown", "toast", "", "")
 
-	if !strings.Contains(cmd, "GT_ROLE=polecat") {
-		t.Error("expected GT_ROLE=polecat in command")
+	if !strings.Contains(cmd, "GT_ROLE=gastown/polecats/toast") {
+		t.Error("expected GT_ROLE=gastown/polecats/toast in command")
 	}
 	if !strings.Contains(cmd, "GT_RIG=gastown") {
 		t.Error("expected GT_RIG=gastown in command")
@@ -1081,8 +1225,8 @@ func TestBuildCrewStartupCommand(t *testing.T) {
 	t.Parallel()
 	cmd := BuildCrewStartupCommand("gastown", "max", "", "")
 
-	if !strings.Contains(cmd, "GT_ROLE=crew") {
-		t.Error("expected GT_ROLE=crew in command")
+	if !strings.Contains(cmd, "GT_ROLE=gastown/crew/max") {
+		t.Error("expected GT_ROLE=gastown/crew/max in command")
 	}
 	if !strings.Contains(cmd, "GT_RIG=gastown") {
 		t.Error("expected GT_RIG=gastown in command")
@@ -1189,7 +1333,7 @@ func TestBuildPolecatStartupCommandWithAgentOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPolecatStartupCommandWithAgentOverride: %v", err)
 	}
-	if !strings.Contains(cmd, "GT_ROLE=polecat") {
+	if !strings.Contains(cmd, "GT_ROLE=testrig/polecats/toast") {
 		t.Fatalf("expected GT_ROLE export in command: %q", cmd)
 	}
 	if !strings.Contains(cmd, "GT_RIG=testrig") {
@@ -1272,7 +1416,7 @@ func TestBuildCrewStartupCommandWithAgentOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildCrewStartupCommandWithAgentOverride: %v", err)
 	}
-	if !strings.Contains(cmd, "GT_ROLE=crew") {
+	if !strings.Contains(cmd, "GT_ROLE=testrig/crew/max") {
 		t.Fatalf("expected GT_ROLE export in command: %q", cmd)
 	}
 	if !strings.Contains(cmd, "GT_RIG=testrig") {
@@ -1437,13 +1581,13 @@ func TestBuildAgentStartupCommand_UsesRoleAgents(t *testing.T) {
 		t.Fatalf("SaveRigSettings: %v", err)
 	}
 
-	// BuildAgentStartupCommand passes role via GT_ROLE env var
+	// BuildAgentStartupCommand passes role via GT_ROLE env var (compound format)
 	cmd := BuildAgentStartupCommand(constants.RoleRefinery, "testrig", townRoot, rigPath, "")
 	if !strings.Contains(cmd, "codex") {
 		t.Fatalf("expected codex for refinery role, got: %q", cmd)
 	}
-	if !strings.Contains(cmd, "GT_ROLE="+constants.RoleRefinery) {
-		t.Fatalf("expected GT_ROLE=%s in command: %q", constants.RoleRefinery, cmd)
+	if !strings.Contains(cmd, "GT_ROLE=testrig/refinery") {
+		t.Fatalf("expected GT_ROLE=testrig/refinery in command: %q", cmd)
 	}
 }
 
@@ -3450,10 +3594,13 @@ func TestBuildStartupCommandWithAgentOverride_IncludesGTRoot(t *testing.T) {
 		t.Fatalf("BuildStartupCommandWithAgentOverride: %v", err)
 	}
 
-	// Should include GT_ROOT in export
-	expected := "GT_ROOT=" + ShellQuote(townRoot)
-	if !strings.Contains(cmd, expected) {
-		t.Errorf("expected %s in command, got: %q", expected, cmd)
+	// Should include GT_ROOT in export.
+	// Accept both quoted and unquoted forms since path quoting varies by platform.
+	// Windows paths contain backslashes which trigger ShellQuote's quoting logic.
+	unquotedForm := "GT_ROOT=" + townRoot
+	quotedForm := "GT_ROOT=" + ShellQuote(townRoot)
+	if !strings.Contains(cmd, unquotedForm) && !strings.Contains(cmd, quotedForm) {
+		t.Errorf("expected GT_ROOT=%s (quoted or unquoted) in command, got: %q", townRoot, cmd)
 	}
 }
 
