@@ -117,3 +117,21 @@ func (l *FileLock) WithLock(fn func() error) error {
 	defer func() { _ = l.Unlock() }() // Unlock error ignored; fn() error takes precedence
 	return fn()
 }
+
+// FlockExclusive acquires an exclusive (write) lock on an open file descriptor.
+// This is a low-level helper for use with already-opened files.
+func FlockExclusive(fd uintptr) error {
+	return syscall.Flock(int(fd), syscall.LOCK_EX)
+}
+
+// FlockShared acquires a shared (read) lock on an open file descriptor.
+// This is a low-level helper for use with already-opened files.
+func FlockShared(fd uintptr) error {
+	return syscall.Flock(int(fd), syscall.LOCK_SH)
+}
+
+// FlockUnlock releases a lock on an open file descriptor.
+// This is a low-level helper for use with already-opened files.
+func FlockUnlock(fd uintptr) error {
+	return syscall.Flock(int(fd), syscall.LOCK_UN)
+}

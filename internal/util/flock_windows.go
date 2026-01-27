@@ -72,3 +72,21 @@ func (l *FileLock) WithLock(fn func() error) error {
 	defer func() { _ = l.Unlock() }() // Unlock error ignored; fn() error takes precedence
 	return fn()
 }
+
+// FlockExclusive is a no-op on Windows where flock(2) is not available.
+// This is a low-level helper for use with already-opened files.
+func FlockExclusive(fd uintptr) error {
+	return nil
+}
+
+// FlockShared is a no-op on Windows where flock(2) is not available.
+// This is a low-level helper for use with already-opened files.
+func FlockShared(fd uintptr) error {
+	return nil
+}
+
+// FlockUnlock is a no-op on Windows where flock(2) is not available.
+// This is a low-level helper for use with already-opened files.
+func FlockUnlock(fd uintptr) error {
+	return nil
+}
