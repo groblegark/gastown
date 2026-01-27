@@ -79,7 +79,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Text: key.NewBinding(
 			key.WithKeys("t"),
-			key.WithHelp("t", "text input"),
+			key.WithHelp("t", "text (stub)"),
 		),
 		Peek: key.NewBinding(
 			key.WithKeys("p"),

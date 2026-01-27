@@ -233,11 +233,11 @@ func (m *Model) renderInputMode(b *strings.Builder) string {
 		b.WriteString(helpStyle.Render("Enter: confirm  Esc: cancel"))
 
 	case ModeText:
-		b.WriteString(inputLabelStyle.Render("Enter custom response (triggers iteration):"))
+		b.WriteString(inputLabelStyle.Render("Custom text response (not yet implemented):"))
 		b.WriteString("\n\n")
 		b.WriteString(m.textInput.View())
 		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("Enter: submit  Esc: cancel"))
+		b.WriteString(helpStyle.Render("Enter: (will show message)  Esc: cancel"))
 	}
 
 	return b.String()

@@ -641,7 +641,9 @@ func (m *Model) handleInputMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		} else if m.inputMode == ModeText {
-			// Text mode would trigger iteration - for now just cancel
+			// Custom text iteration is not yet implemented
+			// For now, show a status message explaining this
+			m.status = "Custom text iteration not yet implemented. Use number keys (1-4) to select an option, or 'd' to dismiss."
 			m.inputMode = ModeNormal
 			m.textInput.Blur()
 		}
