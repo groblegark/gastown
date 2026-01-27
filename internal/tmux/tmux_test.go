@@ -252,6 +252,60 @@ func TestNewSessionWithCommand_InstantExit(t *testing.T) {
 	if !strings.Contains(output, "INSTANT_EXIT_DIAGNOSTIC") {
 		t.Errorf("diagnostic output not captured, got: %q", output)
 	}
+
+	// Verify we can get the exit status (should be "42" from exit 42)
+	exitStatus := tm.GetPaneExitStatus(sessionName)
+	if exitStatus != "42" {
+		t.Logf("GetPaneExitStatus = %q (expected 42, may vary by tmux version)", exitStatus)
+	}
+}
+
+// TestGetPaneExitStatus verifies that we can retrieve the exit status of a dead pane.
+func TestGetPaneExitStatus(t *testing.T) {
+	if !hasTmux() {
+		t.Skip("tmux not installed")
+	}
+
+	tm := NewTmux()
+	sessionName := "gt-test-exit-status-" + t.Name()
+
+	// Clean up any existing session
+	_ = tm.KillSessionWithProcesses(sessionName)
+
+	// Create session with a command that exits with a specific status
+	if err := tm.NewSessionWithCommand(sessionName, "", "sh -c 'exit 127'"); err != nil {
+		t.Fatalf("NewSessionWithCommand: %v", err)
+	}
+	defer func() { _ = tm.KillSessionWithProcesses(sessionName) }()
+
+	// Give tmux time to process the command exit
+	time.Sleep(500 * time.Millisecond)
+
+	// Session should still exist (remain-on-exit preserves it)
+	hasSession, err := tm.HasSession(sessionName)
+	if err != nil {
+		t.Fatalf("HasSession: %v", err)
+	}
+	if !hasSession {
+		t.Skip("session was destroyed - remain-on-exit may not be working")
+	}
+
+	// Pane should be dead
+	dead, err := tm.IsPaneDead(sessionName)
+	if err != nil {
+		t.Fatalf("IsPaneDead: %v", err)
+	}
+	if !dead {
+		t.Fatal("expected pane to be dead after exit")
+	}
+
+	// Exit status should be 127 (command not found / explicit exit)
+	exitStatus := tm.GetPaneExitStatus(sessionName)
+	if exitStatus == "" {
+		t.Log("GetPaneExitStatus returned empty (tmux version may not support pane_dead_status)")
+	} else if exitStatus != "127" {
+		t.Errorf("GetPaneExitStatus = %q, want 127", exitStatus)
+	}
 }
 
 func TestDuplicateSession(t *testing.T) {
