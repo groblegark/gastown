@@ -165,7 +165,7 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 	router := mail.NewRouter(townRoot)
 	msg := &mail.Message{
 		From:    agentID,
-		To:      "human",
+		To:      "overseer",
 		Subject: fmt.Sprintf("[DECISION] %s", decisionPrompt),
 		Body:    formatDecisionMailBody(issue.ID, fields),
 		Type:    mail.TypeTask,
