@@ -1162,11 +1162,16 @@ func (g *Git) UnpushedCommits() (int, error) {
 			return 0, nil
 		}
 
-		// Check if origin/<branch> exists
+		// Check if origin/<branch> exists on the remote (not just local refs).
+		// Fix for gt-8ba: Using rev-parse --verify only checks local refs, which
+		// may be stale if the branch was pushed but not fetched. Use ls-remote
+		// to query the actual remote state.
 		remoteBranch := "origin/" + branch
-		_, refErr := g.run("rev-parse", "--verify", remoteBranch)
-		if refErr == nil {
-			// Remote branch exists - count commits from origin/<branch>..HEAD
+		exists, existsErr := g.RemoteBranchExists("origin", branch)
+		if existsErr == nil && exists {
+			// Remote branch exists - fetch to ensure local ref is up-to-date
+			_, _ = g.run("fetch", "origin", branch)
+			// Count commits from origin/<branch>..HEAD
 			out, countErr := g.run("rev-list", "--count", remoteBranch+"..HEAD")
 			if countErr != nil {
 				return 0, nil // Fallback to safe value on error
