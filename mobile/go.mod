@@ -12,4 +12,4 @@ require (
 
 require github.com/BurntSushi/toml v1.6.0 // indirect
 
-replace github.com/steveyegge/gastown => ../../../refinery/rig
+replace github.com/steveyegge/gastown => ../
