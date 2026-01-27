@@ -127,18 +127,31 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 	var files []staleSettingsInfo
 
 	// Check for STALE settings at town root (~/gt/.claude/settings.json)
-	// This is WRONG - settings here pollute ALL child workspaces via directory traversal.
+	// A regular file here is WRONG - it pollutes ALL child workspaces via directory traversal.
 	// Mayor settings should be at ~/gt/mayor/.claude/ instead.
+	// However, a symlink pointing to mayor/.claude/settings.json is CORRECT -
+	// the mayor session runs from town root and needs this symlink to find its hooks.
 	staleTownRootSettings := filepath.Join(townRoot, ".claude", "settings.json")
 	if fileExists(staleTownRootSettings) {
-		files = append(files, staleSettingsInfo{
-			path:          staleTownRootSettings,
-			agentType:     "mayor",
-			sessionName:   "hq-mayor",
-			wrongLocation: true,
-			gitStatus:     c.getGitFileStatus(staleTownRootSettings),
-			missing:       []string{"should be at mayor/.claude/settings.json, not town root"},
-		})
+		isValidSymlink := false
+		if info, err := os.Lstat(staleTownRootSettings); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			if target, err := os.Readlink(staleTownRootSettings); err == nil {
+				expectedTarget := filepath.Join("..", "mayor", ".claude", "settings.json")
+				if target == expectedTarget {
+					isValidSymlink = true
+				}
+			}
+		}
+		if !isValidSymlink {
+			files = append(files, staleSettingsInfo{
+				path:          staleTownRootSettings,
+				agentType:     "mayor",
+				sessionName:   "hq-mayor",
+				wrongLocation: true,
+				gitStatus:     c.getGitFileStatus(staleTownRootSettings),
+				missing:       []string{"should be a symlink to mayor/.claude/settings.json, not a regular file"},
+			})
+		}
 	}
 
 	// Check for STALE CLAUDE.md at town root (~/gt/CLAUDE.md)
@@ -259,7 +272,14 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 				if !crewEntry.IsDir() || crewEntry.Name() == ".claude" {
 					continue
 				}
-				crewWrongSettings := filepath.Join(crewDir, crewEntry.Name(), ".claude", "settings.json")
+				crewClaudeDir := filepath.Join(crewDir, crewEntry.Name(), ".claude")
+				// Skip if .claude is a symlink to the shared parent directory.
+				// Crew workers use `.claude -> ../.claude` symlinks so all workers
+				// share crew/.claude/settings.json (the correct location).
+				if isSymlinkToSharedDir(crewClaudeDir, filepath.Join(crewDir, ".claude")) {
+					continue
+				}
+				crewWrongSettings := filepath.Join(crewClaudeDir, "settings.json")
 				if fileExists(crewWrongSettings) {
 					files = append(files, staleSettingsInfo{
 						path:          crewWrongSettings,
@@ -293,14 +313,27 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 				// Check for wrong settings in both structures:
 				// Old structure: polecats/<name>/.claude/settings.json
 				// New structure: polecats/<name>/<rigname>/.claude/settings.json
-				wrongPaths := []string{
-					filepath.Join(polecatsDir, pcEntry.Name(), ".claude", "settings.json"),
-					filepath.Join(polecatsDir, pcEntry.Name(), rigName, ".claude", "settings.json"),
+				wrongPaths := []struct {
+					claudeDir    string
+					settingsPath string
+				}{
+					{
+						filepath.Join(polecatsDir, pcEntry.Name(), ".claude"),
+						filepath.Join(polecatsDir, pcEntry.Name(), ".claude", "settings.json"),
+					},
+					{
+						filepath.Join(polecatsDir, pcEntry.Name(), rigName, ".claude"),
+						filepath.Join(polecatsDir, pcEntry.Name(), rigName, ".claude", "settings.json"),
+					},
 				}
-				for _, pcWrongSettings := range wrongPaths {
-					if fileExists(pcWrongSettings) {
+				for _, wp := range wrongPaths {
+					// Skip if .claude is a symlink to the shared parent directory.
+					if isSymlinkToSharedDir(wp.claudeDir, filepath.Join(polecatsDir, ".claude")) {
+						continue
+					}
+					if fileExists(wp.settingsPath) {
 						files = append(files, staleSettingsInfo{
-							path:          pcWrongSettings,
+							path:          wp.settingsPath,
 							agentType:     "polecat",
 							rigName:       rigName,
 							sessionName:   fmt.Sprintf("gt-%s-%s", rigName, pcEntry.Name()),
@@ -496,9 +529,18 @@ func (c *ClaudeSettingsCheck) Fix(ctx *CheckContext) error {
 			mayorDir := filepath.Join(ctx.TownRoot, "mayor")
 
 			// For mayor settings.json at town root, create at mayor/.claude/
+			// and symlink from town root so the mayor session (which runs from
+			// town root) can find its hooks.
 			if sf.agentType == "mayor" && strings.HasSuffix(claudeDir, ".claude") && !strings.Contains(sf.path, "/mayor/") {
 				if err := os.MkdirAll(mayorDir, 0755); err == nil {
 					_ = claude.EnsureSettingsForRole(mayorDir, "mayor")
+				}
+				// Create symlink from town root to mayor settings
+				townClaudeDir := filepath.Join(ctx.TownRoot, ".claude")
+				symlinkPath := filepath.Join(townClaudeDir, "settings.json")
+				if err := os.MkdirAll(townClaudeDir, 0755); err == nil {
+					relTarget := filepath.Join("..", "mayor", ".claude", "settings.json")
+					_ = os.Symlink(relTarget, symlinkPath)
 				}
 			}
 
@@ -560,6 +602,26 @@ func (c *ClaudeSettingsCheck) Fix(ctx *CheckContext) error {
 		return fmt.Errorf("%s", strings.Join(errors, "; "))
 	}
 	return nil
+}
+
+// isSymlinkToSharedDir checks if claudeDir is a symlink that resolves to sharedDir.
+// This prevents gt doctor --fix from deleting shared settings files that are
+// correctly symlinked from worker directories (e.g., crew/<name>/.claude -> ../.claude).
+func isSymlinkToSharedDir(claudeDir, sharedDir string) bool {
+	fi, err := os.Lstat(claudeDir)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(claudeDir)
+	if err != nil {
+		return false
+	}
+	sharedResolved, err := filepath.EvalSymlinks(sharedDir)
+	if err != nil {
+		// If the shared dir doesn't exist, compare against the raw path
+		sharedResolved = sharedDir
+	}
+	return resolved == sharedResolved
 }
 
 // fileExists checks if a file exists.
