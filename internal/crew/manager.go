@@ -188,6 +188,13 @@ func (m *Manager) Add(name string, createBranch bool) (*CrewWorker, error) {
 		fmt.Printf("Warning: could not provision PRIME.md: %v\n", err)
 	}
 
+	// Provision FILE_AFTER_FAIL.md with the "Fail then File" principle documentation.
+	// This ensures crew workers have consistent guidance on bug filing.
+	if err := claude.ProvisionFileAfterFail(crewPath); err != nil {
+		// Non-fatal - crew can still work, warn but don't fail
+		fmt.Printf("Warning: could not provision FILE_AFTER_FAIL.md: %v\n", err)
+	}
+
 	// Copy overlay files from .runtime/overlay/ to crew root.
 	// This allows services to have .env and other config files at their root.
 	if err := rig.CopyOverlay(m.rig.Path, crewPath); err != nil {
