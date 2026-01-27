@@ -1021,3 +1021,213 @@ func RespawnPolecatWithHookedWork(workDir, rigName, polecatName string) error {
 
 	return nil
 }
+
+// ResolvedDecisionInfo contains info about a resolved decision needing notification.
+type ResolvedDecisionInfo struct {
+	DecisionID   string
+	Question     string
+	ChosenOption string
+	Rationale    string
+	ResolvedBy   string
+	RequestedBy  string // Crew address that requested this decision
+}
+
+// FindResolvedDecisionsForCrew finds recently resolved decisions that were requested
+// by crew members in this rig and haven't been notified yet.
+// Returns a list of decisions that need crew notification.
+func FindResolvedDecisionsForCrew(workDir, rigName string, lookback time.Duration) ([]*ResolvedDecisionInfo, error) {
+	townRoot, err := workspace.Find(workDir)
+	if err != nil || townRoot == "" {
+		return nil, fmt.Errorf("finding town root: %w", err)
+	}
+
+	// Use town beads for decisions (they're stored with hq- prefix)
+	bd := beads.NewWithBeadsDir(townRoot, beads.ResolveBeadsDir(townRoot))
+
+	// Get recently resolved decisions
+	decisions, err := bd.ListRecentlyResolvedDecisions(lookback)
+	if err != nil {
+		return nil, fmt.Errorf("listing resolved decisions: %w", err)
+	}
+
+	var results []*ResolvedDecisionInfo
+	t := tmux.NewTmux()
+
+	for _, issue := range decisions {
+		// Parse decision fields to get requestor
+		fields := beads.ParseDecisionFields(issue.Description)
+		if fields == nil {
+			continue
+		}
+
+		// Check if requested by crew in this rig
+		// Format: "rigname/crew/crewname" or "rigname/crewname"
+		if !strings.HasPrefix(fields.RequestedBy, rigName+"/") {
+			continue
+		}
+
+		// Check if this is a crew member (not polecat, witness, etc.)
+		if !strings.Contains(fields.RequestedBy, "/crew/") && !isCrewPath(fields.RequestedBy, rigName) {
+			continue
+		}
+
+		// Check if already notified (has decision:notified label)
+		if beads.HasLabel(issue, "decision:notified") {
+			continue
+		}
+
+		// Check if crew session is at a prompt (idle)
+		sessionName := crewSessionName(fields.RequestedBy, rigName)
+		if sessionName == "" {
+			continue
+		}
+
+		// Only nudge if session exists and Claude is running
+		hasSession, _ := t.HasSession(sessionName)
+		if !hasSession {
+			continue
+		}
+
+		// Check if Claude is running (healthy session that can receive nudges)
+		if !t.IsClaudeRunning(sessionName) {
+			continue
+		}
+
+		// Build notification info
+		chosenOption := ""
+		if fields.ChosenIndex > 0 && fields.ChosenIndex <= len(fields.Options) {
+			chosenOption = fields.Options[fields.ChosenIndex-1].Label
+		}
+
+		results = append(results, &ResolvedDecisionInfo{
+			DecisionID:   issue.ID,
+			Question:     fields.Question,
+			ChosenOption: chosenOption,
+			Rationale:    fields.Rationale,
+			ResolvedBy:   fields.ResolvedBy,
+			RequestedBy:  fields.RequestedBy,
+		})
+	}
+
+	return results, nil
+}
+
+// isCrewPath checks if a requestor path is a crew member path.
+func isCrewPath(path, rigName string) bool {
+	// Handle formats like "gastown/decision" (old format)
+	parts := strings.Split(path, "/")
+	if len(parts) == 2 && parts[0] == rigName {
+		// Check if it's NOT a system role
+		role := parts[1]
+		if role != "witness" && role != "refinery" && role != "polecats" {
+			return true
+		}
+	}
+	return false
+}
+
+// crewSessionName returns the tmux session name for a crew member.
+func crewSessionName(requestedBy, rigName string) string {
+	// Handle formats:
+	// - "gastown/crew/decision" -> "gt-gastown-decision"
+	// - "gastown/decision" (old format) -> "gt-gastown-decision"
+	parts := strings.Split(requestedBy, "/")
+
+	if len(parts) == 3 && parts[1] == "crew" {
+		// New format: rig/crew/name
+		return fmt.Sprintf("gt-%s-%s", parts[0], parts[2])
+	}
+
+	if len(parts) == 2 {
+		// Old format: rig/name
+		role := parts[1]
+		if role != "witness" && role != "refinery" && role != "polecats" {
+			return fmt.Sprintf("gt-%s-%s", parts[0], role)
+		}
+	}
+
+	return ""
+}
+
+// NudgeCrewWithDecision sends a nudge to a crew session about a resolved decision.
+// Returns the session name that was nudged.
+func NudgeCrewWithDecision(workDir, rigName string, info *ResolvedDecisionInfo) (string, error) {
+	sessionName := crewSessionName(info.RequestedBy, rigName)
+	if sessionName == "" {
+		return "", fmt.Errorf("could not determine session name for %s", info.RequestedBy)
+	}
+
+	// Build the nudge message
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("Decision %s resolved: %s", info.DecisionID, info.ChosenOption))
+	if info.Rationale != "" {
+		msg.WriteString(fmt.Sprintf(" (Rationale: %s)", info.Rationale))
+	}
+	msg.WriteString(". Check your mail or continue work.")
+
+	// Send the nudge via gt nudge (uses proper tmux formatting)
+	if err := util.ExecRun(workDir, "gt", "nudge", info.RequestedBy, msg.String()); err != nil {
+		return sessionName, fmt.Errorf("nudging crew: %w", err)
+	}
+
+	return sessionName, nil
+}
+
+// MarkDecisionNotified marks a decision as having been notified to the crew.
+// This prevents duplicate notifications.
+func MarkDecisionNotified(workDir, decisionID string) error {
+	townRoot, err := workspace.Find(workDir)
+	if err != nil || townRoot == "" {
+		return fmt.Errorf("finding town root: %w", err)
+	}
+
+	bd := beads.NewWithBeadsDir(townRoot, beads.ResolveBeadsDir(townRoot))
+
+	return bd.Update(decisionID, beads.UpdateOptions{
+		AddLabels: []string{"decision:notified"},
+	})
+}
+
+// NotifyCrewOfResolvedDecisions is the main function for the witness patrol loop.
+// It finds resolved decisions for crew in this rig and nudges them.
+// Returns a list of notifications sent.
+func NotifyCrewOfResolvedDecisions(workDir, rigName string) ([]*HandlerResult, error) {
+	// Look back 1 hour for recently resolved decisions
+	lookback := time.Hour
+
+	decisions, err := FindResolvedDecisionsForCrew(workDir, rigName, lookback)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []*HandlerResult
+
+	for _, info := range decisions {
+		result := &HandlerResult{
+			MessageID:    info.DecisionID,
+			ProtocolType: "DECISION_RESOLVED",
+		}
+
+		// Nudge the crew
+		sessionName, err := NudgeCrewWithDecision(workDir, rigName, info)
+		if err != nil {
+			result.Error = err
+			result.Action = fmt.Sprintf("failed to nudge %s: %v", info.RequestedBy, err)
+			results = append(results, result)
+			continue
+		}
+
+		// Mark as notified to prevent duplicates
+		if err := MarkDecisionNotified(workDir, info.DecisionID); err != nil {
+			// Non-fatal - notification was sent
+			result.Error = fmt.Errorf("notification sent but failed to mark: %w", err)
+		}
+
+		result.Handled = true
+		result.Action = fmt.Sprintf("nudged %s about decision %s resolved as '%s'",
+			sessionName, info.DecisionID, info.ChosenOption)
+		results = append(results, result)
+	}
+
+	return results, nil
+}
