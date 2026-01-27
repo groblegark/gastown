@@ -668,6 +668,84 @@ func TestClaudeSettingsCheck_WrongLocationCrew(t *testing.T) {
 	}
 }
 
+// TestClaudeSettingsCheck_CrewSymlinkNotFlagged verifies that when crew workers
+// have .claude symlinks pointing to the shared crew/.claude directory, these
+// are NOT flagged as wrong location. This tests the fix for hq-s2rip1.
+func TestClaudeSettingsCheck_CrewSymlinkNotFlagged(t *testing.T) {
+	tmpDir := t.TempDir()
+	rigName := "testrig"
+
+	// Create the correct shared settings at crew/.claude/settings.json
+	sharedClaudeDir := filepath.Join(tmpDir, rigName, "crew", ".claude")
+	sharedSettings := filepath.Join(sharedClaudeDir, "settings.json")
+	createValidSettings(t, sharedSettings)
+
+	// Create crew worker directory with symlink to shared .claude
+	workerDir := filepath.Join(tmpDir, rigName, "crew", "worker1")
+	if err := os.MkdirAll(workerDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create symlink: crew/worker1/.claude -> ../.claude
+	workerClaudeDir := filepath.Join(workerDir, ".claude")
+	if err := os.Symlink("../.claude", workerClaudeDir); err != nil {
+		t.Skipf("cannot create symlinks: %v", err)
+	}
+
+	check := NewClaudeSettingsCheck()
+	ctx := &CheckContext{TownRoot: tmpDir}
+
+	result := check.Run(ctx)
+
+	// Should NOT find any wrong location errors (only the shared settings exist)
+	if result.Status == StatusError {
+		for _, d := range result.Details {
+			if strings.Contains(d, "wrong location") && strings.Contains(d, "worker1") {
+				t.Errorf("crew worker symlink should NOT be flagged as wrong location: %s", d)
+			}
+		}
+	}
+}
+
+// TestClaudeSettingsCheck_PolecatSymlinkNotFlagged verifies that when polecats
+// have .claude symlinks pointing to the shared polecats/.claude directory, these
+// are NOT flagged as wrong location.
+func TestClaudeSettingsCheck_PolecatSymlinkNotFlagged(t *testing.T) {
+	tmpDir := t.TempDir()
+	rigName := "testrig"
+
+	// Create the correct shared settings at polecats/.claude/settings.json
+	sharedClaudeDir := filepath.Join(tmpDir, rigName, "polecats", ".claude")
+	sharedSettings := filepath.Join(sharedClaudeDir, "settings.json")
+	createValidSettings(t, sharedSettings)
+
+	// Create polecat directory with symlink to shared .claude
+	polecatDir := filepath.Join(tmpDir, rigName, "polecats", "pc1")
+	if err := os.MkdirAll(polecatDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create symlink: polecats/pc1/.claude -> ../.claude
+	polecatClaudeDir := filepath.Join(polecatDir, ".claude")
+	if err := os.Symlink("../.claude", polecatClaudeDir); err != nil {
+		t.Skipf("cannot create symlinks: %v", err)
+	}
+
+	check := NewClaudeSettingsCheck()
+	ctx := &CheckContext{TownRoot: tmpDir}
+
+	result := check.Run(ctx)
+
+	// Should NOT find any wrong location errors (only the shared settings exist)
+	if result.Status == StatusError {
+		for _, d := range result.Details {
+			if strings.Contains(d, "wrong location") && strings.Contains(d, "pc1") {
+				t.Errorf("polecat symlink should NOT be flagged as wrong location: %s", d)
+			}
+		}
+	}
+}
+
 func TestClaudeSettingsCheck_WrongLocationPolecat(t *testing.T) {
 	tmpDir := t.TempDir()
 	rigName := "testrig"
@@ -1112,13 +1190,23 @@ func TestClaudeSettingsCheck_TownRootSettingsWarnsInsteadOfKilling(t *testing.T)
 		t.Fatalf("Fix failed: %v", err)
 	}
 
-	// Verify stale file was deleted
-	if _, err := os.Stat(staleTownRootSettings); !os.IsNotExist(err) {
-		t.Error("expected settings.json at town root to be deleted")
+	// Verify a symlink was created from town root to mayor settings
+	// (the fix now creates a symlink so mayor session can find its hooks)
+	info, err := os.Lstat(staleTownRootSettings)
+	if err != nil {
+		t.Fatalf("expected symlink at town root, but got error: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("expected settings.json at town root to be a symlink, not a regular file")
 	}
 
-	// Verify .claude directory was cleaned up (best-effort)
-	if _, err := os.Stat(staleTownRootDir); !os.IsNotExist(err) {
-		t.Error("expected .claude directory at town root to be deleted")
+	// Verify symlink points to mayor settings
+	target, err := os.Readlink(staleTownRootSettings)
+	if err != nil {
+		t.Fatalf("failed to read symlink target: %v", err)
+	}
+	expectedTarget := filepath.Join("..", "mayor", ".claude", "settings.json")
+	if target != expectedTarget {
+		t.Errorf("expected symlink target %q, got %q", expectedTarget, target)
 	}
 }
