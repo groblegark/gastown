@@ -406,14 +406,94 @@ func (s *DecisionServer) Resolve(
 	ctx context.Context,
 	req *connect.Request[gastownv1.ResolveRequest],
 ) (*connect.Response[gastownv1.ResolveResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("Resolve not yet implemented"))
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	// Get the resolver identity from request header or default
+	resolvedBy := req.Header().Get("X-GT-Resolved-By")
+	if resolvedBy == "" {
+		resolvedBy = "rpc-client"
+	}
+
+	// Resolve the decision
+	if err := client.ResolveDecision(
+		req.Msg.DecisionId,
+		int(req.Msg.ChosenIndex),
+		req.Msg.Rationale,
+		resolvedBy,
+	); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resolving decision: %w", err))
+	}
+
+	// Fetch the updated decision
+	issue, fields, err := client.GetDecisionBead(req.Msg.DecisionId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("fetching resolved decision: %w", err))
+	}
+
+	var options []*gastownv1.DecisionOption
+	for _, opt := range fields.Options {
+		options = append(options, &gastownv1.DecisionOption{
+			Label:       opt.Label,
+			Description: opt.Description,
+			Recommended: opt.Recommended,
+		})
+	}
+
+	decision := &gastownv1.Decision{
+		Id:          issue.ID,
+		Question:    fields.Question,
+		Context:     fields.Context,
+		Options:     options,
+		ChosenIndex: int32(fields.ChosenIndex),
+		Rationale:   fields.Rationale,
+		ResolvedBy:  fields.ResolvedBy,
+		RequestedBy: &gastownv1.AgentAddress{Name: fields.RequestedBy},
+		Urgency:     toUrgency(fields.Urgency),
+		Blockers:    fields.Blockers,
+		Resolved:    true,
+	}
+
+	// Publish resolution event to bus
+	if s.bus != nil {
+		s.bus.PublishDecisionResolved(issue.ID, decision)
+	}
+
+	return connect.NewResponse(&gastownv1.ResolveResponse{Decision: decision}), nil
 }
 
 func (s *DecisionServer) Cancel(
 	ctx context.Context,
 	req *connect.Request[gastownv1.CancelRequest],
 ) (*connect.Response[gastownv1.CancelResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("Cancel not yet implemented"))
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	// Close the decision bead with cancelled status
+	reason := req.Msg.Reason
+	if reason == "" {
+		reason = "Cancelled via RPC"
+	}
+
+	// Update labels to mark as cancelled
+	if err := client.Update(req.Msg.DecisionId, beads.UpdateOptions{
+		AddLabels:    []string{"decision:cancelled"},
+		RemoveLabels: []string{"decision:pending"},
+	}); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("updating decision: %w", err))
+	}
+
+	// Close the bead
+	if err := client.Close(req.Msg.DecisionId, reason); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("closing decision: %w", err))
+	}
+
+	// Publish cancellation event to bus
+	if s.bus != nil {
+		s.bus.PublishDecisionCanceled(req.Msg.DecisionId)
+	}
+
+	return connect.NewResponse(&gastownv1.CancelResponse{}), nil
 }
 
 func (s *DecisionServer) WatchDecisions(
