@@ -569,16 +569,49 @@ func TestTurnCheckWithMarker(t *testing.T) {
 	if err := createTurnMarker(sessionID); err != nil {
 		t.Fatalf("createTurnMarker failed: %v", err)
 	}
+	defer clearTurnMarker(sessionID) // Cleanup
 
-	// Check with marker - should return nil (allow) and remove marker
+	// Check with marker - should return nil (allow) and preserve marker
 	result := checkTurnMarker(sessionID, false)
 	if result != nil {
 		t.Errorf("should return nil when marker exists, got %+v", result)
 	}
 
-	// Marker should be removed
-	if turnMarkerExists(sessionID) {
-		t.Error("marker should be removed after check")
+	// Marker should still exist (not cleared by check)
+	// This allows multiple Stop hook firings to pass
+	if !turnMarkerExists(sessionID) {
+		t.Error("marker should still exist after check (cleared by turn-clear, not turn-check)")
+	}
+}
+
+// TestTurnCheckMultipleFirings tests that Stop hook can fire multiple times.
+// This was a bug: the first check would clear the marker, causing subsequent
+// checks to block incorrectly.
+func TestTurnCheckMultipleFirings(t *testing.T) {
+	sessionID := "test-multiple-firings"
+
+	// Create marker (simulating decision request)
+	if err := createTurnMarker(sessionID); err != nil {
+		t.Fatalf("createTurnMarker failed: %v", err)
+	}
+	defer clearTurnMarker(sessionID) // Cleanup
+
+	// First Stop hook firing - should allow
+	result1 := checkTurnMarker(sessionID, false)
+	if result1 != nil {
+		t.Errorf("first check should allow, got %+v", result1)
+	}
+
+	// Second Stop hook firing - should also allow (marker persists)
+	result2 := checkTurnMarker(sessionID, false)
+	if result2 != nil {
+		t.Errorf("second check should also allow, got %+v", result2)
+	}
+
+	// Third Stop hook firing - should still allow
+	result3 := checkTurnMarker(sessionID, false)
+	if result3 != nil {
+		t.Errorf("third check should also allow, got %+v", result3)
 	}
 }
 

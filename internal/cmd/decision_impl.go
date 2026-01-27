@@ -987,10 +987,12 @@ type TurnBlockResult struct {
 // checkTurnMarker checks if a decision was offered this turn.
 // Returns nil if allowed, or a TurnBlockResult if blocked.
 // If soft is true, never blocks (just returns nil).
+// NOTE: This does NOT clear the marker - that's done by turn-clear at the
+// start of the next turn. This allows Stop hook to fire multiple times
+// without incorrectly blocking on subsequent checks.
 func checkTurnMarker(sessionID string, soft bool) *TurnBlockResult {
 	if turnMarkerExists(sessionID) {
-		// Decision was offered - allow and clean up
-		clearTurnMarker(sessionID)
+		// Decision was offered - allow (don't clear; turn-clear handles that)
 		return nil
 	}
 
