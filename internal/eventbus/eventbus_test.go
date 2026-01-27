@@ -180,3 +180,77 @@ func TestBusNonBlocking(t *testing.T) {
 		t.Fatal("publish blocked with full subscriber buffer")
 	}
 }
+
+func TestBusMetrics(t *testing.T) {
+	bus := New()
+	defer bus.Close()
+
+	// Check initial metrics
+	m := bus.Metrics()
+	if m.EventsPublished != 0 {
+		t.Errorf("expected 0 events published, got %d", m.EventsPublished)
+	}
+	if m.SubscribersActive != 0 {
+		t.Errorf("expected 0 active subscribers, got %d", m.SubscribersActive)
+	}
+
+	// Subscribe
+	events, unsub := bus.Subscribe()
+
+	m = bus.Metrics()
+	if m.SubscribersActive != 1 {
+		t.Errorf("expected 1 active subscriber, got %d", m.SubscribersActive)
+	}
+	if m.SubscribersTotal != 1 {
+		t.Errorf("expected 1 total subscriber, got %d", m.SubscribersTotal)
+	}
+
+	// Publish and consume
+	bus.PublishDecisionCreated("test-1", nil)
+	<-events
+
+	m = bus.Metrics()
+	if m.EventsPublished != 1 {
+		t.Errorf("expected 1 event published, got %d", m.EventsPublished)
+	}
+	if m.EventsDelivered != 1 {
+		t.Errorf("expected 1 event delivered, got %d", m.EventsDelivered)
+	}
+	if m.EventsDropped != 0 {
+		t.Errorf("expected 0 events dropped, got %d", m.EventsDropped)
+	}
+
+	// Unsubscribe and verify
+	unsub()
+	m = bus.Metrics()
+	if m.SubscribersActive != 0 {
+		t.Errorf("expected 0 active subscribers after unsub, got %d", m.SubscribersActive)
+	}
+	if m.SubscribersTotal != 1 {
+		t.Errorf("expected 1 total subscriber, got %d", m.SubscribersTotal)
+	}
+}
+
+func TestBusMetricsDropped(t *testing.T) {
+	bus := New()
+	defer bus.Close()
+
+	// Subscribe but don't read
+	_, _ = bus.Subscribe()
+
+	// Fill buffer (100) and overflow
+	for i := 0; i < 110; i++ {
+		bus.PublishDecisionCreated("test", nil)
+	}
+
+	m := bus.Metrics()
+	if m.EventsPublished != 110 {
+		t.Errorf("expected 110 events published, got %d", m.EventsPublished)
+	}
+	if m.EventsDelivered != 100 {
+		t.Errorf("expected 100 events delivered (buffer size), got %d", m.EventsDelivered)
+	}
+	if m.EventsDropped != 10 {
+		t.Errorf("expected 10 events dropped, got %d", m.EventsDropped)
+	}
+}

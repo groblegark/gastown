@@ -73,6 +73,18 @@ func main() {
 		fmt.Fprintf(w, `{"status":"ok"}`)
 	})
 
+	// SSE endpoint for decision events (browser-friendly streaming)
+	mux.HandleFunc("/events/decisions", NewSSEHandler(decisionBus, root))
+
+	// Metrics endpoint
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		metrics := decisionBus.Metrics()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"events_published":%d,"events_delivered":%d,"events_dropped":%d,"subscribers_active":%d,"subscribers_total":%d}`,
+			metrics.EventsPublished, metrics.EventsDelivered, metrics.EventsDropped,
+			metrics.SubscribersActive, metrics.SubscribersTotal)
+	})
+
 	addr := fmt.Sprintf(":%d", *port)
 	log.Printf("Gas Town Mobile Server starting on %s", addr)
 	log.Printf("Town root: %s", root)

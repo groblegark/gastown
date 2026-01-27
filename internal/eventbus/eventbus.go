@@ -26,6 +26,15 @@ type Event struct {
 // Subscriber is a function that handles events.
 type Subscriber func(Event)
 
+// Metrics tracks event bus statistics.
+type Metrics struct {
+	EventsPublished   int64 // Total events published
+	EventsDelivered   int64 // Total events delivered to subscribers
+	EventsDropped     int64 // Events dropped due to full subscriber channels
+	SubscribersActive int   // Current active subscribers
+	SubscribersTotal  int64 // Total subscribers created over time
+}
+
 // Bus is an in-process event bus for decision events.
 // It uses a simple broadcast pattern where all subscribers receive all events.
 // Thread-safe for concurrent publish/subscribe operations.
@@ -34,6 +43,13 @@ type Bus struct {
 	subscribers map[string]chan Event // subscriber ID → event channel
 	nextID      int
 	closed      bool
+
+	// Metrics
+	metricsLock       sync.Mutex
+	eventsPublished   int64
+	eventsDelivered   int64
+	eventsDropped     int64
+	subscribersTotal  int64
 }
 
 // New creates a new event bus.
@@ -62,6 +78,10 @@ func (b *Bus) Subscribe() (events <-chan Event, unsubscribe func()) {
 	ch := make(chan Event, 100) // Buffer to avoid blocking publishers
 	b.subscribers[id] = ch
 
+	b.metricsLock.Lock()
+	b.subscribersTotal++
+	b.metricsLock.Unlock()
+
 	return ch, func() {
 		b.mu.Lock()
 		defer b.mu.Unlock()
@@ -82,13 +102,22 @@ func (b *Bus) Publish(event Event) {
 		return
 	}
 
+	b.metricsLock.Lock()
+	b.eventsPublished++
+	b.metricsLock.Unlock()
+
 	for _, ch := range b.subscribers {
 		select {
 		case ch <- event:
-			// Event delivered
+			b.metricsLock.Lock()
+			b.eventsDelivered++
+			b.metricsLock.Unlock()
 		default:
 			// Channel full, drop event for this subscriber
 			// This prevents slow subscribers from blocking the bus
+			b.metricsLock.Lock()
+			b.eventsDropped++
+			b.metricsLock.Unlock()
 		}
 	}
 }
@@ -140,4 +169,22 @@ func (b *Bus) SubscriberCount() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return len(b.subscribers)
+}
+
+// Metrics returns a snapshot of event bus statistics.
+func (b *Bus) Metrics() Metrics {
+	b.mu.RLock()
+	subscriberCount := len(b.subscribers)
+	b.mu.RUnlock()
+
+	b.metricsLock.Lock()
+	defer b.metricsLock.Unlock()
+
+	return Metrics{
+		EventsPublished:   b.eventsPublished,
+		EventsDelivered:   b.eventsDelivered,
+		EventsDropped:     b.eventsDropped,
+		SubscribersActive: subscriberCount,
+		SubscribersTotal:  b.subscribersTotal,
+	}
 }

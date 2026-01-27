@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"net/http"
 	"path/filepath"
 	"time"
 
@@ -880,4 +881,107 @@ func LoadTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
 	}, nil
+}
+
+// NewSSEHandler creates an HTTP handler for Server-Sent Events streaming of decision events.
+// This provides a browser-friendly alternative to Connect-RPC streaming.
+func NewSSEHandler(bus *eventbus.Bus, townRoot string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Set SSE headers
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		// Check for flusher support
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "SSE not supported", http.StatusInternalServerError)
+			return
+		}
+
+		// Subscribe to events
+		events, unsubscribe := bus.Subscribe()
+		defer unsubscribe()
+
+		// Send initial pending decisions
+		townBeadsPath := beads.GetTownBeadsPath(townRoot)
+		client := beads.New(townBeadsPath)
+		issues, err := client.ListDecisions()
+		if err == nil {
+			for _, issue := range issues {
+				fields := beads.ParseDecisionFields(issue.Description)
+				if fields == nil {
+					continue
+				}
+				// Send as SSE event
+				fmt.Fprintf(w, "event: decision\n")
+				fmt.Fprintf(w, "data: {\"id\":\"%s\",\"question\":\"%s\",\"urgency\":\"%s\",\"type\":\"pending\"}\n\n",
+					issue.ID, escapeJSON(fields.Question), fields.Urgency)
+				flusher.Flush()
+			}
+		}
+
+		// Send connected event
+		fmt.Fprintf(w, "event: connected\n")
+		fmt.Fprintf(w, "data: {\"status\":\"connected\",\"subscribers\":%d}\n\n", bus.SubscriberCount())
+		flusher.Flush()
+
+		// Stream events
+		ctx := r.Context()
+		ticker := time.NewTicker(30 * time.Second) // Keepalive
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+
+			case event, ok := <-events:
+				if !ok {
+					return
+				}
+				// Send event based on type
+				eventType := "unknown"
+				switch event.Type {
+				case eventbus.EventDecisionCreated:
+					eventType = "created"
+				case eventbus.EventDecisionResolved:
+					eventType = "resolved"
+				case eventbus.EventDecisionCanceled:
+					eventType = "canceled"
+				}
+				fmt.Fprintf(w, "event: decision\n")
+				fmt.Fprintf(w, "data: {\"id\":\"%s\",\"type\":\"%s\"}\n\n", event.DecisionID, eventType)
+				flusher.Flush()
+
+			case <-ticker.C:
+				// Keepalive comment
+				fmt.Fprintf(w, ": keepalive\n\n")
+				flusher.Flush()
+			}
+		}
+	}
+}
+
+// escapeJSON escapes a string for JSON output.
+func escapeJSON(s string) string {
+	result := ""
+	for _, c := range s {
+		switch c {
+		case '"':
+			result += `\"`
+		case '\\':
+			result += `\\`
+		case '\n':
+			result += `\n`
+		case '\r':
+			result += `\r`
+		case '\t':
+			result += `\t`
+		default:
+			result += string(c)
+		}
+	}
+	return result
 }
