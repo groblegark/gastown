@@ -282,20 +282,11 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 		if err == nil && dead {
 			// Capture diagnostic output before cleanup
 			diagnosticOutput := m.tmux.CaptureDeadPaneOutput(sessionID, 50)
-			// Try to get the pane's exit status for additional diagnostics
-			exitStatus := m.tmux.GetPaneExitStatus(sessionID)
 			// Kill the zombie session
 			_ = m.tmux.KillSession(sessionID)
 			// Return error with diagnostics
 			if diagnosticOutput != "" {
-				if exitStatus != "" {
-					return fmt.Errorf("session %s died during startup (exit status: %s). Diagnostic output:\n%s", sessionID, exitStatus, diagnosticOutput)
-				}
 				return fmt.Errorf("session %s died during startup. Diagnostic output:\n%s", sessionID, diagnosticOutput)
-			}
-			// Pane died but no output captured - provide more specific error
-			if exitStatus != "" {
-				return fmt.Errorf("session %s died during startup (exit status: %s, no diagnostic output captured - check agent binary and credentials)", sessionID, exitStatus)
 			}
 			return fmt.Errorf("session %s died during startup (pane dead, no diagnostic output - check agent binary and credentials)", sessionID)
 		}
