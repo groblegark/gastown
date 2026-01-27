@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/steveyegge/gastown/internal/ui"
 )
 
 // renderView renders the entire view
@@ -147,15 +149,17 @@ func (m *Model) renderDetailPane() string {
 	b.WriteString(helpStyle.Render(header))
 	b.WriteString("\n\n")
 
-	// Question
-	b.WriteString(detailTitleStyle.Render(d.Prompt))
+	// Question (wrap to terminal width)
+	wrappedPrompt := ui.WrapText(d.Prompt, m.width-4)
+	b.WriteString(detailTitleStyle.Render(wrappedPrompt))
 	b.WriteString("\n\n")
 
-	// Context if available
+	// Context if available (wrap to terminal width)
 	if d.Context != "" {
 		b.WriteString(detailLabelStyle.Render("Context:"))
 		b.WriteString("\n")
-		b.WriteString(detailValueStyle.Render(d.Context))
+		wrappedContext := ui.WrapText(d.Context, m.width-4)
+		b.WriteString(detailValueStyle.Render(wrappedContext))
 		b.WriteString("\n\n")
 	}
 
@@ -176,21 +180,27 @@ func (m *Model) renderDetailPane() string {
 			label = opt.Short + ": " + label
 		}
 
-		// Option description
-		desc := ""
-		if opt.Description != "" {
-			desc = " - " + optionDescStyle.Render(opt.Description)
-		}
-
-		line := fmt.Sprintf("  %s %s%s", numStr, label, desc)
+		// Build option line (number + label)
+		optLine := fmt.Sprintf("  %s %s", numStr, label)
 
 		if isSelected {
-			b.WriteString(selectedOptionStyle.Render(line))
+			b.WriteString(selectedOptionStyle.Render(optLine))
 			b.WriteString(" ←")
 		} else {
-			b.WriteString(optionLabelStyle.Render(line))
+			b.WriteString(optionLabelStyle.Render(optLine))
 		}
 		b.WriteString("\n")
+
+		// Option description on separate line, wrapped and indented
+		if opt.Description != "" {
+			wrappedDesc := ui.WrapText(opt.Description, m.width-10)
+			// Indent each line of the wrapped description
+			for _, descLine := range strings.Split(wrappedDesc, "\n") {
+				b.WriteString("       ")
+				b.WriteString(optionDescStyle.Render(descLine))
+				b.WriteString("\n")
+			}
+		}
 	}
 
 	// Show selected option instructions
