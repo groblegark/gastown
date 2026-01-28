@@ -46,12 +46,16 @@ func DecisionResolved(townRoot, decisionID string, fields beads.DecisionFields, 
 			log.Printf("notify: FAILED to mail requestor %q: %v", fields.RequestedBy, err)
 		}
 
-		// 3. Nudge the requesting agent (immediate, best-effort)
+		// 3. Nudge the requesting agent (immediate, best-effort).
+		// Use --direct to send via tmux immediately rather than queuing to NudgeQueue.
+		// This is critical because the requesting agent is likely idle (blocked waiting
+		// for this decision), so queued nudges would never be drained (no hooks fire
+		// in idle sessions). Direct tmux send wakes up the session.
 		nudgeMsg := fmt.Sprintf("[DECISION RESOLVED] %s: Chose \"%s\"", decisionID, chosenLabel)
 		if rationale != "" {
 			nudgeMsg += fmt.Sprintf(" - %s", rationale)
 		}
-		nudgeCmd := exec.Command("gt", "nudge", fields.RequestedBy, nudgeMsg) //nolint:gosec // trusted internal command
+		nudgeCmd := exec.Command("gt", "nudge", "--direct", fields.RequestedBy, nudgeMsg) //nolint:gosec // trusted internal command
 		if err := nudgeCmd.Run(); err != nil {
 			log.Printf("notify: failed to nudge requestor %q: %v", fields.RequestedBy, err)
 		}
