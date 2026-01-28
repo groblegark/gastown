@@ -13,6 +13,7 @@ import (
 
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
+	"github.com/steveyegge/gastown/internal/ratelimit"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
@@ -31,6 +32,7 @@ var (
 	ErrSessionRunning  = errors.New("session already running")
 	ErrSessionNotFound = errors.New("session not found")
 	ErrIssueInvalid    = errors.New("issue not found or tombstoned")
+	ErrRateLimited     = errors.New("rate limited")
 )
 
 // SessionManager handles polecat session lifecycle.
@@ -150,6 +152,15 @@ func (m *SessionManager) hasPolecat(polecat string) bool {
 func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	if !m.hasPolecat(polecat) {
 		return fmt.Errorf("%w: %s", ErrPolecatNotFound, polecat)
+	}
+
+	// Check for rate limit backoff before starting
+	tracker := ratelimit.NewTracker(m.rig.Path)
+	if err := tracker.Load(); err == nil {
+		if tracker.ShouldDefer() {
+			waitTime := tracker.TimeUntilReady()
+			return fmt.Errorf("%w: backoff active, retry in %v", ErrRateLimited, waitTime.Round(time.Second))
+		}
 	}
 
 	sessionID := m.SessionName(polecat)
@@ -284,6 +295,16 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 			diagnosticOutput := m.tmux.CaptureDeadPaneOutput(sessionID, 50)
 			// Kill the zombie session
 			_ = m.tmux.KillSession(sessionID)
+
+			// Check for rate limit in diagnostic output
+			if ratelimit.DetectRateLimit(diagnosticOutput) {
+				tracker := ratelimit.NewTracker(m.rig.Path)
+				_ = tracker.Load()
+				tracker.RecordRateLimit(fmt.Sprintf("polecat:%s", polecat), opts.Account)
+				_ = tracker.Save()
+				return fmt.Errorf("%w: session %s died due to rate limiting. Diagnostic output:\n%s", ErrRateLimited, sessionID, diagnosticOutput)
+			}
+
 			// Return error with diagnostics
 			if diagnosticOutput != "" {
 				return fmt.Errorf("session %s died during startup. Diagnostic output:\n%s", sessionID, diagnosticOutput)

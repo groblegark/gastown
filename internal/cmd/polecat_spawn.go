@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/polecat"
+	"github.com/steveyegge/gastown/internal/ratelimit"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -65,6 +67,16 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 	r, err := rigMgr.GetRig(rigName)
 	if err != nil {
 		return nil, fmt.Errorf("rig '%s' not found", rigName)
+	}
+
+	// Check for rate limit backoff before spawning
+	tracker := ratelimit.NewTracker(r.Path)
+	if loadErr := tracker.Load(); loadErr == nil {
+		if tracker.ShouldDefer() {
+			waitTime := tracker.TimeUntilReady()
+			return nil, fmt.Errorf("%w: rate limit backoff active for %s, retry in %v",
+				polecat.ErrRateLimited, rigName, waitTime.Round(1e9))
+		}
 	}
 
 	// Get polecat manager (with tmux for session-aware allocation)
@@ -181,6 +193,13 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 			startOpts.Command = cmd
 		}
 		if err := polecatSessMgr.Start(polecatName, startOpts); err != nil {
+			// Check if failure was due to rate limiting
+			if errors.Is(err, polecat.ErrRateLimited) {
+				// Rate limit detected - state already recorded by session manager
+				fmt.Printf("⚠️  Rate limit detected during spawn\n")
+				// Notify witness about rate limit (best effort)
+				notifyWitnessRateLimit(rigName, polecatName, accountHandle)
+			}
 			return nil, fmt.Errorf("starting session: %w", err)
 		}
 	}
@@ -360,4 +379,24 @@ func verifyAndSetHookBead(townRoot, rigName, polecatName, hookBead string) error
 	}
 
 	return nil
+}
+
+// notifyWitnessRateLimit sends a rate limit notification to the rig's witness.
+// This is best-effort and failures are silently ignored.
+func notifyWitnessRateLimit(rigName, polecatName, account string) {
+	// Find workspace
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return
+	}
+
+	// Send mail to witness using gt mail send
+	subject := fmt.Sprintf("RATE_LIMITED polecat:%s", polecatName)
+	body := fmt.Sprintf("Account: %s\nSource: spawn\nPolecat: %s\nRig: %s\n",
+		account, polecatName, rigName)
+
+	witnessAddr := fmt.Sprintf("%s/witness", rigName)
+	cmd := exec.Command("gt", "mail", "send", witnessAddr, "-s", subject, "-m", body)
+	cmd.Dir = townRoot
+	_ = cmd.Run() // Best effort - ignore errors
 }
