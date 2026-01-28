@@ -25,6 +25,7 @@ var (
 	crewSync          bool // Sync from origin before starting (default: true)
 	crewNoSync        bool // Disable sync before starting
 	crewTUI           bool // Launch TUI wizard for crew add
+	crewHook          string // Bead ID to set as hook_bead at startup
 )
 
 var crewCmd = &cobra.Command{
@@ -295,7 +296,8 @@ Examples:
   gt crew start                   # Start all crew (rig inferred from cwd)
   gt crew start beads grip fang   # Start specific crew in beads rig
   gt crew start gastown joe       # Start joe in gastown rig
-  gt crew start --no-sync         # Start without syncing from origin`,
+  gt crew start --no-sync         # Start without syncing from origin
+  gt crew start gastown joe --hook hq-abc  # Start joe with work pre-hooked`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		// With --all, we can have 0 args (infer rig) or 1+ args (rig specified)
 		if crewAll {
@@ -386,6 +388,7 @@ func init() {
 	crewStartCmd.Flags().StringVar(&crewAgentOverride, "agent", "", "Agent alias to run crew worker with (overrides rig/town default)")
 	crewStartCmd.Flags().BoolVar(&crewSync, "sync", true, "Sync workspace from origin before starting (default: true)")
 	crewStartCmd.Flags().BoolVar(&crewNoSync, "no-sync", false, "Skip syncing from origin before starting")
+	crewStartCmd.Flags().StringVar(&crewHook, "hook", "", "Bead ID to set as hook_bead at startup (atomic assignment)")
 
 	crewStopCmd.Flags().StringVar(&crewRig, "rig", "", "Rig to use (filter when using --all)")
 	crewStopCmd.Flags().BoolVar(&crewAll, "all", false, "Stop all running crew sessions")

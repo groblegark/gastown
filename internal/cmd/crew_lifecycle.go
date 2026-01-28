@@ -328,6 +328,11 @@ func runCrewStart(cmd *cobra.Command, args []string) error {
 		baseURL = resolvedAccount.BaseURL
 	}
 
+	// Validate --hook flag: only valid when starting a single crew member
+	if crewHook != "" && len(crewNames) != 1 {
+		return fmt.Errorf("--hook requires exactly one crew member name (got %d)", len(crewNames))
+	}
+
 	// Build start options (shared across all crew members)
 	opts := crew.StartOptions{
 		Account:         crewAccount,
@@ -335,6 +340,7 @@ func runCrewStart(cmd *cobra.Command, args []string) error {
 		AgentOverride:   crewAgentOverride,
 		AuthToken:       authToken,
 		BaseURL:         baseURL,
+		HookBead:        crewHook,
 	}
 
 	// Sync workspaces from origin if enabled (default: true, unless --no-sync)

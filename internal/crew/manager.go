@@ -59,6 +59,12 @@ type StartOptions struct {
 	// BaseURL is an optional ANTHROPIC_BASE_URL for custom API endpoints.
 	// Used with AuthToken for alternative API providers (e.g., LiteLLM).
 	BaseURL string
+
+	// HookBead is a bead ID to set as hook_bead at startup (atomic assignment).
+	// If set, the crew member's agent bead will have this work hooked before
+	// the session starts, preventing the race condition where Claude starts
+	// and finds an empty hook.
+	HookBead string
 }
 
 // validateCrewName checks that a crew name is safe and valid.
@@ -611,6 +617,16 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 		claudeCmd = config.PrependEnv(claudeCmd, prependEnvVars)
 	}
 
+	// Set hook_bead atomically BEFORE session creation so Claude finds work on startup.
+	// This prevents the race condition where Claude starts, finds empty hook, and
+	// creates a "what should I do?" decision point.
+	if opts.HookBead != "" {
+		if err := m.setCrewHookBead(name, opts.HookBead); err != nil {
+			// Non-fatal warning - session will start but crew may need to discover work via gt prime
+			fmt.Printf("Warning: could not set hook_bead for %s: %v\n", name, err)
+		}
+	}
+
 	// Create session with command directly to avoid send-keys race condition.
 	// See: https://github.com/anthropics/gastown/issues/280
 	if err := t.NewSessionWithCommand(sessionID, worker.ClonePath, claudeCmd); err != nil {
@@ -645,6 +661,36 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 	// The session is created in detached mode, and blocking for 60 seconds
 	// serves no purpose. If the caller needs to know when Claude is ready,
 	// they can check with IsClaudeRunning().
+
+	return nil
+}
+
+// setCrewHookBead sets hook_bead on a crew member's agent bead atomically.
+// Follows the same verify-and-retry pattern used by polecat spawn (bd-3q6.8-1).
+func (m *Manager) setCrewHookBead(name, hookBead string) error {
+	townRoot := filepath.Dir(m.rig.Path)
+	prefix := beads.GetPrefixForRig(townRoot, m.rig.Name)
+	agentBeadID := beads.CrewBeadIDWithPrefix(prefix, m.rig.Name, name)
+
+	townBeadsClient := beads.New(townRoot)
+
+	// Set the hook_bead
+	if err := townBeadsClient.SetHookBead(agentBeadID, hookBead); err != nil {
+		return fmt.Errorf("setting hook_bead on %s: %w", agentBeadID, err)
+	}
+
+	// Verify it was set correctly (retry if needed, matches polecat pattern)
+	agentIssue, err := townBeadsClient.Show(agentBeadID)
+	if err != nil {
+		return fmt.Errorf("verifying hook_bead on %s: %w", agentBeadID, err)
+	}
+	if agentIssue.HookBead != hookBead {
+		// Retry once
+		fmt.Printf("  Retrying hook_bead set for %s...\n", agentBeadID)
+		if err := townBeadsClient.SetHookBead(agentBeadID, hookBead); err != nil {
+			return fmt.Errorf("retrying hook_bead set on %s: %w", agentBeadID, err)
+		}
+	}
 
 	return nil
 }
