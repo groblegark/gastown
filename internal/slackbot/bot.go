@@ -206,10 +206,15 @@ func (b *Bot) handleDecisionsCommand(cmd slack.SlashCommand) {
 			urgencyEmoji = ":large_green_circle:"
 		}
 
+		agentTag := ""
+		if d.RequestedBy != "" {
+			agentTag = fmt.Sprintf(" (%s)", d.RequestedBy)
+		}
+
 		blocks = append(blocks,
 			slack.NewSectionBlock(
 				slack.NewTextBlockObject("mrkdwn",
-					fmt.Sprintf("%s *%s*\n%s", urgencyEmoji, d.ID, question),
+					fmt.Sprintf("%s *%s*%s\n%s", urgencyEmoji, d.ID, agentTag, question),
 					false, false,
 				),
 				nil,
@@ -284,7 +289,7 @@ func (b *Bot) handleViewDecision(callback slack.InteractionCallback, decisionID 
 		),
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("*ID:* %s\n*Question:* %s", decision.ID, decision.Question),
+				fmt.Sprintf("*ID:* %s\n*From:* %s\n*Question:* %s", decision.ID, decision.RequestedBy, decision.Question),
 				false, false,
 			),
 			nil, nil,
@@ -438,15 +443,19 @@ func (b *Bot) buildResolveModal(decisionID string, chosenIndex int, question, op
 					nil, nil,
 				),
 				slack.NewDividerBlock(),
-				slack.NewInputBlock(
-					"rationale_block",
-					slack.NewTextBlockObject("plain_text", "Rationale (optional)", false, false),
-					slack.NewTextBlockObject("plain_text", "Explain why you chose this option", false, false),
-					slack.NewPlainTextInputBlockElement(
-						slack.NewTextBlockObject("plain_text", "Enter your reasoning...", false, false),
-						"rationale_input",
-					),
-				),
+				func() *slack.InputBlock {
+					ib := slack.NewInputBlock(
+						"rationale_block",
+						slack.NewTextBlockObject("plain_text", "Rationale", false, false),
+						slack.NewTextBlockObject("plain_text", "Optionally explain your reasoning", false, false),
+						slack.NewPlainTextInputBlockElement(
+							slack.NewTextBlockObject("plain_text", "Enter your reasoning...", false, false),
+							"rationale_input",
+						),
+					)
+					ib.Optional = true
+					return ib
+				}(),
 			},
 		},
 	}
@@ -631,11 +640,17 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 		urgencyEmoji = ":large_green_circle:"
 	}
 
+	// Include agent name if available
+	agentInfo := ""
+	if decision.RequestedBy != "" {
+		agentInfo = fmt.Sprintf(" from *%s*", decision.RequestedBy)
+	}
+
 	blocks := []slack.Block{
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("%s *New Decision Required*\n*ID:* %s\n%s",
-					urgencyEmoji, decision.ID, decision.Question),
+				fmt.Sprintf("%s *%s*%s\n%s",
+					urgencyEmoji, decision.ID, agentInfo, decision.Question),
 				false, false,
 			),
 			nil,
