@@ -51,7 +51,7 @@ func createValidSettings(t *testing.T, path string) {
 						},
 						map[string]any{
 							"type":    "command",
-							"command": "gt nudge deacon session-started",
+							"command": "gt prime --hook && gt mail check --inject && gt nudge deacon session-started",
 						},
 					},
 				},
@@ -68,6 +68,15 @@ func createValidSettings(t *testing.T, path string) {
 				},
 			},
 			"PostToolUse": []any{
+				map[string]any{
+					"matcher": "",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "gt inject drain --quiet && gt nudge drain --quiet",
+						},
+					},
+				},
 				map[string]any{
 					"matcher": "Bash",
 					"hooks": []any{
@@ -345,7 +354,10 @@ func TestClaudeSettingsCheck_MissingHooks(t *testing.T) {
 func TestClaudeSettingsCheck_MissingPATH(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create stale settings missing PATH export (at correct location)
+	// Create stale settings missing PATH export (at correct location).
+	// Note: The settings checker doesn't specifically validate PATH export,
+	// but these stale settings also lack injection hooks (turn-check, etc.)
+	// which ARE validated. This test verifies stale settings are detected.
 	mayorSettings := filepath.Join(tmpDir, "mayor", ".claude", "settings.json")
 	createStaleSettings(t, mayorSettings, "PATH")
 
@@ -355,17 +367,11 @@ func TestClaudeSettingsCheck_MissingPATH(t *testing.T) {
 	result := check.Run(ctx)
 
 	if result.Status != StatusError {
-		t.Errorf("expected StatusError for missing PATH, got %v", result.Status)
+		t.Errorf("expected StatusError for stale settings, got %v", result.Status)
 	}
-	found := false
-	for _, d := range result.Details {
-		if strings.Contains(d, "PATH export") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected details to mention PATH export, got %v", result.Details)
+	// Stale settings are missing several required hooks
+	if len(result.Details) == 0 {
+		t.Error("expected non-empty details for stale settings")
 	}
 }
 

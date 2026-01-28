@@ -412,6 +412,16 @@ func (c *ClaudeSettingsCheck) checkSettings(path, _ string) []string {
 		missing = append(missing, "turn-mark hook")
 	}
 
+	// Check PostToolUse hook has inject drain (queue-based injection pipeline)
+	if !c.hookHasPattern(hooks, "PostToolUse", "gt inject drain") {
+		missing = append(missing, "inject drain hook")
+	}
+
+	// Check SessionStart hook has mail inject (autonomous mail delivery)
+	if !c.hookHasPattern(hooks, "SessionStart", "gt mail check --inject") {
+		missing = append(missing, "mail inject hook")
+	}
+
 	return missing
 }
 
