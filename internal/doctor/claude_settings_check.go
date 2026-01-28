@@ -350,8 +350,8 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 
 // checkSettings compares a settings file against the expected template.
 // Returns a list of what's missing.
-// agentType is reserved for future role-specific validation.
-func (c *ClaudeSettingsCheck) checkSettings(path, _ string) []string {
+// agentType is used for role-specific validation (autonomous vs interactive).
+func (c *ClaudeSettingsCheck) checkSettings(path, agentType string) []string {
 	var missing []string
 
 	// Read the actual settings
@@ -417,9 +417,12 @@ func (c *ClaudeSettingsCheck) checkSettings(path, _ string) []string {
 		missing = append(missing, "inject drain hook")
 	}
 
-	// Check SessionStart hook has mail inject (autonomous mail delivery)
-	if !c.hookHasPattern(hooks, "SessionStart", "gt mail check --inject") {
-		missing = append(missing, "mail inject hook")
+	// Check SessionStart hook has mail inject (autonomous roles only).
+	// Interactive roles (mayor, crew) receive mail via UserPromptSubmit instead.
+	if isAutonomousAgentType(agentType) {
+		if !c.hookHasPattern(hooks, "SessionStart", "gt mail check --inject") {
+			missing = append(missing, "mail inject hook")
+		}
 	}
 
 	return missing
@@ -626,6 +629,16 @@ func isSymlinkToSharedDir(claudeDir, sharedDir string) bool {
 		sharedResolved = sharedDir
 	}
 	return resolved == sharedResolved
+}
+
+// isAutonomousAgentType returns true for agent types that use autonomous settings.
+func isAutonomousAgentType(agentType string) bool {
+	switch agentType {
+	case "polecat", "witness", "refinery", "deacon", "boot":
+		return true
+	default:
+		return false
+	}
 }
 
 // fileExists checks if a file exists.
