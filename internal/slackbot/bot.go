@@ -504,9 +504,10 @@ func (b *Bot) handleViewSubmission(callback slack.InteractionCallback) {
 		rationale = rationale + "\n\n— " + userAttribution
 	}
 
-	// Resolve via RPC
+	// Resolve via RPC with Slack user identity
 	ctx := context.Background()
-	resolved, err := b.rpcClient.ResolveDecision(ctx, decisionID, chosenIndex, rationale)
+	resolvedBy := fmt.Sprintf("slack:%s", callback.User.ID)
+	resolved, err := b.rpcClient.ResolveDecision(ctx, decisionID, chosenIndex, rationale, resolvedBy)
 	if err != nil {
 		// Post detailed error to channel
 		b.postErrorMessage(channelID, callback.User.ID, decisionID, err)

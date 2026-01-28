@@ -348,7 +348,9 @@ func (c *Client) CreateDecision(ctx context.Context, req CreateDecisionRequest) 
 }
 
 // ResolveDecision resolves a decision via the RPC server.
-func (c *Client) ResolveDecision(ctx context.Context, decisionID string, chosenIndex int, rationale string) (*Decision, error) {
+// The resolvedBy parameter identifies who resolved the decision (e.g., "slack:U12345" for Slack users).
+// If empty, the server defaults to "rpc-client".
+func (c *Client) ResolveDecision(ctx context.Context, decisionID string, chosenIndex int, rationale, resolvedBy string) (*Decision, error) {
 	body := map[string]interface{}{
 		"decisionId":  decisionID,
 		"chosenIndex": chosenIndex,
@@ -369,6 +371,9 @@ func (c *Client) ResolveDecision(ctx context.Context, decisionID string, chosenI
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
 		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+	if resolvedBy != "" {
+		httpReq.Header.Set("X-GT-Resolved-By", resolvedBy)
 	}
 
 	resp, err := c.httpClient.Do(httpReq)

@@ -538,7 +538,7 @@ func TestResolveDecision(t *testing.T) {
 		defer server.Close()
 
 		c := NewClient(server.URL)
-		decision, err := c.ResolveDecision(context.Background(), "dec-123", 2, "B is better")
+		decision, err := c.ResolveDecision(context.Background(), "dec-123", 2, "B is better", "test-resolver")
 		if err != nil {
 			t.Fatalf("ResolveDecision failed: %v", err)
 		}
@@ -561,7 +561,7 @@ func TestResolveDecision(t *testing.T) {
 		defer server.Close()
 
 		c := NewClient(server.URL)
-		_, err := c.ResolveDecision(context.Background(), "nonexistent", 1, "reason")
+		_, err := c.ResolveDecision(context.Background(), "nonexistent", 1, "reason", "test-resolver")
 		if err == nil {
 			t.Error("expected error for not found decision")
 		}

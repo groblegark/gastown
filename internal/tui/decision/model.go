@@ -404,7 +404,7 @@ func (m *Model) resolveDecision(decisionID string, choice int, rationale string)
 
 		// Use RPC if client is configured
 		if rpcClient != nil {
-			_, err := rpcClient.ResolveDecision(ctx, decisionID, choice, rationale)
+			_, err := rpcClient.ResolveDecision(ctx, decisionID, choice, rationale, "tui")
 			if err != nil {
 				return resolvedMsg{id: decisionID, err: fmt.Errorf("RPC resolve failed: %w", err)}
 			}
