@@ -463,7 +463,8 @@ func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 			Question:    bdDecision.DecisionPoint.Prompt,
 			RequestedAt: bdDecision.DecisionPoint.CreatedAt,
 			RequestedBy: bdDecision.DecisionPoint.RequestedBy,
-			ChosenIndex: 0, // Pending (will be updated if resolved)
+			Urgency:     bdDecision.DecisionPoint.Urgency,
+			ChosenIndex: 0, // Default pending, will be updated if resolved
 		}
 
 		// Parse options from bd decision
@@ -472,6 +473,20 @@ func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 				Label:       opt.Label,
 				Description: opt.Description,
 			})
+		}
+
+		// Populate resolution fields if the decision has been resolved
+		if bdDecision.DecisionPoint.SelectedOption != "" {
+			// Find the chosen index by matching the option ID
+			for i, opt := range bdDecision.Options {
+				if opt.ID == bdDecision.DecisionPoint.SelectedOption {
+					fields.ChosenIndex = i + 1 // 1-indexed
+					break
+				}
+			}
+			fields.ResolvedBy = bdDecision.DecisionPoint.RespondedBy
+			fields.ResolvedAt = bdDecision.DecisionPoint.RespondedAt
+			fields.Rationale = bdDecision.DecisionPoint.ResponseText
 		}
 
 		return issue, fields, nil
@@ -581,11 +596,16 @@ type BdDecisionOption struct {
 
 // BdDecisionPointData is the nested decision_point data from bd decision show
 type BdDecisionPointData struct {
-	IssueID     string `json:"issue_id"`
-	Prompt      string `json:"prompt"`
-	Options     string `json:"options"` // JSON string of options (raw)
-	CreatedAt   string `json:"created_at"`
-	RequestedBy string `json:"requested_by"`
+	IssueID        string `json:"issue_id"`
+	Prompt         string `json:"prompt"`
+	Options        string `json:"options"` // JSON string of options (raw)
+	CreatedAt      string `json:"created_at"`
+	SelectedOption string `json:"selected_option,omitempty"` // Option ID if resolved
+	RespondedBy    string `json:"responded_by,omitempty"`    // Who resolved the decision
+	RespondedAt    string `json:"responded_at,omitempty"`    // When resolved
+	ResponseText   string `json:"response_text,omitempty"`   // Rationale/comment
+	RequestedBy    string `json:"requested_by,omitempty"`    // Who requested the decision
+	Urgency        string `json:"urgency,omitempty"`         // Urgency level
 }
 
 // BdDecisionShowResponse represents the response from bd decision show
