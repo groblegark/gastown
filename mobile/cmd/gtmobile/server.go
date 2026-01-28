@@ -369,8 +369,8 @@ func (s *DecisionServer) CreateDecision(
 		Blockers:    req.Msg.Blockers,
 	}
 
-	// Create the decision bead
-	issue, err := client.CreateDecisionBead(req.Msg.Question, fields)
+	// Create the decision using bd decision create (canonical storage, hq-946577.39)
+	issue, err := client.CreateBdDecision(fields)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("creating decision: %w", err))
 	}

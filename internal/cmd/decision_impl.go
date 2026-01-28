@@ -142,23 +142,18 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 		// If RPC fails, fall back to direct beads
 	}
 
-	// Fall back to direct beads if RPC not available or failed
+	// Fall back to bd decision create if RPC not available or failed
+	// This uses the canonical decision_points table storage (hq-946577.39)
 	if !rpcUsed {
 		bd := beads.New(beads.ResolveBeadsDir(townRoot))
 		var err error
-		issue, err = bd.CreateDecisionBead(decisionPrompt, fields)
+		issue, err = bd.CreateBdDecision(fields)
 		if err != nil {
-			return fmt.Errorf("creating decision bead: %w", err)
+			return fmt.Errorf("creating decision: %w", err)
 		}
 	}
 
-	// Add blocker dependency if specified (only if we used direct beads, RPC handles this)
-	if decisionBlocks != "" && !rpcUsed {
-		bd := beads.New(beads.ResolveBeadsDir(townRoot))
-		if err := bd.AddDecisionBlocker(issue.ID, decisionBlocks); err != nil {
-			style.PrintWarning("failed to add blocker dependency: %v", err)
-		}
-	}
+	// Note: blocker dependency is now handled by bd decision create --blocks flag
 
 	// Send notification mail to human/overseer
 	router := mail.NewRouter(townRoot)

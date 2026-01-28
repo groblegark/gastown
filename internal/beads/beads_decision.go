@@ -241,7 +241,76 @@ func ParseDecisionFields(description string) *DecisionFields {
 	return fields
 }
 
+// BdDecisionCreateOption represents an option in bd decision create format.
+type BdDecisionCreateOption struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	Recommended bool   `json:"recommended,omitempty"`
+}
+
+// CreateBdDecision creates a decision using bd decision create (canonical storage).
+// This stores the decision in the decision_points table per the canonical design.
+func (b *Beads) CreateBdDecision(fields *DecisionFields) (*Issue, error) {
+	// Convert options to bd's JSON format with IDs
+	var bdOptions []BdDecisionCreateOption
+	for i, opt := range fields.Options {
+		bdOpt := BdDecisionCreateOption{
+			ID:          fmt.Sprintf("%d", i+1), // Use "1", "2", "3", etc. as IDs
+			Label:       opt.Label,
+			Description: opt.Description,
+			Recommended: opt.Recommended,
+		}
+		bdOptions = append(bdOptions, bdOpt)
+	}
+
+	optionsJSON, err := json.Marshal(bdOptions)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling options: %w", err)
+	}
+
+	// Build bd decision create command
+	args := []string{"decision", "create", "--json",
+		"--prompt=" + fields.Question,
+		"--options=" + string(optionsJSON),
+		"--urgency=" + fields.Urgency,
+		"--no-daemon", // Use direct mode to avoid daemon issues
+	}
+
+	// Add optional context (currently bd decision create doesn't support --context,
+	// but we can add it to the prompt as a workaround)
+	// TODO: Add --context flag to bd decision create in beads repo
+
+	// Add requested-by for wake notifications
+	if fields.RequestedBy != "" {
+		args = append(args, "--requested-by="+fields.RequestedBy)
+	}
+
+	// Add blocks dependency
+	if len(fields.Blockers) > 0 {
+		args = append(args, "--blocks="+fields.Blockers[0])
+	}
+
+	out, err := b.run(args...)
+	if err != nil {
+		return nil, fmt.Errorf("bd decision create: %w", err)
+	}
+
+	// Parse the JSON response
+	var result struct {
+		ID      string `json:"id"`
+		Prompt  string `json:"prompt"`
+		Urgency string `json:"urgency,omitempty"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return nil, fmt.Errorf("parsing bd decision create output: %w", err)
+	}
+
+	return &Issue{ID: result.ID}, nil
+}
+
 // CreateDecisionBead creates a decision bead for tracking decisions.
+// DEPRECATED: Use CreateBdDecision for new code (canonical storage).
 func (b *Beads) CreateDecisionBead(title string, fields *DecisionFields) (*Issue, error) {
 	description := FormatDecisionDescription(fields)
 
@@ -282,8 +351,17 @@ func (b *Beads) CreateDecisionBead(title string, fields *DecisionFields) (*Issue
 
 // ResolveDecision marks a decision as resolved with the chosen option.
 // Handles both gt decisions (with gt:decision label) and bd decisions (from decision_points table).
+// Priority: bd decisions (decision_points table) take precedence over gt decisions (markdown).
 func (b *Beads) ResolveDecision(id string, chosenIndex int, rationale, resolvedBy string) error {
-	// First get current issue to check what type of decision it is
+	// First check if it's a bd decision (decision_points table is canonical)
+	// This takes priority because bd-created decisions now have both the gt:decision
+	// label AND a decision_points record (hq-946577.39)
+	bdDecision, bdErr := b.GetBdDecision(id)
+	if bdErr == nil && bdDecision != nil && bdDecision.DecisionPoint != nil {
+		return b.resolveBdDecision(bdDecision, id, chosenIndex, rationale, resolvedBy)
+	}
+
+	// Fall back to gt decision (markdown-based, legacy)
 	issue, err := b.Show(id)
 	if err != nil {
 		return err
@@ -294,13 +372,7 @@ func (b *Beads) ResolveDecision(id string, chosenIndex int, rationale, resolvedB
 		return b.resolveGtDecision(issue, id, chosenIndex, rationale, resolvedBy)
 	}
 
-	// Try as a bd decision (from decision_points table)
-	bdDecision, err := b.GetBdDecision(id)
-	if err != nil || bdDecision == nil {
-		return fmt.Errorf("issue %s is not a decision (no gt:decision label and not in decision_points)", id)
-	}
-
-	return b.resolveBdDecision(bdDecision, id, chosenIndex, rationale, resolvedBy)
+	return fmt.Errorf("issue %s is not a decision (not in decision_points table and no gt:decision label)", id)
 }
 
 // resolveGtDecision resolves a gt decision (with gt:decision label).
@@ -373,6 +445,7 @@ func (b *Beads) resolveBdDecision(dp *BdDecisionPoint, id string, chosenIndex in
 // GetDecisionBead retrieves a decision bead by ID.
 // Returns nil if not found.
 // Supports both gt decisions (with gt:decision label) and bd decisions (from decision_points table).
+// Priority: bd decisions (decision_points table) take precedence (hq-946577.39).
 func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 	issue, err := b.Show(id)
 	if err != nil {
@@ -382,35 +455,34 @@ func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 		return nil, nil, err
 	}
 
-	// Check if it's a gt decision (has gt:decision label)
+	// First check decision_points table (canonical storage for bd-created decisions)
+	bdDecision, bdErr := b.GetBdDecision(id)
+	if bdErr == nil && bdDecision != nil && bdDecision.DecisionPoint != nil {
+		// Convert bd decision to DecisionFields format
+		fields := &DecisionFields{
+			Question:    bdDecision.DecisionPoint.Prompt,
+			RequestedAt: bdDecision.DecisionPoint.CreatedAt,
+			ChosenIndex: 0, // Pending (will be updated if resolved)
+		}
+
+		// Parse options from bd decision
+		for _, opt := range bdDecision.Options {
+			fields.Options = append(fields.Options, DecisionOption{
+				Label:       opt.Label,
+				Description: opt.Description,
+			})
+		}
+
+		return issue, fields, nil
+	}
+
+	// Fall back to gt decision (markdown-based, legacy)
 	if HasLabel(issue, "gt:decision") {
 		fields := ParseDecisionFields(issue.Description)
 		return issue, fields, nil
 	}
 
-	// Try to get it as a bd decision (from decision_points table)
-	bdDecision, err := b.GetBdDecision(id)
-	if err != nil || bdDecision == nil || bdDecision.DecisionPoint == nil {
-		// Not found in decision_points either - not a decision
-		return nil, nil, fmt.Errorf("issue %s is not a decision bead (missing gt:decision label)", id)
-	}
-
-	// Convert bd decision to DecisionFields format
-	fields := &DecisionFields{
-		Question:    bdDecision.DecisionPoint.Prompt,
-		RequestedAt: bdDecision.DecisionPoint.CreatedAt,
-		ChosenIndex: 0, // Pending
-	}
-
-	// Parse options from bd decision
-	for _, opt := range bdDecision.Options {
-		fields.Options = append(fields.Options, DecisionOption{
-			Label:       opt.Label,
-			Description: opt.Description,
-		})
-	}
-
-	return issue, fields, nil
+	return nil, nil, fmt.Errorf("issue %s is not a decision bead (not in decision_points table and no gt:decision label)", id)
 }
 
 // GetBdDecision retrieves a decision from the decision_points table by issue ID.
