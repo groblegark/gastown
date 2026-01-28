@@ -22,6 +22,34 @@ var (
 	ErrNotFound     = errors.New("issue not found")
 )
 
+// resolvedBdPath caches the resolved absolute path to the bd binary.
+// This ensures subprocesses (e.g. gtmobile) find the correct bd version
+// even when their PATH doesn't include ~/.local/bin.
+var resolvedBdPath string
+
+func init() {
+	resolvedBdPath = resolveBdPath()
+}
+
+// resolveBdPath finds the bd binary, preferring ~/.local/bin/bd over system PATH.
+// The system PATH may contain an older bd that doesn't support Dolt backend.
+func resolveBdPath() string {
+	// Prefer ~/.local/bin/bd (where make install puts it)
+	home, err := os.UserHomeDir()
+	if err == nil {
+		localBd := filepath.Join(home, ".local", "bin", "bd")
+		if _, err := os.Stat(localBd); err == nil {
+			return localBd
+		}
+	}
+	// Fall back to PATH lookup
+	path, err := exec.LookPath("bd")
+	if err != nil {
+		return "bd" // let exec.Command fail with a clear error
+	}
+	return path
+}
+
 // Issue represents a beads issue.
 type Issue struct {
 	ID          string   `json:"id"`
@@ -201,7 +229,7 @@ func (b *Beads) run(args ...string) ([]byte, error) {
 		fullArgs = append([]string{"--db", beadsDB}, fullArgs...)
 	}
 
-	cmd := exec.Command("bd", fullArgs...) //nolint:gosec // G204: bd is a trusted internal tool
+	cmd := exec.Command(resolvedBdPath, fullArgs...) //nolint:gosec // G204: bd is a trusted internal tool
 	cmd.Dir = b.workDir
 
 	// Build environment: filter beads env vars when in isolated mode (tests)

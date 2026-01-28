@@ -16,7 +16,7 @@ import (
 // Uses --no-daemon to avoid hanging when daemon isn't running (fix: fhc-e520ae).
 // Explicitly sets BEADS_DIR to prevent inherited env vars from causing routing issues.
 func runSlotSet(workDir, beadID, slotName, slotValue string) error {
-	cmd := exec.Command("bd", "--no-daemon", "slot", "set", beadID, slotName, slotValue)
+	cmd := exec.Command(resolvedBdPath, "--no-daemon", "slot", "set", beadID, slotName, slotValue)
 	cmd.Dir = workDir
 	// Resolve beads directory and set explicitly to prevent inherited BEADS_DIR from
 	// causing routing issues (fix: hq-aee961.18)
@@ -34,7 +34,7 @@ func runSlotSet(workDir, beadID, slotName, slotValue string) error {
 // Uses --no-daemon to avoid hanging when daemon isn't running (fix: fhc-e520ae).
 // Explicitly sets BEADS_DIR to prevent inherited env vars from causing routing issues.
 func runSlotClear(workDir, beadID, slotName string) error {
-	cmd := exec.Command("bd", "--no-daemon", "slot", "clear", beadID, slotName)
+	cmd := exec.Command(resolvedBdPath, "--no-daemon", "slot", "clear", beadID, slotName)
 	cmd.Dir = workDir
 	// Resolve beads directory and set explicitly to prevent inherited BEADS_DIR from
 	// causing routing issues (fix: hq-aee961.18)
