@@ -58,6 +58,7 @@ type Decision struct {
 	Rationale   string
 	RequestedBy string
 	RequestedAt string
+	ResolvedBy  string
 	Urgency     string
 	Resolved    bool
 }
@@ -407,6 +408,87 @@ func (c *Client) ResolveDecision(ctx context.Context, decisionID string, chosenI
 		Question:    result.Decision.Question,
 		ChosenIndex: result.Decision.ChosenIndex,
 		Rationale:   result.Decision.Rationale,
+		Resolved:    result.Decision.Resolved,
+	}, nil
+}
+
+// GetDecision fetches a specific decision by ID via the RPC server.
+func (c *Client) GetDecision(ctx context.Context, decisionID string) (*Decision, error) {
+	body := map[string]interface{}{
+		"decisionId": decisionID,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.DecisionService/GetDecision",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	// Parse response
+	var result struct {
+		Decision struct {
+			ID          string `json:"id"`
+			Question    string `json:"question"`
+			Context     string `json:"context"`
+			Options     []struct {
+				Label       string `json:"label"`
+				Description string `json:"description"`
+				Recommended bool   `json:"recommended"`
+			} `json:"options"`
+			ChosenIndex int    `json:"chosenIndex"`
+			Rationale   string `json:"rationale"`
+			ResolvedBy  string `json:"resolvedBy"`
+			RequestedBy struct {
+				Name string `json:"name"`
+			} `json:"requestedBy"`
+			Urgency  string `json:"urgency"`
+			Resolved bool   `json:"resolved"`
+		} `json:"decision"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	var opts []DecisionOption
+	for _, o := range result.Decision.Options {
+		opts = append(opts, DecisionOption{
+			Label:       o.Label,
+			Description: o.Description,
+			Recommended: o.Recommended,
+		})
+	}
+
+	return &Decision{
+		ID:          result.Decision.ID,
+		Question:    result.Decision.Question,
+		Context:     result.Decision.Context,
+		Options:     opts,
+		ChosenIndex: result.Decision.ChosenIndex,
+		Rationale:   result.Decision.Rationale,
+		ResolvedBy:  result.Decision.ResolvedBy,
+		RequestedBy: result.Decision.RequestedBy.Name,
+		Urgency:     urgencyToString(result.Decision.Urgency),
 		Resolved:    result.Decision.Resolved,
 	}, nil
 }

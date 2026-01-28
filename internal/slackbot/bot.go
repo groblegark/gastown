@@ -631,6 +631,60 @@ func (b *Bot) RPCClient() *rpcclient.Client {
 	return b.rpcClient
 }
 
+// NotifyResolution posts a resolution notification to the configured channel.
+// This is called by the SSE listener when a decision is resolved externally.
+func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
+	if b.channelID == "" {
+		return nil
+	}
+
+	optionLabel := "Unknown"
+	if decision.ChosenIndex > 0 && decision.ChosenIndex <= len(decision.Options) {
+		optionLabel = decision.Options[decision.ChosenIndex-1].Label
+	}
+
+	resolvedBy := decision.ResolvedBy
+	if resolvedBy == "" {
+		resolvedBy = "unknown"
+	}
+
+	// Format resolver - if it's a Slack user ID, use mention; otherwise use plain text
+	resolverText := resolvedBy
+	if strings.HasPrefix(resolvedBy, "slack:") {
+		// Extract Slack user ID and format as mention
+		resolverText = fmt.Sprintf("<@%s>", strings.TrimPrefix(resolvedBy, "slack:"))
+	}
+
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("📋 *Decision Resolved*\n\n"+
+					"*Question:* %s\n"+
+					"*Choice:* %s\n"+
+					"*Resolved by:* %s",
+					decision.Question, optionLabel, resolverText),
+				false, false,
+			),
+			nil, nil,
+		),
+		slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn",
+				"_The requesting agent has been notified via mail and nudge. Blocked work has been unblocked._",
+				false, false,
+			),
+		),
+	}
+
+	_, _, err := b.client.PostMessage(b.channelID,
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		log.Printf("Slack: Error posting resolution notification: %v", err)
+		return err
+	}
+	return nil
+}
+
 // NotifyNewDecision posts a new decision notification to the configured channel.
 func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 	if b.channelID == "" {

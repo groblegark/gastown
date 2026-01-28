@@ -146,9 +146,11 @@ func (l *SSEListener) handleEvent(evt sseEvent) {
 			return
 		}
 
-		// Only notify for newly created decisions
-		if de.Type == "created" {
+		switch de.Type {
+		case "created":
 			l.notifyNewDecision(de)
+		case "resolved":
+			l.notifyResolvedDecision(de)
 		}
 	}
 }
@@ -185,4 +187,20 @@ func (l *SSEListener) notifyNewDecision(de decisionEvent) {
 
 	// Decision not found in pending list - might be resolved already
 	log.Printf("SSE: Decision %s not found in pending list", de.ID)
+}
+
+func (l *SSEListener) notifyResolvedDecision(de decisionEvent) {
+	// Fetch full decision details from RPC
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	decision, err := l.rpcClient.GetDecision(ctx, de.ID)
+	if err != nil {
+		log.Printf("SSE: Error fetching resolved decision %s: %v", de.ID, err)
+		return
+	}
+
+	if err := l.bot.NotifyResolution(*decision); err != nil {
+		log.Printf("SSE: Error notifying Slack of resolution: %v", err)
+	}
 }

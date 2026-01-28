@@ -568,6 +568,94 @@ func TestResolveDecision(t *testing.T) {
 	})
 }
 
+// TestGetDecision tests fetching a specific decision.
+func TestGetDecision(t *testing.T) {
+	t.Run("successful fetch", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/gastown.v1.DecisionService/GetDecision" {
+				t.Errorf("unexpected path: %s", r.URL.Path)
+			}
+
+			var req map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&req)
+
+			if req["decisionId"] != "dec-123" {
+				t.Errorf("decisionId = %v", req["decisionId"])
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"decision": map[string]interface{}{
+					"id":          "dec-123",
+					"question":    "Which option?",
+					"context":     "Test context",
+					"chosenIndex": 2,
+					"rationale":   "B is better",
+					"resolvedBy":  "slack:U12345",
+					"requestedBy": map[string]interface{}{"name": "test-agent"},
+					"urgency":     "URGENCY_HIGH",
+					"resolved":    true,
+					"options": []map[string]interface{}{
+						{"label": "Option A", "description": "First option", "recommended": false},
+						{"label": "Option B", "description": "Second option", "recommended": true},
+					},
+				},
+			})
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		decision, err := c.GetDecision(context.Background(), "dec-123")
+		if err != nil {
+			t.Fatalf("GetDecision failed: %v", err)
+		}
+
+		if decision.ID != "dec-123" {
+			t.Errorf("decision.ID = %q, want %q", decision.ID, "dec-123")
+		}
+		if decision.Question != "Which option?" {
+			t.Errorf("decision.Question = %q", decision.Question)
+		}
+		if decision.Context != "Test context" {
+			t.Errorf("decision.Context = %q", decision.Context)
+		}
+		if decision.ChosenIndex != 2 {
+			t.Errorf("decision.ChosenIndex = %d, want 2", decision.ChosenIndex)
+		}
+		if decision.ResolvedBy != "slack:U12345" {
+			t.Errorf("decision.ResolvedBy = %q, want %q", decision.ResolvedBy, "slack:U12345")
+		}
+		if decision.RequestedBy != "test-agent" {
+			t.Errorf("decision.RequestedBy = %q", decision.RequestedBy)
+		}
+		if decision.Urgency != "high" {
+			t.Errorf("decision.Urgency = %q, want %q", decision.Urgency, "high")
+		}
+		if !decision.Resolved {
+			t.Error("decision.Resolved = false, want true")
+		}
+		if len(decision.Options) != 2 {
+			t.Errorf("len(decision.Options) = %d, want 2", len(decision.Options))
+		}
+		if decision.Options[0].Label != "Option A" {
+			t.Errorf("decision.Options[0].Label = %q", decision.Options[0].Label)
+		}
+	})
+
+	t.Run("server error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		_, err := c.GetDecision(context.Background(), "nonexistent")
+		if err == nil {
+			t.Error("expected error for not found decision")
+		}
+	})
+}
+
 // TestWatchDecisions tests the polling-based watch implementation.
 func TestWatchDecisions(t *testing.T) {
 	t.Run("receives initial decisions", func(t *testing.T) {
