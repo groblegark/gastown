@@ -310,33 +310,35 @@ func (b *Bot) handleViewDecision(callback slack.InteractionCallback, decisionID 
 
 	blocks = append(blocks, slack.NewDividerBlock())
 
-	// Add buttons for each option
-	var buttons []slack.BlockElement
+	// Add options with descriptions and resolve buttons
 	for i, opt := range decision.Options {
 		label := opt.Label
 		if opt.Recommended {
 			label = "⭐ " + label
 		}
-		if len(label) > 75 {
-			label = label[:72] + "..."
+		buttonLabel := label
+		if len(buttonLabel) > 75 {
+			buttonLabel = buttonLabel[:72] + "..."
 		}
 
-		buttons = append(buttons,
-			slack.NewButtonBlockElement(
-				fmt.Sprintf("resolve_%s_%d", decision.ID, i+1),
-				fmt.Sprintf("%s:%d", decision.ID, i+1),
-				slack.NewTextBlockObject("plain_text", label, false, false),
-			),
-		)
-	}
+		// Show option with description
+		optText := fmt.Sprintf("*%d. %s*", i+1, label)
+		if opt.Description != "" {
+			optText += fmt.Sprintf("\n%s", opt.Description)
+		}
 
-	if len(buttons) > 0 {
 		blocks = append(blocks,
 			slack.NewSectionBlock(
-				slack.NewTextBlockObject("mrkdwn", "*Options:*", false, false),
-				nil, nil,
+				slack.NewTextBlockObject("mrkdwn", optText, false, false),
+				nil,
+				slack.NewAccessory(
+					slack.NewButtonBlockElement(
+						fmt.Sprintf("resolve_%s_%d", decision.ID, i+1),
+						fmt.Sprintf("%s:%d", decision.ID, i+1),
+						slack.NewTextBlockObject("plain_text", "Choose", false, false),
+					),
+				),
 			),
-			slack.NewActionBlock("decision_actions", buttons...),
 		)
 	}
 
@@ -666,6 +668,38 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 				),
 			),
 		),
+	}
+
+	// Show context inline if available
+	if decision.Context != "" {
+		contextText := decision.Context
+		if len(contextText) > 300 {
+			contextText = contextText[:297] + "..."
+		}
+		blocks = append(blocks,
+			slack.NewContextBlock("",
+				slack.NewTextBlockObject("mrkdwn", contextText, false, false),
+			),
+		)
+	}
+
+	// Show compact option summary
+	if len(decision.Options) > 0 {
+		var optSummary string
+		for i, opt := range decision.Options {
+			if i > 0 {
+				optSummary += "  •  "
+			}
+			if opt.Recommended {
+				optSummary += "⭐ "
+			}
+			optSummary += opt.Label
+		}
+		blocks = append(blocks,
+			slack.NewContextBlock("",
+				slack.NewTextBlockObject("mrkdwn", optSummary, false, false),
+			),
+		)
 	}
 
 	_, _, err := b.client.PostMessage(b.channelID,
