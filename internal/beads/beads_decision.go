@@ -461,6 +461,7 @@ func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 		// Convert bd decision to DecisionFields format
 		fields := &DecisionFields{
 			Question:    bdDecision.DecisionPoint.Prompt,
+			RequestedBy: bdDecision.DecisionPoint.RequestedBy,
 			RequestedAt: bdDecision.DecisionPoint.CreatedAt,
 			ChosenIndex: 0, // Pending (will be updated if resolved)
 		}
@@ -580,10 +581,11 @@ type BdDecisionOption struct {
 
 // BdDecisionPointData is the nested decision_point data from bd decision show
 type BdDecisionPointData struct {
-	IssueID   string `json:"issue_id"`
-	Prompt    string `json:"prompt"`
-	Options   string `json:"options"` // JSON string of options (raw)
-	CreatedAt string `json:"created_at"`
+	IssueID     string `json:"issue_id"`
+	Prompt      string `json:"prompt"`
+	Options     string `json:"options"` // JSON string of options (raw)
+	CreatedAt   string `json:"created_at"`
+	RequestedBy string `json:"requested_by"`
 }
 
 // BdDecisionShowResponse represents the response from bd decision show
