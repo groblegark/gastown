@@ -211,6 +211,18 @@ func (l *SSEListener) notifyNewDecision(de decisionEvent) {
 }
 
 func (l *SSEListener) notifyResolvedDecision(de decisionEvent) {
+	// Check if we've already notified for this resolution
+	// Use "resolved:" prefix to distinguish from new decision notifications
+	resolvedKey := "resolved:" + de.ID
+	l.seenMu.Lock()
+	if l.seen[resolvedKey] {
+		l.seenMu.Unlock()
+		log.Printf("SSE: Already notified resolution for %s, skipping duplicate", de.ID)
+		return
+	}
+	l.seen[resolvedKey] = true
+	l.seenMu.Unlock()
+
 	// Fetch full decision details from RPC
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
