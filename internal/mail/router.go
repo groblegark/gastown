@@ -292,12 +292,13 @@ type agentBead struct {
 }
 
 // agentBeadToAddress converts an agent bead to a mail address.
-// Handles both legacy gt- prefixed IDs and current hq- prefixed IDs:
+// Handles both hq- prefixed IDs (town-level) and gt- prefixed IDs (rig-level):
 //   - hq-mayor → mayor/
 //   - hq-deacon → deacon/
-//   - hq-{hash} → uses created_by field or parses title/description
-//   - gt-mayor → mayor/ (legacy)
-//   - gt-gastown-crew-max → gastown/max (legacy)
+//   - hq-gastown-witness → gastown/witness
+//   - hq-gastown-crew-max → gastown/max
+//   - gt-mayor → mayor/
+//   - gt-gastown-crew-max → gastown/max
 func agentBeadToAddress(bead *agentBead) string {
 	if bead == nil {
 		return ""
@@ -305,51 +306,43 @@ func agentBeadToAddress(bead *agentBead) string {
 
 	id := bead.ID
 
-	// Handle hq- prefixed IDs (current format)
+	// Parse agent bead IDs by stripping the prefix and extracting components.
+	// Both hq- and gt- prefixed IDs follow the same structure after the prefix:
+	//   <prefix>-<role>                    → town-level singleton (mayor, deacon)
+	//   <prefix>-<rig>-<role>              → rig-level singleton (witness, refinery)
+	//   <prefix>-<rig>-<role>-<name>       → rig-level named agent (crew, polecat)
+	var rest string
 	if strings.HasPrefix(id, "hq-") {
-		// Well-known town-level agents
-		if id == "hq-mayor" {
-			return "mayor/"
-		}
-		if id == "hq-deacon" {
-			return "deacon/"
-		}
-
-		// For rig-level agents, created_by often contains the agent address
-		// e.g., "beads/crew/emma" for an agent that self-registered
-		if bead.CreatedBy != "" && strings.Contains(bead.CreatedBy, "/") {
-			// Validate it looks like an agent address (rig/role/name or rig/name)
-			parts := strings.Split(bead.CreatedBy, "/")
-			if len(parts) >= 2 {
-				return bead.CreatedBy
-			}
-		}
-
-		// Fall back to parsing description for role_type and rig
-		return parseAgentAddressFromDescription(bead.Description)
-	}
-
-	// Handle gt- prefixed IDs (legacy format)
-	if !strings.HasPrefix(id, "gt-") {
+		rest = strings.TrimPrefix(id, "hq-")
+	} else if strings.HasPrefix(id, "gt-") {
+		rest = strings.TrimPrefix(id, "gt-")
+	} else {
 		return "" // Not a valid agent bead ID
 	}
 
-	// Strip prefix
-	rest := strings.TrimPrefix(id, "gt-")
 	parts := strings.Split(rest, "-")
 
 	switch len(parts) {
 	case 1:
-		// Town-level: gt-mayor, gt-deacon
+		// Town-level singleton: hq-mayor → mayor/, gt-deacon → deacon/
 		return parts[0] + "/"
 	case 2:
-		// Rig singleton: gt-gastown-witness
+		// Could be rig singleton or town-level named agent (dogs)
+		if parts[0] == "dog" {
+			// Town-level named: hq-dog-alpha → dog/alpha
+			return "dog/" + parts[1]
+		}
+		// Rig singleton: hq-gastown-witness → gastown/witness
 		return parts[0] + "/" + parts[1]
 	default:
-		// Rig named agent: gt-gastown-crew-max, gt-gastown-polecat-Toast
-		// Skip the role part (parts[1]) and use rig/name format
+		// Rig named agent: hq-gastown-crew-max, gt-gastown-polecat-Toast
+		// Use rig/name format (role is implicit in the bead, not in the address)
 		if len(parts) >= 3 {
-			// Rejoin if name has hyphens: gt-gastown-polecat-my-agent
+			if parts[0] == "dog" {
+				// Town-level dog with hyphenated name: hq-dog-my-dog → dog/my-dog
+				return "dog/" + strings.Join(parts[1:], "-")
+			}
+			// Rejoin if name has hyphens: gt-gastown-polecat-my-agent → gastown/my-agent
 			name := strings.Join(parts[2:], "-")
 			return parts[0] + "/" + name
 		}
@@ -523,10 +516,12 @@ func (r *Router) queryAgents(descContains string) ([]*agentBead, error) {
 		return nil, fmt.Errorf("parsing agent query result: %w", err)
 	}
 
-	// Filter for open agents only (closed agents are inactive)
+	// Filter for active agents only (closed agents are inactive).
+	// Agent beads use "pinned" status (required for AttachMolecule, fix: bd-3q6.5-1),
+	// so we must include pinned in addition to open/in_progress.
 	var active []*agentBead
 	for _, agent := range agents {
-		if agent.Status == "open" || agent.Status == "in_progress" {
+		if agent.Status == "open" || agent.Status == "in_progress" || agent.Status == "pinned" {
 			active = append(active, agent)
 		}
 	}
