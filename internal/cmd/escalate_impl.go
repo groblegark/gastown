@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -539,8 +541,7 @@ func extractMailTargetsFromActions(actions []string) []string {
 }
 
 // executeExternalActions processes external notification actions (email:, sms:, slack).
-// For now, this logs warnings if contacts aren't configured - actual sending is future work.
-func executeExternalActions(actions []string, cfg *config.EscalationConfig, _, _, _ string) {
+func executeExternalActions(actions []string, cfg *config.EscalationConfig, beadID, severity, description string) {
 	for _, action := range actions {
 		switch {
 		case strings.HasPrefix(action, "email:"):
@@ -563,8 +564,11 @@ func executeExternalActions(actions []string, cfg *config.EscalationConfig, _, _
 			if cfg.Contacts.SlackWebhook == "" {
 				style.PrintWarning("slack action skipped: contacts.slack_webhook not configured in settings/escalation.json")
 			} else {
-				// TODO: Implement actual Slack webhook posting
-				fmt.Printf("  💬 Would post to Slack (not yet implemented)\n")
+				if err := postSlackWebhook(cfg.Contacts.SlackWebhook, beadID, severity, description); err != nil {
+					style.PrintWarning("slack webhook failed: %v", err)
+				} else {
+					fmt.Printf("  💬 Posted escalation to Slack\n")
+				}
 			}
 
 		case action == "log":
@@ -573,6 +577,63 @@ func executeExternalActions(actions []string, cfg *config.EscalationConfig, _, _
 			fmt.Printf("  📝 Logged to escalation log\n")
 		}
 	}
+}
+
+// postSlackWebhook sends an escalation notification to a Slack incoming webhook.
+func postSlackWebhook(webhookURL, beadID, severity, description string) error {
+	urgencyEmoji := map[string]string{
+		"critical": "🔴",
+		"high":     "🟠",
+		"medium":   "🟡",
+		"low":      "🟢",
+	}
+	emoji := urgencyEmoji[severity]
+	if emoji == "" {
+		emoji = "⚪"
+	}
+
+	payload := map[string]interface{}{
+		"blocks": []map[string]interface{}{
+			{
+				"type": "header",
+				"text": map[string]string{
+					"type":  "plain_text",
+					"text":  fmt.Sprintf("%s Escalation: %s", emoji, beadID),
+					"emoji": "true",
+				},
+			},
+			{
+				"type": "section",
+				"fields": []map[string]string{
+					{"type": "mrkdwn", "text": fmt.Sprintf("*Severity:*\n%s %s", emoji, severity)},
+					{"type": "mrkdwn", "text": fmt.Sprintf("*Bead:*\n%s", beadID)},
+				},
+			},
+			{
+				"type": "section",
+				"text": map[string]string{
+					"type": "mrkdwn",
+					"text": fmt.Sprintf("*Description:*\n%s", description),
+				},
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+
+	resp, err := http.Post(webhookURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("post webhook: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func formatEscalationMailBody(beadID, severity, reason, from, related string) string {
