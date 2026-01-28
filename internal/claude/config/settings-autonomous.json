@@ -61,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "(gt mail check --inject || true) && (bd decision check --inject || true) && (gt decision turn-clear || true)"
+            "command": "(gt nudge drain --quiet || true) && (gt mail check --inject || true) && (bd decision check --inject || true) && (gt decision turn-clear || true)"
           }
         ]
       }
