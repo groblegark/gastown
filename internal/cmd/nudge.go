@@ -138,7 +138,7 @@ func runNudge(cmd *cobra.Command, args []string) error {
 	// Expand role shortcuts to session names
 	// These shortcuts let users type "mayor" instead of "gt-mayor"
 	switch target {
-	case "mayor":
+	case "mayor", "mayor/":
 		target = session.MayorSessionName()
 	case "witness", "refinery":
 		// These need the current rig
@@ -157,7 +157,7 @@ func runNudge(cmd *cobra.Command, args []string) error {
 	}
 
 	// Special case: "deacon" target maps to the Deacon session
-	if target == "deacon" {
+	if target == "deacon" || target == "deacon/" {
 		deaconSession := session.DeaconSessionName()
 		// Check if Deacon session exists
 		exists, err := t.HasSession(deaconSession)
@@ -473,9 +473,9 @@ func shouldNudgeTarget(townRoot, targetAddress string, force bool) (bool, string
 func addressToAgentBeadID(address string) string {
 	// Handle special cases
 	switch address {
-	case "mayor":
+	case "mayor", "mayor/":
 		return session.MayorSessionName()
-	case "deacon":
+	case "deacon", "deacon/":
 		return session.DeaconSessionName()
 	}
 
