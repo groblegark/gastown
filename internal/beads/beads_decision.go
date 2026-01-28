@@ -367,7 +367,6 @@ func (b *Beads) ResolveDecision(id string, chosenIndex int, rationale, resolvedB
 		return err
 	}
 
-	// Check if it's a gt decision (has gt:decision label)
 	if HasLabel(issue, "gt:decision") {
 		return b.resolveGtDecision(issue, id, chosenIndex, rationale, resolvedBy)
 	}
@@ -501,18 +500,10 @@ func (b *Beads) GetBdDecision(id string) (*BdDecisionPoint, error) {
 }
 
 // ListDecisions returns all pending decision beads.
+// This delegates to ListBdDecisions() which queries the decision_points table
+// directly, avoiding the Dolt label-query issues with bd list --label=...
 func (b *Beads) ListDecisions() ([]*Issue, error) {
-	out, err := b.run("list", "--label=gt:decision", "--label=decision:pending", "--status=open", "--json")
-	if err != nil {
-		return nil, err
-	}
-
-	var issues []*Issue
-	if err := json.Unmarshal(out, &issues); err != nil {
-		return nil, fmt.Errorf("parsing bd list output: %w", err)
-	}
-
-	return issues, nil
+	return b.ListBdDecisions()
 }
 
 // ListAllDecisions returns all decision beads (pending and resolved).
