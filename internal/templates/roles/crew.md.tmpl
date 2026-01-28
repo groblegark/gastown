@@ -741,33 +741,32 @@ Escalations are **urgent** - they signal something is wrong.
 
 **When you modify gastown (gt) or beads (bd) code, deploy the updated binaries.**
 
+**IMPORTANT: Always use `make build` / `make install`, NEVER raw `go build`.**
+Raw `go build` produces unsigned binaries that will refuse to run (BuiltProperly check).
+The Makefile embeds version info and signing via ldflags.
+
 After `git push`, if your changes affect `cmd/gt` or `cmd/bd`:
 
 ```bash
 # 1. Pull latest (in case of concurrent pushes)
 git pull origin main
 
-# 2. Build to temp location and record hash
-go build -o /tmp/gt ./cmd/gt   # for gastown
-go build -o /tmp/bd ./cmd/bd   # for beads
-sha256sum /tmp/gt /tmp/bd      # Record pre-deploy hashes
+# 2. Build and install (sets BuiltProperly=1 via ldflags)
+make install    # Builds with ldflags, copies to ~/.local/bin/gt
 
-# 3. Deploy using mv (avoids "binary file in use" error)
-mv /tmp/gt ~/.local/bin/gt
-mv /tmp/bd ~/.local/bin/bd
-
-# 4. Verify deployment with hash check
-which gt && gt --version
-sha256sum ~/.local/bin/gt ~/.local/bin/bd   # Verify hashes match step 2
+# 3. Verify deployment
+gt --version    # Should show version, commit, and BuiltProperly=1
 ```
 
-**Quick one-liner for gastown:**
+**For production deployment with hash verification:**
 ```bash
-git pull && go build -o /tmp/gt ./cmd/gt && HASH=$(sha256sum /tmp/gt | cut -d' ' -f1) && mv /tmp/gt ~/.local/bin/gt && echo "Deployed gt: $HASH" && [ "$(sha256sum ~/.local/bin/gt | cut -d' ' -f1)" = "$HASH" ] && echo "Hash verified"
+make deploy     # Pulls, builds, deploys with mv, verifies hash
 ```
 
-**Why verify hashes?** Ensures the deployed binary is identical to what was built.
-Catches filesystem corruption, incomplete transfers, or tampering.
+**For beads (bd):** Run `make install` from the beads repo root.
+
+**Never use `go build ./cmd/gt` directly** — the resulting binary will fail the
+BuiltProperly check and refuse to run.
 
 ## Tips
 
