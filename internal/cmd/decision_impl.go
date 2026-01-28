@@ -138,8 +138,12 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 			// RPC succeeded - use the returned decision
 			issue = &beads.Issue{ID: decision.ID}
 			rpcUsed = true
+		} else {
+			// Log RPC error for debugging (hq-3p8p76)
+			style.PrintWarning("RPC CreateDecision failed (falling back to direct DB): %v", rpcErr)
 		}
-		// If RPC fails, fall back to direct beads
+	} else {
+		style.PrintWarning("gtmobile RPC not available (falling back to direct DB)")
 	}
 
 	// Fall back to bd decision create if RPC not available or failed
