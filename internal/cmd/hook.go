@@ -38,6 +38,7 @@ Examples:
   gt hook gt-abc -s "Fix the bug"   # With subject for handoff mail
   gt hook gt-abc --if-empty         # Hook only if nothing hooked (idempotent)
   gt hook gt-abc --upsert           # Replace any existing hook (idempotent)
+  gt hook gt-abc --target gastown/crew/max  # Hook work onto another agent
 
 Related commands:
   gt sling <bead>    # Hook + start now (keep context)
@@ -97,7 +98,8 @@ var (
 	hookClear   bool
 	hookIfEmpty bool
 	hookUpsert  bool
-	hookAll     bool // --all: show all hooked beads (full queue)
+	hookAll     bool   // --all: show all hooked beads (full queue)
+	hookTarget  string // --target: set hook on a different agent
 )
 
 func init() {
@@ -110,6 +112,7 @@ func init() {
 	hookCmd.Flags().BoolVar(&hookIfEmpty, "if-empty", false, "Only hook if empty, exit 0 either way")
 	hookCmd.Flags().BoolVar(&hookUpsert, "upsert", false, "Replace existing hook, always succeed")
 	hookCmd.Flags().BoolVar(&hookAll, "all", false, "Show all hooked beads (full work queue)")
+	hookCmd.Flags().StringVar(&hookTarget, "target", "", "Target agent to hook work on (e.g., gastown/crew/slack_decisions)")
 
 	// --json flag for status output (used when no args, i.e., gt hook --json)
 	hookCmd.Flags().BoolVar(&moleculeJSON, "json", false, "Output as JSON (for status)")
@@ -183,9 +186,16 @@ func runHook(_ *cobra.Command, args []string) error {
 	}
 
 	// Determine agent identity
-	agentID, _, _, err := resolveSelfTarget()
-	if err != nil {
-		return fmt.Errorf("detecting agent identity: %w", err)
+	var agentID string
+	if hookTarget != "" {
+		// External targeting: hook work onto a specified agent
+		agentID = hookTarget
+	} else {
+		var selfErr error
+		agentID, _, _, selfErr = resolveSelfTarget()
+		if selfErr != nil {
+			return fmt.Errorf("detecting agent identity: %w", selfErr)
+		}
 	}
 
 	// Find beads directory
