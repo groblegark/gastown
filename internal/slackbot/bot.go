@@ -708,8 +708,8 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 	blocks := []slack.Block{
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("%s%s %s",
-					urgencyEmoji, agentInfo, decision.Question),
+				fmt.Sprintf("%s *%s*%s\n%s",
+					urgencyEmoji, decision.ID, agentInfo, decision.Question),
 				false, false,
 			),
 			nil,
