@@ -74,12 +74,10 @@ func (b *Bot) Run(ctx context.Context) error {
 		}
 	}()
 
-	go func() {
-		<-ctx.Done()
-		// Socket mode will be closed when Run returns
-	}()
-
-	return b.socketMode.Run()
+	// Use RunContext for graceful shutdown on SIGTERM (hq-je8tm7.1)
+	// RunContext closes the WebSocket when context is canceled, allowing
+	// systemctl restart to complete quickly instead of waiting 90s for SIGKILL.
+	return b.socketMode.RunContext(ctx)
 }
 
 func (b *Bot) handleEvent(evt socketmode.Event) {
