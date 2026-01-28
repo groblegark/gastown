@@ -681,11 +681,46 @@ Before offering a decision, **research each option**. Don't guess. Each option s
 Bad options: "Yes / No" or "Option A / Option B / Other"
 Good options: Real alternatives with context that enables informed choice.
 
-Example of quality options:
+**Option descriptions are shown to humans in Slack.** The label is the headline; the
+description (after the colon) explains the tradeoff. Write descriptions that help
+a busy human choose without needing to ask follow-up questions.
+
+**Bad** (label only, no context for the human):
+```
+--option "Redis"
+--option "In-memory"
+--option "Defer"
+```
+
+**Good** (label + description with tradeoffs):
 ```
 --option "Redis: Distributed caching, handles scaling, adds operational complexity"
 --option "In-memory: Simple and fast, limited to single process"
 --option "Defer: No caching until bottleneck proven, avoid premature optimization"
+```
+
+### Providing Context
+
+Use `--context` to explain **why this decision matters** and what you've already
+researched. The context is shown inline in Slack notifications so the human can
+decide immediately without clicking through.
+
+**What to include in --context:**
+- What you investigated and what you found
+- Why you can't proceed without human input
+- Constraints or requirements that shape the options
+- What's blocked if this isn't resolved
+
+**Example with context:**
+```bash
+gt decision request \
+  --prompt "Which caching strategy for the API layer?" \
+  --context "Current response times average 200ms, target is <50ms. Cache hit analysis shows 80% of requests query the same 5 endpoints. Redis adds an ops dependency but handles our multi-process architecture. In-memory is simpler but won't share across workers." \
+  --option "Redis: Distributed, persistent, handles multi-process. Adds ops complexity" \
+  --option "In-memory: Zero ops overhead, but each worker has its own cache" \
+  --option "Defer: Skip caching until we profile production traffic patterns" \
+  --blocks gt-work-xyz \
+  --urgency high
 ```
 
 ### Two-Layer Architecture
