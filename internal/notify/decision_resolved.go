@@ -35,12 +35,13 @@ func DecisionResolved(townRoot, decisionID string, fields beads.DecisionFields, 
 	// 3. Send mail to requestor (persistent notification)
 	if fields.RequestedBy != "" && fields.RequestedBy != "unknown" {
 		msg := &mail.Message{
-			From:     resolvedBy,
-			To:       fields.RequestedBy,
-			Subject:  subject,
-			Body:     body,
-			Type:     mail.TypeTask,
-			Priority: mail.PriorityNormal,
+			From:       resolvedBy,
+			To:         fields.RequestedBy,
+			Subject:    subject,
+			Body:       body,
+			Type:       mail.TypeTask,
+			Priority:   mail.PriorityNormal,
+			SkipNotify: true, // We send an explicit nudge below - skip mail notification to avoid double-nudge (hq-t1wcr5)
 		}
 
 		if err := router.Send(msg); err != nil {

@@ -709,7 +709,8 @@ func (r *Router) sendToSingle(msg *Message) error {
 
 	// Notify recipient if they have an active session (best-effort notification)
 	// Skip notification for self-mail (handoffs to future-self don't need present-self notified)
-	if !isSelfMail(msg.From, msg.To) {
+	// Skip notification if SkipNotify is set (caller is sending a separate nudge - hq-t1wcr5)
+	if !isSelfMail(msg.From, msg.To) && !msg.SkipNotify {
 		_ = r.notifyRecipient(msg)
 	}
 
