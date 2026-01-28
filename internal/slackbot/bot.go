@@ -607,6 +607,12 @@ func (b *Bot) postResolutionNotification(decisionID, optionLabel, userID string)
 			),
 			nil, nil,
 		),
+		slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn",
+				"_The requesting agent has been notified via mail and nudge. Blocked work has been unblocked._",
+				false, false,
+			),
+		),
 	}
 
 	_, _, err := b.client.PostMessage(b.channelID,

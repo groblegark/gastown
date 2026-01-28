@@ -21,6 +21,7 @@ import (
 	"github.com/steveyegge/gastown/internal/eventbus"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mail"
+	"github.com/steveyegge/gastown/internal/notify"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/tmux"
 
@@ -459,6 +460,13 @@ func (s *DecisionServer) Resolve(
 	if s.bus != nil {
 		s.bus.PublishDecisionResolved(issue.ID, decision)
 	}
+
+	// Notify the requesting agent (mail + nudge + unblock)
+	chosenLabel := ""
+	if fields.ChosenIndex > 0 && fields.ChosenIndex <= len(fields.Options) {
+		chosenLabel = fields.Options[fields.ChosenIndex-1].Label
+	}
+	go notify.DecisionResolved(s.townRoot, issue.ID, *fields, chosenLabel, fields.Rationale, resolvedBy)
 
 	return connect.NewResponse(&gastownv1.ResolveResponse{Decision: decision}), nil
 }

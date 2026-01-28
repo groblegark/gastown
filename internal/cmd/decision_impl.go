@@ -19,6 +19,7 @@ import (
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/inject"
 	"github.com/steveyegge/gastown/internal/mail"
+	"github.com/steveyegge/gastown/internal/notify"
 	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/style"
@@ -426,62 +427,8 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolving decision: %w", err)
 	}
 
-	// Remove blocker dependencies
-	for _, blockerID := range fields.Blockers {
-		if err := bd.RemoveDecisionBlocker(decisionID, blockerID); err != nil {
-			style.PrintWarning("failed to remove blocker dependency %s: %v", blockerID, err)
-		}
-	}
-
-	// Send notification to requestor
-	if fields.RequestedBy != "" && fields.RequestedBy != "unknown" {
-		router := mail.NewRouter(townRoot)
-
-		// Build subject - include rationale so agents see it in mail notifications
-		subject := fmt.Sprintf("[DECISION RESOLVED] %s → %s", truncateString(fields.Question, 30), chosenOption.Label)
-		if effectiveRationale != "" {
-			subject += fmt.Sprintf(": %s", truncateString(effectiveRationale, 40))
-		}
-
-		msg := &mail.Message{
-			From:     resolvedBy,
-			To:       fields.RequestedBy,
-			Subject:  subject,
-			Body:     formatResolutionMailBody(decisionID, fields.Question, chosenOption.Label, effectiveRationale, resolvedBy),
-			Type:     mail.TypeTask,
-			Priority: mail.PriorityNormal,
-		}
-
-		if err := router.Send(msg); err != nil {
-			style.PrintError("FAILED to notify requestor %q: %v", fields.RequestedBy, err)
-			style.PrintError("The requestor will NOT know their decision was resolved!")
-			style.PrintError("Fix: ensure agent bead exists for %s (gt crew add <rig> <name>)", fields.RequestedBy)
-		}
-
-		// Nudge the requesting agent so they see the resolution immediately
-		nudgeMsg := fmt.Sprintf("[DECISION RESOLVED] %s: Chose \"%s\"", decisionID, chosenOption.Label)
-		if effectiveRationale != "" {
-			nudgeMsg += fmt.Sprintf(" - %s", effectiveRationale)
-		}
-		nudgeCmd := execCommand("gt", "nudge", fields.RequestedBy, nudgeMsg)
-		if err := nudgeCmd.Run(); err != nil {
-			// Don't fail resolve, just warn
-			style.PrintWarning("failed to nudge requestor: %v", err)
-		}
-	}
-
-	// Log to activity feed
-	payload := map[string]interface{}{
-		"decision_id":  decisionID,
-		"question":     fields.Question,
-		"chosen_index": decisionChoice,
-		"chosen_label": chosenOption.Label,
-		"resolved_by":  resolvedBy,
-	}
-	if effectiveRationale != "" {
-		payload["rationale"] = effectiveRationale
-	}
-	_ = events.LogFeed(events.TypeDecisionResolved, resolvedBy, payload)
+	// Notify requestor: mail + nudge + unblock + activity log
+	notify.DecisionResolved(townRoot, decisionID, *fields, chosenOption.Label, effectiveRationale, resolvedBy)
 
 	// Output
 	if decisionJSON {
@@ -1312,12 +1259,25 @@ func runDecisionCheck(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Check for recently-resolved decisions (last 1 hour) relevant to this identity
+	resolved, _ := bd.ListRecentlyResolvedDecisions(1 * time.Hour)
+	var relevantResolved []*beads.Issue
+	for _, issue := range resolved {
+		fields := beads.ParseDecisionFields(issue.Description)
+		if fields.RequestedBy == identity ||
+			identity == "overseer" ||
+			identity == "human" {
+			relevantResolved = append(relevantResolved, issue)
+		}
+	}
+
 	// JSON output
 	if decisionCheckJSON {
 		result := map[string]interface{}{
-			"identity": identity,
-			"pending":  len(relevant),
-			"has_new":  len(relevant) > 0,
+			"identity":          identity,
+			"pending":           len(relevant),
+			"recently_resolved": len(relevantResolved),
+			"has_new":           len(relevant) > 0 || len(relevantResolved) > 0,
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -1326,33 +1286,51 @@ func runDecisionCheck(cmd *cobra.Command, args []string) error {
 
 	// Inject mode: queue system-reminder if decisions exist
 	if decisionCheckInject {
-		if len(relevant) > 0 {
-			// Build the system-reminder content
+		hasContent := len(relevant) > 0 || len(relevantResolved) > 0
+		if hasContent {
 			var buf bytes.Buffer
 			buf.WriteString("<system-reminder>\n")
-			buf.WriteString(fmt.Sprintf("You have %d pending decision(s) awaiting resolution.\n\n", len(relevant)))
 
-			for _, issue := range relevant {
-				fields := beads.ParseDecisionFields(issue.Description)
-				emoji := urgencyEmoji(fields.Urgency)
-				buf.WriteString(fmt.Sprintf("- %s %s [%s]: %s\n", emoji, issue.ID, strings.ToUpper(fields.Urgency), truncateString(fields.Question, 50)))
+			if len(relevant) > 0 {
+				buf.WriteString(fmt.Sprintf("You have %d pending decision(s) awaiting resolution.\n\n", len(relevant)))
+				for _, issue := range relevant {
+					fields := beads.ParseDecisionFields(issue.Description)
+					emoji := urgencyEmoji(fields.Urgency)
+					buf.WriteString(fmt.Sprintf("- %s %s [%s]: %s\n", emoji, issue.ID, strings.ToUpper(fields.Urgency), truncateString(fields.Question, 50)))
+				}
+				buf.WriteString("\n")
+				buf.WriteString("Run 'gt decision list' to see details, or 'gt decision resolve <id> --choice N' to resolve.\n")
 			}
 
-			buf.WriteString("\n")
-			buf.WriteString("Run 'gt decision list' to see details, or 'gt decision resolve <id> --choice N' to resolve.\n")
+			if len(relevantResolved) > 0 {
+				if len(relevant) > 0 {
+					buf.WriteString("\n")
+				}
+				buf.WriteString(fmt.Sprintf("%d of your decision(s) were recently resolved:\n\n", len(relevantResolved)))
+				for _, issue := range relevantResolved {
+					fields := beads.ParseDecisionFields(issue.Description)
+					chosenLabel := "(unknown)"
+					if fields.ChosenIndex > 0 && fields.ChosenIndex <= len(fields.Options) {
+						chosenLabel = fields.Options[fields.ChosenIndex-1].Label
+					}
+					buf.WriteString(fmt.Sprintf("- %s: Chose \"%s\"", issue.ID, chosenLabel))
+					if fields.Rationale != "" {
+						buf.WriteString(fmt.Sprintf(" - %s", truncateString(fields.Rationale, 60)))
+					}
+					buf.WriteString("\n")
+				}
+				buf.WriteString("\nYour blocked work should now be unblocked. Run 'gt decision show <id>' for details.\n")
+			}
+
 			buf.WriteString("</system-reminder>\n")
 
-			// Check if we should queue or output directly
 			sessionID := runtime.SessionIDFromEnv()
 			if sessionID != "" {
-				// Session ID available - use queue
 				queue := inject.NewQueue(townRoot, sessionID)
 				if err := queue.Enqueue(inject.TypeDecision, buf.String()); err != nil {
-					// Fall back to direct output on queue error
 					fmt.Print(buf.String())
 				}
 			} else {
-				// No session ID - output directly (legacy behavior)
 				fmt.Print(buf.String())
 			}
 		}
@@ -1362,6 +1340,11 @@ func runDecisionCheck(cmd *cobra.Command, args []string) error {
 	// Normal mode
 	if len(relevant) > 0 {
 		fmt.Printf("%s %d pending decision(s)\n", style.Bold.Render("📋"), len(relevant))
+	}
+	if len(relevantResolved) > 0 {
+		fmt.Printf("%s %d recently resolved decision(s)\n", style.Bold.Render("✓"), len(relevantResolved))
+	}
+	if len(relevant) > 0 || len(relevantResolved) > 0 {
 		return NewSilentExit(0)
 	}
 	fmt.Println("No pending decisions")
