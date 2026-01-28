@@ -214,7 +214,7 @@ func (b *Bot) handleDecisionsCommand(cmd slack.SlashCommand) {
 		blocks = append(blocks,
 			slack.NewSectionBlock(
 				slack.NewTextBlockObject("mrkdwn",
-					fmt.Sprintf("%s *%s*%s\n%s", urgencyEmoji, d.ID, agentTag, question),
+					fmt.Sprintf("%s%s %s", urgencyEmoji, agentTag, question),
 					false, false,
 				),
 				nil,
@@ -289,7 +289,7 @@ func (b *Bot) handleViewDecision(callback slack.InteractionCallback, decisionID 
 		),
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("*ID:* %s\n*From:* %s\n*Question:* %s", decision.ID, decision.RequestedBy, decision.Question),
+				fmt.Sprintf("*From:* %s\n*Question:* %s", decision.RequestedBy, decision.Question),
 				false, false,
 			),
 			nil, nil,
@@ -572,10 +572,9 @@ func (b *Bot) postResolutionConfirmation(channelID, userID, decisionID, optionLa
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn",
 				fmt.Sprintf("✅ *Decision Resolved Successfully!*\n\n"+
-					"*Decision ID:* `%s`\n"+
-					"*Your Choice:* %s\n"+
+					"*Choice:* %s\n"+
 					"*Rationale:* %s",
-					decisionID, optionLabel, displayRationale),
+					optionLabel, displayRationale),
 				false, false,
 			),
 			nil, nil,
@@ -601,10 +600,9 @@ func (b *Bot) postResolutionNotification(decisionID, optionLabel, userID string)
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn",
 				fmt.Sprintf("📋 *Decision Resolved*\n\n"+
-					"*ID:* `%s`\n"+
 					"*Choice:* %s\n"+
 					"*Resolved by:* <@%s>",
-					decisionID, optionLabel, userID),
+					optionLabel, userID),
 				false, false,
 			),
 			nil, nil,
@@ -649,8 +647,8 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 	blocks := []slack.Block{
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("%s *%s*%s\n%s",
-					urgencyEmoji, decision.ID, agentInfo, decision.Question),
+				fmt.Sprintf("%s%s %s",
+					urgencyEmoji, agentInfo, decision.Question),
 				false, false,
 			),
 			nil,
