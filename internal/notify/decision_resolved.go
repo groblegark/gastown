@@ -15,6 +15,9 @@ import (
 // DecisionResolved notifies the requesting agent that their decision was resolved.
 // It sends mail (persistent), nudges (immediate), removes blockers, and logs the event.
 // Errors are logged but do not cause failure - notification is best-effort.
+//
+// When RequestedBy is empty or "unknown", a fallback notification is sent to overseer
+// so that decision resolutions are never silently lost.
 func DecisionResolved(townRoot, decisionID string, fields beads.DecisionFields, chosenLabel, rationale, resolvedBy string) {
 	// 1. Remove blocker dependencies
 	bd := beads.New(beads.GetTownBeadsPath(townRoot))
@@ -25,14 +28,14 @@ func DecisionResolved(townRoot, decisionID string, fields beads.DecisionFields, 
 	}
 
 	// 2. Send mail to requestor (persistent notification)
+	router := mail.NewRouter(townRoot)
+	subject := fmt.Sprintf("[DECISION RESOLVED] %s → %s", truncate(fields.Question, 30), chosenLabel)
+	if rationale != "" {
+		subject += fmt.Sprintf(": %s", truncate(rationale, 40))
+	}
+
 	if fields.RequestedBy != "" && fields.RequestedBy != "unknown" {
-		router := mail.NewRouter(townRoot)
-
-		subject := fmt.Sprintf("[DECISION RESOLVED] %s → %s", truncate(fields.Question, 30), chosenLabel)
-		if rationale != "" {
-			subject += fmt.Sprintf(": %s", truncate(rationale, 40))
-		}
-
+		// Known requestor - send direct notification
 		msg := &mail.Message{
 			From:     resolvedBy,
 			To:       fields.RequestedBy,
@@ -58,6 +61,22 @@ func DecisionResolved(townRoot, decisionID string, fields beads.DecisionFields, 
 		nudgeCmd := exec.Command("gt", "nudge", "--direct", fields.RequestedBy, nudgeMsg) //nolint:gosec // trusted internal command
 		if err := nudgeCmd.Run(); err != nil {
 			log.Printf("notify: failed to nudge requestor %q: %v", fields.RequestedBy, err)
+		}
+	} else {
+		// Unknown requestor - log warning and send fallback notification to overseer
+		log.Printf("notify: decision %s has empty/unknown RequestedBy (%q), sending fallback to overseer", decisionID, fields.RequestedBy)
+
+		msg := &mail.Message{
+			From:     resolvedBy,
+			To:       "overseer",
+			Subject:  "[DECISION RESOLVED - NO REQUESTOR] " + subject,
+			Body:     formatResolutionBody(decisionID, fields.Question, chosenLabel, rationale, resolvedBy) + "\n\nNote: Original requestor unknown. This decision may need manual follow-up.",
+			Type:     mail.TypeTask,
+			Priority: mail.PriorityNormal,
+		}
+
+		if err := router.Send(msg); err != nil {
+			log.Printf("notify: FAILED to mail overseer fallback for decision %s: %v", decisionID, err)
 		}
 	}
 
