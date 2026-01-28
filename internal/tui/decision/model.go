@@ -233,7 +233,8 @@ type Model struct {
 	currentRig   string
 
 	// RPC mode - when set, uses RPC client instead of gt CLI commands
-	rpcClient *rpcclient.Client
+	rpcClient    *rpcclient.Client
+	rpcConnected bool // tracks whether RPC connection is healthy
 
 	// Polling
 	pollTicker *time.Ticker
@@ -794,6 +795,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchDecisionsMsg:
 		if msg.err != nil {
 			m.err = msg.err
+			// Update RPC connection status on failure
+			if m.rpcClient != nil {
+				m.rpcConnected = false
+			}
 		} else {
 			m.err = nil
 			m.decisions = m.filterDecisions(msg.decisions)
@@ -801,6 +806,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = max(0, len(m.decisions)-1)
 			}
 			m.status = fmt.Sprintf("Updated: %d pending", len(m.decisions))
+			// Update RPC connection status on success
+			if m.rpcClient != nil {
+				m.rpcConnected = true
+			}
 		}
 
 	case tickMsg:
