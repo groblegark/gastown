@@ -11,52 +11,18 @@ func TestParseSessionName(t *testing.T) {
 		wantRole Role
 		wantRig  string
 		wantName string
-		wantTown string
 		wantErr  bool
 	}{
-		// Town-level roles - legacy format (hq-mayor, hq-deacon)
+		// Town-level roles (hq-mayor, hq-deacon)
 		{
-			name:     "mayor legacy",
+			name:     "mayor",
 			session:  "hq-mayor",
 			wantRole: RoleMayor,
 		},
 		{
-			name:     "deacon legacy",
+			name:     "deacon",
 			session:  "hq-deacon",
 			wantRole: RoleDeacon,
-		},
-
-		// Town-level roles - new town-namespaced format
-		{
-			name:     "mayor with town",
-			session:  "hq-gt11-mayor",
-			wantRole: RoleMayor,
-			wantTown: "gt11",
-		},
-		{
-			name:     "deacon with town",
-			session:  "hq-gt11-deacon",
-			wantRole: RoleDeacon,
-			wantTown: "gt11",
-		},
-		{
-			name:     "boot with town",
-			session:  "hq-gt11-boot",
-			wantRole: RoleBoot,
-			wantTown: "gt11",
-		},
-		{
-			name:     "mayor with hyphenated town",
-			session:  "hq-my-town-mayor",
-			wantRole: RoleMayor,
-			wantTown: "my-town",
-		},
-
-		// Boot legacy format (gt-boot)
-		{
-			name:     "boot legacy",
-			session:  "gt-boot",
-			wantRole: RoleBoot,
 		},
 
 		// Witness (simple rig)
@@ -163,9 +129,6 @@ func TestParseSessionName(t *testing.T) {
 			if got.Name != tt.wantName {
 				t.Errorf("ParseSessionName(%q).Name = %v, want %v", tt.session, got.Name, tt.wantName)
 			}
-			if got.Town != tt.wantTown {
-				t.Errorf("ParseSessionName(%q).Town = %v, want %v", tt.session, got.Town, tt.wantTown)
-			}
 		})
 	}
 }
@@ -205,27 +168,6 @@ func TestAgentIdentity_SessionName(t *testing.T) {
 			name:     "polecat",
 			identity: AgentIdentity{Role: RolePolecat, Rig: "gastown", Name: "morsov"},
 			want:     "gt-gastown-morsov",
-		},
-		// Town-namespaced identities
-		{
-			name:     "mayor with town",
-			identity: AgentIdentity{Role: RoleMayor, Town: "gt11"},
-			want:     "hq-gt11-mayor",
-		},
-		{
-			name:     "deacon with town",
-			identity: AgentIdentity{Role: RoleDeacon, Town: "gt11"},
-			want:     "hq-gt11-deacon",
-		},
-		{
-			name:     "boot with town",
-			identity: AgentIdentity{Role: RoleBoot, Town: "gt11"},
-			want:     "hq-gt11-boot",
-		},
-		{
-			name:     "boot legacy (no town)",
-			identity: AgentIdentity{Role: RoleBoot},
-			want:     "gt-boot",
 		},
 	}
 
@@ -288,18 +230,12 @@ func TestAgentIdentity_Address(t *testing.T) {
 func TestParseSessionName_RoundTrip(t *testing.T) {
 	// Test that parsing then reconstructing gives the same result
 	sessions := []string{
-		// Legacy formats
 		"hq-mayor",
 		"hq-deacon",
-		"gt-boot",
 		"gt-gastown-witness",
 		"gt-foo-bar-refinery",
 		"gt-gastown-crew-max",
 		"gt-gastown-morsov",
-		// Town-namespaced formats
-		"hq-gt11-mayor",
-		"hq-gt11-deacon",
-		"hq-gt11-boot",
 	}
 
 	for _, sess := range sessions {

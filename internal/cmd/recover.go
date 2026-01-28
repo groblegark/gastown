@@ -118,9 +118,9 @@ func resolveRecoverTarget(target string) (string, string, string, string, error)
 	// Handle role shortcuts
 	switch target {
 	case "mayor":
-		return session.MayorSessionName(workspace.TownName()), "mayor", "", "", nil
+		return session.MayorSessionName(), "mayor", "", "", nil
 	case "deacon":
-		return session.DeaconSessionName(workspace.TownName()), "deacon", "", "", nil
+		return session.DeaconSessionName(), "deacon", "", "", nil
 	case "witness", "refinery":
 		roleInfo, err := GetRole()
 		if err != nil {

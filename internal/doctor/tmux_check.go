@@ -3,7 +3,6 @@ package doctor
 import (
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/session"
@@ -87,7 +86,7 @@ func (c *LinkedPaneCheck) Run(ctx *CheckContext) *CheckResult {
 	}
 
 	// Cache for Fix (exclude mayor session since we don't want to kill it)
-	mayorSession := session.MayorSessionName(filepath.Base(ctx.TownRoot))
+	mayorSession := session.MayorSessionName()
 
 	c.linkedSessions = nil
 	for sess := range linkedSessionSet {

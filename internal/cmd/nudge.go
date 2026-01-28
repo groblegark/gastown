@@ -139,7 +139,7 @@ func runNudge(cmd *cobra.Command, args []string) error {
 	// These shortcuts let users type "mayor" instead of "gt-mayor"
 	switch target {
 	case "mayor":
-		target = session.MayorSessionName(workspace.TownName())
+		target = session.MayorSessionName()
 	case "witness", "refinery":
 		// These need the current rig
 		roleInfo, err := GetRole()
@@ -158,7 +158,7 @@ func runNudge(cmd *cobra.Command, args []string) error {
 
 	// Special case: "deacon" target maps to the Deacon session
 	if target == "deacon" {
-		deaconSession := session.DeaconSessionName(workspace.TownName())
+		deaconSession := session.DeaconSessionName()
 		// Check if Deacon session exists
 		exists, err := t.HasSession(deaconSession)
 		if err != nil {
@@ -374,9 +374,9 @@ func resolveNudgePattern(pattern string, agents []*AgentSession) []string {
 	// Handle special cases
 	switch pattern {
 	case "mayor":
-		return []string{session.MayorSessionName(workspace.TownName())}
+		return []string{session.MayorSessionName()}
 	case "deacon":
-		return []string{session.DeaconSessionName(workspace.TownName())}
+		return []string{session.DeaconSessionName()}
 	}
 
 	// Parse pattern
@@ -474,9 +474,9 @@ func addressToAgentBeadID(address string) string {
 	// Handle special cases
 	switch address {
 	case "mayor":
-		return session.MayorSessionName(workspace.TownName())
+		return session.MayorSessionName()
 	case "deacon":
-		return session.DeaconSessionName(workspace.TownName())
+		return session.DeaconSessionName()
 	}
 
 	// Parse rig/role format

@@ -322,12 +322,7 @@ const DeaconRole = "deacon"
 
 // getDeaconSessionName returns the Deacon session name for the daemon's town.
 func (d *Daemon) getDeaconSessionName() string {
-	return session.DeaconSessionName(d.townName())
-}
-
-// townName returns the basename of the town root for session naming.
-func (d *Daemon) townName() string {
-	return filepath.Base(d.config.TownRoot)
+	return session.DeaconSessionName()
 }
 
 // ensureBootRunning runs Boot triage to check on the Deacon.

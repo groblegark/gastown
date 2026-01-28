@@ -3,7 +3,6 @@ package doctor
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/boot"
@@ -65,9 +64,9 @@ func (c *BootHealthCheck) Run(ctx *CheckContext) *CheckResult {
 	// Check 2: Session alive
 	sessionAlive := b.IsSessionAlive()
 	if sessionAlive {
-		details = append(details, fmt.Sprintf("Session: %s (alive)", session.BootSessionName(filepath.Base(ctx.TownRoot))))
+		details = append(details, fmt.Sprintf("Session: %s (alive)", session.BootSessionName()))
 	} else {
-		details = append(details, fmt.Sprintf("Session: %s (not running)", session.BootSessionName(filepath.Base(ctx.TownRoot))))
+		details = append(details, fmt.Sprintf("Session: %s (not running)", session.BootSessionName()))
 	}
 
 	// Check 3: Last execution status

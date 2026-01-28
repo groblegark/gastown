@@ -104,10 +104,8 @@ func getMayorManager() (*mayor.Manager, error) {
 }
 
 // getMayorSessionName returns the Mayor session name.
-// Uses town-namespaced format when workspace is available.
 func getMayorSessionName() string {
-	town := workspace.TownName()
-	return session.MayorSessionName(town)
+	return mayor.SessionName()
 }
 
 func runMayorStart(cmd *cobra.Command, args []string) error {

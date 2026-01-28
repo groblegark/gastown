@@ -12,22 +12,14 @@ const Prefix = "gt-"
 const HQPrefix = "hq-"
 
 // MayorSessionName returns the session name for the Mayor agent.
-// When town is provided and non-empty, produces "hq-{town}-mayor" for multi-town support.
-// When called with no args, produces legacy "hq-mayor" format.
-func MayorSessionName(town ...string) string {
-	if len(town) > 0 && town[0] != "" {
-		return fmt.Sprintf("%s%s-mayor", HQPrefix, town[0])
-	}
+// One mayor per machine - multi-town requires containers/VMs for isolation.
+func MayorSessionName() string {
 	return HQPrefix + "mayor"
 }
 
 // DeaconSessionName returns the session name for the Deacon agent.
-// When town is provided and non-empty, produces "hq-{town}-deacon" for multi-town support.
-// When called with no args, produces legacy "hq-deacon" format.
-func DeaconSessionName(town ...string) string {
-	if len(town) > 0 && town[0] != "" {
-		return fmt.Sprintf("%s%s-deacon", HQPrefix, town[0])
-	}
+// One deacon per machine - multi-town requires containers/VMs for isolation.
+func DeaconSessionName() string {
 	return HQPrefix + "deacon"
 }
 
@@ -52,15 +44,11 @@ func PolecatSessionName(rig, name string) string {
 }
 
 // BootSessionName returns the session name for the Boot watchdog.
-// When town is provided and non-empty, produces "hq-{town}-boot" for multi-town support.
-// When called with no args, produces legacy "gt-boot" format.
-// Note: Legacy format uses "gt-boot" instead of "hq-boot" to avoid tmux prefix
-// matching collisions. The new format "hq-{town}-boot" is safe because
-// "hq-gt11-boot" won't prefix-match "hq-gt11-deacon".
-func BootSessionName(town ...string) string {
-	if len(town) > 0 && town[0] != "" {
-		return fmt.Sprintf("%s%s-boot", HQPrefix, town[0])
-	}
+// Note: We use "gt-boot" instead of "hq-deacon-boot" to avoid tmux prefix
+// matching collisions. Tmux matches session names by prefix, so "hq-deacon-boot"
+// would match when checking for "hq-deacon", causing HasSession("hq-deacon")
+// to return true when only Boot is running.
+func BootSessionName() string {
 	return Prefix + "boot"
 }
 

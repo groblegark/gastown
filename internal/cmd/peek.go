@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
-	"github.com/steveyegge/gastown/internal/workspace"
 )
 
 // Peek command flags
@@ -66,11 +65,11 @@ func runPeek(cmd *cobra.Command, args []string) error {
 	var sessionName string
 	switch address {
 	case "mayor":
-		sessionName = session.MayorSessionName(workspace.TownName())
+		sessionName = session.MayorSessionName()
 	case "deacon":
-		sessionName = session.DeaconSessionName(workspace.TownName())
+		sessionName = session.DeaconSessionName()
 	case "boot":
-		sessionName = session.BootSessionName(workspace.TownName())
+		sessionName = "gt-boot" // Boot watchdog session
 	}
 
 	if sessionName != "" {

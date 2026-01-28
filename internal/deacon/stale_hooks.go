@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -98,7 +97,7 @@ func ScanStaleHooks(townRoot string, cfg *StaleHookConfig) (*StaleHookScanResult
 
 		// Check if assignee agent is still alive
 		if bead.Assignee != "" {
-			sessionName := assigneeToSessionName(bead.Assignee, filepath.Base(townRoot))
+			sessionName := assigneeToSessionName(bead.Assignee)
 			if sessionName != "" {
 				alive, _ := t.HasSession(sessionName)
 				hookResult.AgentAlive = alive
@@ -149,7 +148,7 @@ func listHookedBeads(townRoot string) ([]*HookedBead, error) {
 
 // assigneeToSessionName converts an assignee address to a tmux session name.
 // Supports formats like "gastown/polecats/max", "gastown/crew/joe", etc.
-func assigneeToSessionName(assignee, town string) string {
+func assigneeToSessionName(assignee string) string {
 	parts := strings.Split(assignee, "/")
 
 	switch len(parts) {
@@ -157,9 +156,9 @@ func assigneeToSessionName(assignee, town string) string {
 		// Simple names like "deacon", "mayor"
 		switch assignee {
 		case "deacon":
-			return session.DeaconSessionName(town)
+			return session.DeaconSessionName()
 		case "mayor":
-			return session.MayorSessionName(town)
+			return session.MayorSessionName()
 		default:
 			return ""
 		}

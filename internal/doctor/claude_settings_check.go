@@ -124,7 +124,6 @@ func (c *ClaudeSettingsCheck) Run(ctx *CheckContext) *CheckResult {
 
 // findSettingsFiles locates all .claude/settings.json files and identifies their agent type.
 func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettingsInfo {
-	town := filepath.Base(townRoot)
 	var files []staleSettingsInfo
 
 	// Check for STALE settings at town root (~/gt/.claude/settings.json)
@@ -147,7 +146,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 			files = append(files, staleSettingsInfo{
 				path:          staleTownRootSettings,
 				agentType:     "mayor",
-				sessionName:   session.MayorSessionName(town),
+				sessionName:   "hq-mayor",
 				wrongLocation: true,
 				gitStatus:     c.getGitFileStatus(staleTownRootSettings),
 				missing:       []string{"should be a symlink to mayor/.claude/settings.json, not a regular file"},
@@ -164,7 +163,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 		files = append(files, staleSettingsInfo{
 			path:          staleTownRootCLAUDEmd,
 			agentType:     "mayor",
-			sessionName:   session.MayorSessionName(town),
+			sessionName:   "hq-mayor",
 			wrongLocation: true,
 			gitStatus:     c.getGitFileStatus(staleTownRootCLAUDEmd),
 			missing:       []string{"should be at mayor/CLAUDE.md, not town root"},
@@ -177,7 +176,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 		files = append(files, staleSettingsInfo{
 			path:        mayorSettings,
 			agentType:   "mayor",
-			sessionName: session.MayorSessionName(town),
+			sessionName: "hq-mayor",
 		})
 	}
 
@@ -187,7 +186,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 		files = append(files, staleSettingsInfo{
 			path:        deaconSettings,
 			agentType:   "deacon",
-			sessionName: session.DeaconSessionName(town),
+			sessionName: "hq-deacon",
 		})
 	}
 
@@ -546,8 +545,8 @@ func (c *ClaudeSettingsCheck) Fix(ctx *CheckContext) error {
 					mayorDir,
 					ctx.TownRoot,
 					townName,
-					session.MayorSessionName(filepath.Base(ctx.TownRoot)),
-					session.DeaconSessionName(filepath.Base(ctx.TownRoot)),
+					session.MayorSessionName(),
+					session.DeaconSessionName(),
 				); err != nil {
 					errors = append(errors, fmt.Sprintf("failed to create mayor/CLAUDE.md: %v", err))
 				}
