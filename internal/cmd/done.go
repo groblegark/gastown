@@ -271,6 +271,14 @@ func runDone(cmd *cobra.Command, args []string) error {
 		// Check if branch has commits ahead of origin/default
 		// If not, work may have been pushed directly to main - that's fine, just skip MR
 		originDefault := "origin/" + defaultBranch
+
+		// FIX (gt-fpak7): Fetch origin before checking commits ahead.
+		// Stale origin refs can cause aheadCount to be 0 when there are actually
+		// unpushed commits, leading to skipped push and lost work.
+		if err := g.Fetch("origin"); err != nil {
+			style.PrintWarning("could not fetch origin: %v", err)
+		}
+
 		aheadCount, err := g.CommitsAhead(originDefault, "HEAD")
 		if err != nil {
 			// Fallback to local branch comparison if origin not available
@@ -285,12 +293,21 @@ func runDone(cmd *cobra.Command, args []string) error {
 		// If no commits ahead, work was likely pushed directly to main (or already merged)
 		// This is valid - skip MR creation but still complete successfully
 		if aheadCount == 0 {
-			fmt.Printf("%s Branch has no commits ahead of %s\n", style.Bold.Render("→"), originDefault)
-			fmt.Printf("  Work was likely pushed directly to main or already merged.\n")
-			fmt.Printf("  Skipping MR creation - completing without merge request.\n\n")
+			// FIX (gt-fpak7): Double-check that our branch exists on remote before skipping push.
+			// If the branch doesn't exist on remote, we have work that needs pushing.
+			branchExistsOnRemote, _ := g.RemoteBranchExists("origin", branch)
+			if !branchExistsOnRemote {
+				// Branch doesn't exist on remote - we need to push even if aheadCount is 0.
+				// This handles the case where origin/main is stale or equal to our branch base.
+				fmt.Printf("%s Branch not on remote, pushing...\n", style.Bold.Render("→"))
+			} else {
+				fmt.Printf("%s Branch has no commits ahead of %s\n", style.Bold.Render("→"), originDefault)
+				fmt.Printf("  Work was likely pushed directly to main or already merged.\n")
+				fmt.Printf("  Skipping MR creation - completing without merge request.\n\n")
 
-			// Skip straight to witness notification (no MR needed)
-			goto notifyWitness
+				// Skip straight to witness notification (no MR needed)
+				goto notifyWitness
+			}
 		}
 
 		// CRITICAL: Push branch BEFORE creating MR bead (hq-6dk53, hq-a4ksk)
