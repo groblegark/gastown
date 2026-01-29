@@ -1089,7 +1089,7 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 				slack.NewButtonBlockElement(
 					"view_decision",
 					decision.ID, // Keep original ID for button action
-					slack.NewTextBlockObject("plain_text", "View & Resolve", false, false),
+					slack.NewTextBlockObject("plain_text", "View Details", false, false),
 				),
 			),
 		),
@@ -1108,23 +1108,49 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 		)
 	}
 
-	// Show compact option summary
+	// Show options inline with resolve buttons (gt-1bc64)
+	// This allows users to resolve directly from the notification without extra clicks
 	if len(decision.Options) > 0 {
-		var optSummary string
+		blocks = append(blocks, slack.NewDividerBlock())
+
 		for i, opt := range decision.Options {
-			if i > 0 {
-				optSummary += "  •  "
-			}
+			label := opt.Label
 			if opt.Recommended {
-				optSummary += "⭐ "
+				label = "⭐ " + label
 			}
-			optSummary += opt.Label
+
+			// Build option text with description if available
+			optText := fmt.Sprintf("*%d. %s*", i+1, label)
+			if opt.Description != "" {
+				// Truncate long descriptions
+				desc := opt.Description
+				if len(desc) > 150 {
+					desc = desc[:147] + "..."
+				}
+				optText += fmt.Sprintf("\n%s", desc)
+			}
+
+			// Truncate button label if too long (Slack limit)
+			buttonLabel := "Choose"
+			if len(decision.Options) <= 4 {
+				// For small option counts, show option number
+				buttonLabel = fmt.Sprintf("Choose %d", i+1)
+			}
+
+			blocks = append(blocks,
+				slack.NewSectionBlock(
+					slack.NewTextBlockObject("mrkdwn", optText, false, false),
+					nil,
+					slack.NewAccessory(
+						slack.NewButtonBlockElement(
+							fmt.Sprintf("resolve_%s_%d", decision.ID, i+1),
+							fmt.Sprintf("%s:%d", decision.ID, i+1),
+							slack.NewTextBlockObject("plain_text", buttonLabel, false, false),
+						),
+					),
+				),
+			)
 		}
-		blocks = append(blocks,
-			slack.NewContextBlock("",
-				slack.NewTextBlockObject("mrkdwn", optSummary, false, false),
-			),
-		)
 	}
 
 	// Add Break Out / Unbreak Out button if agent identity is available
