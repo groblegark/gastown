@@ -416,10 +416,12 @@ func handleMoleculeComplete(cwd, townRoot, moleculeID string, dryRun bool) error
 	}
 
 	// For polecats, use gt done to signal completion
+	// Note: We use COMPLETED status because the molecule is fully done.
+	// This triggers MR submission to the merge queue.
 	if roleCtx.Role == RolePolecat {
 		fmt.Printf("%s Signaling completion to witness...\n", style.Bold.Render("📤"))
 
-		doneCmd := exec.Command("gt", "done", "--exit", "DEFERRED")
+		doneCmd := exec.Command("gt", "done", "--status", "COMPLETED")
 		doneCmd.Stdout = os.Stdout
 		doneCmd.Stderr = os.Stderr
 		return doneCmd.Run()
