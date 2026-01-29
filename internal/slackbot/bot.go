@@ -552,6 +552,33 @@ func (b *Bot) handleDismissDecision(callback slack.InteractionCallback, decision
 	// No confirmation needed - the message disappearing IS the confirmation
 }
 
+// DismissDecisionByID deletes a decision's Slack notification message by decision ID.
+// Used for auto-dismissing stale or cancelled decisions.
+// Returns true if the message was found and deleted, false otherwise.
+func (b *Bot) DismissDecisionByID(decisionID string) bool {
+	b.decisionMessagesMu.RLock()
+	msgInfo, found := b.decisionMessages[decisionID]
+	b.decisionMessagesMu.RUnlock()
+
+	if !found {
+		return false
+	}
+
+	_, _, err := b.client.DeleteMessage(msgInfo.channelID, msgInfo.timestamp)
+	if err != nil {
+		log.Printf("Slack: Failed to auto-dismiss decision %s: %v", decisionID, err)
+		return false
+	}
+
+	// Remove from tracking
+	b.decisionMessagesMu.Lock()
+	delete(b.decisionMessages, decisionID)
+	b.decisionMessagesMu.Unlock()
+
+	log.Printf("Slack: Auto-dismissed decision %s (deleted message %s)", decisionID, msgInfo.timestamp)
+	return true
+}
+
 // agentToBreakOutChannelName converts an agent identity to a dedicated Break Out channel name.
 // Unlike agentToChannelName, this includes the FULL agent path for dedicated channels.
 // Examples:
@@ -840,9 +867,18 @@ func (b *Bot) postErrorMessage(channelID, userID, decisionID string, err error) 
 
 // updateMessageAsResolved edits the original decision notification to show a collapsed resolved view.
 // This keeps one message per decision instead of creating a new confirmation message.
-func (b *Bot) updateMessageAsResolved(channelID, messageTs, decisionID, question, context, chosenOption, userID string) {
+// The resolverID can be a Slack user ID (will be formatted as mention) or a plain string.
+func (b *Bot) updateMessageAsResolved(channelID, messageTs, decisionID, question, context, chosenOption, resolverID string) {
 	// Generate semantic slug for display
 	semanticSlug := util.GenerateDecisionSlug(decisionID, question)
+
+	// Format resolver - if it looks like a Slack user ID (no colons, alphanumeric), use mention
+	// Otherwise display as plain text
+	resolverText := resolverID
+	if resolverID != "" && !strings.Contains(resolverID, ":") && len(resolverID) > 3 {
+		// Likely a Slack user ID (e.g., "U12345678")
+		resolverText = fmt.Sprintf("<@%s>", resolverID)
+	}
 
 	// Build resolved text with question and context preserved
 	resolvedText := fmt.Sprintf("✅ *%s* — Resolved\n\n", semanticSlug)
@@ -850,7 +886,7 @@ func (b *Bot) updateMessageAsResolved(channelID, messageTs, decisionID, question
 	if context != "" {
 		resolvedText += fmt.Sprintf("*Context:* %s\n", context)
 	}
-	resolvedText += fmt.Sprintf("\n*Choice:* %s\n*By:* <@%s>", chosenOption, userID)
+	resolvedText += fmt.Sprintf("\n*Choice:* %s\n*By:* %s", chosenOption, resolverText)
 
 	// Build collapsed resolved view
 	blocks := []slack.Block{
@@ -865,9 +901,11 @@ func (b *Bot) updateMessageAsResolved(channelID, messageTs, decisionID, question
 	)
 	if err != nil {
 		log.Printf("Slack: Failed to update message as resolved: %v", err)
-		// Fallback: post ephemeral confirmation
-		b.postEphemeral(channelID, userID,
-			fmt.Sprintf("✅ Decision resolved: %s", chosenOption))
+		// Fallback: post ephemeral confirmation (only works if resolverID is a valid Slack user)
+		if resolverID != "" && !strings.Contains(resolverID, ":") && len(resolverID) > 3 {
+			b.postEphemeral(channelID, resolverID,
+				fmt.Sprintf("✅ Decision resolved: %s", chosenOption))
+		}
 	} else {
 		log.Printf("Slack: Updated decision %s message to resolved state", decisionID)
 	}
@@ -1091,19 +1129,13 @@ func (b *Bot) cacheChannel(name, id string) {
 	b.channelCacheMu.Unlock()
 }
 
-// NotifyResolution posts a resolution notification to the appropriate channel.
+// NotifyResolution updates or posts a resolution notification for a decision.
 // This is called by the SSE listener when a decision is resolved externally.
-// Uses the channel router to notify the same channel where the decision was originally posted.
+// If we have a tracked message, it updates the existing message; otherwise posts a new one.
 func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
 	// If resolved via Slack, skip - we already edited the original message
 	if strings.HasPrefix(decision.ResolvedBy, "slack:") {
 		log.Printf("Slack: Skipping resolution notification for %s (resolved via Slack, message already updated)", decision.ID)
-		return nil
-	}
-
-	// Resolve channel based on original requesting agent
-	targetChannel := b.resolveChannel(decision.RequestedBy)
-	if targetChannel == "" {
 		return nil
 	}
 
@@ -1115,6 +1147,27 @@ func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
 	resolvedBy := decision.ResolvedBy
 	if resolvedBy == "" {
 		resolvedBy = "unknown"
+	}
+
+	// Check if we have a tracked message to update
+	b.decisionMessagesMu.RLock()
+	msgInfo, hasTrackedMessage := b.decisionMessages[decision.ID]
+	b.decisionMessagesMu.RUnlock()
+
+	if hasTrackedMessage {
+		// Update the existing message instead of posting a new one
+		b.updateMessageAsResolved(msgInfo.channelID, msgInfo.timestamp, decision.ID, decision.Question, decision.Context, optionLabel, resolvedBy)
+		// Remove from tracking
+		b.decisionMessagesMu.Lock()
+		delete(b.decisionMessages, decision.ID)
+		b.decisionMessagesMu.Unlock()
+		return nil
+	}
+
+	// Fallback: post a new message if we don't have the original tracked
+	targetChannel := b.resolveChannel(decision.RequestedBy)
+	if targetChannel == "" {
+		return nil
 	}
 
 	// Format resolver - if it's a Slack user ID, use mention; otherwise use plain text
@@ -1298,9 +1351,18 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 		)
 	}
 
-	_, _, err := b.client.PostMessage(targetChannel,
+	_, ts, err := b.client.PostMessage(targetChannel,
 		slack.MsgOptionBlocks(blocks...),
 	)
+	if err == nil && ts != "" {
+		// Track the message for auto-dismiss
+		b.decisionMessagesMu.Lock()
+		b.decisionMessages[decision.ID] = messageInfo{
+			channelID: targetChannel,
+			timestamp: ts,
+		}
+		b.decisionMessagesMu.Unlock()
+	}
 	return err
 }
 
@@ -1419,9 +1481,18 @@ func (b *Bot) notifyDecisionToChannel(decision rpcclient.Decision, channelID str
 		)
 	}
 
-	_, _, err := b.client.PostMessage(channelID,
+	_, ts, err := b.client.PostMessage(channelID,
 		slack.MsgOptionBlocks(blocks...),
 	)
+	if err == nil && ts != "" {
+		// Track the message for auto-dismiss
+		b.decisionMessagesMu.Lock()
+		b.decisionMessages[decision.ID] = messageInfo{
+			channelID: channelID,
+			timestamp: ts,
+		}
+		b.decisionMessagesMu.Unlock()
+	}
 	return err
 }
 

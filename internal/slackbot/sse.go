@@ -157,6 +157,8 @@ func (l *SSEListener) handleEvent(evt sseEvent) {
 			l.notifyNewDecision(de)
 		case "resolved":
 			l.notifyResolvedDecision(de)
+		case "cancelled", "canceled":
+			l.handleCancelledDecision(de)
 		default:
 			log.Printf("SSE: Ignoring event type: %s", de.Type)
 		}
@@ -235,5 +237,14 @@ func (l *SSEListener) notifyResolvedDecision(de decisionEvent) {
 
 	if err := l.bot.NotifyResolution(*decision); err != nil {
 		log.Printf("SSE: Error notifying Slack of resolution: %v", err)
+	}
+}
+
+func (l *SSEListener) handleCancelledDecision(de decisionEvent) {
+	// Auto-dismiss: delete the Slack notification for cancelled decisions
+	if l.bot.DismissDecisionByID(de.ID) {
+		log.Printf("SSE: Auto-dismissed cancelled decision %s", de.ID)
+	} else {
+		log.Printf("SSE: No tracked message for cancelled decision %s (may not have been posted)", de.ID)
 	}
 }
