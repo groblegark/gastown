@@ -88,7 +88,7 @@ gt decision show hq-abc123
 
 Output:
 ```
-🟢 Decision: hq-abc123 [PENDING]
+🟢 Decision: gt-dec-caching_strategyabc123 [PENDING]
 
 Question: Which caching strategy should we use?
 
@@ -102,8 +102,10 @@ Requested by: beads/crew/decision
 Requested at: 5 minutes ago
 Urgency: medium
 
-To resolve: gt decision resolve hq-abc123 --choice N --rationale "..."
+To resolve: gt decision resolve gt-abc123 --choice N --rationale "..."
 ```
+
+Note: Decisions are assigned a **semantic slug** (e.g., `gt-dec-caching_strategyabc123`) derived from the prompt text. This makes decisions easy to identify in Slack notifications and logs. Use clear, descriptive prompts to generate meaningful slugs.
 
 ### Resolving Decisions
 
@@ -227,12 +229,17 @@ When an agent tries to end a turn without offering a decision:
 
 ● Ran 1 stop hook
   ⎿  Stop hook error: You must offer a formal decision point using
-     bd decision create or gt decision request before ending this turn.
+     'gt decision request' before ending this turn.
 
-● [Agent learns the API and creates a decision]
+     When the decision is created, it will be assigned a semantic slug
+     (e.g., gt-dec-cache_strategyzfyl8) that makes it easy to identify
+     in Slack and logs. Use clear, descriptive prompts so the generated
+     slug is meaningful.
 
-● Bash(gt decision request --prompt "What would you like to do?" ...)
-  ⎿  📋 Decision requested: hq-abc123
+● [Agent creates a decision with a descriptive prompt]
+
+● Bash(gt decision request --prompt "Which caching strategy?" ...)
+  ⎿  📋 Decision requested: gt-dec-caching_strategyabc123
 
 ● Decision point created. Waiting for your choice.
 ```
@@ -270,6 +277,45 @@ Each option has:
 - `short`: 1-3 word summary for compact display
 - `label`: Sentence-length description
 - `description`: Optional rich markdown content
+
+## Semantic Slugs
+
+Decisions are assigned human-readable **semantic slugs** that make them easy to identify in Slack, logs, and CLI output.
+
+### Format
+
+```
+<prefix>-dec-<title_slug><random>
+```
+
+Examples:
+- `gt-dec-caching_strategyabc123` - From prompt "Which caching strategy?"
+- `gt-dec-api_design_approachxyz789` - From prompt "API design approach?"
+- `gt-dec-production_deploymentp1q2r3` - From prompt "Approve production deployment?"
+
+### Slug Generation Rules
+
+1. The prompt text is slugified:
+   - Converted to lowercase
+   - Stop words removed (a, an, the, which, should, etc.)
+   - Non-alphanumeric replaced with underscores
+   - Truncated to 40 characters at word boundary
+
+2. The type code `dec` identifies it as a decision
+
+3. The random component ensures uniqueness
+
+### Best Practice
+
+Use **clear, descriptive prompts** so the generated slug is meaningful:
+
+**Good prompts (generate useful slugs):**
+- "Which caching strategy for the API layer?" → `gt-dec-caching_strategy_api_layer...`
+- "Database choice for user data?" → `gt-dec-database_choice_user_data...`
+
+**Poor prompts (generate unhelpful slugs):**
+- "What should we do?" → `gt-dec-xxx...` (too vague)
+- "Yes or no?" → `gt-dec-yes_no...` (not descriptive)
 
 ## Iterative Refinement
 

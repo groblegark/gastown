@@ -1052,7 +1052,9 @@ func checkTurnMarker(sessionID string, soft bool) *TurnBlockResult {
 	// Strict mode - block
 	return &TurnBlockResult{
 		Decision: "block",
-		Reason:   "You must offer a formal decision point using 'gt decision request' before ending this turn. This ensures humans stay informed about progress and can provide guidance.",
+		Reason: `You must offer a formal decision point using 'gt decision request' before ending this turn. This ensures humans stay informed about progress and can provide guidance.
+
+When the decision is created, it will be assigned a semantic slug (e.g., gt-dec-cache_strategyzfyl8) that makes it easy to identify in Slack and logs. Use clear, descriptive prompts so the generated slug is meaningful.`,
 	}
 }
 
