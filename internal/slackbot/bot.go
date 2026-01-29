@@ -833,18 +833,12 @@ func (b *Bot) updateMessageAsResolved(channelID, messageTs, decisionID, question
 	// Generate semantic slug for display
 	semanticSlug := util.GenerateDecisionSlug(decisionID, question)
 
-	// Truncate question for compact display
-	displayQuestion := question
-	if len(displayQuestion) > 100 {
-		displayQuestion = displayQuestion[:97] + "..."
-	}
-
 	// Build collapsed resolved view
 	blocks := []slack.Block{
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("✅ *%s* — Resolved\n~%s~\n\n*Choice:* %s\n*By:* <@%s>",
-					semanticSlug, displayQuestion, chosenOption, userID),
+				fmt.Sprintf("✅ *%s* — Resolved\n\n*Choice:* %s\n*By:* <@%s>",
+					semanticSlug, chosenOption, userID),
 				false, false,
 			),
 			nil, nil,
