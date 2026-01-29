@@ -1507,6 +1507,237 @@ func suggestFileOption() string {
 	return "File bug: Create tracking bead to investigate root cause"
 }
 
+// --- Decision Chain Visualization ---
+
+// chainNode represents a node in the decision chain tree.
+type chainNode struct {
+	ID           string       `json:"id"`
+	Question     string       `json:"question"`
+	ChosenIndex  int          `json:"chosen_index"`
+	ChosenLabel  string       `json:"chosen_label,omitempty"`
+	Urgency      string       `json:"urgency"`
+	RequestedBy  string       `json:"requested_by"`
+	RequestedAt  string       `json:"requested_at"`
+	ResolvedAt   string       `json:"resolved_at,omitempty"`
+	Predecessor  string       `json:"predecessor_id,omitempty"`
+	Children     []*chainNode `json:"children,omitempty"`
+	IsTarget     bool         `json:"is_target,omitempty"` // Marks the requested decision
+}
+
+func runDecisionChain(cmd *cobra.Command, args []string) error {
+	decisionID := util.ResolveSemanticSlug(args[0])
+
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	bd := beads.New(beads.ResolveBeadsDir(townRoot))
+
+	if decisionChainDescendants {
+		return showDecisionDescendants(bd, decisionID)
+	}
+
+	return showDecisionAncestry(bd, decisionID)
+}
+
+// showDecisionAncestry shows the chain from root to the specified decision.
+func showDecisionAncestry(bd *beads.Beads, decisionID string) error {
+	// Build chain by following predecessor links
+	var chain []*chainNode
+	currentID := decisionID
+
+	for currentID != "" {
+		issue, fields, err := bd.GetDecisionBead(currentID)
+		if err != nil {
+			return fmt.Errorf("failed to load decision %s: %w", currentID, err)
+		}
+		if issue == nil || fields == nil {
+			return fmt.Errorf("decision not found: %s", currentID)
+		}
+
+		node := &chainNode{
+			ID:          issue.ID,
+			Question:    fields.Question,
+			ChosenIndex: fields.ChosenIndex,
+			Urgency:     fields.Urgency,
+			RequestedBy: fields.RequestedBy,
+			RequestedAt: fields.RequestedAt,
+			ResolvedAt:  fields.ResolvedAt,
+			Predecessor: fields.PredecessorID,
+			IsTarget:    issue.ID == decisionID,
+		}
+
+		if fields.ChosenIndex > 0 && fields.ChosenIndex <= len(fields.Options) {
+			node.ChosenLabel = fields.Options[fields.ChosenIndex-1].Label
+		}
+
+		chain = append([]*chainNode{node}, chain...) // Prepend to build root->leaf order
+		currentID = fields.PredecessorID
+	}
+
+	if decisionChainJSON {
+		out, _ := json.MarshalIndent(chain, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	}
+
+	// Pretty print the chain
+	fmt.Printf("📋 Decision Chain (%d decisions)\n\n", len(chain))
+
+	for i, node := range chain {
+		indent := strings.Repeat("  ", i)
+		connector := "└─"
+		if i == 0 {
+			connector = "┌─"
+		} else if i < len(chain)-1 {
+			connector = "├─"
+		}
+
+		status := "PENDING"
+		if node.ChosenIndex > 0 {
+			status = "RESOLVED"
+		}
+
+		marker := ""
+		if node.IsTarget {
+			marker = " ← (target)"
+		}
+
+		emoji := urgencyEmoji(node.Urgency)
+		slug := util.GenerateDecisionSlug(node.ID, node.Question)
+		fmt.Printf("%s%s %s %s [%s]%s\n", indent, connector, emoji, slug, status, marker)
+		fmt.Printf("%s   %s\n", indent, truncateString(node.Question, 60))
+
+		if node.ChosenLabel != "" {
+			fmt.Printf("%s   → Chose: %s\n", indent, node.ChosenLabel)
+		}
+
+		if i < len(chain)-1 {
+			fmt.Printf("%s │\n", indent)
+		}
+	}
+
+	return nil
+}
+
+// showDecisionDescendants shows decisions that follow from the specified decision.
+func showDecisionDescendants(bd *beads.Beads, decisionID string) error {
+	// Get all decisions and build a map of predecessor -> children
+	allDecisions, err := bd.ListAllDecisions()
+	if err != nil {
+		return fmt.Errorf("failed to list decisions: %w", err)
+	}
+
+	// Build descendant map
+	children := make(map[string][]string)
+	for _, issue := range allDecisions {
+		_, fields, err := bd.GetDecisionBead(issue.ID)
+		if err != nil || fields == nil {
+			continue
+		}
+		if fields.PredecessorID != "" {
+			children[fields.PredecessorID] = append(children[fields.PredecessorID], issue.ID)
+		}
+	}
+
+	// Build tree recursively
+	root, err := buildChainTree(bd, decisionID, children)
+	if err != nil {
+		return err
+	}
+
+	if decisionChainJSON {
+		out, _ := json.MarshalIndent(root, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	}
+
+	// Pretty print tree
+	fmt.Printf("📋 Decision Descendants\n\n")
+	printChainTree(root, "", true)
+
+	return nil
+}
+
+// buildChainTree builds a tree of decisions from the given root.
+func buildChainTree(bd *beads.Beads, rootID string, children map[string][]string) (*chainNode, error) {
+	issue, fields, err := bd.GetDecisionBead(rootID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load decision %s: %w", rootID, err)
+	}
+	if issue == nil || fields == nil {
+		return nil, fmt.Errorf("decision not found: %s", rootID)
+	}
+
+	node := &chainNode{
+		ID:          issue.ID,
+		Question:    fields.Question,
+		ChosenIndex: fields.ChosenIndex,
+		Urgency:     fields.Urgency,
+		RequestedBy: fields.RequestedBy,
+		RequestedAt: fields.RequestedAt,
+		ResolvedAt:  fields.ResolvedAt,
+		Predecessor: fields.PredecessorID,
+	}
+
+	if fields.ChosenIndex > 0 && fields.ChosenIndex <= len(fields.Options) {
+		node.ChosenLabel = fields.Options[fields.ChosenIndex-1].Label
+	}
+
+	// Add children
+	for _, childID := range children[rootID] {
+		child, err := buildChainTree(bd, childID, children)
+		if err != nil {
+			continue // Skip children that can't be loaded
+		}
+		node.Children = append(node.Children, child)
+	}
+
+	return node, nil
+}
+
+// printChainTree prints a decision tree with ASCII art.
+func printChainTree(node *chainNode, prefix string, isLast bool) {
+	connector := "├─"
+	if isLast {
+		connector = "└─"
+	}
+	if prefix == "" {
+		connector = "┌─" // Root node
+	}
+
+	status := "PENDING"
+	if node.ChosenIndex > 0 {
+		status = "RESOLVED"
+	}
+
+	emoji := urgencyEmoji(node.Urgency)
+	slug := util.GenerateDecisionSlug(node.ID, node.Question)
+	fmt.Printf("%s%s %s %s [%s]\n", prefix, connector, emoji, slug, status)
+	fmt.Printf("%s   %s\n", prefix, truncateString(node.Question, 60))
+
+	if node.ChosenLabel != "" {
+		fmt.Printf("%s   → Chose: %s\n", prefix, node.ChosenLabel)
+	}
+
+	childPrefix := prefix
+	if prefix != "" {
+		if isLast {
+			childPrefix += "   "
+		} else {
+			childPrefix += "│  "
+		}
+	}
+
+	for i, child := range node.Children {
+		if i > 0 || prefix != "" {
+			fmt.Printf("%s │\n", childPrefix)
+		}
+		printChainTree(child, childPrefix, i == len(node.Children)-1)
+	}
+}
+
 // --- Decision Chaining Validation ---
 
 // validateSuccessorSchema validates that the current decision's context conforms

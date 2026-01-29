@@ -291,6 +291,26 @@ Examples:
 	SilenceErrors: true, // Suppress "Error: exit 1" message
 }
 
+var decisionChainCmd = &cobra.Command{
+	Use:   "chain <decision-id>",
+	Short: "Show decision chain ancestry",
+	Long: `Display the chain of decisions leading to a specific decision.
+
+Follows predecessor links to show the full decision tree that led
+to the specified decision. Useful for understanding context and
+how a sequence of decisions evolved.
+
+FLAGS:
+  --descendants   Show decisions that follow from this one (children)
+  --json          Output as JSON
+
+Examples:
+  gt decision chain hq-dec-abc       # Show ancestors (root to this decision)
+  gt decision chain hq-dec-abc --descendants  # Show descendants`,
+	Args: cobra.ExactArgs(1),
+	RunE: runDecisionChain,
+}
+
 // Watch-specific flags
 var decisionWatchUrgentOnly bool
 var decisionWatchNotify bool
@@ -318,6 +338,10 @@ var decisionCheckIdentity string
 
 // Request validation flags
 var decisionNoFileCheck bool
+
+// Chain-specific flags
+var decisionChainDescendants bool
+var decisionChainJSON bool
 
 func init() {
 	// Request subcommand flags
@@ -382,6 +406,10 @@ func init() {
 	decisionCheckCmd.Flags().StringVar(&decisionCheckIdentity, "identity", "", "Explicit identity for decisions (e.g., gastown/crew/joe)")
 	decisionCheckCmd.Flags().StringVar(&decisionCheckIdentity, "address", "", "Alias for --identity")
 
+	// Chain flags
+	decisionChainCmd.Flags().BoolVar(&decisionChainDescendants, "descendants", false, "Show decisions that follow from this one")
+	decisionChainCmd.Flags().BoolVar(&decisionChainJSON, "json", false, "Output as JSON")
+
 	// Add subcommands
 	decisionCmd.AddCommand(decisionRequestCmd)
 	decisionCmd.AddCommand(decisionListCmd)
@@ -396,6 +424,7 @@ func init() {
 	decisionCmd.AddCommand(decisionTurnCheckCmd)
 	decisionCmd.AddCommand(decisionCancelCmd)
 	decisionCmd.AddCommand(decisionCheckCmd)
+	decisionCmd.AddCommand(decisionChainCmd)
 
 	rootCmd.AddCommand(decisionCmd)
 }
