@@ -46,6 +46,17 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid urgency '%s': must be high, medium, or low", decisionUrgency)
 	}
 
+	// Validate context is valid JSON if provided
+	if decisionContext != "" {
+		var contextJSON json.RawMessage
+		if err := json.Unmarshal([]byte(decisionContext), &contextJSON); err != nil {
+			return fmt.Errorf("--context must be valid JSON: %w\n\nExample:\n  --context '{\"issue\": \"gt-abc123\", \"analysis\": \"Found bug in parser\"}'\n\nYour input was:\n  %s", err, truncateString(decisionContext, 100))
+		}
+		// Re-serialize for canonical formatting (optional but ensures valid JSON is stored)
+		canonicalJSON, _ := json.Marshal(contextJSON)
+		decisionContext = string(canonicalJSON)
+	}
+
 	// Validate recommend index
 	if decisionRecommend < 0 || decisionRecommend > len(decisionOptions) {
 		return fmt.Errorf("--recommend must be between 1 and %d", len(decisionOptions))

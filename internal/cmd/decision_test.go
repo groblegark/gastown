@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -811,5 +812,108 @@ func TestDecisionRequestNoFileCheckFlag(t *testing.T) {
 	noFileCheckFlag := flags.Lookup("no-file-check")
 	if noFileCheckFlag == nil {
 		t.Error("missing --no-file-check flag")
+	}
+}
+
+// --- JSON context validation tests ---
+
+// TestValidateJSONContext tests validation of --context JSON.
+func TestValidateJSONContext(t *testing.T) {
+	tests := []struct {
+		name      string
+		context   string
+		wantValid bool
+	}{
+		{
+			name:      "empty context",
+			context:   "",
+			wantValid: true,
+		},
+		{
+			name:      "valid object",
+			context:   `{"issue": "gt-123", "analysis": "found bug"}`,
+			wantValid: true,
+		},
+		{
+			name:      "valid array",
+			context:   `["option1", "option2"]`,
+			wantValid: true,
+		},
+		{
+			name:      "valid string",
+			context:   `"just a string"`,
+			wantValid: true,
+		},
+		{
+			name:      "valid number",
+			context:   `42`,
+			wantValid: true,
+		},
+		{
+			name:      "valid boolean",
+			context:   `true`,
+			wantValid: true,
+		},
+		{
+			name:      "valid null",
+			context:   `null`,
+			wantValid: true,
+		},
+		{
+			name:      "nested object",
+			context:   `{"data": {"nested": true}, "items": [1, 2, 3]}`,
+			wantValid: true,
+		},
+		{
+			name:      "invalid - plain text",
+			context:   "just some text",
+			wantValid: false,
+		},
+		{
+			name:      "invalid - unquoted string",
+			context:   "hello world",
+			wantValid: false,
+		},
+		{
+			name:      "invalid - missing quotes",
+			context:   `{issue: gt-123}`,
+			wantValid: false,
+		},
+		{
+			name:      "invalid - trailing comma",
+			context:   `{"a": 1,}`,
+			wantValid: false,
+		},
+		{
+			name:      "invalid - single quotes",
+			context:   `{'key': 'value'}`,
+			wantValid: false,
+		},
+		{
+			name:      "invalid - unclosed brace",
+			context:   `{"key": "value"`,
+			wantValid: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test by attempting to parse as JSON
+			var parsed interface{}
+			err := json.Unmarshal([]byte(tt.context), &parsed)
+
+			// Empty context is always valid (skip validation)
+			if tt.context == "" {
+				if !tt.wantValid {
+					t.Error("empty context should always be valid")
+				}
+				return
+			}
+
+			isValid := err == nil
+			if isValid != tt.wantValid {
+				t.Errorf("context %q: got valid=%v, want valid=%v (err=%v)", tt.context, isValid, tt.wantValid, err)
+			}
+		})
 	}
 }

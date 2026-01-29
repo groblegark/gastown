@@ -67,7 +67,7 @@ dependent work until resolved.
 FLAGS:
   --prompt      The decision to be made (required)
   --option      An option in "Label: Description" format (repeatable, 2-4 required)
-  --context     Background information or analysis
+  --context     Background context as JSON object (e.g., '{"issue": "gt-123", "analysis": "..."}')
   --recommend   Mark option N as recommended (1-indexed)
   --blocks      Bead ID that's blocked by this decision
   --parent      Parent bead for hierarchy
@@ -322,7 +322,7 @@ func init() {
 	// Request subcommand flags
 	// Primary flags
 	decisionRequestCmd.Flags().StringVarP(&decisionPrompt, "prompt", "p", "", "The decision to be made (required)")
-	decisionRequestCmd.Flags().StringVarP(&decisionContext, "context", "c", "", "Background information or analysis")
+	decisionRequestCmd.Flags().StringVarP(&decisionContext, "context", "c", "", "Background context as JSON (e.g., '{\"issue\": \"gt-123\"}')")
 	decisionRequestCmd.Flags().StringArrayVarP(&decisionOptions, "option", "o", nil, "Option in 'Label: Description' format (repeatable)")
 	decisionRequestCmd.Flags().IntVarP(&decisionRecommend, "recommend", "r", 0, "Mark option N as recommended (1-indexed)")
 	decisionRequestCmd.Flags().StringVar(&decisionBlocks, "blocks", "", "Bead ID that this decision blocks")
