@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/slack-go/slack"
+	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 
 	"github.com/steveyegge/gastown/internal/rpcclient"
@@ -74,6 +75,12 @@ func (b *Bot) Run(ctx context.Context) error {
 		}
 	}()
 
+	// Auto-join all public channels on startup (gt-baeko)
+	if err := b.JoinAllChannels(); err != nil {
+		log.Printf("Slack: Warning: failed to auto-join channels: %v", err)
+		// Continue anyway - bot can still function in channels it's already in
+	}
+
 	// Use RunContext for graceful shutdown on SIGTERM (hq-je8tm7.1)
 	// RunContext closes the WebSocket when context is canceled, allowing
 	// systemctl restart to complete quickly instead of waiting 90s for SIGKILL.
@@ -90,6 +97,15 @@ func (b *Bot) handleEvent(evt socketmode.Event) {
 
 	case socketmode.EventTypeConnectionError:
 		log.Printf("Slack: Connection error: %v", evt.Data)
+
+	case socketmode.EventTypeEventsAPI:
+		// Handle Events API callbacks (channel_created, etc.) (gt-baeko)
+		eventsAPIEvent, ok := evt.Data.(slackevents.EventsAPIEvent)
+		if !ok {
+			return
+		}
+		b.socketMode.Ack(*evt.Request)
+		b.handleEventsAPI(eventsAPIEvent)
 
 	case socketmode.EventTypeSlashCommand:
 		cmd, ok := evt.Data.(slack.SlashCommand)
@@ -759,4 +775,86 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 		slack.MsgOptionBlocks(blocks...),
 	)
 	return err
+}
+
+// handleEventsAPI processes Events API callbacks like channel_created (gt-baeko).
+func (b *Bot) handleEventsAPI(event slackevents.EventsAPIEvent) {
+	switch event.Type {
+	case slackevents.CallbackEvent:
+		innerEvent := event.InnerEvent
+		switch ev := innerEvent.Data.(type) {
+		case *slackevents.ChannelCreatedEvent:
+			b.handleChannelCreated(ev)
+		}
+	}
+}
+
+// handleChannelCreated auto-joins newly created channels (gt-baeko).
+func (b *Bot) handleChannelCreated(event *slackevents.ChannelCreatedEvent) {
+	channelID := event.Channel.ID
+	channelName := event.Channel.Name
+
+	log.Printf("Slack: New channel created: #%s (%s), attempting to join", channelName, channelID)
+
+	_, _, _, err := b.client.JoinConversation(channelID)
+	if err != nil {
+		log.Printf("Slack: Failed to join new channel #%s: %v", channelName, err)
+		return
+	}
+
+	log.Printf("Slack: Successfully joined new channel #%s", channelName)
+}
+
+// JoinAllChannels lists all public channels and joins those the bot isn't in (gt-baeko).
+// This is called on startup to ensure the bot is present in all channels.
+func (b *Bot) JoinAllChannels() error {
+	log.Println("Slack: Auto-joining all public channels...")
+
+	var cursor string
+	joinedCount := 0
+	alreadyMemberCount := 0
+
+	for {
+		// List public channels with pagination
+		params := &slack.GetConversationsParameters{
+			Types:           []string{"public_channel"},
+			Limit:           200,
+			Cursor:          cursor,
+			ExcludeArchived: true,
+		}
+
+		channels, nextCursor, err := b.client.GetConversations(params)
+		if err != nil {
+			return fmt.Errorf("failed to list channels: %w", err)
+		}
+
+		for _, ch := range channels {
+			if ch.IsMember {
+				alreadyMemberCount++
+				continue
+			}
+
+			// Try to join the channel
+			_, _, _, err := b.client.JoinConversation(ch.ID)
+			if err != nil {
+				// Log but don't fail - some channels may have restrictions
+				log.Printf("Slack: Could not join #%s: %v", ch.Name, err)
+				continue
+			}
+
+			joinedCount++
+			if b.debug {
+				log.Printf("Slack: Joined #%s", ch.Name)
+			}
+		}
+
+		// Check for more pages
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	log.Printf("Slack: Auto-join complete: joined %d channels, already member of %d", joinedCount, alreadyMemberCount)
+	return nil
 }
