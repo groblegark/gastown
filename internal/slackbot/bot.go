@@ -649,7 +649,9 @@ func (b *Bot) handleResolveDecision(callback slack.InteractionCallback, action *
 	}
 
 	// Open modal for rationale input
-	modalRequest := b.buildResolveModal(decisionID, chosenIndex, decision.Question, optionLabel, callback.Channel.ID)
+	// Pass message timestamp so we can edit the original message on resolution
+	messageTs := callback.Message.Timestamp
+	modalRequest := b.buildResolveModal(decisionID, chosenIndex, decision.Question, optionLabel, callback.Channel.ID, messageTs)
 
 	_, err = b.client.OpenView(callback.TriggerID, modalRequest)
 	if err != nil {
@@ -659,7 +661,7 @@ func (b *Bot) handleResolveDecision(callback slack.InteractionCallback, action *
 	}
 }
 
-func (b *Bot) buildResolveModal(decisionID string, chosenIndex int, question, optionLabel, channelID string) slack.ModalViewRequest {
+func (b *Bot) buildResolveModal(decisionID string, chosenIndex int, question, optionLabel, channelID, messageTs string) slack.ModalViewRequest {
 	// Truncate question if too long for display
 	displayQuestion := question
 	if len(displayQuestion) > 200 {
@@ -672,9 +674,9 @@ func (b *Bot) buildResolveModal(decisionID string, chosenIndex int, question, op
 		metadataLabel = metadataLabel[:97] + "..."
 	}
 
-	// Private metadata to pass through to submission (format: id:index:channel:label)
+	// Private metadata to pass through to submission (format: id:index:channel:messageTs|label)
 	// Using | as separator for label since it might contain colons
-	metadata := fmt.Sprintf("%s:%d:%s|%s", decisionID, chosenIndex, channelID, metadataLabel)
+	metadata := fmt.Sprintf("%s:%d:%s:%s|%s", decisionID, chosenIndex, channelID, messageTs, metadataLabel)
 
 	return slack.ModalViewRequest{
 		Type:            slack.VTModal,
@@ -723,7 +725,7 @@ func (b *Bot) handleViewSubmission(callback slack.InteractionCallback) {
 		return
 	}
 
-	// Parse private metadata (format: "decisionID:chosenIndex:channelID|optionLabel")
+	// Parse private metadata (format: "decisionID:chosenIndex:channelID:messageTs|optionLabel")
 	metadata := callback.View.PrivateMetadata
 	labelSep := strings.LastIndex(metadata, "|")
 	optionLabel := ""
@@ -733,7 +735,7 @@ func (b *Bot) handleViewSubmission(callback slack.InteractionCallback) {
 	}
 
 	parts := strings.Split(metadata, ":")
-	if len(parts) < 3 {
+	if len(parts) < 4 {
 		log.Printf("Slack: Invalid modal metadata: %s", callback.View.PrivateMetadata)
 		return
 	}
@@ -742,6 +744,7 @@ func (b *Bot) handleViewSubmission(callback slack.InteractionCallback) {
 	var chosenIndex int
 	_, _ = fmt.Sscanf(parts[1], "%d", &chosenIndex)
 	channelID := parts[2]
+	messageTs := parts[3]
 
 	// Get rationale from form
 	rationale := ""
@@ -769,8 +772,13 @@ func (b *Bot) handleViewSubmission(callback slack.InteractionCallback) {
 		return
 	}
 
-	// Post rich confirmation
-	b.postResolutionConfirmation(channelID, callback.User.ID, resolved.ID, optionLabel, rationale)
+	// Edit the original message to show resolved state (collapsed view)
+	if messageTs != "" {
+		b.updateMessageAsResolved(channelID, messageTs, resolved.ID, resolved.Question, optionLabel, callback.User.ID)
+	} else {
+		// Fallback: post new message if we don't have the original timestamp
+		b.postResolutionConfirmation(channelID, callback.User.ID, resolved.ID, optionLabel, rationale)
+	}
 
 	// Post to notification channel if configured and different
 	if b.channelID != "" && b.channelID != channelID {
@@ -816,6 +824,43 @@ func (b *Bot) postErrorMessage(channelID, userID, decisionID string, err error) 
 	)
 	if err2 != nil {
 		log.Printf("Slack: Error posting error message: %v", err2)
+	}
+}
+
+// updateMessageAsResolved edits the original decision notification to show a collapsed resolved view.
+// This keeps one message per decision instead of creating a new confirmation message.
+func (b *Bot) updateMessageAsResolved(channelID, messageTs, decisionID, question, chosenOption, userID string) {
+	// Generate semantic slug for display
+	semanticSlug := util.GenerateDecisionSlug(decisionID, question)
+
+	// Truncate question for compact display
+	displayQuestion := question
+	if len(displayQuestion) > 100 {
+		displayQuestion = displayQuestion[:97] + "..."
+	}
+
+	// Build collapsed resolved view
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("✅ *%s* — Resolved\n~%s~\n\n*Choice:* %s\n*By:* <@%s>",
+					semanticSlug, displayQuestion, chosenOption, userID),
+				false, false,
+			),
+			nil, nil,
+		),
+	}
+
+	_, _, _, err := b.client.UpdateMessage(channelID, messageTs,
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		log.Printf("Slack: Failed to update message as resolved: %v", err)
+		// Fallback: post ephemeral confirmation
+		b.postEphemeral(channelID, userID,
+			fmt.Sprintf("✅ Decision resolved: %s", chosenOption))
+	} else {
+		log.Printf("Slack: Updated decision %s message to resolved state", decisionID)
 	}
 }
 
