@@ -519,7 +519,7 @@ func updateAgentHookBead(agentID, beadID, workDir, townBeadsDir string) {
 
 // ensureAgentBeadExists creates or reopens an agent bead if it doesn't exist or is closed.
 // This fixes hq-cc7214.26 where slinging fails because the agent bead isn't found.
-func ensureAgentBeadExists(bd *beads.Beads, agentID, agentBeadID, townRoot string) error {
+func ensureAgentBeadExists(bd *beads.Beads, agentID, agentBeadID, _ string) error {
 	// Parse agent ID to determine role type and rig
 	// Format: rig/role/name (e.g., gastown/crew/dolt_doctor, gastown/polecats/Toast)
 	// Or: rig/role (e.g., gastown/witness, gastown/refinery)

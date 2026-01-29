@@ -653,7 +653,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			updated, cmd := m.crewWizard.Update(msg)
 			if wizard, ok := updated.(*crewTUI.AddModel); ok {
 				m.crewWizard = wizard
-				// Check if wizard completed or was cancelled
+				// Check if wizard completed or was canceled
 				if wizard.IsDone() {
 					m.creatingCrew = false
 					m.crewWizard = nil

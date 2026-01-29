@@ -1127,7 +1127,7 @@ func isCrewPath(path, rigName string) bool {
 }
 
 // crewSessionName returns the tmux session name for a crew member.
-func crewSessionName(requestedBy, rigName string) string {
+func crewSessionName(requestedBy, _ string) string {
 	// Handle formats:
 	// - "gastown/crew/worker" -> "gt-gastown-crew-worker"
 	// - "gastown/worker" (old format) -> try crew first, then polecat

@@ -360,7 +360,7 @@ func (b *Bot) handleResolveDecision(callback slack.InteractionCallback, action *
 
 	decisionID := parts[0]
 	var chosenIndex int
-	fmt.Sscanf(parts[1], "%d", &chosenIndex)
+	_, _ = fmt.Sscanf(parts[1], "%d", &chosenIndex)
 
 	// Fetch decision details for the modal
 	ctx := context.Background()
@@ -483,7 +483,7 @@ func (b *Bot) handleViewSubmission(callback slack.InteractionCallback) {
 
 	decisionID := parts[0]
 	var chosenIndex int
-	fmt.Sscanf(parts[1], "%d", &chosenIndex)
+	_, _ = fmt.Sscanf(parts[1], "%d", &chosenIndex)
 	channelID := parts[2]
 
 	// Get rationale from form
@@ -562,7 +562,7 @@ func (b *Bot) postErrorMessage(channelID, userID, decisionID string, err error) 
 	}
 }
 
-func (b *Bot) postResolutionConfirmation(channelID, userID, decisionID, optionLabel, rationale string) {
+func (b *Bot) postResolutionConfirmation(channelID, userID, _, optionLabel, rationale string) {
 	// Truncate rationale for display
 	displayRationale := rationale
 	if len(displayRationale) > 200 {
@@ -596,7 +596,7 @@ func (b *Bot) postResolutionConfirmation(channelID, userID, decisionID, optionLa
 	}
 }
 
-func (b *Bot) postResolutionNotification(decisionID, optionLabel, userID string) {
+func (b *Bot) postResolutionNotification(_, optionLabel, userID string) {
 	blocks := []slack.Block{
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn",

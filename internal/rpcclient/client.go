@@ -133,7 +133,7 @@ func (c *Client) ListPendingDecisions(ctx context.Context) ([]Decision, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("RPC error: %s", resp.Status)
@@ -234,7 +234,7 @@ func (c *Client) IsAvailable(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	return resp.StatusCode == http.StatusOK
 }
@@ -301,7 +301,7 @@ func (c *Client) CreateDecision(ctx context.Context, req CreateDecisionRequest) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("RPC error: %s", resp.Status)
@@ -381,7 +381,7 @@ func (c *Client) ResolveDecision(ctx context.Context, decisionID string, chosenI
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("RPC error: %s", resp.Status)
@@ -438,7 +438,7 @@ func (c *Client) GetDecision(ctx context.Context, decisionID string) (*Decision,
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("RPC error: %s", resp.Status)

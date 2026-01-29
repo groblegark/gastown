@@ -223,29 +223,25 @@ func ExtractRetryAfter(output string) time.Duration {
 		matches := pattern.FindStringSubmatch(output)
 		if len(matches) > 1 {
 			var value int
-			if _, err := parseIntFromString(matches[1], &value); err == nil {
-				// Patterns 2,3,5 are minutes, others are seconds
-				if i == 2 || i == 3 || i == 5 {
-					return time.Duration(value) * time.Minute
-				}
-				return time.Duration(value) * time.Second
+			parseIntFromString(matches[1], &value)
+			// Patterns 2,3,5 are minutes, others are seconds
+			if i == 2 || i == 3 || i == 5 {
+				return time.Duration(value) * time.Minute
 			}
+			return time.Duration(value) * time.Second
 		}
 	}
 
 	return 0
 }
 
-func parseIntFromString(s string, result *int) (int, error) {
-	n, err := parseInt(s)
-	if err != nil {
-		return 0, err
-	}
+func parseIntFromString(s string, result *int) int {
+	n := parseInt(s)
 	*result = n
-	return n, nil
+	return n
 }
 
-func parseInt(s string) (int, error) {
+func parseInt(s string) int {
 	var n int
 	for _, c := range s {
 		if c < '0' || c > '9' {
@@ -253,7 +249,7 @@ func parseInt(s string) (int, error) {
 		}
 		n = n*10 + int(c-'0')
 	}
-	return n, nil
+	return n
 }
 
 // min returns the smaller of two integers.
