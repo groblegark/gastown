@@ -50,6 +50,9 @@ type decisionEvent struct {
 // Run starts listening for SSE events. Blocks until context is canceled.
 // Automatically reconnects on disconnect with exponential backoff.
 func (l *SSEListener) Run(ctx context.Context) error {
+	// Pre-populate seen map with existing pending decisions to avoid re-notifying on restart
+	l.prePopulateSeen(ctx)
+
 	backoff := time.Second
 	maxBackoff := 30 * time.Second
 
@@ -247,4 +250,25 @@ func (l *SSEListener) handleCancelledDecision(de decisionEvent) {
 	} else {
 		log.Printf("SSE: No tracked message for cancelled decision %s (may not have been posted)", de.ID)
 	}
+}
+
+// prePopulateSeen marks all existing pending decisions as seen to avoid re-notifying on restart.
+// This prevents the duplicate notification problem when gtslack restarts.
+func (l *SSEListener) prePopulateSeen(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	decisions, err := l.rpcClient.ListPendingDecisions(ctx)
+	if err != nil {
+		log.Printf("SSE: Warning: could not pre-populate seen decisions: %v", err)
+		return
+	}
+
+	l.seenMu.Lock()
+	for _, d := range decisions {
+		l.seen[d.ID] = true
+	}
+	l.seenMu.Unlock()
+
+	log.Printf("SSE: Pre-populated %d existing pending decisions (will not re-notify)", len(decisions))
 }
