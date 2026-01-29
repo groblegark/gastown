@@ -290,7 +290,7 @@ func runDecisionList(cmd *cobra.Command, args []string) error {
 }
 
 func runDecisionShow(cmd *cobra.Command, args []string) error {
-	decisionID := args[0]
+	decisionID := util.ResolveSemanticSlug(args[0])
 
 	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {
@@ -382,7 +382,7 @@ func runDecisionShow(cmd *cobra.Command, args []string) error {
 }
 
 func runDecisionResolve(cmd *cobra.Command, args []string) error {
-	decisionID := args[0]
+	decisionID := util.ResolveSemanticSlug(args[0])
 
 	if decisionChoice < 1 {
 		return fmt.Errorf("--choice is required and must be >= 1")
@@ -684,7 +684,7 @@ func urgencyEmoji(urgency string) string {
 }
 
 func runDecisionAwait(cmd *cobra.Command, args []string) error {
-	decisionID := args[0]
+	decisionID := util.ResolveSemanticSlug(args[0])
 
 	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {
@@ -1163,7 +1163,7 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 }
 
 func runDecisionCancel(cmd *cobra.Command, args []string) error {
-	decisionID := args[0]
+	decisionID := util.ResolveSemanticSlug(args[0])
 
 	// Find workspace
 	townRoot, err := workspace.FindFromCwdOrError()

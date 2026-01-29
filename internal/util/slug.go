@@ -127,3 +127,103 @@ func GenerateSlug(title string) string {
 
 	return slug
 }
+
+// ValidTypeAbbreviations maps type abbreviations to full type names.
+// Used to validate and identify semantic slugs.
+var ValidTypeAbbreviations = map[string]string{
+	"dec":  "decision",
+	"esc":  "escalation",
+	"tsk":  "task",
+	"bug":  "bug",
+	"feat": "feature",
+	"epc":  "epic",
+	"chr":  "chore",
+	"mr":   "merge-request",
+	"mol":  "molecule",
+	"wsp":  "wisp",
+	"agt":  "agent",
+	"rol":  "role",
+	"cvy":  "convoy",
+	"evt":  "event",
+	"msg":  "message",
+}
+
+// IsSemanticSlug checks if an ID looks like a semantic slug (vs a canonical ID).
+// Semantic slugs have format: prefix-type-slug+random (e.g., gt-dec-cache_strategyabc123)
+// Canonical IDs have format: prefix-random (e.g., gt-abc123)
+func IsSemanticSlug(id string) bool {
+	parts := strings.SplitN(id, "-", 3)
+	if len(parts) != 3 {
+		return false // Not enough components for semantic slug
+	}
+
+	// Check if second component is a valid type abbreviation
+	_, isValidType := ValidTypeAbbreviations[parts[1]]
+	if !isValidType {
+		return false
+	}
+
+	// Semantic slugs have a slug component (third part) with at least 7 chars
+	// (minimum 3 for slug + minimum 4 for random)
+	if len(parts[2]) < 7 {
+		return false
+	}
+
+	return true
+}
+
+// ResolveSemanticSlug converts a semantic slug to its canonical ID.
+// If the input is already a canonical ID, it returns it unchanged.
+//
+// Examples:
+//   - "gt-dec-cache_strategyabc123" -> "gt-abc123"
+//   - "gt-esc-server_downy7m2k" -> "gt-y7m2k"
+//   - "gt-abc123" -> "gt-abc123" (already canonical)
+func ResolveSemanticSlug(id string) string {
+	if !IsSemanticSlug(id) {
+		return id // Already canonical or unrecognized format
+	}
+
+	parts := strings.SplitN(id, "-", 3)
+	if len(parts) != 3 {
+		return id
+	}
+
+	prefix := parts[0]
+	slugWithRandom := parts[2]
+
+	// Handle child segments (e.g., gt-dec-slugabc123.child_name)
+	childSuffix := ""
+	if dotIdx := strings.Index(slugWithRandom, "."); dotIdx > 0 {
+		childSuffix = slugWithRandom[dotIdx:]
+		slugWithRandom = slugWithRandom[:dotIdx]
+	}
+
+	// Extract random from end of slug (4-6 alphanumeric chars)
+	// Try lengths 6, 5, 4 to find the random component
+	for randLen := 6; randLen >= 4; randLen-- {
+		if len(slugWithRandom) >= 3+randLen {
+			potentialRandom := slugWithRandom[len(slugWithRandom)-randLen:]
+			if isAlphanumeric(potentialRandom) {
+				// Reconstruct canonical ID: prefix-random[.child]
+				return prefix + "-" + potentialRandom + childSuffix
+			}
+		}
+	}
+
+	// Could not extract random, return original
+	return id
+}
+
+// isAlphanumeric checks if a string contains only lowercase letters and digits.
+func isAlphanumeric(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+			return false
+		}
+	}
+	return true
+}

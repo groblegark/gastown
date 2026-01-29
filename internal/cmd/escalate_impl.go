@@ -216,7 +216,7 @@ func runEscalateList(cmd *cobra.Command, args []string) error {
 }
 
 func runEscalateAck(cmd *cobra.Command, args []string) error {
-	escalationID := args[0]
+	escalationID := util.ResolveSemanticSlug(args[0])
 
 	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {
@@ -245,7 +245,7 @@ func runEscalateAck(cmd *cobra.Command, args []string) error {
 }
 
 func runEscalateClose(cmd *cobra.Command, args []string) error {
-	escalationID := args[0]
+	escalationID := util.ResolveSemanticSlug(args[0])
 
 	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {
@@ -466,7 +466,7 @@ func formatReescalationMailBody(result *beads.ReescalationResult, reescalatedBy 
 }
 
 func runEscalateShow(cmd *cobra.Command, args []string) error {
-	escalationID := args[0]
+	escalationID := util.ResolveSemanticSlug(args[0])
 
 	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {
