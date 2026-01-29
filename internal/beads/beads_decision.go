@@ -278,9 +278,10 @@ func (b *Beads) CreateBdDecision(fields *DecisionFields) (*Issue, error) {
 		"--no-daemon", // Use direct mode to avoid daemon issues
 	}
 
-	// Add optional context (currently bd decision create doesn't support --context,
-	// but we can add it to the prompt as a workaround)
-	// TODO: Add --context flag to bd decision create in beads repo
+	// Add context if provided
+	if fields.Context != "" {
+		args = append(args, "--context="+fields.Context)
+	}
 
 	// Add requested-by for wake notifications
 	if fields.RequestedBy != "" {
