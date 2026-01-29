@@ -1378,11 +1378,24 @@ func containsString(slice []string, s string) bool {
 // --- Fail-then-File validation ---
 
 // failureKeywords are patterns that indicate a failure context in the prompt or context.
+// These are matched as whole words (with word boundaries) to avoid false positives like
+// "delivered" matching "error" or "fail" matching "failure-mode" in design discussions.
 var failureKeywords = []string{
-	"error", "fail", "bug", "broke", "broken", "issue", "problem",
-	"stuck", "crash", "exception", "panic", "fatal", "cannot", "unable",
-	"doesn't work", "does not work", "not working", "won't", "will not",
+	"error", "errors", "failed", "failing", "failure", "bug", "bugs",
+	"broke", "broken", "stuck", "crash", "crashed", "crashing",
+	"exception", "panic", "panicked", "fatal",
+	"cannot", "unable", "doesn't work", "does not work", "not working",
+	"won't work", "will not work", "stopped working",
 	"400", "401", "403", "404", "500", "502", "503", "504", // HTTP error codes
+}
+
+// failureExclusions are patterns that indicate a false positive (design discussion, not actual failure).
+var failureExclusions = []string{
+	"fail vs", "vs fail", "fail or", "or fail",
+	"failure mode", "failure context", "failure detection",
+	"hard fail", "soft fail", "fail-then-file", "fail then file",
+	"on failure", "on error", "error handling", "error mode",
+	"validation", "strictness", "blocking vs", "vs blocking",
 }
 
 // fileKeywords are patterns that indicate an option mentions filing/tracking.
@@ -1392,14 +1405,59 @@ var fileKeywords = []string{
 }
 
 // hasFailureContext checks if the prompt or context contains failure indicators.
+// It uses word boundary matching to avoid false positives on partial matches
+// (e.g., "delivered" should not match "error").
 func hasFailureContext(prompt, context string) bool {
 	combined := strings.ToLower(prompt + " " + context)
+
+	// First check exclusions - if it looks like a design discussion, skip
+	for _, excl := range failureExclusions {
+		if strings.Contains(combined, excl) {
+			return false
+		}
+	}
+
+	// Check for failure keywords as whole words
 	for _, keyword := range failureKeywords {
-		if strings.Contains(combined, keyword) {
+		if containsWholeWord(combined, keyword) {
 			return true
 		}
 	}
 	return false
+}
+
+// containsWholeWord checks if text contains keyword as a complete word.
+func containsWholeWord(text, keyword string) bool {
+	idx := strings.Index(text, keyword)
+	for idx != -1 {
+		// Check character before
+		beforeOK := idx == 0 || !isWordChar(text[idx-1])
+		// Check character after
+		endIdx := idx + len(keyword)
+		afterOK := endIdx == len(text) || !isWordChar(text[endIdx])
+
+		if beforeOK && afterOK {
+			return true
+		}
+
+		// Search for next occurrence
+		if endIdx < len(text) {
+			nextIdx := strings.Index(text[endIdx:], keyword)
+			if nextIdx == -1 {
+				break
+			}
+			idx = endIdx + nextIdx
+		} else {
+			break
+		}
+	}
+	return false
+}
+
+// isWordChar returns true if c is alphanumeric or underscore.
+func isWordChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+		(c >= '0' && c <= '9') || c == '_'
 }
 
 // hasFileOption checks if any option mentions filing/tracking bugs.
