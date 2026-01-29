@@ -100,6 +100,11 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 	// Empty values would override tmux session environment
 	if cfg.TownRoot != "" {
 		env["GT_ROOT"] = cfg.TownRoot
+		// Prevent git from walking up to umbrella repo when running in rig worktrees.
+		// This stops accidental commits to the umbrella when running git commands from
+		// intermediate directories (e.g., polecats/) that don't have their own .git.
+		// See: bd-tsk-implement_git_context_protection_both
+		env["GIT_CEILING_DIRECTORIES"] = cfg.TownRoot
 	}
 
 	// Set BEADS_AGENT_NAME for polecat/crew (uses same format as BD_ACTOR)
