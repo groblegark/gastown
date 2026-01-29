@@ -1,353 +1,329 @@
 # Semantic Issue ID Format Specification
 
-**Status:** Draft v0.2
+**Status:** Draft v0.3
 **Author:** gastown/crew/semantic_id_design
 **Date:** 2026-01-29
 **Parent Epic:** gt-zfyl8
 
 ## Overview
 
-This document specifies the format for semantic issue IDs in the beads system.
-Semantic IDs replace random identifiers (e.g., `gt-3q6.9`) with human-readable
-identifiers that include type information and a semantic slug derived from the
-title (e.g., `gt-epc-semantic_ids7x9k`).
+This document specifies semantic "slugs" as human-friendly aliases for beads.
+Rather than replacing random IDs, slugs provide an alternative lookup mechanism
+while preserving the canonical random ID for stability.
 
-## Design Goals
+## Design Philosophy
 
-1. **Readability**: IDs should convey meaning at a glance
-2. **Type-aware**: Bead type visible in the ID itself
-3. **Memorability**: Easy to remember and discuss verbally
-4. **Shell-friendly**: No quoting or escaping required
-5. **Collision-proof**: Random suffix guarantees uniqueness
-6. **Backward-compatible**: Coexist with existing random IDs
+### Slug as Alias, Not Replacement
+
+```
+Canonical ID:  gt-zfyl8        ← Immutable, always works
+Slug alias:    semantic_ids    ← Human-friendly, can be renamed
+```
+
+This mirrors common patterns:
+- **Git**: SHA `a1b2c3d` vs branch `main`
+- **Web**: `/posts/12345` vs `/posts/my-great-article`
+- **DNS**: IP `192.168.1.1` vs hostname `server.local`
+
+### Benefits
+
+1. **No breaking changes**: Random IDs remain canonical
+2. **Rename-safe**: Slugs can be updated without breaking references
+3. **Optional**: Beads can exist without slugs (backward compat)
+4. **Multiple lookups**: Same bead accessible by ID or slug
+5. **Simpler implementation**: Just add a field + lookup index
 
 ## Format Specification
 
-### Full ID Structure
+### Slug Structure
 
 ```
-<prefix>-<type>-<slug><suffix>
+<type>-<descriptive_slug>
 ```
 
 **Components:**
-- `<prefix>`: 2-3 character rig identifier (e.g., `gt`, `bd`, `hq`)
-- `-`: Separator
 - `<type>`: 3-character type code (e.g., `epc`, `bug`, `tsk`)
 - `-`: Separator
-- `<slug>`: Human-readable identifier derived from title (underscores for spaces)
-- `<suffix>`: 4-character random alphanumeric for uniqueness
+- `<descriptive_slug>`: Human-readable name using underscores
+
+### Full Reference (with rig prefix)
+
+When referencing across rigs, include the prefix:
+```
+gt:epc-semantic_ids     # Full reference
+epc-semantic_ids        # Within same rig (prefix optional)
+```
 
 ### Type Codes
 
-| Bead Type | Code | Example |
-|-----------|------|---------|
-| epic | `epc` | `gt-epc-semantic_ids7x9k` |
-| bug | `bug` | `gt-bug-login_timeout3f2a` |
-| task | `tsk` | `gt-tsk-add_validation9b1c` |
-| feature | `ftr` | `gt-ftr-dark_mode4d7e` |
-| decision | `dec` | `gt-dec-cache_strategy2m4n` |
-| convoy | `cnv` | `gt-cnv-fix_auth_flow8p3q` |
-| molecule | `mol` | `gt-mol-deacon_patrol5r6s` |
-| wisp | `wsp` | `gt-wsp-check_inbox7t8u` |
-| agent | `agt` | `hq-agt-gastown_witness` |
-| role | `rol` | `hq-rol-polecat_config` |
-| mr | `mrq` | `gt-mrq-feature_branch2v3w` |
+| Bead Type | Code | Example Slug |
+|-----------|------|--------------|
+| epic | `epc` | `epc-semantic_ids` |
+| bug | `bug` | `bug-login_timeout` |
+| task | `tsk` | `tsk-add_validation` |
+| feature | `ftr` | `ftr-dark_mode` |
+| decision | `dec` | `dec-cache_strategy` |
+| convoy | `cnv` | `cnv-fix_auth_flow` |
+| molecule | `mol` | `mol-deacon_patrol` |
+| wisp | `wsp` | `wsp-check_inbox` |
+| agent | `agt` | `agt-gastown_witness` |
+| role | `rol` | `rol-polecat` |
+| mr | `mrq` | `mrq-feature_branch` |
 
 ### Examples
 
-| Title | Type | Semantic ID |
-|-------|------|-------------|
-| Semantic Issue IDs | epic | `gt-epc-semantic_ids7x9k` |
-| Fix login timeout | bug | `gt-bug-fix_login_timeout3f2a` |
-| Add user authentication | task | `gt-tsk-add_user_auth9b1c` |
-| Database migration failure | bug | `bd-bug-db_migration_fail4d7e` |
-| Which cache strategy? | decision | `gt-dec-cache_strategy2m4n` |
+| Random ID | Slug | Title |
+|-----------|------|-------|
+| `gt-zfyl8` | `epc-semantic_ids` | Semantic Issue IDs |
+| `gt-zfyl8.1` | `epc-semantic_ids.1` | Design: ID format specification |
+| `gt-3q6a9` | `bug-login_timeout` | Fix login timeout |
+| `hq-abc123` | `dec-cache_strategy` | Which cache strategy? |
 
-### Hierarchical IDs (Subtasks)
+## Hierarchical Slugs
 
-Subtasks use dot notation appended to parent ID:
+### Dotted Notation (Current System)
 
+Today's hierarchy uses numeric dot suffixes:
+- `gt-zfyl8` - Parent (epic)
+- `gt-zfyl8.1` - First child (task)
+- `gt-zfyl8.2` - Second child
+
+### Slug Hierarchy Options
+
+**Option A: Numeric suffix (mirrors IDs)**
 ```
-<parent_id>.<ordinal>
-```
-
-**Examples:**
-- `gt-epc-semantic_ids7x9k.1` - First subtask of the epic
-- `gt-epc-semantic_ids7x9k.2` - Second subtask
-- `gt-tsk-add_auth9b1c.1` - Subtask of a task
-
-## Character Set
-
-### Allowed Characters by Segment
-
-| Segment | Characters | Notes |
-|---------|------------|-------|
-| Prefix | `a-z` | 2-3 lowercase letters |
-| Type | `a-z` | Exactly 3 lowercase letters |
-| Slug | `a-z`, `0-9`, `_` | Underscore as word separator |
-| Suffix | `a-z`, `0-9` | 4-char random alphanumeric |
-| Separators | `-`, `.` | Hyphen between segments, dot for hierarchy |
-
-### Why Two Hyphens?
-
-The format uses hyphens to separate prefix, type, and slug+suffix:
-
-```
-gt-epc-semantic_ids7x9k
-│  │   └─ slug + suffix (underscore-separated words)
-│  └─ type code
-└─ prefix
+epc-semantic_ids      → gt-zfyl8
+epc-semantic_ids.1    → gt-zfyl8.1
+epc-semantic_ids.2    → gt-zfyl8.2
 ```
 
-**Parsing is unambiguous:**
-- Split on `-` gives exactly 3 parts: `[prefix, type, slug+suffix]`
-- Underscores only appear within the slug
-- Suffix is always last 4 chars of the third segment
-
-**Shell examples:**
-```bash
-# Clear structure, easy to parse
-bd show gt-epc-semantic_ids7x9k
-gt sling gt-bug-fix_login3f2a
-
-# Tab completion works on type
-bd list --type=bug  # or filter by gt-bug-*
+**Option B: Named children (more semantic)**
+```
+epc-semantic_ids                → gt-zfyl8
+epc-semantic_ids/format_spec    → gt-zfyl8.1
+epc-semantic_ids/validation     → gt-zfyl8.8
 ```
 
-## Length Constraints
+**Option C: Hybrid (numbered + optional names)**
+```
+epc-semantic_ids.1              → gt-zfyl8.1
+epc-semantic_ids.1:format_spec  → gt-zfyl8.1 (with alias)
+```
 
-### Segment Lengths
+**Recommendation:** Start with **Option A** (numeric suffix) for simplicity.
+Named children (Option B) can be added later as an enhancement.
 
-| Segment | Min | Max | Notes |
-|---------|-----|-----|-------|
-| Prefix | 2 | 3 | Rig identifier |
-| Type | 3 | 3 | Fixed-length type code |
-| Slug | 3 | 40 | Human-readable portion |
-| Suffix | 4 | 4 | Random uniqueness |
+## Slug Rules
 
-### Full ID Length
+### Character Set
+
+| Character | Allowed | Notes |
+|-----------|---------|-------|
+| `a-z` | Yes | Lowercase letters |
+| `0-9` | Yes | Digits (not at start of descriptive part) |
+| `_` | Yes | Word separator within descriptive part |
+| `-` | Yes | Type-slug separator (exactly one) |
+| `.` | Yes | Hierarchy separator |
+| `:` | Reserved | Future: child naming |
+| `/` | Reserved | Future: path-style hierarchy |
+
+### Length Constraints
 
 | Component | Min | Max |
 |-----------|-----|-----|
-| Prefix | 2 | 3 |
-| Hyphen | 1 | 1 |
-| Type | 3 | 3 |
-| Hyphen | 1 | 1 |
-| Slug | 3 | 40 |
-| Suffix | 4 | 4 |
-| **Total** | **14** | **52** |
+| Type code | 3 | 3 |
+| Descriptive slug | 3 | 40 |
+| **Total** | **7** | **44** |
 
-### Truncation Rules
-
-When auto-generating from long titles:
-1. Truncate slug at word boundary when possible
-2. Maximum 40 characters for slug portion
-3. Never truncate to less than 3 characters
-4. Remove trailing underscores after truncation
-5. Append 4-char random suffix after truncation
-
-**Example:**
-```
-Title: "Implement comprehensive user authentication with OAuth2 and JWT support"
-Slug:  "impl_user_auth_oauth2_jwt"  (truncated at word boundary)
-Full:  "gt-tsk-impl_user_auth_oauth2_jwt8k3m"
-```
-
-## Random Suffix
-
-### Purpose
-
-The 4-character random suffix guarantees uniqueness even when titles collide:
-
-| Title | Generated ID |
-|-------|--------------|
-| Fix login bug | `gt-bug-fix_login_bug3f2a` |
-| Fix login bug | `gt-bug-fix_login_bug7x9k` |
-| Fix login bug | `gt-bug-fix_login_bug2m4n` |
-
-### Generation
-
-- Characters: `[a-z0-9]` (36 possible per position)
-- Length: 4 characters
-- Combinations: 36^4 = 1,679,616 unique suffixes
-- Collision probability at 10,000 issues: < 0.003%
-
-### Suffix Placement
-
-Suffix is appended directly to slug without separator:
-
-```
-gt-bug-fix_login3f2a
-           └────┴─── suffix (4 chars)
-```
-
-This keeps IDs compact while maintaining readability.
-
-## Validation Rules
-
-### Regex Pattern (Full ID)
+### Validation Regex
 
 ```regex
-^[a-z]{2,3}-(epc|bug|tsk|ftr|dec|cnv|mol|wsp|agt|rol|mrq)-[a-z][a-z0-9_]{2,39}[a-z0-9]{4}(\.\d+)*$
+^(epc|bug|tsk|ftr|dec|cnv|mol|wsp|agt|rol|mrq)-[a-z][a-z0-9_]{2,39}(\.\d+)*$
 ```
 
-**Breakdown:**
-- `^[a-z]{2,3}` - 2-3 letter prefix
-- `-` - Literal hyphen
-- `(epc|bug|tsk|ftr|dec|cnv|mol|wsp|agt|rol|mrq)` - Type code enum
-- `-` - Literal hyphen
-- `[a-z][a-z0-9_]{2,39}` - Slug: starts with letter, 3-40 chars
-- `[a-z0-9]{4}` - Random suffix: exactly 4 alphanumeric
-- `(\.\d+)*` - Optional hierarchy suffixes (`.1`, `.2`, etc.)
+### Normalization
 
-### Validation Examples
+| Input | Normalized | Rule |
+|-------|-----------|------|
+| `Fix LOGIN Bug` | `fix_login_bug` | Lowercase, spaces→underscore |
+| `Add user auth` | `add_user_auth` | Spaces→underscore |
+| `123-bug` | `n123_bug` | Prefix numbers with 'n' |
+| `fix--bug` | `fix_bug` | Collapse multiple underscores |
 
-| ID | Valid | Reason |
-|----|-------|--------|
-| `gt-epc-semantic_ids7x9k` | ✓ | Standard semantic ID |
-| `gt-bug-fix_login3f2a` | ✓ | Bug with short slug |
-| `gt-tsk-a7x9` | ✗ | Slug too short (min 3 before suffix) |
-| `gt-xxx-test1234` | ✗ | Invalid type code |
-| `gt-epc-Fix_Login7x9k` | ✗ | Must be lowercase |
-| `gt-bug-fix-login3f2a` | ✗ | No hyphens in slug |
-| `gt-epc-semantic_ids7x9k.1` | ✓ | Valid hierarchical ID |
-| `GT-EPC-TEST1234` | ✗ | Must be lowercase |
+## Collision Handling
 
-## Reserved Patterns
+### Within Rig: Numeric Suffix
 
-### Special Agent IDs
-
-Agent beads may omit the suffix for well-known singletons:
-
+When a slug already exists, append numeric suffix:
 ```
-hq-agt-mayor          # Town-level agent (no suffix needed)
-hq-agt-deacon         # Town-level agent
-hq-agt-gastown_witness    # Rig-level agent
+bug-login_timeout      # First
+bug-login_timeout_2    # Second with same title
+bug-login_timeout_3    # Third
 ```
 
-### Role Beads
+### Cross-Rig: Prefix Required
 
-Role configuration beads use consistent naming:
+Slugs are unique within a rig. Cross-rig references need prefix:
+```
+gt:bug-login_timeout   # gastown rig
+bd:bug-login_timeout   # beads rig (different bead)
+```
+
+## Data Model
+
+### Bead Schema Addition
+
+```sql
+ALTER TABLE issues ADD COLUMN slug TEXT;
+CREATE UNIQUE INDEX idx_issues_slug ON issues(slug) WHERE slug IS NOT NULL;
+```
+
+### Lookup Priority
+
+1. Try exact ID match: `gt-zfyl8`
+2. Try slug match: `epc-semantic_ids` → resolves to `gt-zfyl8`
+3. Error if not found
+
+### CLI Usage
+
+```bash
+# Both work identically
+bd show gt-zfyl8
+bd show epc-semantic_ids
+
+# Set/update slug
+bd slug gt-zfyl8 epc-semantic_ids
+
+# Remove slug
+bd slug gt-zfyl8 --clear
+
+# List beads with slugs
+bd list --with-slugs
+```
+
+## Auto-Generation
+
+### When Creating Beads
+
+```bash
+# Auto-generate slug from title
+bd create -t bug "Fix login timeout"
+# → ID: gt-abc123
+# → Slug: bug-fix_login_timeout (auto-generated)
+
+# Explicit slug
+bd create -t bug "Fix login timeout" --slug bug-auth_fix
+# → ID: gt-abc123
+# → Slug: bug-auth_fix (user-specified)
+
+# No slug (opt-out)
+bd create -t bug "Fix login timeout" --no-slug
+# → ID: gt-abc123
+# → Slug: (none)
+```
+
+### Algorithm
 
 ```
-hq-rol-polecat        # Polecat role config
-hq-rol-crew           # Crew role config
+function generateSlug(type, title):
+    1. typeCode = getTypeCode(type)
+    2. slug = lowercase(title)
+    3. slug = replaceAll(slug, /[^a-z0-9]+/, "_")
+    4. slug = collapseConsecutive(slug, "_")
+    5. slug = trim(slug, "_")
+    6. if startsWithDigit(slug): slug = "n" + slug
+    7. if len(slug) > 40: slug = truncateAtWordBoundary(slug, 40)
+    8. if len(slug) < 3: slug = padRight(slug, "x", 3)
+    9. base = typeCode + "-" + slug
+    10. if exists(base): base = appendNumericSuffix(base)
+    11. return base
 ```
 
 ## Backward Compatibility
 
-### Coexistence with Random IDs
+### Random IDs Remain Canonical
 
-The system must support both ID types indefinitely:
+- All existing IDs continue to work unchanged
+- Slugs are purely additive
+- Internal references use IDs, not slugs
+- Slugs are for human convenience only
 
-| Pattern | Type | Example |
-|---------|------|---------|
-| `prefix-[a-z0-9]{4,7}` | Random (legacy) | `gt-3q6a9`, `bd-xyz123` |
-| `prefix-type-slug+suffix` | Semantic (new) | `gt-epc-semantic_ids7x9k` |
+### Migration
 
-### Detection Heuristic
+No migration required. Slugs are:
+1. Optional for existing beads
+2. Auto-generated for new beads (can be disabled)
+3. Can be added to old beads retroactively
 
-```go
-func IsSemanticID(id string) bool {
-    parts := strings.Split(id, "-")
-    if len(parts) < 3 {
-        return false  // Legacy format: prefix-random
-    }
-    // Semantic format has 3 parts: prefix-type-slug
-    return isValidTypeCode(parts[1])
-}
-```
+## Implementation Phases
 
-### Migration Path
+### Phase 1: Core (MVP)
+- [ ] Add `slug` column to issues table
+- [ ] Implement slug validation
+- [ ] Add `bd slug` command
+- [ ] Lookup by slug in `bd show`
 
-1. **Phase 1**: Accept both ID types, generate random by default
-2. **Phase 2**: Generate semantic IDs for new issues
-3. **Phase 3**: Optional migration tool to rename legacy IDs
+### Phase 2: Auto-Generation
+- [ ] Auto-generate slug on `bd create`
+- [ ] `--slug` and `--no-slug` flags
+- [ ] Collision handling with numeric suffix
 
-## Implementation Notes
+### Phase 3: Hierarchy
+- [ ] Support dotted slugs for children
+- [ ] Inherit parent slug prefix
 
-### ID Generation Algorithm
-
-```
-function generateSemanticID(prefix, type, title):
-    1. typeCode = getTypeCode(type)  # epic→epc, bug→bug, etc.
-    2. slug = lowercase(title)
-    3. slug = transliterate(slug)     # ä→a, ö→o
-    4. slug = replaceAll(slug, /[^a-z0-9]+/, "_")
-    5. slug = collapseConsecutive(slug, "_")
-    6. slug = trim(slug, "_")
-    7. if startsWithDigit(slug): slug = "n" + slug
-    8. if len(slug) > 40: slug = truncateAtWordBoundary(slug, 40)
-    9. if len(slug) < 3: slug = padRight(slug, "x", 3)
-    10. suffix = randomAlphanumeric(4)
-    11. return prefix + "-" + typeCode + "-" + slug + suffix
-```
-
-### Parsing Algorithm
-
-```
-function parseSemanticID(id):
-    parts = split(id, "-")
-    if len(parts) != 3: return error("invalid format")
-
-    prefix = parts[0]
-    typeCode = parts[1]
-    slugWithSuffix = parts[2]
-
-    # Handle hierarchy suffix
-    if contains(slugWithSuffix, "."):
-        mainPart, hierarchy = splitFirst(slugWithSuffix, ".")
-        slugWithSuffix = mainPart
-
-    # Extract random suffix (last 4 chars)
-    if len(slugWithSuffix) < 7:  # min: 3 slug + 4 suffix
-        return error("slug too short")
-
-    slug = slugWithSuffix[:-4]
-    suffix = slugWithSuffix[-4:]
-
-    return {prefix, typeCode, slug, suffix, hierarchy}
-```
-
-### Storage Considerations
-
-- Index on full ID for lookups
-- Index on `(prefix, typeCode)` for type-filtered queries
-- Suffix uniqueness enforced at creation time
+### Phase 4: Enhancements (Future)
+- [ ] Named children (`epc-semantic_ids/format_spec`)
+- [ ] Slug aliases (multiple slugs → same bead)
+- [ ] Slug history/redirects
 
 ## Test Cases
 
-### Valid IDs
+### Valid Slugs
 
 ```
-gt-epc-semantic_ids7x9k
-gt-bug-fix_login_timeout3f2a
-gt-tsk-add_user_auth9b1c
-bd-bug-db_migration4d7e
-hq-dec-cache_strategy2m4n
-gt-cnv-fix_auth_flow8p3q
-gt-mol-deacon_patrol5r6s
-gt-epc-semantic_ids7x9k.1
-gt-epc-semantic_ids7x9k.2
-hq-agt-mayor
-hq-rol-polecat
+epc-semantic_ids
+bug-fix_login_timeout
+tsk-add_user_auth
+dec-cache_strategy
+epc-semantic_ids.1
+epc-semantic_ids.2
+bug-login_timeout_2
 ```
 
-### Invalid IDs
+### Invalid Slugs
 
 ```
-gt-semantic_ids7x9k       # Missing type code
-gt-epc-ab12               # Slug too short (need 3+4)
-gt-xxx-test1234           # Invalid type code
-gt-epc-Fix_Login7x9k      # Uppercase not allowed
-gt-bug-fix-login3f2a      # Hyphen in slug
-gt-epc-test               # Missing random suffix
-GT-EPC-TEST1234           # Uppercase prefix/type
+semantic_ids           # Missing type code
+epc-ab                 # Too short (min 3 chars)
+epc-Fix_Login          # Uppercase
+bug-fix-login          # Hyphen in descriptive part
+EPC-test               # Uppercase type
 ```
+
+## Open Questions
+
+### Resolved
+
+1. **Q: Replace IDs or alias?**
+   A: **Alias**. Slugs are lookup helpers, IDs remain canonical.
+
+2. **Q: Hierarchy notation?**
+   A: Dotted numeric for now (`.1`, `.2`). Named children deferred.
+
+3. **Q: Auto-generate or manual?**
+   A: Auto-generate by default, with opt-out.
+
+### Deferred
+
+1. Named child slugs (`epc-semantic_ids/format_spec`)
+2. Slug aliases (multiple slugs → one bead)
+3. Slug redirects (old slug → new slug)
 
 ## Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 0.1 | 2026-01-29 | Initial draft with single-hyphen format |
-| 0.2 | 2026-01-29 | **Breaking**: New format `prefix-type-slug+suffix` with embedded type code and random suffix for collision resistance |
+| 0.1 | 2026-01-29 | Initial draft: single-hyphen replacement format |
+| 0.2 | 2026-01-29 | Added type code and random suffix |
+| 0.3 | 2026-01-29 | **Pivot**: Slug as alias, not replacement. Random IDs remain canonical. |
