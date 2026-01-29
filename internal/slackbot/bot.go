@@ -13,6 +13,7 @@ import (
 	"github.com/slack-go/slack/socketmode"
 
 	"github.com/steveyegge/gastown/internal/rpcclient"
+	slackrouter "github.com/steveyegge/gastown/internal/slack"
 	"github.com/steveyegge/gastown/internal/util"
 )
 
@@ -21,17 +22,19 @@ type Bot struct {
 	client      *slack.Client
 	socketMode  *socketmode.Client
 	rpcClient   *rpcclient.Client
-	channelID   string // Channel to post decision notifications
+	channelID   string // Default channel to post decision notifications
+	router      *slackrouter.Router // Channel router for per-agent routing
 	debug       bool
 }
 
 // Config holds configuration for the Slack bot.
 type Config struct {
-	BotToken    string // xoxb-... Slack bot token
-	AppToken    string // xapp-... Slack app-level token (for Socket Mode)
-	RPCEndpoint string // gtmobile RPC server URL
-	ChannelID   string // Channel for decision notifications
-	Debug       bool
+	BotToken         string // xoxb-... Slack bot token
+	AppToken         string // xapp-... Slack app-level token (for Socket Mode)
+	RPCEndpoint      string // gtmobile RPC server URL
+	ChannelID        string // Default channel for decision notifications
+	RouterConfigPath string // Optional path to slack.json for per-agent routing
+	Debug            bool
 }
 
 // New creates a new Slack bot.
@@ -59,11 +62,32 @@ func New(cfg Config) (*Bot, error) {
 
 	rpcClient := rpcclient.NewClient(cfg.RPCEndpoint)
 
+	// Load channel router for per-agent routing
+	var router *slackrouter.Router
+	if cfg.RouterConfigPath != "" {
+		var err error
+		router, err = slackrouter.LoadRouterFromFile(cfg.RouterConfigPath)
+		if err != nil {
+			log.Printf("Slack: Warning: failed to load router from %s: %v", cfg.RouterConfigPath, err)
+		} else if router.IsEnabled() {
+			log.Printf("Slack: Channel router loaded from %s", cfg.RouterConfigPath)
+		}
+	} else {
+		// Try auto-discovery from standard locations
+		var err error
+		router, err = slackrouter.LoadRouter()
+		if err == nil && router.IsEnabled() {
+			log.Printf("Slack: Channel router auto-loaded")
+		}
+		// Silence errors for auto-discovery - config may not exist
+	}
+
 	return &Bot{
 		client:     client,
 		socketMode: socketClient,
 		rpcClient:  rpcClient,
 		channelID:  cfg.ChannelID,
+		router:     router,
 		debug:      cfg.Debug,
 	}, nil
 }
@@ -652,10 +676,29 @@ func (b *Bot) RPCClient() *rpcclient.Client {
 	return b.rpcClient
 }
 
-// NotifyResolution posts a resolution notification to the configured channel.
+// resolveChannel determines the appropriate channel for an agent.
+// Uses the router if available and enabled, otherwise falls back to default channelID.
+func (b *Bot) resolveChannel(agent string) string {
+	if b.router != nil && b.router.IsEnabled() && agent != "" {
+		result := b.router.Resolve(agent)
+		if result != nil && result.ChannelID != "" {
+			if b.debug {
+				log.Printf("Slack: Routing %s to channel %s (matched by: %s)",
+					agent, result.ChannelID, result.MatchedBy)
+			}
+			return result.ChannelID
+		}
+	}
+	return b.channelID
+}
+
+// NotifyResolution posts a resolution notification to the appropriate channel.
 // This is called by the SSE listener when a decision is resolved externally.
+// Uses the channel router to notify the same channel where the decision was originally posted.
 func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
-	if b.channelID == "" {
+	// Resolve channel based on original requesting agent
+	targetChannel := b.resolveChannel(decision.RequestedBy)
+	if targetChannel == "" {
 		return nil
 	}
 
@@ -699,7 +742,7 @@ func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
 		),
 	}
 
-	_, _, err := b.client.PostMessage(b.channelID,
+	_, _, err := b.client.PostMessage(targetChannel,
 		slack.MsgOptionBlocks(blocks...),
 	)
 	if err != nil {
@@ -709,9 +752,12 @@ func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
 	return nil
 }
 
-// NotifyNewDecision posts a new decision notification to the configured channel.
+// NotifyNewDecision posts a new decision notification to the appropriate channel.
+// Uses the channel router to determine the target channel based on the requesting agent.
 func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
-	if b.channelID == "" {
+	// Resolve channel based on agent identity
+	targetChannel := b.resolveChannel(decision.RequestedBy)
+	if targetChannel == "" {
 		return nil
 	}
 
@@ -784,7 +830,7 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 		)
 	}
 
-	_, _, err := b.client.PostMessage(b.channelID,
+	_, _, err := b.client.PostMessage(targetChannel,
 		slack.MsgOptionBlocks(blocks...),
 	)
 	return err
