@@ -1,6 +1,6 @@
 # Semantic Issue ID Format Specification
 
-**Status:** Draft v0.4
+**Status:** Draft v0.5
 **Author:** gastown/crew/semantic_id_design
 **Date:** 2026-01-29
 **Parent Epic:** gt-zfyl8
@@ -8,331 +8,218 @@
 ## Overview
 
 This document specifies semantic "slugs" as human-friendly aliases for beads.
-Rather than replacing random IDs, slugs provide an alternative lookup mechanism
-while preserving the canonical random ID for stability.
+Slugs embed the canonical ID's random component, providing both readability
+and a direct link to the underlying bead.
 
-## Design Philosophy
-
-### Slug as Alias, Not Replacement
+## Format
 
 ```
-Canonical ID:  gt-zfyl8        ← Immutable, always works
-Slug alias:    semantic_ids    ← Human-friendly, can be renamed
-```
-
-This mirrors common patterns:
-- **Git**: SHA `a1b2c3d` vs branch `main`
-- **Web**: `/posts/12345` vs `/posts/my-great-article`
-- **DNS**: IP `192.168.1.1` vs hostname `server.local`
-
-### Benefits
-
-1. **No breaking changes**: Random IDs remain canonical
-2. **Rename-safe**: Slugs can be updated without breaking references
-3. **Optional**: Beads can exist without slugs (backward compat)
-4. **Multiple lookups**: Same bead accessible by ID or slug
-5. **Simpler implementation**: Just add a field + lookup index
-
-## Format Specification
-
-### Slug Structure
-
-```
-<type>-<descriptive_slug>
+<prefix>-<type>-<title><random>.<child>.<grandchild>...
 ```
 
 **Components:**
-- `<type>`: 3-character type code (e.g., `epc`, `bug`, `tsk`)
-- `-`: Separator
-- `<descriptive_slug>`: Human-readable name using underscores
+- `<prefix>`: 2-3 char rig identifier (`gt`, `bd`, `hq`)
+- `<type>`: 3-char type code (`epc`, `bug`, `tsk`, etc.)
+- `<title>`: Slugified title (underscores for spaces)
+- `<random>`: Same random ID from canonical bead ID
+- `.<child>`: Optional child segments (title-derived, not numbered)
 
-### Full Reference (with rig prefix)
-
-When referencing across rigs, include the prefix:
-```
-gt:epc-semantic_ids     # Full reference
-epc-semantic_ids        # Within same rig (prefix optional)
-```
-
-### Type Codes
-
-| Bead Type | Code | Example Slug |
-|-----------|------|--------------|
-| epic | `epc` | `epc-semantic_ids` |
-| bug | `bug` | `bug-login_timeout` |
-| task | `tsk` | `tsk-add_validation` |
-| feature | `ftr` | `ftr-dark_mode` |
-| decision | `dec` | `dec-cache_strategy` |
-| convoy | `cnv` | `cnv-fix_auth_flow` |
-| molecule | `mol` | `mol-deacon_patrol` |
-| wisp | `wsp` | `wsp-check_inbox` |
-| agent | `agt` | `agt-gastown_witness` |
-| role | `rol` | `rol-polecat` |
-| mr | `mrq` | `mrq-feature_branch` |
-
-### Examples
-
-| Random ID | Slug | Title |
-|-----------|------|-------|
-| `gt-zfyl8` | `epc-semantic_ids` | Semantic Issue IDs |
-| `gt-zfyl8.1` | `epc-semantic_ids.1` | Design: ID format specification |
-| `gt-3q6a9` | `bug-login_timeout` | Fix login timeout |
-| `hq-abc123` | `dec-cache_strategy` | Which cache strategy? |
-
-## Hierarchical Slugs
-
-### Canonical IDs vs Slugs
-
-Canonical IDs use numeric dot suffixes:
-- `gt-zfyl8` - Parent (epic)
-- `gt-zfyl8.1` - First child (task)
-- `gt-zfyl8.2` - Second child
-
-Slugs use **named** dot suffixes derived from titles:
-- `epc-semantic_ids` → `gt-zfyl8`
-- `epc-semantic_ids.format_spec` → `gt-zfyl8.1`
-- `epc-semantic_ids.validation` → `gt-zfyl8.8`
-
-### Why Named Children?
-
-Titles are **already mandatory** for all beads. Since every bead has a title,
-we can always generate a meaningful slug. No need for numeric suffixes in slugs.
-
-### Examples
+## Examples
 
 | Canonical ID | Title | Slug |
 |--------------|-------|------|
-| `gt-zfyl8` | Semantic Issue IDs | `epc-semantic_ids` |
-| `gt-zfyl8.1` | ID format specification | `epc-semantic_ids.format_spec` |
-| `gt-zfyl8.8` | Validation preview | `epc-semantic_ids.validation` |
-| `gt-zfyl8.6` | Migration tool | `epc-semantic_ids.migration_tool` |
+| `gt-zfyl8` | Semantic Issue IDs | `gt-epc-semantic_idszfyl8` |
+| `gt-zfyl8.1` | Format specification | `gt-epc-semantic_idszfyl8.format_spec` |
+| `gt-zfyl8.8` | Validation preview | `gt-epc-semantic_idszfyl8.validation` |
+| `gt-3q6a9` | Fix login timeout | `gt-bug-fix_login_timeout3q6a9` |
 
-### Child Slug Generation
+### Hierarchy
 
-Children inherit parent slug as prefix:
+Children append `.name` after the parent's random:
+
 ```
-child_slug = parent_slug + "." + slugify(child_title)
+gt-epc-semantic_idszfyl8                         # Epic (parent)
+gt-epc-semantic_idszfyl8.format_spec             # Task (child)
+gt-epc-semantic_idszfyl8.validation              # Task (child)
+gt-epc-semantic_idszfyl8.format_spec.regex       # Subtask (grandchild)
 ```
 
-No type code on children (parent provides context).
+**Key insight:** The random component (`zfyl8`) anchors the entire tree.
+Children are just `.name` appended—no numbers in slugs.
 
-## Slug Rules
+## Type Codes
 
-### Character Set
+| Bead Type | Code | Example |
+|-----------|------|---------|
+| epic | `epc` | `gt-epc-semantic_idszfyl8` |
+| bug | `bug` | `gt-bug-login_timeout3q6a9` |
+| task | `tsk` | `gt-tsk-add_validationx7m2` |
+| feature | `ftr` | `gt-ftr-dark_mode9k4p` |
+| decision | `dec` | `gt-dec-cache_strategy2n5q` |
+| convoy | `cnv` | `gt-cnv-fix_auth8r3w` |
+| molecule | `mol` | `gt-mol-deacon_patrol4j6v` |
+| wisp | `wsp` | `gt-wsp-check_inbox1t8y` |
+| agent | `agt` | `hq-agt-gastown_witness` |
+| role | `rol` | `hq-rol-polecat` |
+| mr | `mrq` | `gt-mrq-feature_branch5s2m` |
+
+## Character Set
 
 | Character | Allowed | Notes |
 |-----------|---------|-------|
 | `a-z` | Yes | Lowercase letters |
-| `0-9` | Yes | Digits (not at start of descriptive part) |
-| `_` | Yes | Word separator within descriptive part |
-| `-` | Yes | Type-slug separator (exactly one per segment) |
-| `.` | Yes | Hierarchy separator (parent.child) |
+| `0-9` | Yes | Digits |
+| `_` | Yes | Word separator in title |
+| `-` | Yes | Prefix-type-title separator |
+| `.` | Yes | Child hierarchy separator |
 
-### Length Constraints
+## Slug Rules
 
-| Component | Min | Max |
-|-----------|-----|-----|
-| Type code | 3 | 3 |
-| Descriptive slug | 3 | 40 |
-| **Total** | **7** | **44** |
+### Title Slugification
 
-### Validation Regex
+1. Lowercase the title
+2. Replace non-alphanumeric with `_`
+3. Collapse consecutive `_` to single `_`
+4. Trim leading/trailing `_`
+5. If starts with digit, prefix with `n`
+6. Truncate to 40 chars at word boundary
+7. Minimum 3 chars (pad with `x` if needed)
+
+### Random Component
+
+- Extracted from canonical ID: `gt-zfyl8` → `zfyl8`
+- Appended directly after title slug (no separator)
+- Typically 4-6 alphanumeric characters
+- Guarantees uniqueness—no collision handling needed
+
+### Child Segments
+
+- Derived from child bead's title
+- Appended with `.` separator
+- No type code on children (parent provides context)
+- No numbers—always use title-derived names
+
+## Validation Regex
 
 ```regex
-^(epc|bug|tsk|ftr|dec|cnv|mol|wsp|agt|rol|mrq)-[a-z][a-z0-9_]{2,39}(\.[a-z][a-z0-9_]{2,39})*$
+^[a-z]{2,3}-(epc|bug|tsk|ftr|dec|cnv|mol|wsp|agt|rol|mrq)-[a-z][a-z0-9_]{2,39}[a-z0-9]{4,6}(\.[a-z][a-z0-9_]{2,39})*$
 ```
 
 **Breakdown:**
-- `^(epc|bug|...)` - Type code
-- `-` - Type separator
-- `[a-z][a-z0-9_]{2,39}` - Root slug (3-40 chars, starts with letter)
-- `(\.[a-z][a-z0-9_]{2,39})*` - Optional named children (dot + name)
+- `^[a-z]{2,3}` - Prefix (2-3 chars)
+- `-` - Separator
+- `(epc|bug|...)` - Type code (3 chars)
+- `-` - Separator
+- `[a-z][a-z0-9_]{2,39}` - Title slug (3-40 chars)
+- `[a-z0-9]{4,6}` - Random from canonical ID
+- `(\.[a-z][a-z0-9_]{2,39})*` - Optional child segments
 
-### Normalization
+## Lookup & Cross-Reference
 
-| Input | Normalized | Rule |
-|-------|-----------|------|
-| `Fix LOGIN Bug` | `fix_login_bug` | Lowercase, spaces→underscore |
-| `Add user auth` | `add_user_auth` | Spaces→underscore |
-| `123-bug` | `n123_bug` | Prefix numbers with 'n' |
-| `fix--bug` | `fix_bug` | Collapse multiple underscores |
+### From Slug to Canonical ID
 
-## Collision Handling
-
-### Within Rig: Numeric Suffix
-
-When a slug already exists, append numeric suffix:
+Extract random component, reconstruct:
 ```
-bug-login_timeout      # First
-bug-login_timeout_2    # Second with same title
-bug-login_timeout_3    # Third
+gt-epc-semantic_idszfyl8.format_spec
+                   └────┘
+                   zfyl8 → gt-zfyl8 (parent)
+                         → gt-zfyl8.1 (lookup by title match)
 ```
 
-### Cross-Rig: Prefix Required
+### From Canonical ID to Slug
 
-Slugs are unique within a rig. Cross-rig references need prefix:
+Look up bead, construct from type + title + random:
 ```
-gt:bug-login_timeout   # gastown rig
-bd:bug-login_timeout   # beads rig (different bead)
-```
-
-## Data Model
-
-### Bead Schema Addition
-
-```sql
-ALTER TABLE issues ADD COLUMN slug TEXT;
-CREATE UNIQUE INDEX idx_issues_slug ON issues(slug) WHERE slug IS NOT NULL;
+gt-zfyl8.1 → type=task, title="Format specification"
+           → gt-tsk-... wait, parent is epic
+           → gt-epc-semantic_idszfyl8.format_spec
 ```
 
-### Lookup Priority
-
-1. Try exact ID match: `gt-zfyl8`
-2. Try slug match: `epc-semantic_ids` → resolves to `gt-zfyl8`
-3. Error if not found
-
-### CLI Usage
+## CLI Usage
 
 ```bash
 # Both work identically
 bd show gt-zfyl8
-bd show epc-semantic_ids
+bd show gt-epc-semantic_idszfyl8
 
-# Set/update slug
-bd slug gt-zfyl8 epc-semantic_ids
-
-# Remove slug
-bd slug gt-zfyl8 --clear
+# Show with slug
+bd show gt-zfyl8 --with-slug
 
 # List beads with slugs
-bd list --with-slugs
+bd list --slugs
 ```
 
-## Auto-Generation
+## Data Model
 
-### When Creating Beads
+### Schema
 
-```bash
-# Auto-generate slug from title
-bd create -t bug "Fix login timeout"
-# → ID: gt-abc123
-# → Slug: bug-fix_login_timeout (auto-generated)
-
-# Explicit slug
-bd create -t bug "Fix login timeout" --slug bug-auth_fix
-# → ID: gt-abc123
-# → Slug: bug-auth_fix (user-specified)
-
-# No slug (opt-out)
-bd create -t bug "Fix login timeout" --no-slug
-# → ID: gt-abc123
-# → Slug: (none)
+```sql
+-- Slug is computed/cached, not a separate column
+-- Or stored for performance:
+ALTER TABLE issues ADD COLUMN slug TEXT;
+CREATE UNIQUE INDEX idx_issues_slug ON issues(slug) WHERE slug IS NOT NULL;
 ```
 
-### Algorithm
+### Generation
 
-```
-function generateSlug(type, title):
-    1. typeCode = getTypeCode(type)
-    2. slug = lowercase(title)
-    3. slug = replaceAll(slug, /[^a-z0-9]+/, "_")
-    4. slug = collapseConsecutive(slug, "_")
-    5. slug = trim(slug, "_")
-    6. if startsWithDigit(slug): slug = "n" + slug
-    7. if len(slug) > 40: slug = truncateAtWordBoundary(slug, 40)
-    8. if len(slug) < 3: slug = padRight(slug, "x", 3)
-    9. base = typeCode + "-" + slug
-    10. if exists(base): base = appendNumericSuffix(base)
-    11. return base
-```
+Slugs can be:
+1. **Computed on-the-fly** from type + title + random
+2. **Cached in column** for faster lookup
+3. **Generated on create** and updated if title changes
 
 ## Backward Compatibility
 
-### Random IDs Remain Canonical
-
+- Canonical random IDs remain the source of truth
+- Slugs are derived/computed aliases
 - All existing IDs continue to work unchanged
-- Slugs are purely additive
-- Internal references use IDs, not slugs
-- Slugs are for human convenience only
-
-### Migration
-
-No migration required. Slugs are:
-1. Optional for existing beads
-2. Auto-generated for new beads (can be disabled)
-3. Can be added to old beads retroactively
-
-## Implementation Phases
-
-### Phase 1: Core (MVP)
-- [ ] Add `slug` column to issues table
-- [ ] Implement slug validation regex
-- [ ] Add `bd slug` command (set/clear/show)
-- [ ] Lookup by slug in `bd show`, `bd update`, etc.
-
-### Phase 2: Auto-Generation
-- [ ] Auto-generate slug on `bd create` from type + title
-- [ ] `--slug` and `--no-slug` flags
-- [ ] Collision handling with `_2`, `_3` suffix
-
-### Phase 3: Hierarchy
-- [ ] Child slugs inherit parent prefix: `parent.child`
-- [ ] Auto-generate child slug from parent slug + child title
-- [ ] Validate parent exists when creating hierarchical slug
-
-### Phase 4: Enhancements (Future)
-- [ ] Slug aliases (multiple slugs → same bead)
-- [ ] Slug history/redirects (old slug → new slug)
-- [ ] Bulk slug generation for existing beads
+- Slugs add human-friendly lookup, don't replace anything
 
 ## Test Cases
 
 ### Valid Slugs
 
 ```
-epc-semantic_ids
-bug-fix_login_timeout
-tsk-add_user_auth
-dec-cache_strategy
-epc-semantic_ids.format_spec
-epc-semantic_ids.validation
-epc-semantic_ids.format_spec.regex_pattern
-bug-login_timeout_2
+gt-epc-semantic_idszfyl8
+gt-bug-fix_login_timeout3q6a9
+gt-tsk-add_user_authx7m2
+gt-epc-semantic_idszfyl8.format_spec
+gt-epc-semantic_idszfyl8.validation
+gt-epc-semantic_idszfyl8.format_spec.regex
 ```
 
 ### Invalid Slugs
 
 ```
-semantic_ids           # Missing type code
-epc-ab                 # Too short (min 3 chars)
-epc-Fix_Login          # Uppercase
-bug-fix-login          # Hyphen in descriptive part
-EPC-test               # Uppercase type
-epc-semantic_ids.1     # Numeric child (use names, not numbers)
-epc-semantic_ids/child # Wrong separator (use dot, not slash)
+semantic_idszfyl8                    # Missing prefix and type
+gt-semantic_idszfyl8                 # Missing type
+epc-semantic_idszfyl8                # Missing prefix
+gt-epc-semantic_ids                  # Missing random
+gt-epc-semantic_idszfyl8.1           # Numeric child (use names)
+gt-epc-Fix_Loginzfyl8                # Uppercase
+gt-epc-fix-loginzfyl8                # Hyphen in title
 ```
 
-## Open Questions
+## Implementation Phases
 
-### Resolved
+### Phase 1: Core
+- [ ] Slug generation function (type + title + random)
+- [ ] Slug validation regex
+- [ ] Lookup by slug in `bd show`
 
-1. **Q: Replace IDs or alias?**
-   A: **Alias**. Slugs are lookup helpers, IDs remain canonical.
+### Phase 2: Children
+- [ ] Parent slug extraction from child
+- [ ] Child slug generation (parent.child_title)
+- [ ] Hierarchical lookup
 
-2. **Q: Hierarchy separator?**
-   A: **Dot** (`.`). Same as IDs but with names: `epc-semantic_ids.format_spec`
+### Phase 3: CLI Integration
+- [ ] `--with-slug` flag on show/list
+- [ ] Slug display in standard output
+- [ ] Tab completion for slugs
 
-3. **Q: Numeric or named children?**
-   A: **Named**. Titles are mandatory, so always derive from title.
-
-4. **Q: Auto-generate or manual?**
-   A: Auto-generate by default, with opt-out.
-
-### Deferred
-
-1. Slug aliases (multiple slugs → one bead)
-2. Slug redirects (old slug → new slug)
-3. Deep nesting limits (how many `.` levels allowed?)
+### Phase 4: Caching (Optional)
+- [ ] Store slug in column for performance
+- [ ] Update slug when title changes
+- [ ] Migration for existing beads
 
 ## Changelog
 
@@ -340,5 +227,6 @@ epc-semantic_ids/child # Wrong separator (use dot, not slash)
 |---------|------|---------|
 | 0.1 | 2026-01-29 | Initial draft: single-hyphen replacement format |
 | 0.2 | 2026-01-29 | Added type code and random suffix |
-| 0.3 | 2026-01-29 | **Pivot**: Slug as alias, not replacement. Random IDs remain canonical. |
-| 0.4 | 2026-01-29 | Named children: `epc-semantic_ids.format_spec` (dot separator, title-derived) |
+| 0.3 | 2026-01-29 | Pivot: Slug as alias, not replacement |
+| 0.4 | 2026-01-29 | Named children with dot separator |
+| 0.5 | 2026-01-29 | **Final**: Embed canonical random in slug, children append after |
