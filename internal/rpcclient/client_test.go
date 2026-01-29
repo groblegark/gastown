@@ -898,3 +898,463 @@ func TestNilOptions(t *testing.T) {
 		t.Errorf("Options = %v, want nil or empty", decisions[0].Options)
 	}
 }
+
+// --- Decision Chaining Tests ---
+
+// TestGetDecisionChain tests fetching a decision's ancestry chain.
+func TestGetDecisionChain(t *testing.T) {
+	t.Run("successful chain fetch", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/gastown.v1.DecisionService/GetChain" {
+				t.Errorf("unexpected path: %s", r.URL.Path)
+			}
+			if r.Method != "POST" {
+				t.Errorf("method = %s, want POST", r.Method)
+			}
+
+			var req map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&req)
+
+			if req["decisionId"] != "dec-child" {
+				t.Errorf("decisionId = %v, want dec-child", req["decisionId"])
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"chain": []map[string]interface{}{
+					{
+						"id":          "dec-root",
+						"question":    "Root decision",
+						"chosenIndex": 1,
+						"chosenLabel": "Option A",
+						"urgency":     "URGENCY_HIGH",
+						"requestedBy": "agent-1",
+						"requestedAt": "2026-01-29T10:00:00Z",
+						"resolvedAt":  "2026-01-29T10:30:00Z",
+					},
+					{
+						"id":            "dec-child",
+						"question":      "Child decision",
+						"chosenIndex":   2,
+						"chosenLabel":   "Option B",
+						"urgency":       "URGENCY_MEDIUM",
+						"requestedBy":   "agent-2",
+						"requestedAt":   "2026-01-29T11:00:00Z",
+						"predecessorId": "dec-root",
+						"isTarget":      true,
+					},
+				},
+			})
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		chain, err := c.GetDecisionChain(context.Background(), "dec-child")
+		if err != nil {
+			t.Fatalf("GetDecisionChain failed: %v", err)
+		}
+
+		if len(chain) != 2 {
+			t.Fatalf("len(chain) = %d, want 2", len(chain))
+		}
+
+		// Verify root node
+		root := chain[0]
+		if root.ID != "dec-root" {
+			t.Errorf("chain[0].ID = %q, want dec-root", root.ID)
+		}
+		if root.Question != "Root decision" {
+			t.Errorf("chain[0].Question = %q", root.Question)
+		}
+		if root.ChosenIndex != 1 {
+			t.Errorf("chain[0].ChosenIndex = %d, want 1", root.ChosenIndex)
+		}
+		if root.ChosenLabel != "Option A" {
+			t.Errorf("chain[0].ChosenLabel = %q", root.ChosenLabel)
+		}
+		if root.Urgency != "high" {
+			t.Errorf("chain[0].Urgency = %q, want high", root.Urgency)
+		}
+		if root.PredecessorID != "" {
+			t.Errorf("chain[0].PredecessorID = %q, want empty", root.PredecessorID)
+		}
+
+		// Verify child node
+		child := chain[1]
+		if child.ID != "dec-child" {
+			t.Errorf("chain[1].ID = %q, want dec-child", child.ID)
+		}
+		if child.PredecessorID != "dec-root" {
+			t.Errorf("chain[1].PredecessorID = %q, want dec-root", child.PredecessorID)
+		}
+		if !child.IsTarget {
+			t.Error("chain[1].IsTarget = false, want true")
+		}
+		if child.Urgency != "medium" {
+			t.Errorf("chain[1].Urgency = %q, want medium", child.Urgency)
+		}
+	})
+
+	t.Run("single node chain", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"chain": []map[string]interface{}{
+					{
+						"id":        "dec-single",
+						"question":  "Single decision",
+						"urgency":   "URGENCY_LOW",
+						"isTarget":  true,
+					},
+				},
+			})
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		chain, err := c.GetDecisionChain(context.Background(), "dec-single")
+		if err != nil {
+			t.Fatalf("GetDecisionChain failed: %v", err)
+		}
+
+		if len(chain) != 1 {
+			t.Fatalf("len(chain) = %d, want 1", len(chain))
+		}
+		if !chain[0].IsTarget {
+			t.Error("single node should be target")
+		}
+	})
+
+	t.Run("empty chain", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"chain": []interface{}{},
+			})
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		chain, err := c.GetDecisionChain(context.Background(), "nonexistent")
+		if err != nil {
+			t.Fatalf("GetDecisionChain failed: %v", err)
+		}
+
+		if len(chain) != 0 {
+			t.Errorf("len(chain) = %d, want 0", len(chain))
+		}
+	})
+
+	t.Run("server error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		_, err := c.GetDecisionChain(context.Background(), "dec-123")
+		if err == nil {
+			t.Error("expected error for server error response")
+		}
+	})
+
+	t.Run("with API key", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			apiKey := r.Header.Get("X-GT-API-Key")
+			if apiKey != "test-key" {
+				t.Errorf("X-GT-API-Key = %q, want test-key", apiKey)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"chain": []interface{}{}})
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL, WithAPIKey("test-key"))
+		_, err := c.GetDecisionChain(context.Background(), "dec-123")
+		if err != nil {
+			t.Fatalf("GetDecisionChain failed: %v", err)
+		}
+	})
+
+	t.Run("context cancellation", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(5 * time.Second)
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		_, err := c.GetDecisionChain(ctx, "dec-123")
+		if err == nil {
+			t.Error("expected error for cancelled context")
+		}
+	})
+
+	t.Run("deep chain", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			// 5-level deep chain
+			chain := []map[string]interface{}{
+				{"id": "dec-1", "question": "Level 1", "urgency": "URGENCY_HIGH"},
+				{"id": "dec-2", "question": "Level 2", "urgency": "URGENCY_HIGH", "predecessorId": "dec-1"},
+				{"id": "dec-3", "question": "Level 3", "urgency": "URGENCY_MEDIUM", "predecessorId": "dec-2"},
+				{"id": "dec-4", "question": "Level 4", "urgency": "URGENCY_LOW", "predecessorId": "dec-3"},
+				{"id": "dec-5", "question": "Level 5", "urgency": "URGENCY_LOW", "predecessorId": "dec-4", "isTarget": true},
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{"chain": chain})
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		chain, err := c.GetDecisionChain(context.Background(), "dec-5")
+		if err != nil {
+			t.Fatalf("GetDecisionChain failed: %v", err)
+		}
+
+		if len(chain) != 5 {
+			t.Fatalf("len(chain) = %d, want 5", len(chain))
+		}
+
+		// Verify chain order (root to target)
+		for i, node := range chain {
+			expectedID := "dec-" + string(rune('1'+i))
+			if node.ID != expectedID {
+				t.Errorf("chain[%d].ID = %q, want %q", i, node.ID, expectedID)
+			}
+		}
+
+		// Verify target is last
+		if !chain[4].IsTarget {
+			t.Error("last node should be target")
+		}
+	})
+}
+
+// TestValidateDecisionContext tests the context validation RPC.
+func TestValidateDecisionContext(t *testing.T) {
+	t.Run("valid context", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/gastown.v1.DecisionService/ValidateContext" {
+				t.Errorf("unexpected path: %s", r.URL.Path)
+			}
+
+			var req map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&req)
+
+			if req["context"] != `{"key": "value"}` {
+				t.Errorf("context = %v", req["context"])
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"valid":  true,
+				"errors": []string{},
+			})
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		valid, errors, err := c.ValidateDecisionContext(context.Background(), `{"key": "value"}`, "")
+		if err != nil {
+			t.Fatalf("ValidateDecisionContext failed: %v", err)
+		}
+
+		if !valid {
+			t.Error("valid = false, want true")
+		}
+		if len(errors) != 0 {
+			t.Errorf("errors = %v, want empty", errors)
+		}
+	})
+
+	t.Run("invalid context", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"valid":  false,
+				"errors": []string{"invalid JSON syntax", "missing required field"},
+			})
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		valid, errors, err := c.ValidateDecisionContext(context.Background(), "not valid json", "")
+		if err != nil {
+			t.Fatalf("ValidateDecisionContext failed: %v", err)
+		}
+
+		if valid {
+			t.Error("valid = true, want false")
+		}
+		if len(errors) != 2 {
+			t.Errorf("len(errors) = %d, want 2", len(errors))
+		}
+	})
+
+	t.Run("with predecessor ID", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&req)
+
+			if req["predecessorId"] != "dec-parent" {
+				t.Errorf("predecessorId = %v, want dec-parent", req["predecessorId"])
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"valid":  true,
+				"errors": []string{},
+			})
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		valid, _, err := c.ValidateDecisionContext(context.Background(), `{"key": "value"}`, "dec-parent")
+		if err != nil {
+			t.Fatalf("ValidateDecisionContext failed: %v", err)
+		}
+
+		if !valid {
+			t.Error("valid = false, want true")
+		}
+	})
+
+	t.Run("server error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		c := NewClient(server.URL)
+		_, _, err := c.ValidateDecisionContext(context.Background(), `{}`, "")
+		if err == nil {
+			t.Error("expected error for server error response")
+		}
+	})
+}
+
+// TestChainNodeStruct tests the ChainNode struct.
+func TestChainNodeStruct(t *testing.T) {
+	node := ChainNode{
+		ID:            "test-123",
+		Question:      "Test question?",
+		ChosenIndex:   2,
+		ChosenLabel:   "Option B",
+		Urgency:       "high",
+		RequestedBy:   "test-agent",
+		RequestedAt:   "2026-01-29T10:00:00Z",
+		ResolvedAt:    "2026-01-29T10:30:00Z",
+		PredecessorID: "parent-123",
+		IsTarget:      true,
+	}
+
+	// Test JSON marshaling
+	data, err := json.Marshal(node)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	jsonStr := string(data)
+	if !strings.Contains(jsonStr, `"id":"test-123"`) {
+		t.Error("missing id field in JSON")
+	}
+	if !strings.Contains(jsonStr, `"predecessor_id":"parent-123"`) {
+		t.Error("missing predecessor_id field in JSON")
+	}
+	if !strings.Contains(jsonStr, `"is_target":true`) {
+		t.Error("missing is_target field in JSON")
+	}
+
+	// Test unmarshaling
+	var decoded ChainNode
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+	if decoded.ID != node.ID {
+		t.Errorf("decoded.ID = %q, want %q", decoded.ID, node.ID)
+	}
+	if decoded.PredecessorID != node.PredecessorID {
+		t.Errorf("decoded.PredecessorID = %q, want %q", decoded.PredecessorID, node.PredecessorID)
+	}
+}
+
+// TestChainNodeWithChildren tests nested chain nodes.
+func TestChainNodeWithChildren(t *testing.T) {
+	root := &ChainNode{
+		ID:       "root",
+		Question: "Root decision",
+		Children: []*ChainNode{
+			{
+				ID:            "child-1",
+				Question:      "Child 1",
+				PredecessorID: "root",
+			},
+			{
+				ID:            "child-2",
+				Question:      "Child 2",
+				PredecessorID: "root",
+			},
+		},
+	}
+
+	// Test JSON marshaling with children
+	data, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		t.Fatalf("json.MarshalIndent failed: %v", err)
+	}
+
+	jsonStr := string(data)
+	if !strings.Contains(jsonStr, "children") {
+		t.Error("missing children field in JSON")
+	}
+	if !strings.Contains(jsonStr, "child-1") {
+		t.Error("missing first child in JSON")
+	}
+	if !strings.Contains(jsonStr, "child-2") {
+		t.Error("missing second child in JSON")
+	}
+}
+
+// TestCreateDecisionWithPredecessor tests creating a chained decision.
+func TestCreateDecisionWithPredecessor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/gastown.v1.DecisionService/CreateDecision" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		var req map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&req)
+
+		// Verify predecessor is included
+		if req["predecessorId"] != "dec-parent" {
+			t.Errorf("predecessorId = %v, want dec-parent", req["predecessorId"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"decision": map[string]interface{}{
+				"id":            "dec-child",
+				"question":      "Follow-up question?",
+				"predecessorId": "dec-parent",
+			},
+		})
+	}))
+	defer server.Close()
+
+	c := NewClient(server.URL)
+	decision, err := c.CreateDecision(context.Background(), CreateDecisionRequest{
+		Question:      "Follow-up question?",
+		Options:       []DecisionOption{{Label: "A"}, {Label: "B"}},
+		RequestedBy:   "test-agent",
+		PredecessorID: "dec-parent",
+	})
+	if err != nil {
+		t.Fatalf("CreateDecision failed: %v", err)
+	}
+
+	if decision.ID != "dec-child" {
+		t.Errorf("decision.ID = %q, want dec-child", decision.ID)
+	}
+}

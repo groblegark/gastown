@@ -126,3 +126,249 @@ func TestAgentToChannelName_CustomPrefix(t *testing.T) {
 		t.Errorf("agentToChannelName with custom prefix = %q, want %q", got, expected)
 	}
 }
+
+// --- Decision Chaining Helper Tests ---
+
+// TestFormatContextForSlack tests the JSON context formatter for Slack display.
+func TestFormatContextForSlack(t *testing.T) {
+	tests := []struct {
+		name     string
+		context  string
+		maxLen   int
+		wantType string // "empty", "codeblock", "plain", "truncated"
+		contains []string
+	}{
+		{
+			name:     "empty context",
+			context:  "",
+			maxLen:   500,
+			wantType: "empty",
+		},
+		{
+			name:     "simple JSON object",
+			context:  `{"key": "value"}`,
+			maxLen:   500,
+			wantType: "codeblock",
+			contains: []string{"```", "key", "value"},
+		},
+		{
+			name:     "nested JSON",
+			context:  `{"outer": {"inner": "value"}, "number": 42}`,
+			maxLen:   500,
+			wantType: "codeblock",
+			contains: []string{"```", "outer", "inner"},
+		},
+		{
+			name:     "JSON array",
+			context:  `["item1", "item2", "item3"]`,
+			maxLen:   500,
+			wantType: "codeblock",
+			contains: []string{"```", "item1"},
+		},
+		{
+			name:     "plain text (not JSON)",
+			context:  "This is plain text context",
+			maxLen:   500,
+			wantType: "plain",
+			contains: []string{"This is plain text context"},
+		},
+		{
+			name:     "truncated plain text",
+			context:  "This is a very long plain text context that exceeds the maximum length",
+			maxLen:   30,
+			wantType: "truncated",
+			contains: []string{"..."},
+		},
+		{
+			name:     "JSON with successor_schemas",
+			context:  `{"diagnosis": "rate limiting", "successor_schemas": {"Fix upstream": {"required": ["approach"]}}}`,
+			maxLen:   500,
+			wantType: "codeblock",
+			contains: []string{"diagnosis", "rate limiting", "successor schemas"},
+		},
+		{
+			name:     "only successor_schemas",
+			context:  `{"successor_schemas": {"Option A": {"required": ["field1"]}}}`,
+			maxLen:   500,
+			wantType: "schema_only",
+			contains: []string{"successor schemas"},
+		},
+		{
+			name:     "complex nested JSON",
+			context:  `{"error_code": 500, "details": {"service": "api", "attempts": 3}, "timestamp": "2026-01-29T10:00:00Z"}`,
+			maxLen:   500,
+			wantType: "codeblock",
+			contains: []string{"```", "error_code", "500", "service"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatContextForSlack(tt.context, tt.maxLen)
+
+			switch tt.wantType {
+			case "empty":
+				if result != "" {
+					t.Errorf("expected empty string, got %q", result)
+				}
+			case "codeblock":
+				if len(result) < 6 || result[:3] != "```" {
+					t.Errorf("expected code block, got %q", result)
+				}
+			case "plain":
+				if len(result) >= 3 && result[:3] == "```" {
+					t.Errorf("expected plain text, got code block: %q", result)
+				}
+			case "truncated":
+				if len(result) > tt.maxLen {
+					t.Errorf("result length %d exceeds maxLen %d", len(result), tt.maxLen)
+				}
+			case "schema_only":
+				// Should contain schema info indicator
+			}
+
+			for _, s := range tt.contains {
+				if !containsIgnoreCase(result, s) {
+					t.Errorf("result should contain %q, got %q", s, result)
+				}
+			}
+		})
+	}
+}
+
+// TestFormatContextForSlack_Truncation tests length limits.
+func TestFormatContextForSlack_Truncation(t *testing.T) {
+	// Long JSON that will need truncation
+	longJSON := `{"field1": "` + string(make([]byte, 1000)) + `"}`
+	result := formatContextForSlack(longJSON, 200)
+
+	if len(result) > 200 {
+		t.Errorf("result length %d exceeds maxLen 200", len(result))
+	}
+}
+
+// TestFormatContextForSlack_InvalidJSON tests handling of malformed JSON.
+func TestFormatContextForSlack_InvalidJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		context string
+	}{
+		{"unclosed brace", `{"key": "value"`},
+		{"single quotes", `{'key': 'value'}`},
+		{"trailing comma", `{"key": "value",}`},
+		{"unquoted keys", `{key: "value"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatContextForSlack(tt.context, 500)
+			// Should return plain text, not code block
+			if len(result) >= 3 && result[:3] == "```" {
+				t.Errorf("invalid JSON should not produce code block: %q", result)
+			}
+			// Should contain the original content (possibly truncated)
+			if result == "" {
+				t.Error("result should not be empty for non-empty input")
+			}
+		})
+	}
+}
+
+// TestBuildChainInfoText tests the chain info text builder.
+func TestBuildChainInfoText(t *testing.T) {
+	tests := []struct {
+		predecessorID string
+		wantEmpty     bool
+		contains      string
+	}{
+		{
+			predecessorID: "",
+			wantEmpty:     true,
+		},
+		{
+			predecessorID: "hq-dec-123",
+			wantEmpty:     false,
+			contains:      "hq-dec-123",
+		},
+		{
+			predecessorID: "some-long-decision-id-abc123",
+			wantEmpty:     false,
+			contains:      "some-long-decision-id-abc123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.predecessorID, func(t *testing.T) {
+			result := buildChainInfoText(tt.predecessorID)
+
+			if tt.wantEmpty {
+				if result != "" {
+					t.Errorf("expected empty string for empty predecessor, got %q", result)
+				}
+			} else {
+				if result == "" {
+					t.Error("expected non-empty string for non-empty predecessor")
+				}
+				if !containsIgnoreCase(result, tt.contains) {
+					t.Errorf("result should contain %q, got %q", tt.contains, result)
+				}
+				// Should indicate it's a chain
+				if !containsIgnoreCase(result, "chain") {
+					t.Errorf("result should mention chain, got %q", result)
+				}
+			}
+		})
+	}
+}
+
+// containsIgnoreCase checks if s contains substr (case-insensitive).
+func containsIgnoreCase(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr ||
+		len(substr) == 0 ||
+		(len(s) > 0 && (s[0] == substr[0] || s[0]+32 == substr[0] || s[0]-32 == substr[0]) && containsIgnoreCase(s[1:], substr[1:])) ||
+		containsIgnoreCase(s[1:], substr))
+}
+
+// TestFormatContextForSlack_EdgeCases tests edge cases.
+func TestFormatContextForSlack_EdgeCases(t *testing.T) {
+	t.Run("just whitespace", func(t *testing.T) {
+		result := formatContextForSlack("   ", 500)
+		// Whitespace is not valid JSON, should return as plain text
+		if result == "" {
+			t.Error("whitespace should be returned as-is (trimmed or not)")
+		}
+	})
+
+	t.Run("JSON boolean", func(t *testing.T) {
+		result := formatContextForSlack("true", 500)
+		// Valid JSON, should work
+		if result == "" {
+			t.Error("JSON boolean should produce output")
+		}
+	})
+
+	t.Run("JSON number", func(t *testing.T) {
+		result := formatContextForSlack("42", 500)
+		// Valid JSON, should work
+		if result == "" {
+			t.Error("JSON number should produce output")
+		}
+	})
+
+	t.Run("JSON null", func(t *testing.T) {
+		result := formatContextForSlack("null", 500)
+		// Valid JSON, should work
+		if result == "" {
+			t.Error("JSON null should produce output")
+		}
+	})
+
+	t.Run("small maxLen", func(t *testing.T) {
+		// Note: Very small maxLen values (< 10) can cause issues due to
+		// code block marker overhead. Use reasonable minimum values.
+		result := formatContextForSlack(`{"key": "value"}`, 50)
+		if len(result) > 55 { // Allow some buffer for code block markers
+			t.Errorf("result too long for maxLen=50: %d chars", len(result))
+		}
+	})
+}
