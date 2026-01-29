@@ -50,17 +50,18 @@ func WithTimeout(d time.Duration) Option {
 
 // Decision represents a decision from the RPC API.
 type Decision struct {
-	ID          string
-	Question    string
-	Context     string
-	Options     []DecisionOption
-	ChosenIndex int
-	Rationale   string
-	RequestedBy string
-	RequestedAt string
-	ResolvedBy  string
-	Urgency     string
-	Resolved    bool
+	ID            string
+	Question      string
+	Context       string
+	Options       []DecisionOption
+	ChosenIndex   int
+	Rationale     string
+	RequestedBy   string
+	RequestedAt   string
+	ResolvedBy    string
+	Urgency       string
+	Resolved      bool
+	PredecessorID string // For decision chaining
 }
 
 // DecisionOption represents an option in a decision.
@@ -150,13 +151,14 @@ func (c *Client) ListPendingDecisions(ctx context.Context) ([]Decision, error) {
 				Description string `json:"description"`
 				Recommended bool   `json:"recommended"`
 			} `json:"options"`
-			ChosenIndex int    `json:"chosenIndex"`
-			Rationale   string `json:"rationale"`
-			RequestedBy struct {
+			ChosenIndex   int    `json:"chosenIndex"`
+			Rationale     string `json:"rationale"`
+			RequestedBy   struct {
 				Name string `json:"name"`
 			} `json:"requestedBy"`
-			Urgency  string `json:"urgency"`
-			Resolved bool   `json:"resolved"`
+			Urgency       string `json:"urgency"`
+			Resolved      bool   `json:"resolved"`
+			PredecessorID string `json:"predecessorId"`
 		} `json:"decisions"`
 	}
 
@@ -175,15 +177,16 @@ func (c *Client) ListPendingDecisions(ctx context.Context) ([]Decision, error) {
 			})
 		}
 		decisions = append(decisions, Decision{
-			ID:          d.ID,
-			Question:    d.Question,
-			Context:     d.Context,
-			Options:     opts,
-			ChosenIndex: d.ChosenIndex,
-			Rationale:   d.Rationale,
-			RequestedBy: d.RequestedBy.Name,
-			Urgency:     urgencyToString(d.Urgency),
-			Resolved:    d.Resolved,
+			ID:            d.ID,
+			Question:      d.Question,
+			Context:       d.Context,
+			Options:       opts,
+			ChosenIndex:   d.ChosenIndex,
+			Rationale:     d.Rationale,
+			RequestedBy:   d.RequestedBy.Name,
+			Urgency:       urgencyToString(d.Urgency),
+			Resolved:      d.Resolved,
+			PredecessorID: d.PredecessorID,
 		})
 	}
 
@@ -241,13 +244,14 @@ func (c *Client) IsAvailable(ctx context.Context) bool {
 
 // CreateDecisionRequest contains the parameters for creating a decision via RPC.
 type CreateDecisionRequest struct {
-	Question    string
-	Context     string
-	Options     []DecisionOption
-	RequestedBy string
-	Urgency     string
-	Blockers    []string
-	ParentBead  string
+	Question      string
+	Context       string
+	Options       []DecisionOption
+	RequestedBy   string
+	Urgency       string
+	Blockers      []string
+	ParentBead    string
+	PredecessorID string // For decision chaining
 }
 
 // CreateDecision creates a new decision via the RPC server.
@@ -279,6 +283,9 @@ func (c *Client) CreateDecision(ctx context.Context, req CreateDecisionRequest) 
 	}
 	if req.ParentBead != "" {
 		body["parentBead"] = req.ParentBead
+	}
+	if req.PredecessorID != "" {
+		body["predecessorId"] = req.PredecessorID
 	}
 
 	jsonBody, err := json.Marshal(body)
@@ -491,4 +498,140 @@ func (c *Client) GetDecision(ctx context.Context, decisionID string) (*Decision,
 		Urgency:     urgencyToString(result.Decision.Urgency),
 		Resolved:    result.Decision.Resolved,
 	}, nil
+}
+
+// ChainNode represents a node in a decision chain.
+type ChainNode struct {
+	ID            string       `json:"id"`
+	Question      string       `json:"question"`
+	ChosenIndex   int          `json:"chosen_index"`
+	ChosenLabel   string       `json:"chosen_label,omitempty"`
+	Urgency       string       `json:"urgency"`
+	RequestedBy   string       `json:"requested_by"`
+	RequestedAt   string       `json:"requested_at"`
+	ResolvedAt    string       `json:"resolved_at,omitempty"`
+	PredecessorID string       `json:"predecessor_id,omitempty"`
+	Children      []*ChainNode `json:"children,omitempty"`
+	IsTarget      bool         `json:"is_target,omitempty"`
+}
+
+// GetDecisionChain fetches the ancestry chain for a decision via the RPC server.
+// Returns the chain from root to the specified decision.
+func (c *Client) GetDecisionChain(ctx context.Context, decisionID string) ([]*ChainNode, error) {
+	body := map[string]interface{}{
+		"decisionId": decisionID,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.DecisionService/GetChain",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	// Parse response
+	var result struct {
+		Chain []struct {
+			ID            string `json:"id"`
+			Question      string `json:"question"`
+			ChosenIndex   int    `json:"chosenIndex"`
+			ChosenLabel   string `json:"chosenLabel"`
+			Urgency       string `json:"urgency"`
+			RequestedBy   string `json:"requestedBy"`
+			RequestedAt   string `json:"requestedAt"`
+			ResolvedAt    string `json:"resolvedAt"`
+			PredecessorID string `json:"predecessorId"`
+			IsTarget      bool   `json:"isTarget"`
+		} `json:"chain"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	var chain []*ChainNode
+	for _, node := range result.Chain {
+		chain = append(chain, &ChainNode{
+			ID:            node.ID,
+			Question:      node.Question,
+			ChosenIndex:   node.ChosenIndex,
+			ChosenLabel:   node.ChosenLabel,
+			Urgency:       urgencyToString(node.Urgency),
+			RequestedBy:   node.RequestedBy,
+			RequestedAt:   node.RequestedAt,
+			ResolvedAt:    node.ResolvedAt,
+			PredecessorID: node.PredecessorID,
+			IsTarget:      node.IsTarget,
+		})
+	}
+
+	return chain, nil
+}
+
+// ValidateDecisionContext validates the JSON context for a decision.
+// Returns validation errors if the context is invalid.
+func (c *Client) ValidateDecisionContext(ctx context.Context, context string, predecessorID string) (bool, []string, error) {
+	body := map[string]interface{}{
+		"context": context,
+	}
+	if predecessorID != "" {
+		body["predecessorId"] = predecessorID
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return false, nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.DecisionService/ValidateContext",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return false, nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return false, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	// Parse response
+	var result struct {
+		Valid  bool     `json:"valid"`
+		Errors []string `json:"errors"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return result.Valid, result.Errors, nil
 }
