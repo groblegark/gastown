@@ -37,6 +37,11 @@ The Gas Town Slack bot (`gtslack`) allows team members to view and resolve pendi
    - `chat:write` - Post messages
    - `commands` - Handle slash commands
    - `users:read` - Get user info
+   - `channels:read` - List channels
+   - `channels:join` - Join channels
+
+**For dynamic channel creation** (optional, enables `-dynamic-channels` flag):
+   - `channels:manage` - Create new public channels
 
 ### Step 4: Create Slash Command
 
