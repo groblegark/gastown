@@ -6,7 +6,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -22,9 +24,15 @@ type Bot struct {
 	client      *slack.Client
 	socketMode  *socketmode.Client
 	rpcClient   *rpcclient.Client
-	channelID   string // Default channel to post decision notifications
-	router      *slackrouter.Router // Channel router for per-agent routing
+	channelID   string                  // Default channel to post decision notifications
+	router      *slackrouter.Router     // Channel router for per-agent routing
 	debug       bool
+
+	// Dynamic channel creation
+	dynamicChannels    bool              // Enable automatic channel creation
+	channelPrefix      string            // Prefix for created channels (e.g., "gt-decisions")
+	channelCache       map[string]string // Cache: agent pattern → channel ID
+	channelCacheMu     sync.RWMutex      // Protects channelCache
 }
 
 // Config holds configuration for the Slack bot.
@@ -34,6 +42,8 @@ type Config struct {
 	RPCEndpoint      string // gtmobile RPC server URL
 	ChannelID        string // Default channel for decision notifications
 	RouterConfigPath string // Optional path to slack.json for per-agent routing
+	DynamicChannels  bool   // Enable automatic channel creation based on agent identity
+	ChannelPrefix    string // Prefix for dynamically created channels (default: "gt-decisions")
 	Debug            bool
 }
 
@@ -82,13 +92,22 @@ func New(cfg Config) (*Bot, error) {
 		// Silence errors for auto-discovery - config may not exist
 	}
 
+	// Set default channel prefix
+	channelPrefix := cfg.ChannelPrefix
+	if channelPrefix == "" {
+		channelPrefix = "gt-decisions"
+	}
+
 	return &Bot{
-		client:     client,
-		socketMode: socketClient,
-		rpcClient:  rpcClient,
-		channelID:  cfg.ChannelID,
-		router:     router,
-		debug:      cfg.Debug,
+		client:          client,
+		socketMode:      socketClient,
+		rpcClient:       rpcClient,
+		channelID:       cfg.ChannelID,
+		router:          router,
+		debug:           cfg.Debug,
+		dynamicChannels: cfg.DynamicChannels,
+		channelPrefix:   channelPrefix,
+		channelCache:    make(map[string]string),
 	}, nil
 }
 
@@ -677,11 +696,15 @@ func (b *Bot) RPCClient() *rpcclient.Client {
 }
 
 // resolveChannel determines the appropriate channel for an agent.
-// Uses the router if available and enabled, otherwise falls back to default channelID.
+// Priority order:
+// 1. Static router config (if available and matches)
+// 2. Dynamic channel creation (if enabled)
+// 3. Default channelID
 func (b *Bot) resolveChannel(agent string) string {
+	// Try static router first
 	if b.router != nil && b.router.IsEnabled() && agent != "" {
 		result := b.router.Resolve(agent)
-		if result != nil && result.ChannelID != "" {
+		if result != nil && result.ChannelID != "" && !result.IsDefault {
 			if b.debug {
 				log.Printf("Slack: Routing %s to channel %s (matched by: %s)",
 					agent, result.ChannelID, result.MatchedBy)
@@ -689,7 +712,138 @@ func (b *Bot) resolveChannel(agent string) string {
 			return result.ChannelID
 		}
 	}
+
+	// Try dynamic channel creation
+	if b.dynamicChannels && agent != "" {
+		channelID, err := b.ensureChannelExists(agent)
+		if err != nil {
+			log.Printf("Slack: Failed to ensure channel for %s: %v (falling back to default)", agent, err)
+		} else if channelID != "" {
+			return channelID
+		}
+	}
+
 	return b.channelID
+}
+
+// agentToChannelName converts an agent identity to a Slack channel name.
+// Examples:
+//   - "gastown/polecats/furiosa" → "gt-decisions-gastown-polecats"
+//   - "beads/crew/wolf" → "gt-decisions-beads-crew"
+//   - "mayor" → "gt-decisions-mayor"
+//
+// Channel names are limited to 80 chars, lowercase, no spaces, hyphens allowed.
+func (b *Bot) agentToChannelName(agent string) string {
+	parts := strings.Split(agent, "/")
+
+	// Use rig and role, drop the agent name for grouping
+	// gastown/polecats/furiosa → gastown-polecats
+	var nameParts []string
+	if len(parts) >= 2 {
+		nameParts = parts[:2] // rig and role
+	} else {
+		nameParts = parts // single segment like "mayor"
+	}
+
+	// Build channel name
+	name := b.channelPrefix + "-" + strings.Join(nameParts, "-")
+
+	// Sanitize for Slack: lowercase, replace invalid chars with hyphens
+	name = strings.ToLower(name)
+	name = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(name, "-")
+	name = regexp.MustCompile(`-+`).ReplaceAllString(name, "-") // collapse multiple hyphens
+	name = strings.Trim(name, "-")
+
+	// Slack channel names max 80 chars
+	if len(name) > 80 {
+		name = name[:80]
+	}
+
+	return name
+}
+
+// ensureChannelExists looks up or creates a channel for the given agent.
+// Returns the channel ID.
+func (b *Bot) ensureChannelExists(agent string) (string, error) {
+	channelName := b.agentToChannelName(agent)
+
+	// Check cache first
+	b.channelCacheMu.RLock()
+	if cachedID, ok := b.channelCache[channelName]; ok {
+		b.channelCacheMu.RUnlock()
+		return cachedID, nil
+	}
+	b.channelCacheMu.RUnlock()
+
+	// Look up channel by name
+	channelID, err := b.findChannelByName(channelName)
+	if err == nil && channelID != "" {
+		b.cacheChannel(channelName, channelID)
+		if b.debug {
+			log.Printf("Slack: Found existing channel #%s (%s) for agent %s", channelName, channelID, agent)
+		}
+		return channelID, nil
+	}
+
+	// Create the channel
+	channel, err := b.client.CreateConversation(slack.CreateConversationParams{
+		ChannelName: channelName,
+		IsPrivate:   false,
+	})
+	if err != nil {
+		// Check if it's a "name_taken" error (channel exists but we couldn't find it)
+		if strings.Contains(err.Error(), "name_taken") {
+			// Try to find it again
+			channelID, findErr := b.findChannelByName(channelName)
+			if findErr == nil && channelID != "" {
+				b.cacheChannel(channelName, channelID)
+				return channelID, nil
+			}
+		}
+		return "", fmt.Errorf("create channel %s: %w", channelName, err)
+	}
+
+	b.cacheChannel(channelName, channel.ID)
+	log.Printf("Slack: Created channel #%s (%s) for agent %s", channelName, channel.ID, agent)
+	return channel.ID, nil
+}
+
+// findChannelByName searches for a channel by name.
+func (b *Bot) findChannelByName(name string) (string, error) {
+	var cursor string
+	for {
+		params := &slack.GetConversationsParameters{
+			Types:           []string{"public_channel"},
+			Limit:           200,
+			Cursor:          cursor,
+			ExcludeArchived: true,
+		}
+
+		channels, nextCursor, err := b.client.GetConversations(params)
+		if err != nil {
+			return "", err
+		}
+
+		for _, ch := range channels {
+			if ch.Name == name {
+				return ch.ID, nil
+			}
+		}
+
+		if nextCursor == "" {
+			break
+		}
+		cursor = nextCursor
+	}
+
+	return "", nil // Not found
+}
+
+// cacheChannel stores a channel name → ID mapping.
+func (b *Bot) cacheChannel(name, id string) {
+	b.channelCacheMu.Lock()
+	b.channelCache[name] = id
+	b.channelCacheMu.Unlock()
 }
 
 // NotifyResolution posts a resolution notification to the appropriate channel.

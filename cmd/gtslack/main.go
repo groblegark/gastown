@@ -27,11 +27,13 @@ import (
 )
 
 var (
-	botToken   = flag.String("bot-token", "", "Slack bot token (xoxb-...)")
-	appToken   = flag.String("app-token", "", "Slack app token for Socket Mode (xapp-...)")
-	rpcURL     = flag.String("rpc", "http://localhost:8443", "gtmobile RPC endpoint URL")
-	channelID  = flag.String("channel", "", "Channel ID for decision notifications")
-	debug      = flag.Bool("debug", false, "Enable debug logging")
+	botToken        = flag.String("bot-token", "", "Slack bot token (xoxb-...)")
+	appToken        = flag.String("app-token", "", "Slack app token for Socket Mode (xapp-...)")
+	rpcURL          = flag.String("rpc", "http://localhost:8443", "gtmobile RPC endpoint URL")
+	channelID       = flag.String("channel", "", "Default channel ID for decision notifications")
+	dynamicChannels = flag.Bool("dynamic-channels", false, "Enable automatic channel creation per agent")
+	channelPrefix   = flag.String("channel-prefix", "gt-decisions", "Prefix for dynamically created channels")
+	debug           = flag.Bool("debug", false, "Enable debug logging")
 )
 
 func main() {
@@ -56,11 +58,13 @@ func main() {
 	}
 
 	cfg := slackbot.Config{
-		BotToken:    *botToken,
-		AppToken:    *appToken,
-		RPCEndpoint: *rpcURL,
-		ChannelID:   *channelID,
-		Debug:       *debug,
+		BotToken:        *botToken,
+		AppToken:        *appToken,
+		RPCEndpoint:     *rpcURL,
+		ChannelID:       *channelID,
+		DynamicChannels: *dynamicChannels,
+		ChannelPrefix:   *channelPrefix,
+		Debug:           *debug,
 	}
 
 	bot, err := slackbot.New(cfg)
@@ -83,7 +87,10 @@ func main() {
 	log.Printf("Starting Gas Town Slack bot")
 	log.Printf("RPC endpoint: %s", *rpcURL)
 	if *channelID != "" {
-		log.Printf("Notifications channel: %s", *channelID)
+		log.Printf("Default notifications channel: %s", *channelID)
+	}
+	if *dynamicChannels {
+		log.Printf("Dynamic channel creation enabled (prefix: %s)", *channelPrefix)
 	}
 
 	// Start SSE listener for real-time decision notifications
