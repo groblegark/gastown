@@ -967,8 +967,10 @@ func NewSSEHandler(bus *eventbus.Bus, townRoot string) http.HandlerFunc {
 		}
 
 		// Stream events
+		// NOTE: CLI-created decisions are handled by the DecisionPoller, which publishes
+		// to the event bus. The backup poll was removed to avoid duplicate notifications.
 		ctx := r.Context()
-		ticker := time.NewTicker(30 * time.Second) // Backup poll for CLI-created decisions
+		ticker := time.NewTicker(30 * time.Second) // Keepalive timer only
 		defer ticker.Stop()
 
 		for {
@@ -980,7 +982,7 @@ func NewSSEHandler(bus *eventbus.Bus, townRoot string) http.HandlerFunc {
 				if !ok {
 					return
 				}
-				// Skip if already sent to this client (avoids duplicates from poller + backup poll)
+				// Skip if already sent to this client (e.g., in initial pending list)
 				if event.Type == eventbus.EventDecisionCreated {
 					if decision, ok := event.Data.(*gastownv1.Decision); ok && decision != nil {
 						if seen[decision.Id] {
@@ -1008,29 +1010,10 @@ func NewSSEHandler(bus *eventbus.Bus, townRoot string) http.HandlerFunc {
 				flusher.Flush()
 
 			case <-ticker.C:
-				// Backup poll for decisions created via CLI (not through RPC)
-				newIssues, err := client.ListDecisions()
-				if err != nil {
-					// Just send keepalive on error
-					fmt.Fprintf(w, ": keepalive\n\n")
-					flusher.Flush()
-					continue
-				}
-				for _, issue := range newIssues {
-					if seen[issue.ID] {
-						continue
-					}
-					seen[issue.ID] = true
-					fields := beads.ParseDecisionFields(issue.Description)
-					if fields == nil {
-						continue
-					}
-					fmt.Fprintf(w, "event: decision\n")
-					fmt.Fprintf(w, "data: {\"id\":\"%s\",\"question\":\"%s\",\"urgency\":\"%s\",\"type\":\"pending\"}\n\n",
-						issue.ID, escapeJSON(fields.Question), fields.Urgency)
-					flusher.Flush()
-				}
-				// Send keepalive even if no new decisions
+				// Send keepalive to prevent connection timeout
+				// NOTE: CLI-created decisions are handled by the DecisionPoller, which
+				// publishes to the event bus. We removed the redundant backup poll here
+				// to avoid duplicate notifications (the poller and backup poll were racing).
 				fmt.Fprintf(w, ": keepalive\n\n")
 				flusher.Flush()
 			}
