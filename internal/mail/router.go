@@ -634,6 +634,11 @@ func (r *Router) validateRecipient(identity string) error {
 		return nil
 	}
 
+	// Town-level singletons may not have agent beads but are always valid
+	if identity == "mayor/" || identity == "deacon/" {
+		return nil
+	}
+
 	// Query all agents and check if any match this identity
 	agents, err := r.queryAgents("")
 	if err != nil {
