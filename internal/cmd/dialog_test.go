@@ -105,8 +105,8 @@ func TestDialogClient_CLI(t *testing.T) {
 		if resp.Selected != "a" {
 			t.Errorf("Expected Selected 'a', got %q", resp.Selected)
 		}
-		if resp.Cancelled {
-			t.Error("Expected not cancelled")
+		if resp.Canceled {
+			t.Error("Expected not canceled")
 		}
 	case err := <-errCh:
 		t.Fatalf("Error: %v", err)
@@ -171,10 +171,10 @@ func TestDialogRequest_Types(t *testing.T) {
 	}
 }
 
-func TestDialogResponse_Cancelled(t *testing.T) {
+func TestDialogResponse_Canceled(t *testing.T) {
 	resp := DialogResponse{
 		ID:        "test-1",
-		Cancelled: true,
+		Canceled: true,
 	}
 
 	data, err := json.Marshal(resp)
@@ -182,8 +182,8 @@ func TestDialogResponse_Cancelled(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	if !strings.Contains(string(data), `"cancelled":true`) {
-		t.Errorf("Expected cancelled:true in JSON, got: %s", string(data))
+	if !strings.Contains(string(data), `"canceled":true`) {
+		t.Errorf("Expected canceled:true in JSON, got: %s", string(data))
 	}
 }
 
@@ -215,8 +215,8 @@ func TestShowDialogCLI_Choice(t *testing.T) {
 	if resp.Selected != "yes" {
 		t.Errorf("Expected Selected 'yes', got %q", resp.Selected)
 	}
-	if resp.Cancelled {
-		t.Error("Expected not cancelled")
+	if resp.Canceled {
+		t.Error("Expected not canceled")
 	}
 }
 
@@ -258,8 +258,8 @@ func TestShowDialogCLI_Cancel(t *testing.T) {
 	}
 
 	resp := showDialogCLI(req)
-	if !resp.Cancelled {
-		t.Error("Expected cancelled")
+	if !resp.Canceled {
+		t.Error("Expected canceled")
 	}
 }
 
@@ -311,8 +311,8 @@ func TestShowDialogCLI_Confirm(t *testing.T) {
 
 			resp := showDialogCLI(req)
 			if tt.cancel {
-				if !resp.Cancelled {
-					t.Error("Expected cancelled")
+				if !resp.Canceled {
+					t.Error("Expected canceled")
 				}
 			} else {
 				if resp.Selected != tt.expected {

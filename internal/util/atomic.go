@@ -49,11 +49,11 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 
 	// Write data and close the file
 	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return fmt.Errorf("write temp file: %w", err)
 	}
 	if err := tmpFile.Chmod(perm); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return fmt.Errorf("chmod temp file: %w", err)
 	}
 	if err := tmpFile.Close(); err != nil {
