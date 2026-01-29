@@ -456,6 +456,28 @@ func (b *Bot) handleBreakOut(callback slack.InteractionCallback, agent string) {
 	}
 
 	log.Printf("Slack: Break Out: %s → #%s (%s)", agent, channelName, channelID)
+
+	// Repost pending decisions for this agent to the new channel
+	ctx := context.Background()
+	decisions, err := b.rpcClient.ListPendingDecisions(ctx)
+	if err != nil {
+		log.Printf("Slack: Break Out: failed to fetch pending decisions: %v", err)
+	} else {
+		repostedCount := 0
+		for _, d := range decisions {
+			if d.RequestedBy == agent {
+				if err := b.notifyDecisionToChannel(d, channelID); err != nil {
+					log.Printf("Slack: Break Out: failed to repost decision %s: %v", d.ID, err)
+				} else {
+					repostedCount++
+				}
+			}
+		}
+		if repostedCount > 0 {
+			log.Printf("Slack: Break Out: reposted %d pending decision(s) to new channel", repostedCount)
+		}
+	}
+
 	b.postEphemeral(callback.Channel.ID, callback.User.ID,
 		fmt.Sprintf("✅ Broke out *%s* to dedicated channel <#%s>. Future decisions will go there.", agent, channelID))
 }
@@ -1179,6 +1201,114 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 	}
 
 	_, _, err := b.client.PostMessage(targetChannel,
+		slack.MsgOptionBlocks(blocks...),
+	)
+	return err
+}
+
+// notifyDecisionToChannel posts a decision notification to a specific channel.
+// Used by Break Out to repost pending decisions to the new dedicated channel.
+func (b *Bot) notifyDecisionToChannel(decision rpcclient.Decision, channelID string) error {
+	urgencyEmoji := ":white_circle:"
+	switch decision.Urgency {
+	case "high":
+		urgencyEmoji = ":red_circle:"
+	case "medium":
+		urgencyEmoji = ":large_yellow_circle:"
+	case "low":
+		urgencyEmoji = ":large_green_circle:"
+	}
+
+	agentInfo := ""
+	if decision.RequestedBy != "" {
+		agentInfo = fmt.Sprintf(" from *%s*", decision.RequestedBy)
+	}
+
+	semanticSlug := util.GenerateDecisionSlug(decision.ID, decision.Question)
+
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("%s *%s*%s\n%s",
+					urgencyEmoji, semanticSlug, agentInfo, decision.Question),
+				false, false,
+			),
+			nil,
+			slack.NewAccessory(
+				slack.NewButtonBlockElement(
+					"view_decision",
+					decision.ID,
+					slack.NewTextBlockObject("plain_text", "View Details", false, false),
+				),
+			),
+		),
+	}
+
+	if decision.Context != "" {
+		contextText := decision.Context
+		if len(contextText) > 300 {
+			contextText = contextText[:297] + "..."
+		}
+		blocks = append(blocks,
+			slack.NewContextBlock("",
+				slack.NewTextBlockObject("mrkdwn", contextText, false, false),
+			),
+		)
+	}
+
+	if len(decision.Options) > 0 {
+		blocks = append(blocks, slack.NewDividerBlock())
+
+		for i, opt := range decision.Options {
+			label := opt.Label
+			if opt.Recommended {
+				label = "⭐ " + label
+			}
+
+			optText := fmt.Sprintf("*%d. %s*", i+1, label)
+			if opt.Description != "" {
+				desc := opt.Description
+				if len(desc) > 150 {
+					desc = desc[:147] + "..."
+				}
+				optText += fmt.Sprintf("\n%s", desc)
+			}
+
+			buttonLabel := "Choose"
+			if len(decision.Options) <= 4 {
+				buttonLabel = fmt.Sprintf("Choose %d", i+1)
+			}
+
+			blocks = append(blocks,
+				slack.NewSectionBlock(
+					slack.NewTextBlockObject("mrkdwn", optText, false, false),
+					nil,
+					slack.NewAccessory(
+						slack.NewButtonBlockElement(
+							fmt.Sprintf("resolve_%s_%d", decision.ID, i+1),
+							fmt.Sprintf("%s:%d", decision.ID, i+1),
+							slack.NewTextBlockObject("plain_text", buttonLabel, false, false),
+						),
+					),
+				),
+			)
+		}
+	}
+
+	// Show Unbreak Out button (since we're in a break-out channel)
+	if decision.RequestedBy != "" {
+		blocks = append(blocks,
+			slack.NewActionBlock("",
+				slack.NewButtonBlockElement(
+					"unbreak_out",
+					decision.RequestedBy,
+					slack.NewTextBlockObject("plain_text", "🔀 Unbreak Out", false, false),
+				),
+			),
+		)
+	}
+
+	_, _, err := b.client.PostMessage(channelID,
 		slack.MsgOptionBlocks(blocks...),
 	)
 	return err
