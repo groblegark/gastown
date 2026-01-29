@@ -747,7 +747,8 @@ func getAgentBeadID(ctx RoleContext) string {
 	case RolePolecat:
 		if ctx.Rig != "" && ctx.Polecat != "" {
 			// Polecat agent beads use hq- prefix for town beads (fix for gt-myc)
-			return beads.PolecatBeadIDTown(ctx.Rig, ctx.Polecat)
+			townName, _ := workspace.GetTownName(ctx.TownRoot)
+			return beads.PolecatBeadIDTown(townName, ctx.Rig, ctx.Polecat)
 		}
 		return ""
 	case RoleCrew:

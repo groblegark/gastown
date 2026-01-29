@@ -178,6 +178,26 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 
 	// Check if already running
 	running, _ := polecatSessMgr.IsRunning(polecatName)
+
+	// FIX (gt-e15cu): If session is running, check if polecat has hooked work (busy).
+	// Polecats are single-task workers - we must not queue work behind existing work.
+	// If busy, kill the existing session and start fresh.
+	if running {
+		townName, _ := workspace.GetTownName(townRoot)
+		agentBeadID := beads.PolecatBeadIDTown(townName, rigName, polecatName)
+		townBeadsClient := beads.New(townRoot)
+		if agentBead, showErr := townBeadsClient.Show(agentBeadID); showErr == nil {
+			if agentBead.HookBead != "" && agentBead.HookBead != opts.HookBead {
+				// Polecat has different hooked work - it's busy
+				fmt.Printf("  Polecat %s has hooked work (%s), killing stale session...\n",
+					polecatName, agentBead.HookBead)
+				sessionName := polecatSessMgr.SessionName(polecatName)
+				_ = t.KillSessionWithProcesses(sessionName)
+				running = false // Will start fresh session below
+			}
+		}
+	}
+
 	if !running {
 		fmt.Printf("Starting session for %s/%s...\n", rigName, polecatName)
 		startOpts := polecat.SessionStartOptions{
@@ -358,7 +378,8 @@ func verifySpawnedPolecat(clonePath, sessionName string, t *tmux.Tmux) error {
 // This fixes bd-3q6.8-1 where the slot set in CreateOrReopenAgentBead may fail silently.
 func verifyAndSetHookBead(townRoot, rigName, polecatName, hookBead string) error {
 	// Agent bead uses hq- prefix and is stored in town beads
-	agentBeadID := beads.PolecatBeadIDTown(rigName, polecatName)
+	townName, _ := workspace.GetTownName(townRoot)
+	agentBeadID := beads.PolecatBeadIDTown(townName, rigName, polecatName)
 
 	// Read the agent bead from town beads
 	townBeadsClient := beads.New(townRoot)

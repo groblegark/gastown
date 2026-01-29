@@ -531,7 +531,9 @@ type agentBeadResponse struct {
 func getCleanupStatus(workDir, rigName, polecatName string) string {
 	// Construct agent bead ID using hq- prefix for town-level storage (fix for gt-myc).
 	// All polecat agent beads are stored in town beads with hq- prefix to match manager.go.
-	agentBeadID := beads.PolecatBeadIDTown(rigName, polecatName)
+	townRoot, _ := workspace.Find(workDir)
+	townName := workspace.TownNameFromRoot(townRoot)
+	agentBeadID := beads.PolecatBeadIDTown(townName, rigName, polecatName)
 
 	output, err := util.ExecWithOutput(workDir, "bd", "show", agentBeadID, "--json")
 	if err != nil {
@@ -967,7 +969,8 @@ func RespawnPolecatWithHookedWork(workDir, rigName, polecatName string) error {
 
 	// Get the hook_bead from the agent bead.
 	// All polecat agent beads use hq- prefix and are stored in town beads (fix for gt-myc).
-	agentBeadID := beads.PolecatBeadIDTown(rigName, polecatName)
+	townName, _ := workspace.GetTownName(townRoot)
+	agentBeadID := beads.PolecatBeadIDTown(townName, rigName, polecatName)
 	bd := beads.New(rigPath)
 	_, fields, err := bd.GetAgentBead(agentBeadID)
 	if err != nil || fields == nil {

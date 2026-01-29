@@ -38,6 +38,9 @@ func buildAgentBeadID(identity string, role Role, townRoot string) string {
 		return config.GetRigPrefix(townRoot, rig)
 	}
 
+	// Get town name for polecat bead IDs
+	townName, _ := workspace.GetTownName(townRoot)
+
 	// If role is unknown or empty, try to infer from identity
 	if role == RoleUnknown || role == Role("") {
 		switch {
@@ -51,13 +54,13 @@ func buildAgentBeadID(identity string, role Role, townRoot string) string {
 			return beads.RefineryBeadIDWithPrefix(getPrefix(parts[0]), parts[0])
 		case len(parts) == 2:
 			// Assume rig/name is a polecat - uses hq- prefix for town beads (fix for gt-myc)
-			return beads.PolecatBeadIDTown(parts[0], parts[1])
+			return beads.PolecatBeadIDTown(townName, parts[0], parts[1])
 		case len(parts) == 3 && parts[1] == "crew":
 			// rig/crew/name - crew member
 			return beads.CrewBeadIDWithPrefix(getPrefix(parts[0]), parts[0], parts[2])
 		case len(parts) == 3 && parts[1] == "polecats":
 			// rig/polecats/name - explicit polecat - uses hq- prefix for town beads (fix for gt-myc)
-			return beads.PolecatBeadIDTown(parts[0], parts[2])
+			return beads.PolecatBeadIDTown(townName, parts[0], parts[2])
 		default:
 			return ""
 		}
@@ -82,10 +85,10 @@ func buildAgentBeadID(identity string, role Role, townRoot string) string {
 		// Handle both 2-part (rig/name) and 3-part (rig/polecats/name) formats
 		// Polecat agent beads use hq- prefix for town beads (fix for gt-myc)
 		if len(parts) == 3 && parts[1] == "polecats" {
-			return beads.PolecatBeadIDTown(parts[0], parts[2])
+			return beads.PolecatBeadIDTown(townName, parts[0], parts[2])
 		}
 		if len(parts) >= 2 {
-			return beads.PolecatBeadIDTown(parts[0], parts[1])
+			return beads.PolecatBeadIDTown(townName, parts[0], parts[1])
 		}
 		return ""
 	case RoleCrew:

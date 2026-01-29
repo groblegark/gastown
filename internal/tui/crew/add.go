@@ -14,6 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/workspace"
 )
 
 // WizardStep represents the current step in the wizard
@@ -228,7 +229,6 @@ func (m *AddModel) createNewRig() tea.Cmd {
 func (m *AddModel) createCrew() tea.Cmd {
 	return func() tea.Msg {
 		rigName := m.rigs[m.selectedRig]
-		rigPath := m.rigPaths[rigName]
 		crewName := m.nameInput.Value()
 
 		// Load rig config
@@ -256,11 +256,12 @@ func (m *AddModel) createCrew() tea.Cmd {
 			return crewCreatedMsg{err: err}
 		}
 
-		// Create agent bead
+		// Create agent bead in town beads (hq- prefix).
+		// Town-level storage ensures mail routing can validate recipients.
 		var agentBead string
-		bd := beads.New(beads.ResolveBeadsDir(rigPath))
-		prefix := beads.GetPrefixForRig(m.townRoot, rigName)
-		crewID := beads.CrewBeadIDWithPrefix(prefix, rigName, crewName)
+		bd := beads.New(beads.ResolveBeadsDir(m.townRoot))
+		townName := workspace.TownNameFromRoot(m.townRoot)
+		crewID := beads.CrewBeadIDTown(townName, rigName, crewName)
 		if _, err := bd.Show(crewID); err != nil {
 			// Agent bead doesn't exist, create it
 			fields := &beads.AgentFields{

@@ -439,7 +439,8 @@ func agentIDToBeadID(agentID, townRoot string) string {
 		return beads.CrewBeadIDWithPrefix(prefix, rig, parts[2])
 	case len(parts) == 3 && parts[1] == "polecats":
 		// Polecat agent beads use town beads (hq- prefix) - fix for hq-uumjfv
-		return beads.PolecatBeadIDTown(rig, parts[2])
+		townName, _ := workspace.GetTownName(townRoot)
+		return beads.PolecatBeadIDTown(townName, rig, parts[2])
 	default:
 		return ""
 	}

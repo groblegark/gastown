@@ -16,6 +16,7 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/workspace"
 )
 
 // BeadsMessage represents a message from gt mail inbox --json.
@@ -729,7 +730,8 @@ func (d *Daemon) identityToAgentBeadID(identity string) string {
 		return beads.CrewBeadIDWithPrefix(prefix, parsed.RigName, parsed.AgentName)
 	case "polecat":
 		// Polecat agent beads use hq- prefix and are stored in town beads (fix for gt-myc).
-		return beads.PolecatBeadIDTown(parsed.RigName, parsed.AgentName)
+		townName := workspace.TownNameFromRoot(d.config.TownRoot)
+		return beads.PolecatBeadIDTown(townName, parsed.RigName, parsed.AgentName)
 	default:
 		return ""
 	}

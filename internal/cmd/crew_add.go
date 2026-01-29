@@ -75,7 +75,10 @@ func runCrewAdd(cmd *cobra.Command, args []string) error {
 	crewGit := git.NewGit(r.Path)
 	crewMgr := crew.NewManager(r, crewGit)
 
-	bd := beads.New(beads.ResolveBeadsDir(r.Path))
+	// Use town-level beads for agent beads (hq- prefix).
+	// Agent beads are coordination artifacts accessible to all rigs,
+	// and the mail router validates recipients against town beads.
+	bd := beads.New(beads.ResolveBeadsDir(townRoot))
 
 	// Track results
 	var created []string
@@ -116,9 +119,10 @@ func runCrewAdd(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Path: %s\n", worker.ClonePath)
 		fmt.Printf("  Branch: %s\n", worker.Branch)
 
-		// Create agent bead for the crew worker
-		prefix := beads.GetPrefixForRig(townRoot, rigName)
-		crewID := beads.CrewBeadIDWithPrefix(prefix, rigName, name)
+		// Create agent bead for the crew worker in town beads (hq- prefix).
+		// Town-level storage ensures mail routing can validate recipients.
+		townName := workspace.TownNameFromRoot(townRoot)
+		crewID := beads.CrewBeadIDTown(townName, rigName, name)
 		if _, err := bd.Show(crewID); err != nil {
 			// Agent bead doesn't exist, create it
 			fields := &beads.AgentFields{
