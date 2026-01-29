@@ -66,21 +66,51 @@ want human guidance. The decision is tracked as a bead and blocks
 dependent work until resolved.
 
 FLAGS:
-  --prompt      The decision to be made (required)
-  --option      An option in "Label: Description" format (repeatable, 2-4 required)
-  --context     Background information or analysis
-  --recommend   Mark option N as recommended (1-indexed)
-  --blocks      Bead ID that's blocked by this decision
-  --parent      Parent bead for hierarchy
-  --urgency     Priority level: high, medium, low (default: medium)
+  --prompt        The decision to be made (required)
+  --option        An option in "Label: Description" format (repeatable, 2-4 required)
+  --context       JSON context (structured data for decision-making)
+  --recommend     Mark option N as recommended (1-indexed)
+  --blocks        Bead ID that's blocked by this decision
+  --parent        Parent bead for hierarchy
+  --predecessor   ID of predecessor decision (for chaining)
+  --urgency       Priority level: high, medium, low (default: medium)
+
+CONTEXT FORMAT:
+  Context must be valid JSON. Examples:
+    --context '{"key": "value"}'
+    --context '[1, 2, 3]'
+    --context '"simple string"'
+
+DECISION CHAINING:
+  Use --predecessor to link decisions in a chain:
+    --predecessor hq-dec-abc123
+
+  Predecessor decisions can define successor_schemas in their context to
+  validate follow-up decisions. See 'gt decision chain' to view chains.
 
 Examples:
+  # Basic decision request
   gt decision request \
     --prompt "Which authentication method?" \
-    --option "JWT tokens: Stateless, scalable, good for SPAs" \
-    --option "Session cookies: Simpler, traditional approach" \
+    --option "JWT tokens: Stateless, scalable" \
+    --option "Session cookies: Simpler approach" \
     --recommend 1 \
-    --blocks gt-work-xyz`,
+    --blocks gt-work-xyz
+
+  # With JSON context
+  gt decision request \
+    --prompt "How to handle the error?" \
+    --option "Retry: Transient failure likely" \
+    --option "Escalate: Root cause unknown" \
+    --context '{"error_code": 500, "attempts": 3}'
+
+  # Chained decision
+  gt decision request \
+    --prompt "Fix approach?" \
+    --option "Add retry logic" \
+    --option "Fix underlying bug" \
+    --predecessor hq-dec-abc123 \
+    --context '{"diagnosis": "rate limiting"}'`,
 	RunE: runDecisionRequest,
 }
 
