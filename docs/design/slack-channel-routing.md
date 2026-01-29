@@ -445,6 +445,64 @@ Provide helpful error when posting to channel bot isn't in.
 
 ---
 
+## Usage Guide
+
+### Setup
+
+1. **Create config file** at `~/gt/settings/slack.json`:
+   ```bash
+   cp ~/gt/settings/slack.json.example ~/gt/settings/slack.json
+   # Edit with your actual Slack channel IDs
+   ```
+
+2. **Configure channel patterns** based on your team structure:
+   - Use exact matches for specific agents: `"gastown/crew/decision_point": "C123"`
+   - Use wildcards for groups: `"gastown/polecats/*": "C456"`
+   - Set a default for unmatched agents: `"default_channel": "C789"`
+
+3. **Restart gtslack** to load the new config:
+   ```bash
+   systemctl restart gtslack  # or kill and restart manually
+   ```
+
+### Verification
+
+The router auto-loads from standard locations on startup. Check logs for:
+```
+Slack: Channel router auto-loaded
+```
+
+With debug mode (`-debug` flag), you'll see routing decisions:
+```
+Slack: Routing gastown/polecats/furiosa to channel C_GASTOWN_POLECATS (matched by: gastown/polecats/*)
+```
+
+### Testing Patterns
+
+To verify pattern matching works as expected, check the unit tests:
+```bash
+cd gastown/mayor/rig
+go test ./internal/slack/... -v -run TestResolve
+```
+
+### Troubleshooting
+
+**Decisions not routing to expected channel:**
+- Check pattern specificity - more specific patterns match first
+- Verify channel IDs are correct (not channel names)
+- Enable debug mode to see routing decisions
+
+**Router not loading:**
+- Check file exists at `~/gt/settings/slack.json`
+- Validate JSON syntax: `jq . ~/gt/settings/slack.json`
+- Check file permissions
+
+**Bot can't post to channel:**
+- Ensure bot is invited to the channel
+- Verify channel ID is correct (not archived)
+
+---
+
 ## Appendix: Agent Identity Format
 
 Gas Town agent identities follow the pattern: `<rig>/<role>/<name>`
