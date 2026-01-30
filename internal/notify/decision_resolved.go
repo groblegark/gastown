@@ -51,10 +51,10 @@ func DecisionResolved(townRoot, decisionID string, fields beads.DecisionFields, 
 		}
 
 		// 4. Nudge the requesting agent (immediate, best-effort).
-		// Use --direct to send via tmux immediately rather than queuing to NudgeQueue.
+		// Direct tmux send is now the default behavior for gt nudge (no --direct needed).
 		// This is critical because the requesting agent is likely idle (blocked waiting
 		// for this decision), so queued nudges would never be drained (no hooks fire
-		// in idle sessions). Direct tmux send wakes up the session.
+		// in idle sessions). Direct send wakes up the session immediately.
 		semanticSlug := util.GenerateDecisionSlug(decisionID, fields.Question)
 		nudgeMsg := fmt.Sprintf("[DECISION RESOLVED] %s: Chose \"%s\"", semanticSlug, chosenLabel)
 		if rationale != "" {
@@ -62,7 +62,7 @@ func DecisionResolved(townRoot, decisionID string, fields beads.DecisionFields, 
 		}
 		// Add actionable instructions so the agent knows to continue working
 		nudgeMsg += " → Continue working - check inbox"
-		nudgeCmd := exec.Command("gt", "nudge", "--direct", fields.RequestedBy, nudgeMsg) //nolint:gosec // trusted internal command
+		nudgeCmd := exec.Command("gt", "nudge", fields.RequestedBy, nudgeMsg) //nolint:gosec // trusted internal command
 		if err := nudgeCmd.Run(); err != nil {
 			log.Printf("notify: failed to nudge requestor %q: %v", fields.RequestedBy, err)
 		}

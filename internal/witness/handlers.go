@@ -1188,11 +1188,10 @@ func NudgeCrewWithDecision(workDir, rigName string, info *ResolvedDecisionInfo) 
 	}
 	msg.WriteString(". Check your mail or continue work.")
 
-	// Send the nudge via gt nudge --direct (uses proper tmux formatting).
-	// Must use --direct because the crew is likely idle (blocked waiting for this
-	// decision), so queued nudges would never be drained (no hooks fire in idle
-	// sessions). Direct tmux send wakes up the session.
-	if err := util.ExecRun(workDir, "gt", "nudge", "--direct", info.RequestedBy, msg.String()); err != nil {
+	// Send the nudge via gt nudge (uses proper tmux formatting).
+	// Direct send is now the default - the crew is likely idle (blocked waiting for
+	// this decision), so direct delivery is needed to wake up the session.
+	if err := util.ExecRun(workDir, "gt", "nudge", info.RequestedBy, msg.String()); err != nil {
 		return sessionName, fmt.Errorf("nudging crew: %w", err)
 	}
 

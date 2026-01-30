@@ -18,14 +18,16 @@ import (
 
 var nudgeMessageFlag string
 var nudgeForceFlag bool
-var nudgeDirectFlag bool
+var nudgeDirectFlag bool // deprecated: direct is now default
+var nudgeQueueFlag bool
 var nudgeDrainQuiet bool
 
 func init() {
 	rootCmd.AddCommand(nudgeCmd)
 	nudgeCmd.Flags().StringVarP(&nudgeMessageFlag, "message", "m", "", "Message to send")
 	nudgeCmd.Flags().BoolVarP(&nudgeForceFlag, "force", "f", false, "Send even if target has DND enabled")
-	nudgeCmd.Flags().BoolVar(&nudgeDirectFlag, "direct", false, "Send directly via tmux (bypasses queue, may cause API 400 errors)")
+	nudgeCmd.Flags().BoolVar(&nudgeDirectFlag, "direct", false, "DEPRECATED: direct is now the default behavior")
+	nudgeCmd.Flags().BoolVar(&nudgeQueueFlag, "queue", false, "Queue the nudge for later delivery (use when target may be busy processing tools)")
 
 	// Add drain subcommand
 	nudgeCmd.AddCommand(nudgeDrainCmd)
@@ -41,6 +43,17 @@ var nudgeCmd = &cobra.Command{
 Delivers a message directly to any worker's Claude Code session: polecats, crew,
 witness, refinery, mayor, or deacon. Use this for real-time coordination when
 you need immediate attention from another worker.
+
+DELIVERY MODES:
+  Direct (default): Sends immediately via tmux. Use this to wake up idle agents
+                    waiting for decisions, stale agents, or any agent you need to
+                    respond immediately. May cause API 400 errors if the target is
+                    actively processing tools (recoverable - message still arrives).
+
+  Queued (--queue): Buffers the nudge for later delivery via the target's
+                    PostToolUse hook. Use this when sending many nudges to a busy
+                    agent to avoid API errors. WARNING: Queued nudges are NEVER
+                    delivered to idle agents (no tools running = no hooks firing).
 
 Uses a reliable delivery pattern:
 1. Sends text in literal mode (-l flag)
@@ -507,23 +520,22 @@ func addressToAgentBeadID(address string) string {
 	}
 }
 
-// sendOrQueueNudge sends a nudge either via queue (safe) or direct tmux (legacy).
-// By default, nudges are queued to prevent API 400 errors when the target is busy.
-// Use --direct flag to send immediately via tmux (may cause errors if target is busy).
+// sendOrQueueNudge sends a nudge either directly via tmux (default) or queued for later delivery.
+// By default, nudges are sent directly to wake up idle agents immediately.
+// Use --queue flag to buffer nudges when the target may be busy processing tools.
 func sendOrQueueNudge(t *tmux.Tmux, townRoot, sessionName, message string) error {
-	// If --direct flag is set or we're not in a workspace, use direct tmux send
-	if nudgeDirectFlag || townRoot == "" {
-		return t.NudgeSession(sessionName, message)
+	// If --queue flag is set and we're in a workspace, queue the nudge
+	if nudgeQueueFlag && townRoot != "" {
+		nq := inject.NewNudgeQueue(townRoot, sessionName)
+		if err := nq.Enqueue(message); err != nil {
+			// Fall back to direct send if queueing fails
+			return t.NudgeSession(sessionName, message)
+		}
+		return nil
 	}
 
-	// Queue the nudge - it will be delivered via the target's PostToolUse hook
-	nq := inject.NewNudgeQueue(townRoot, sessionName)
-	if err := nq.Enqueue(message); err != nil {
-		// Fall back to direct send if queueing fails
-		return t.NudgeSession(sessionName, message)
-	}
-
-	return nil
+	// Default: send directly via tmux to wake up the target immediately
+	return t.NudgeSession(sessionName, message)
 }
 
 // nudgeDrainCmd drains the nudge queue for the current session.
