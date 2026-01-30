@@ -120,7 +120,7 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 			Type:          decisionType,
 		}
 
-		// Run create validators
+		// Run create validators (script-based)
 		result := validator.RunCreateValidators(townRoot, validatorInput)
 		if !result.Passed {
 			// Show errors
@@ -137,6 +137,24 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 		// Show any warnings even on success
 		for _, w := range result.Warnings {
 			style.PrintWarning("%s", w)
+		}
+
+		// Run schema bead validation (if --type specified)
+		if decisionType != "" {
+			schemaResult := validator.ValidateAgainstSchema(decisionType, contextMap)
+			if !schemaResult.Valid && schemaResult.Blocking {
+				for _, e := range schemaResult.Errors {
+					style.PrintError("%s", e)
+				}
+				for _, w := range schemaResult.Warnings {
+					style.PrintWarning("Advice: %s", w)
+				}
+				return fmt.Errorf("schema validation failed")
+			}
+			// Show warnings even on success
+			for _, w := range schemaResult.Warnings {
+				style.PrintWarning("%s", w)
+			}
 		}
 	}
 
