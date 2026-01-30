@@ -699,19 +699,37 @@ a busy human choose without needing to ask follow-up questions.
 --option "Defer: No caching until bottleneck proven, avoid premature optimization"
 ```
 
-### Providing Context
+### Providing Context (STRONGLY ENCOURAGED)
+
+**Context is the difference between a 5-second decision and a 5-minute investigation.**
 
 Use `--context` to explain **why this decision matters** and what you've already
 researched. The context is shown inline in Slack notifications so the human can
 decide immediately without clicking through.
+
+**ALWAYS provide context when:**
+- You've done research that led to the decision (share your findings!)
+- The decision has non-obvious implications
+- Numbers, metrics, or specific details are relevant
+- The human might wonder "why is this a decision point?"
 
 **What to include in --context:**
 - What you investigated and what you found
 - Why you can't proceed without human input
 - Constraints or requirements that shape the options
 - What's blocked if this isn't resolved
+- Relevant metrics, counts, or measurements
 
-**Example with context:**
+**Bad context (forces human to investigate):**
+```bash
+gt decision request \
+  --prompt "Which approach for the API?" \
+  --option "Approach A" \
+  --option "Approach B"
+  # No context - human has no idea what this is about!
+```
+
+**Good context (human can decide immediately):**
 ```bash
 gt decision request \
   --prompt "Which caching strategy for the API layer?" \
@@ -722,6 +740,18 @@ gt decision request \
   --blocks gt-work-xyz \
   --urgency high
 ```
+
+**Context as prose (for simpler decisions):**
+```bash
+gt decision request \
+  --prompt "Continue with bug triage or switch tasks?" \
+  --context "Fixed 5 bugs this session (commits pushed). 13 bugs remain in backlog. Categories: database sync (2), operational (3), stale data (2), other (6). No urgent blockers." \
+  --option "Continue triage: Work through remaining bugs systematically" \
+  --option "Different work: Assign me something else"
+```
+
+**Remember:** Decisions without context slow down the whole system. The human sees
+your decision in Slack - if they have to dig for context, that's wasted time.
 
 ### Two-Layer Architecture
 
