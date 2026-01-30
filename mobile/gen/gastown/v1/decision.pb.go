@@ -649,24 +649,26 @@ func (x *WatchDecisionsRequest) GetMinUrgency() Urgency {
 
 // A decision point requiring human input
 type Decision struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Question      string                 `protobuf:"bytes,2,opt,name=question,proto3" json:"question,omitempty"`
-	Context       string                 `protobuf:"bytes,3,opt,name=context,proto3" json:"context,omitempty"`
-	Options       []*DecisionOption      `protobuf:"bytes,4,rep,name=options,proto3" json:"options,omitempty"`
-	ChosenIndex   int32                  `protobuf:"varint,5,opt,name=chosen_index,json=chosenIndex,proto3" json:"chosen_index,omitempty"` // 0 = pending, 1-indexed when resolved
-	Rationale     string                 `protobuf:"bytes,6,opt,name=rationale,proto3" json:"rationale,omitempty"`                         // Set after resolution
-	RequestedBy   *AgentAddress          `protobuf:"bytes,7,opt,name=requested_by,json=requestedBy,proto3" json:"requested_by,omitempty"`
-	RequestedAt   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=requested_at,json=requestedAt,proto3" json:"requested_at,omitempty"`
-	ResolvedBy    string                 `protobuf:"bytes,9,opt,name=resolved_by,json=resolvedBy,proto3" json:"resolved_by,omitempty"`
-	ResolvedAt    *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=resolved_at,json=resolvedAt,proto3" json:"resolved_at,omitempty"`
-	Urgency       Urgency                `protobuf:"varint,11,opt,name=urgency,proto3,enum=gastown.v1.Urgency" json:"urgency,omitempty"`
-	Blockers      []string               `protobuf:"bytes,12,rep,name=blockers,proto3" json:"blockers,omitempty"` // Work IDs blocked by this decision
-	Resolved      bool                   `protobuf:"varint,13,opt,name=resolved,proto3" json:"resolved,omitempty"`
-	Cancelled     bool                   `protobuf:"varint,14,opt,name=cancelled,proto3" json:"cancelled,omitempty"`
-	PredecessorId string                 `protobuf:"bytes,15,opt,name=predecessor_id,json=predecessorId,proto3" json:"predecessor_id,omitempty"` // Predecessor decision ID for chaining
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Question        string                 `protobuf:"bytes,2,opt,name=question,proto3" json:"question,omitempty"`
+	Context         string                 `protobuf:"bytes,3,opt,name=context,proto3" json:"context,omitempty"`
+	Options         []*DecisionOption      `protobuf:"bytes,4,rep,name=options,proto3" json:"options,omitempty"`
+	ChosenIndex     int32                  `protobuf:"varint,5,opt,name=chosen_index,json=chosenIndex,proto3" json:"chosen_index,omitempty"` // 0 = pending, 1-indexed when resolved
+	Rationale       string                 `protobuf:"bytes,6,opt,name=rationale,proto3" json:"rationale,omitempty"`                         // Set after resolution
+	RequestedBy     *AgentAddress          `protobuf:"bytes,7,opt,name=requested_by,json=requestedBy,proto3" json:"requested_by,omitempty"`
+	RequestedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=requested_at,json=requestedAt,proto3" json:"requested_at,omitempty"`
+	ResolvedBy      string                 `protobuf:"bytes,9,opt,name=resolved_by,json=resolvedBy,proto3" json:"resolved_by,omitempty"`
+	ResolvedAt      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=resolved_at,json=resolvedAt,proto3" json:"resolved_at,omitempty"`
+	Urgency         Urgency                `protobuf:"varint,11,opt,name=urgency,proto3,enum=gastown.v1.Urgency" json:"urgency,omitempty"`
+	Blockers        []string               `protobuf:"bytes,12,rep,name=blockers,proto3" json:"blockers,omitempty"` // Work IDs blocked by this decision
+	Resolved        bool                   `protobuf:"varint,13,opt,name=resolved,proto3" json:"resolved,omitempty"`
+	Cancelled       bool                   `protobuf:"varint,14,opt,name=cancelled,proto3" json:"cancelled,omitempty"`
+	PredecessorId   string                 `protobuf:"bytes,15,opt,name=predecessor_id,json=predecessorId,proto3" json:"predecessor_id,omitempty"`         // Predecessor decision ID for chaining
+	ParentBead      string                 `protobuf:"bytes,16,opt,name=parent_bead,json=parentBead,proto3" json:"parent_bead,omitempty"`                  // Parent bead ID (e.g., epic) for hierarchy/routing
+	ParentBeadTitle string                 `protobuf:"bytes,17,opt,name=parent_bead_title,json=parentBeadTitle,proto3" json:"parent_bead_title,omitempty"` // Parent bead title for channel derivation
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Decision) Reset() {
@@ -804,6 +806,20 @@ func (x *Decision) GetPredecessorId() string {
 	return ""
 }
 
+func (x *Decision) GetParentBead() string {
+	if x != nil {
+		return x.ParentBead
+	}
+	return ""
+}
+
+func (x *Decision) GetParentBeadTitle() string {
+	if x != nil {
+		return x.ParentBeadTitle
+	}
+	return ""
+}
+
 // An option in a decision
 type DecisionOption struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -909,7 +925,7 @@ const file_gastown_v1_decision_proto_rawDesc = "" +
 	"\x0eCancelResponse\"M\n" +
 	"\x15WatchDecisionsRequest\x124\n" +
 	"\vmin_urgency\x18\x01 \x01(\x0e2\x13.gastown.v1.UrgencyR\n" +
-	"minUrgency\"\xcd\x04\n" +
+	"minUrgency\"\x9a\x05\n" +
 	"\bDecision\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\bquestion\x18\x02 \x01(\tR\bquestion\x12\x18\n" +
@@ -928,7 +944,10 @@ const file_gastown_v1_decision_proto_rawDesc = "" +
 	"\bblockers\x18\f \x03(\tR\bblockers\x12\x1a\n" +
 	"\bresolved\x18\r \x01(\bR\bresolved\x12\x1c\n" +
 	"\tcancelled\x18\x0e \x01(\bR\tcancelled\x12%\n" +
-	"\x0epredecessor_id\x18\x0f \x01(\tR\rpredecessorId\"j\n" +
+	"\x0epredecessor_id\x18\x0f \x01(\tR\rpredecessorId\x12\x1f\n" +
+	"\vparent_bead\x18\x10 \x01(\tR\n" +
+	"parentBead\x12*\n" +
+	"\x11parent_bead_title\x18\x11 \x01(\tR\x0fparentBeadTitle\"j\n" +
 	"\x0eDecisionOption\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12 \n" +

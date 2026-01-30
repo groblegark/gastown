@@ -50,18 +50,20 @@ func WithTimeout(d time.Duration) Option {
 
 // Decision represents a decision from the RPC API.
 type Decision struct {
-	ID            string
-	Question      string
-	Context       string
-	Options       []DecisionOption
-	ChosenIndex   int
-	Rationale     string
-	RequestedBy   string
-	RequestedAt   string
-	ResolvedBy    string
-	Urgency       string
-	Resolved      bool
-	PredecessorID string // For decision chaining
+	ID              string
+	Question        string
+	Context         string
+	Options         []DecisionOption
+	ChosenIndex     int
+	Rationale       string
+	RequestedBy     string
+	RequestedAt     string
+	ResolvedBy      string
+	Urgency         string
+	Resolved        bool
+	PredecessorID   string // For decision chaining
+	ParentBeadID    string // Parent bead ID (e.g., epic) for hierarchy
+	ParentBeadTitle string // Parent bead title for channel derivation
 }
 
 // DecisionOption represents an option in a decision.
@@ -468,8 +470,10 @@ func (c *Client) GetDecision(ctx context.Context, decisionID string) (*Decision,
 			RequestedBy struct {
 				Name string `json:"name"`
 			} `json:"requestedBy"`
-			Urgency  string `json:"urgency"`
-			Resolved bool   `json:"resolved"`
+			Urgency         string `json:"urgency"`
+			Resolved        bool   `json:"resolved"`
+			ParentBead      string `json:"parentBead"`
+			ParentBeadTitle string `json:"parentBeadTitle"`
 		} `json:"decision"`
 	}
 
@@ -487,16 +491,18 @@ func (c *Client) GetDecision(ctx context.Context, decisionID string) (*Decision,
 	}
 
 	return &Decision{
-		ID:          result.Decision.ID,
-		Question:    result.Decision.Question,
-		Context:     result.Decision.Context,
-		Options:     opts,
-		ChosenIndex: result.Decision.ChosenIndex,
-		Rationale:   result.Decision.Rationale,
-		ResolvedBy:  result.Decision.ResolvedBy,
-		RequestedBy: result.Decision.RequestedBy.Name,
-		Urgency:     urgencyToString(result.Decision.Urgency),
-		Resolved:    result.Decision.Resolved,
+		ID:              result.Decision.ID,
+		Question:        result.Decision.Question,
+		Context:         result.Decision.Context,
+		Options:         opts,
+		ChosenIndex:     result.Decision.ChosenIndex,
+		Rationale:       result.Decision.Rationale,
+		ResolvedBy:      result.Decision.ResolvedBy,
+		RequestedBy:     result.Decision.RequestedBy.Name,
+		Urgency:         urgencyToString(result.Decision.Urgency),
+		Resolved:        result.Decision.Resolved,
+		ParentBeadID:    result.Decision.ParentBead,
+		ParentBeadTitle: result.Decision.ParentBeadTitle,
 	}, nil
 }
 

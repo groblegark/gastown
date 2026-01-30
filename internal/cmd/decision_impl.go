@@ -204,7 +204,7 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 		RequestedAt:   time.Now().Format(time.RFC3339),
 		Urgency:       urgency,
 		PredecessorID: decisionPredecessor,
-		ParentID:      decisionParent,
+		ParentBeadID:  decisionParent,
 	}
 
 	// Add blocker if specified

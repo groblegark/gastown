@@ -333,17 +333,19 @@ func (s *DecisionServer) GetDecision(
 	}
 
 	decision := &gastownv1.Decision{
-		Id:          issue.ID,
-		Question:    fields.Question,
-		Context:     fields.Context,
-		Options:     options,
-		ChosenIndex: int32(fields.ChosenIndex),
-		Rationale:   fields.Rationale,
-		ResolvedBy:  fields.ResolvedBy,
-		RequestedBy: &gastownv1.AgentAddress{Name: fields.RequestedBy},
-		Urgency:     toUrgency(fields.Urgency),
-		Blockers:    fields.Blockers,
-		Resolved:    fields.ChosenIndex > 0,
+		Id:              issue.ID,
+		Question:        fields.Question,
+		Context:         fields.Context,
+		Options:         options,
+		ChosenIndex:     int32(fields.ChosenIndex),
+		Rationale:       fields.Rationale,
+		ResolvedBy:      fields.ResolvedBy,
+		RequestedBy:     &gastownv1.AgentAddress{Name: fields.RequestedBy},
+		Urgency:         toUrgency(fields.Urgency),
+		Blockers:        fields.Blockers,
+		Resolved:        fields.ChosenIndex > 0,
+		ParentBead:      fields.ParentBeadID,
+		ParentBeadTitle: fields.ParentBeadTitle,
 	}
 
 	return connect.NewResponse(&gastownv1.GetDecisionResponse{Decision: decision}), nil
@@ -378,6 +380,18 @@ func (s *DecisionServer) CreateDecision(
 		PredecessorID: req.Msg.PredecessorId,
 	}
 
+	// Handle parent bead for epic-based channel routing
+	var parentBeadTitle string
+	if req.Msg.ParentBead != "" {
+		fields.ParentBeadID = req.Msg.ParentBead
+		// Look up the parent bead to get its title
+		parentIssue, err := client.Show(req.Msg.ParentBead)
+		if err == nil && parentIssue != nil {
+			parentBeadTitle = parentIssue.Title
+			fields.ParentBeadTitle = parentBeadTitle
+		}
+	}
+
 	// Create the decision using bd decision create (canonical storage, hq-946577.39)
 	issue, err := client.CreateBdDecision(fields)
 	if err != nil {
@@ -395,15 +409,17 @@ func (s *DecisionServer) CreateDecision(
 	}
 
 	decision := &gastownv1.Decision{
-		Id:            issue.ID,
-		Question:      fields.Question,
-		Context:       fields.Context,
-		Options:       protoOptions,
-		RequestedBy:   req.Msg.RequestedBy,
-		Urgency:       req.Msg.Urgency,
-		Blockers:      fields.Blockers,
-		Resolved:      false,
-		PredecessorId: fields.PredecessorID,
+		Id:              issue.ID,
+		Question:        fields.Question,
+		Context:         fields.Context,
+		Options:         protoOptions,
+		RequestedBy:     req.Msg.RequestedBy,
+		Urgency:         req.Msg.Urgency,
+		Blockers:        fields.Blockers,
+		Resolved:        false,
+		PredecessorId:   fields.PredecessorID,
+		ParentBead:      fields.ParentBeadID,
+		ParentBeadTitle: parentBeadTitle,
 	}
 
 	// Publish event to bus for real-time notification

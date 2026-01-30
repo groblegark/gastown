@@ -1217,6 +1217,103 @@ func (b *Bot) resolveChannel(agent string) string {
 	return b.channelID
 }
 
+// resolveChannelForDecision determines the appropriate channel for a decision.
+// Priority order:
+// 1. Epic-based channel (if decision has parent epic)
+// 2. Static router config (if available and matches)
+// 3. Dynamic channel creation (if enabled)
+// 4. Default channelID
+func (b *Bot) resolveChannelForDecision(decision rpcclient.Decision) string {
+	// Priority 1: Epic-based channel routing
+	if decision.ParentBeadTitle != "" {
+		channelID, err := b.ensureEpicChannelExists(decision.ParentBeadTitle)
+		if err != nil {
+			log.Printf("Slack: Failed to ensure epic channel for %q: %v (falling back to agent routing)",
+				decision.ParentBeadTitle, err)
+		} else if channelID != "" {
+			if b.debug {
+				log.Printf("Slack: Routing decision %s to epic channel for %q",
+					decision.ID, decision.ParentBeadTitle)
+			}
+			return channelID
+		}
+	}
+
+	// Fall back to agent-based routing
+	return b.resolveChannel(decision.RequestedBy)
+}
+
+// ensureEpicChannelExists looks up or creates a channel for the given epic title.
+// Returns the channel ID.
+func (b *Bot) ensureEpicChannelExists(epicTitle string) (string, error) {
+	// Derive channel name from epic title using the slug function
+	slug := util.DeriveChannelSlug(epicTitle)
+	if slug == "" {
+		return "", fmt.Errorf("could not derive channel slug from epic title: %q", epicTitle)
+	}
+
+	// Build full channel name with prefix
+	channelName := b.channelPrefix + "-" + slug
+
+	// Sanitize for Slack (should already be clean from DeriveChannelSlug, but be safe)
+	channelName = strings.ToLower(channelName)
+	channelName = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(channelName, "-")
+	channelName = regexp.MustCompile(`-+`).ReplaceAllString(channelName, "-")
+	channelName = strings.Trim(channelName, "-")
+
+	// Slack channel names max 80 chars
+	if len(channelName) > 80 {
+		channelName = channelName[:80]
+		channelName = strings.TrimRight(channelName, "-")
+	}
+
+	// Check cache first
+	b.channelCacheMu.RLock()
+	if cachedID, ok := b.channelCache[channelName]; ok {
+		b.channelCacheMu.RUnlock()
+		return cachedID, nil
+	}
+	b.channelCacheMu.RUnlock()
+
+	// Look up channel by name
+	channelID, err := b.findChannelByName(channelName)
+	if err == nil && channelID != "" {
+		b.cacheChannel(channelName, channelID)
+		if b.debug {
+			log.Printf("Slack: Found existing epic channel #%s (%s) for epic %q", channelName, channelID, epicTitle)
+		}
+		return channelID, nil
+	}
+
+	// Dynamic channels disabled - can't create
+	if !b.dynamicChannels {
+		return "", nil
+	}
+
+	// Create the channel
+	channel, err := b.client.CreateConversation(slack.CreateConversationParams{
+		ChannelName: channelName,
+		IsPrivate:   false,
+	})
+	if err != nil {
+		// Check if it's a "name_taken" error - someone else created it
+		if strings.Contains(err.Error(), "name_taken") {
+			// Try to find it again
+			channelID, findErr := b.findChannelByName(channelName)
+			if findErr == nil && channelID != "" {
+				b.cacheChannel(channelName, channelID)
+				return channelID, nil
+			}
+		}
+		return "", fmt.Errorf("creating epic channel %s: %w", channelName, err)
+	}
+
+	b.cacheChannel(channelName, channel.ID)
+	log.Printf("Slack: Created epic channel #%s (%s) for epic %q", channelName, channel.ID, epicTitle)
+
+	return channel.ID, nil
+}
+
 // agentToChannelName converts an agent identity to a Slack channel name.
 // Examples:
 //   - "gastown/polecats/furiosa" → "gt-decisions-gastown-polecats"
@@ -1373,7 +1470,7 @@ func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
 	}
 
 	// Fallback: post a new message if we don't have the original tracked
-	targetChannel := b.resolveChannel(decision.RequestedBy)
+	targetChannel := b.resolveChannelForDecision(decision)
 	if targetChannel == "" {
 		return nil
 	}
@@ -1419,10 +1516,12 @@ func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
 }
 
 // NotifyNewDecision posts a new decision notification to the appropriate channel.
-// Uses the channel router to determine the target channel based on the requesting agent.
+// Uses the channel router to determine the target channel based on:
+// 1. Parent epic (if decision has a parent bead with title)
+// 2. Requesting agent identity
 func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
-	// Resolve channel based on agent identity
-	targetChannel := b.resolveChannel(decision.RequestedBy)
+	// Resolve channel based on parent epic or agent identity
+	targetChannel := b.resolveChannelForDecision(decision)
 	if targetChannel == "" {
 		return nil
 	}

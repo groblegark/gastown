@@ -109,6 +109,8 @@ message Decision {
   bool resolved = 13;
   bool cancelled = 14;
   string predecessor_id = 15;    // Predecessor decision ID for chaining
+  string parent_bead = 16;       // Parent bead ID (e.g., epic) for hierarchy/routing
+  string parent_bead_title = 17; // Parent bead title for channel derivation
 }
 
 // An option in a decision

@@ -33,19 +33,20 @@ type DecisionOption struct {
 // DecisionFields holds structured fields for decision beads.
 // These are stored as structured data in the description.
 type DecisionFields struct {
-	Question      string           `json:"question"`                 // The decision to be made
-	Context       string           `json:"context,omitempty"`        // Background/analysis
-	Options       []DecisionOption `json:"options"`                  // Available choices
-	ChosenIndex   int              `json:"chosen_index"`             // Index of selected option (0 = pending, 1-indexed when resolved)
-	Rationale     string           `json:"rationale,omitempty"`      // Why this choice was made
-	RequestedBy   string           `json:"requested_by"`             // Agent that requested decision
-	RequestedAt   string           `json:"requested_at"`             // When requested
-	ResolvedBy    string           `json:"resolved_by,omitempty"`    // Who made the decision
-	ResolvedAt    string           `json:"resolved_at,omitempty"`    // When resolved
-	Urgency       string           `json:"urgency"`                  // high, medium, low
-	Blockers      []string         `json:"blockers,omitempty"`       // Work IDs blocked by this decision
-	PredecessorID string           `json:"predecessor_id,omitempty"` // Predecessor decision ID for chaining
-	ParentID      string           `json:"parent_id,omitempty"`      // Parent bead (epic) for hierarchy
+	Question        string           `json:"question"`                    // The decision to be made
+	Context         string           `json:"context,omitempty"`           // Background/analysis
+	Options         []DecisionOption `json:"options"`                     // Available choices
+	ChosenIndex     int              `json:"chosen_index"`                // Index of selected option (0 = pending, 1-indexed when resolved)
+	Rationale       string           `json:"rationale,omitempty"`         // Why this choice was made
+	RequestedBy     string           `json:"requested_by"`                // Agent that requested decision
+	RequestedAt     string           `json:"requested_at"`                // When requested
+	ResolvedBy      string           `json:"resolved_by,omitempty"`       // Who made the decision
+	ResolvedAt      string           `json:"resolved_at,omitempty"`       // When resolved
+	Urgency         string           `json:"urgency"`                     // high, medium, low
+	Blockers        []string         `json:"blockers,omitempty"`          // Work IDs blocked by this decision
+	PredecessorID   string           `json:"predecessor_id,omitempty"`    // Predecessor decision ID for chaining
+	ParentBeadID    string           `json:"parent_bead_id,omitempty"`    // Parent bead ID (e.g., epic) for hierarchy
+	ParentBeadTitle string           `json:"parent_bead_title,omitempty"` // Parent bead title for channel derivation
 }
 
 // DecisionState constants for decision status tracking.
@@ -304,8 +305,8 @@ func (b *Beads) CreateBdDecision(fields *DecisionFields) (*Issue, error) {
 	}
 
 	// Add parent for hierarchy
-	if fields.ParentID != "" {
-		args = append(args, "--parent="+fields.ParentID)
+	if fields.ParentBeadID != "" {
+		args = append(args, "--parent="+fields.ParentBeadID)
 	}
 
 	out, err := b.run(args...)
