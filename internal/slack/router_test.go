@@ -338,3 +338,24 @@ func TestLoadRouterFromFile(t *testing.T) {
 	// as it tests file I/O which is straightforward
 	t.Skip("Requires temp file setup")
 }
+
+func TestNormalizeAgent(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"mayor", "mayor"},
+		{"mayor/", "mayor"},
+		{"gastown/crew/emma", "gastown/crew/emma"},
+		{"gastown/crew/emma/", "gastown/crew/emma"},
+		{"gastown/polecats/furiosa//", "gastown/polecats/furiosa"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		got := normalizeAgent(tt.input)
+		if got != tt.want {
+			t.Errorf("normalizeAgent(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}

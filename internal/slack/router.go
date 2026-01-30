@@ -602,12 +602,19 @@ func IsValidChannelMode(mode string) bool {
 	return false
 }
 
+// normalizeAgent normalizes agent names for consistent config key lookup.
+// Trims trailing slashes to ensure "mayor/" and "mayor" map to the same key.
+func normalizeAgent(agent string) string {
+	return strings.TrimRight(agent, "/")
+}
+
 // GetAgentChannelMode retrieves the channel mode preference for an agent.
 // Returns empty string if no preference is set.
 // Agent format: "rig/role/name" (e.g., "gastown/polecats/furiosa")
 func GetAgentChannelMode(agent string) (ChannelMode, error) {
-	// Normalize agent name for config key (replace / with .)
-	key := "slack.channel_mode." + strings.ReplaceAll(agent, "/", ".")
+	// Normalize agent name for config key (trim trailing slashes, replace / with .)
+	normalized := normalizeAgent(agent)
+	key := "slack.channel_mode." + strings.ReplaceAll(normalized, "/", ".")
 	value, err := bdConfigGet(key)
 	if err != nil {
 		return "", err
@@ -624,13 +631,15 @@ func SetAgentChannelMode(agent string, mode ChannelMode) error {
 	if !IsValidChannelMode(string(mode)) {
 		return fmt.Errorf("invalid channel mode %q: must be one of %v", mode, ValidChannelModes)
 	}
-	key := "slack.channel_mode." + strings.ReplaceAll(agent, "/", ".")
+	normalized := normalizeAgent(agent)
+	key := "slack.channel_mode." + strings.ReplaceAll(normalized, "/", ".")
 	return bdConfigSet(key, string(mode))
 }
 
 // ClearAgentChannelMode removes the channel mode preference for an agent.
 func ClearAgentChannelMode(agent string) error {
-	key := "slack.channel_mode." + strings.ReplaceAll(agent, "/", ".")
+	normalized := normalizeAgent(agent)
+	key := "slack.channel_mode." + strings.ReplaceAll(normalized, "/", ".")
 	// bd config set with empty value effectively unsets
 	return bdConfigSet(key, "")
 }
