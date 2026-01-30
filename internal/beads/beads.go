@@ -332,12 +332,12 @@ func (b *Beads) List(opts ListOptions) ([]*Issue, error) {
 	if opts.Status != "" {
 		args = append(args, "--status="+opts.Status)
 	}
-	// Prefer Label over Type (Type is deprecated)
+	// Prefer Label over Type (Type queries the deprecated issue_type column)
 	if opts.Label != "" {
 		args = append(args, "--label="+opts.Label)
 	} else if opts.Type != "" {
-		// Deprecated: convert type to label for backward compatibility
-		args = append(args, "--label=gt:"+opts.Type)
+		// Use --type for backward compatibility with existing beads using issue_type column
+		args = append(args, "--type="+opts.Type)
 	}
 	if opts.Priority >= 0 {
 		args = append(args, fmt.Sprintf("--priority=%d", opts.Priority))
