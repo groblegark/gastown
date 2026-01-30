@@ -117,12 +117,14 @@ func TestDecisionPollerNoDuplicates(t *testing.T) {
 
 func TestDecisionDataStruct(t *testing.T) {
 	data := DecisionData{
-		ID:          "dec-123",
-		Question:    "Choose auth method",
-		Context:     "We need to decide on authentication",
-		RequestedBy: "agent/test",
-		Urgency:     "high",
-		Blockers:    []string{"work-456"},
+		ID:              "dec-123",
+		Question:        "Choose auth method",
+		Context:         "We need to decide on authentication",
+		RequestedBy:     "agent/test",
+		Urgency:         "high",
+		Blockers:        []string{"work-456"},
+		ParentBeadID:    "epic-789",
+		ParentBeadTitle: "Authentication Epic",
 		Options: []DecisionOptionData{
 			{Label: "JWT", Description: "JSON Web Tokens", Recommended: true},
 			{Label: "Session", Description: "Server-side sessions"},
@@ -137,5 +139,11 @@ func TestDecisionDataStruct(t *testing.T) {
 	}
 	if !data.Options[0].Recommended {
 		t.Error("expected first option to be recommended")
+	}
+	if data.ParentBeadID != "epic-789" {
+		t.Errorf("unexpected ParentBeadID: %s", data.ParentBeadID)
+	}
+	if data.ParentBeadTitle != "Authentication Epic" {
+		t.Errorf("unexpected ParentBeadTitle: %s", data.ParentBeadTitle)
 	}
 }

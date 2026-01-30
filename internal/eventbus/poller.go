@@ -13,13 +13,15 @@ import (
 // DecisionData contains decision information for publishing events.
 // This is a simple struct that avoids importing proto types.
 type DecisionData struct {
-	ID          string
-	Question    string
-	Context     string
-	RequestedBy string
-	Urgency     string
-	Blockers    []string
-	Options     []DecisionOptionData
+	ID              string
+	Question        string
+	Context         string
+	RequestedBy     string
+	Urgency         string
+	Blockers        []string
+	Options         []DecisionOptionData
+	ParentBeadID    string // Parent bead ID (e.g., epic) for hierarchy/routing
+	ParentBeadTitle string // Parent bead title for channel derivation
 }
 
 // DecisionOptionData represents an option in a decision.
@@ -146,12 +148,14 @@ func (p *DecisionPoller) poll(client *beads.Beads) {
 
 		// Convert to DecisionData
 		data := DecisionData{
-			ID:          issue.ID,
-			Question:    fields.Question,
-			Context:     fields.Context,
-			RequestedBy: fields.RequestedBy,
-			Urgency:     fields.Urgency,
-			Blockers:    fields.Blockers,
+			ID:              issue.ID,
+			Question:        fields.Question,
+			Context:         fields.Context,
+			RequestedBy:     fields.RequestedBy,
+			Urgency:         fields.Urgency,
+			Blockers:        fields.Blockers,
+			ParentBeadID:    fields.ParentBeadID,
+			ParentBeadTitle: fields.ParentBeadTitle,
 		}
 		for _, opt := range fields.Options {
 			data.Options = append(data.Options, DecisionOptionData{
@@ -161,7 +165,7 @@ func (p *DecisionPoller) poll(client *beads.Beads) {
 			})
 		}
 
-		log.Printf("DecisionPoller: publishing new CLI-created decision %s: %q", issue.ID, fields.Question)
+		log.Printf("DecisionPoller: publishing new CLI-created decision %s: %q (parent: %s)", issue.ID, fields.Question, fields.ParentBeadID)
 		p.publisher(data)
 	}
 }

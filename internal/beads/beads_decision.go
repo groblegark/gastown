@@ -484,7 +484,16 @@ func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 			RequestedBy:   bdDecision.DecisionPoint.RequestedBy,
 			Urgency:       bdDecision.DecisionPoint.Urgency,
 			PredecessorID: bdDecision.DecisionPoint.PriorID,
+			ParentBeadID:  bdDecision.DecisionPoint.ParentBeadID,
 			ChosenIndex:   0, // Default pending, will be updated if resolved
+		}
+
+		// Look up parent bead title for channel routing
+		if fields.ParentBeadID != "" {
+			parentIssue, parentErr := b.Show(fields.ParentBeadID)
+			if parentErr == nil && parentIssue != nil {
+				fields.ParentBeadTitle = parentIssue.Title
+			}
 		}
 
 		// Parse options from bd decision
@@ -643,6 +652,7 @@ type BdDecisionPointData struct {
 	RequestedBy    string `json:"requested_by,omitempty"`    // Who requested the decision
 	Urgency        string `json:"urgency,omitempty"`         // Urgency level
 	PriorID        string `json:"prior_id,omitempty"`        // Predecessor decision ID
+	ParentBeadID   string `json:"parent_bead_id,omitempty"`  // Parent bead ID (e.g., epic) for hierarchy
 }
 
 // BdDecisionShowResponse represents the response from bd decision show

@@ -46,15 +46,16 @@ func TestDecisionFieldsStruct(t *testing.T) {
 	}
 }
 
-// TestBdDecisionPointDataStruct verifies BdDecisionPointData fields including RequestedBy.
-// This test ensures the struct can properly unmarshal the requested_by field from bd decision show.
+// TestBdDecisionPointDataStruct verifies BdDecisionPointData fields including RequestedBy and ParentBeadID.
+// This test ensures the struct can properly unmarshal the requested_by and parent_bead_id fields from bd decision show.
 func TestBdDecisionPointDataStruct(t *testing.T) {
 	data := BdDecisionPointData{
-		IssueID:     "hq-test123",
-		Prompt:      "Which option?",
-		Options:     `[{"id":"1","label":"A"},{"id":"2","label":"B"}]`,
-		CreatedAt:   "2026-01-28T12:00:00Z",
-		RequestedBy: "gastown/crew/decision",
+		IssueID:      "hq-test123",
+		Prompt:       "Which option?",
+		Options:      `[{"id":"1","label":"A"},{"id":"2","label":"B"}]`,
+		CreatedAt:    "2026-01-28T12:00:00Z",
+		RequestedBy:  "gastown/crew/decision",
+		ParentBeadID: "epic-456",
 	}
 
 	if data.IssueID != "hq-test123" {
@@ -66,17 +67,21 @@ func TestBdDecisionPointDataStruct(t *testing.T) {
 	if data.RequestedBy != "gastown/crew/decision" {
 		t.Errorf("RequestedBy = %q, want 'gastown/crew/decision'", data.RequestedBy)
 	}
+	if data.ParentBeadID != "epic-456" {
+		t.Errorf("ParentBeadID = %q, want 'epic-456'", data.ParentBeadID)
+	}
 }
 
 // TestBdDecisionPointDataJSONUnmarshal verifies BdDecisionPointData JSON unmarshaling.
-// This tests that the requested_by field is properly extracted from bd decision show JSON.
+// This tests that the requested_by and parent_bead_id fields are properly extracted from bd decision show JSON.
 func TestBdDecisionPointDataJSONUnmarshal(t *testing.T) {
 	jsonData := `{
 		"issue_id": "hq-abc123",
 		"prompt": "Test decision?",
 		"options": "[{\"id\":\"1\",\"label\":\"Yes\"},{\"id\":\"2\",\"label\":\"No\"}]",
 		"created_at": "2026-01-28T10:00:00Z",
-		"requested_by": "gastown/crew/test_agent"
+		"requested_by": "gastown/crew/test_agent",
+		"parent_bead_id": "epic-789"
 	}`
 
 	var data BdDecisionPointData
@@ -95,6 +100,9 @@ func TestBdDecisionPointDataJSONUnmarshal(t *testing.T) {
 	}
 	if data.CreatedAt != "2026-01-28T10:00:00Z" {
 		t.Errorf("CreatedAt = %q, want '2026-01-28T10:00:00Z'", data.CreatedAt)
+	}
+	if data.ParentBeadID != "epic-789" {
+		t.Errorf("ParentBeadID = %q, want 'epic-789'", data.ParentBeadID)
 	}
 }
 

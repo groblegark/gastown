@@ -73,13 +73,15 @@ func main() {
 			})
 		}
 		decision := &gastownv1.Decision{
-			Id:          data.ID,
-			Question:    data.Question,
-			Context:     data.Context,
-			Options:     options,
-			RequestedBy: &gastownv1.AgentAddress{Name: data.RequestedBy},
-			Urgency:     toUrgencyProto(data.Urgency),
-			Blockers:    data.Blockers,
+			Id:              data.ID,
+			Question:        data.Question,
+			Context:         data.Context,
+			Options:         options,
+			RequestedBy:     &gastownv1.AgentAddress{Name: data.RequestedBy},
+			Urgency:         toUrgencyProto(data.Urgency),
+			Blockers:        data.Blockers,
+			ParentBead:      data.ParentBeadID,
+			ParentBeadTitle: data.ParentBeadTitle,
 		}
 		decisionBus.PublishDecisionCreated(data.ID, decision)
 	}
