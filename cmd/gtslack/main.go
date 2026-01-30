@@ -9,10 +9,11 @@
 //
 // Environment variables can also be used:
 //
-//	SLACK_BOT_TOKEN - Bot OAuth token (xoxb-...)
-//	SLACK_APP_TOKEN - App-level token for Socket Mode (xapp-...)
-//	GTMOBILE_RPC    - gtmobile RPC endpoint URL
-//	SLACK_CHANNEL   - Channel ID for decision notifications
+//	SLACK_BOT_TOKEN   - Bot OAuth token (xoxb-...)
+//	SLACK_APP_TOKEN   - App-level token for Socket Mode (xapp-...)
+//	GTMOBILE_RPC      - gtmobile RPC endpoint URL
+//	SLACK_CHANNEL     - Channel ID for decision notifications
+//	SLACK_AUTO_INVITE - Comma-separated Slack user IDs to auto-invite when routing to channels
 package main
 
 import (
@@ -21,6 +22,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/gofrs/flock"
@@ -37,6 +39,7 @@ var (
 	dynamicChannels = flag.Bool("dynamic-channels", false, "Enable automatic channel creation per agent")
 	channelPrefix   = flag.String("channel-prefix", "gt-decisions", "Prefix for dynamically created channels")
 	townRoot        = flag.String("town-root", "", "Town root directory for convoy lookup (auto-discovered if empty)")
+	autoInvite      = flag.String("auto-invite", "", "Comma-separated Slack user IDs to auto-invite when routing to channels")
 	debug           = flag.Bool("debug", false, "Enable debug logging")
 )
 
@@ -68,9 +71,23 @@ func main() {
 	if *channelID == "" {
 		*channelID = os.Getenv("SLACK_CHANNEL")
 	}
+	if *autoInvite == "" {
+		*autoInvite = os.Getenv("SLACK_AUTO_INVITE")
+	}
 
 	if *botToken == "" || *appToken == "" {
 		log.Fatal("Both -bot-token and -app-token are required (or set SLACK_BOT_TOKEN and SLACK_APP_TOKEN)")
+	}
+
+	// Parse auto-invite user IDs (comma-separated)
+	var autoInviteUsers []string
+	if *autoInvite != "" {
+		for _, u := range strings.Split(*autoInvite, ",") {
+			u = strings.TrimSpace(u)
+			if u != "" {
+				autoInviteUsers = append(autoInviteUsers, u)
+			}
+		}
 	}
 
 	cfg := slackbot.Config{
@@ -81,6 +98,7 @@ func main() {
 		DynamicChannels: *dynamicChannels,
 		ChannelPrefix:   *channelPrefix,
 		TownRoot:        *townRoot,
+		AutoInviteUsers: autoInviteUsers,
 		Debug:           *debug,
 	}
 
@@ -108,6 +126,9 @@ func main() {
 	}
 	if *dynamicChannels {
 		log.Printf("Dynamic channel creation enabled (prefix: %s)", *channelPrefix)
+	}
+	if len(autoInviteUsers) > 0 {
+		log.Printf("Auto-invite users: %v", autoInviteUsers)
 	}
 
 	// Start SSE listener for real-time decision notifications

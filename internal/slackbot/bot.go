@@ -44,6 +44,7 @@ type Bot struct {
 	channelPrefix      string            // Prefix for created channels (e.g., "gt-decisions")
 	channelCache       map[string]string // Cache: agent pattern → channel ID
 	channelCacheMu     sync.RWMutex      // Protects channelCache
+	autoInviteUsers    []string          // Users to auto-invite when routing to new channels
 
 	// Decision message tracking for auto-dismiss
 	decisionMessages   map[string]messageInfo // decision ID → message info
@@ -52,14 +53,15 @@ type Bot struct {
 
 // Config holds configuration for the Slack bot.
 type Config struct {
-	BotToken         string // xoxb-... Slack bot token
-	AppToken         string // xapp-... Slack app-level token (for Socket Mode)
-	RPCEndpoint      string // gtmobile RPC server URL
-	ChannelID        string // Default channel for decision notifications
-	RouterConfigPath string // Optional path to slack.json for per-agent routing
-	DynamicChannels  bool   // Enable automatic channel creation based on agent identity
-	ChannelPrefix    string // Prefix for dynamically created channels (default: "gt-decisions")
-	TownRoot         string // Town root directory for convoy lookup (auto-discovered if empty)
+	BotToken         string   // xoxb-... Slack bot token
+	AppToken         string   // xapp-... Slack app-level token (for Socket Mode)
+	RPCEndpoint      string   // gtmobile RPC server URL
+	ChannelID        string   // Default channel for decision notifications
+	RouterConfigPath string   // Optional path to slack.json for per-agent routing
+	DynamicChannels  bool     // Enable automatic channel creation based on agent identity
+	ChannelPrefix    string   // Prefix for dynamically created channels (default: "gt-decisions")
+	TownRoot         string   // Town root directory for convoy lookup (auto-discovered if empty)
+	AutoInviteUsers  []string // Slack user IDs to auto-invite when routing to new channels
 	Debug            bool
 }
 
@@ -142,6 +144,7 @@ func New(cfg Config) (*Bot, error) {
 		dynamicChannels:  cfg.DynamicChannels,
 		channelPrefix:    channelPrefix,
 		channelCache:     make(map[string]string),
+		autoInviteUsers:  cfg.AutoInviteUsers,
 		decisionMessages: make(map[string]messageInfo),
 	}
 	log.Printf("Slack: Bot created with router=%v", bot.router != nil)
@@ -1455,6 +1458,10 @@ func (b *Bot) ensureChannelExists(agent string) (string, error) {
 		if b.debug {
 			log.Printf("Slack: Found existing channel #%s (%s) for agent %s", channelName, channelID, agent)
 		}
+		// Auto-invite to existing channel (handles channels created before auto-invite was configured)
+		if err := b.autoInviteToChannel(channelID); err != nil {
+			log.Printf("Slack: Warning: failed to auto-invite users to existing #%s: %v", channelName, err)
+		}
 		return channelID, nil
 	}
 
@@ -1470,6 +1477,10 @@ func (b *Bot) ensureChannelExists(agent string) (string, error) {
 			channelID, findErr := b.findChannelByName(channelName)
 			if findErr == nil && channelID != "" {
 				b.cacheChannel(channelName, channelID)
+				// Auto-invite to existing channel
+				if inviteErr := b.autoInviteToChannel(channelID); inviteErr != nil {
+					log.Printf("Slack: Warning: failed to auto-invite users to #%s: %v", channelName, inviteErr)
+				}
 				return channelID, nil
 			}
 		}
@@ -1478,7 +1489,48 @@ func (b *Bot) ensureChannelExists(agent string) (string, error) {
 
 	b.cacheChannel(channelName, channel.ID)
 	log.Printf("Slack: Created channel #%s (%s) for agent %s", channelName, channel.ID, agent)
+
+	// Auto-invite configured users to the new channel
+	if err := b.autoInviteToChannel(channel.ID); err != nil {
+		log.Printf("Slack: Warning: failed to auto-invite users to #%s: %v", channelName, err)
+		// Continue anyway - channel was created successfully
+	}
+
 	return channel.ID, nil
+}
+
+// autoInviteToChannel invites the configured users to a channel.
+// This ensures the overseer and other stakeholders can see decisions routed to dynamic channels.
+func (b *Bot) autoInviteToChannel(channelID string) error {
+	if len(b.autoInviteUsers) == 0 {
+		return nil
+	}
+
+	// InviteUsersToConversation takes a channel ID and a variadic list of user IDs
+	_, err := b.client.InviteUsersToConversation(channelID, b.autoInviteUsers...)
+	if err != nil {
+		// Check for common non-fatal errors
+		errStr := err.Error()
+		if strings.Contains(errStr, "already_in_channel") {
+			if b.debug {
+				log.Printf("Slack: Users already in channel %s", channelID)
+			}
+			return nil
+		}
+		if strings.Contains(errStr, "cant_invite_self") {
+			// Bot can't invite itself, but that's fine
+			if b.debug {
+				log.Printf("Slack: Can't invite bot to channel %s (already there)", channelID)
+			}
+			return nil
+		}
+		return err
+	}
+
+	if b.debug {
+		log.Printf("Slack: Invited %d users to channel %s", len(b.autoInviteUsers), channelID)
+	}
+	return nil
 }
 
 // findChannelByName searches for a channel by name.
