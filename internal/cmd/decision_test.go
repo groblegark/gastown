@@ -307,6 +307,14 @@ func TestDecisionRequestCmdFlags(t *testing.T) {
 	} else if urgencyFlag.DefValue != "medium" {
 		t.Errorf("urgency default = %q, want 'medium'", urgencyFlag.DefValue)
 	}
+
+	// Type flag for type-aware validation
+	typeFlag := flags.Lookup("type")
+	if typeFlag == nil {
+		t.Error("missing --type flag")
+	} else if typeFlag.DefValue != "" {
+		t.Errorf("type default = %q, want empty", typeFlag.DefValue)
+	}
 }
 
 // TestDecisionResolveCmdFlags tests resolve command flags.
