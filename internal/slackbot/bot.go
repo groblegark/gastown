@@ -1209,11 +1209,12 @@ func (b *Bot) RPCClient() *rpcclient.Client {
 
 // resolveChannel determines the appropriate channel for an agent.
 // Priority order:
-// 1. Static router config (if available and matches)
+// 1. Static router config (if available and matches a pattern)
 // 2. Dynamic channel creation (if enabled)
-// 3. Default channelID
+// 3. Router's default channel (if configured)
+// 4. Bot's default channelID
 func (b *Bot) resolveChannel(agent string) string {
-	// Try static router first
+	// Try static router first (pattern matches only, not default)
 	if b.router != nil && b.router.IsEnabled() && agent != "" {
 		result := b.router.Resolve(agent)
 		if result != nil && result.ChannelID != "" && !result.IsDefault {
@@ -1232,6 +1233,19 @@ func (b *Bot) resolveChannel(agent string) string {
 			log.Printf("Slack: Failed to ensure channel for %s: %v (falling back to default)", agent, err)
 		} else if channelID != "" {
 			return channelID
+		}
+	}
+
+	// Use router's configured default channel if available
+	// This ensures new agents without explicit patterns still get routed
+	// (fixes bd-epc-slack_decision_infrastructure.3)
+	if b.router != nil && b.router.IsEnabled() {
+		cfg := b.router.GetConfig()
+		if cfg != nil && cfg.DefaultChannel != "" {
+			if b.debug {
+				log.Printf("Slack: Routing %s to router default channel %s", agent, cfg.DefaultChannel)
+			}
+			return cfg.DefaultChannel
 		}
 	}
 
