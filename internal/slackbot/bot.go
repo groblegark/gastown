@@ -705,6 +705,7 @@ func (b *Bot) handleResolveDecision(callback slack.InteractionCallback, action *
 	// Open modal for rationale input
 	// Pass message timestamp so we can edit the original message on resolution
 	messageTs := callback.Message.Timestamp
+	log.Printf("Slack: [DEBUG] Opening resolve modal for %s - messageTs=%q channelID=%s", decisionID, messageTs, callback.Channel.ID)
 	modalRequest := b.buildResolveModal(decisionID, chosenIndex, decision.Question, optionLabel, callback.Channel.ID, messageTs)
 
 	_, err = b.client.OpenView(callback.TriggerID, modalRequest)
@@ -916,6 +917,7 @@ func (b *Bot) handleViewSubmission(callback slack.InteractionCallback) {
 	_, _ = fmt.Sscanf(parts[1], "%d", &chosenIndex)
 	channelID := parts[2]
 	messageTs := parts[3]
+	log.Printf("Slack: [DEBUG] Modal submitted for %s - messageTs=%q channelID=%s optionLabel=%q", decisionID, messageTs, channelID, optionLabel)
 
 	// Get rationale from form
 	rationale := ""
@@ -1002,6 +1004,7 @@ func (b *Bot) postErrorMessage(channelID, userID, decisionID string, err error) 
 // This keeps one message per decision instead of creating a new confirmation message.
 // The resolverID can be a Slack user ID (will be formatted as mention) or a plain string.
 func (b *Bot) updateMessageAsResolved(channelID, messageTs, decisionID, question, context, chosenOption, rationale, resolverID string) {
+	log.Printf("Slack: [DEBUG] updateMessageAsResolved called - channelID=%s messageTs=%q decisionID=%s", channelID, messageTs, decisionID)
 	// Generate semantic slug for display
 	semanticSlug := util.GenerateDecisionSlug(decisionID, question)
 
