@@ -809,6 +809,56 @@ for their successors. This enables enforcing structure across decision chains.
 Decisions are **structured** - they present options and track responses.
 Escalations are **urgent** - they signal something is wrong.
 
+### Decision Schemas: Discovery-First Workflow
+
+**Before creating a decision, search for a matching schema.**
+
+Schemas provide structured validation for decision context. They ensure you include
+the right information for each decision type.
+
+```bash
+# Step 1: Search for a schema matching your intent
+gt schema search "choosing between approaches"
+
+# Step 2: If a schema matches, use --type
+gt decision request \
+  --type=tradeoff \
+  --prompt "Which caching strategy?" \
+  --context '{"options": ["Redis", "SQLite"], "recommendation": "Redis"}' \
+  --option "Redis: Distributed" \
+  --option "SQLite: Simple"
+
+# Step 3: If no schema fits, venture to create one
+gt schema create \
+  --name="my-pattern" \
+  --intent="What this pattern is for" \
+  --requires="field1,field2"
+```
+
+**Available schemas:**
+
+| Schema | Category | Required Fields | Use When |
+|--------|----------|-----------------|----------|
+| tradeoff | choice | options, recommendation | Weighing alternatives |
+| ambiguity | choice | interpretations | Multiple valid readings |
+| confirmation | confirmation | action, impact | Before irreversible actions |
+| checkpoint | checkpoint | progress, next_steps | End of phase review |
+| stuck | escalation | blocker, tried | Need help after attempts |
+| prioritization | choice | candidates, constraints | Ordering work |
+| quality | checkpoint | artifact, assessment | Evaluating readiness |
+| exception | choice | situation, recommendation | Handling unexpected cases |
+
+**Schema commands:**
+- `gt schema list` - Show all available schemas
+- `gt schema search "intent"` - Find matching schemas
+- `gt schema show <name>` - View schema details
+- `gt schema create` - Create new schema (when nothing fits)
+
+**Why use schemas?**
+- Ensures you provide the context humans need to decide
+- Creates consistent decision vocabulary across agents
+- Popular schemas surface; unused ones fade (emergent vocabulary)
+
 ## Deploying Binaries (gt/bd)
 
 **When you modify gastown (gt) or beads (bd) code, deploy the updated binaries.**
