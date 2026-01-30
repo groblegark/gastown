@@ -1267,6 +1267,18 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "[turn-check] Soft mode: %v\n", decisionTurnCheckSoft)
 	}
 
+	// Check if there are already pending decisions from this agent
+	// If so, don't require a new one (fix for bd-bug-stop_hook_fires_even_when_decision)
+	if !markerExists && !decisionTurnCheckSoft {
+		hasPending := checkAgentHasPendingDecisions()
+		if hasPending {
+			if decisionTurnCheckVerbose {
+				fmt.Fprintf(os.Stderr, "[turn-check] OK: Agent has pending decisions awaiting resolution\n")
+			}
+			return nil
+		}
+	}
+
 	result := checkTurnMarker(input.SessionID, decisionTurnCheckSoft)
 
 	if result != nil {
@@ -1285,6 +1297,39 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// checkAgentHasPendingDecisions checks if the current agent has any pending decisions.
+// Returns true if there are pending decisions from this agent, false otherwise.
+func checkAgentHasPendingDecisions() bool {
+	// Get agent identity
+	agentID := detectSender()
+	if agentID == "" || agentID == "unknown" {
+		return false
+	}
+
+	// Find workspace
+	townRoot, err := workspace.FindFromCwd()
+	if err != nil {
+		return false
+	}
+
+	// Get pending decisions
+	bd := beads.New(beads.ResolveBeadsDir(townRoot))
+	issues, err := bd.ListAllPendingDecisions()
+	if err != nil {
+		return false
+	}
+
+	// Check if any pending decisions are from this agent
+	for _, issue := range issues {
+		fields := beads.ParseDecisionFields(issue.Description)
+		if fields.RequestedBy == agentID {
+			return true
+		}
+	}
+
+	return false
 }
 
 func runDecisionCancel(cmd *cobra.Command, args []string) error {
