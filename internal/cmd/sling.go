@@ -92,7 +92,13 @@ Batch Slinging:
   gt sling gt-abc gt-def gt-ghi gastown   # Sling multiple beads to a rig
 
   When multiple beads are provided with a rig target, each bead gets its own
-  polecat. This parallelizes work dispatch without running gt sling N times.`,
+  polecat. This parallelizes work dispatch without running gt sling N times.
+
+Ownership and Merge Strategy:
+  gt sling gt-abc gastown --owned         # Caller-managed convoy (use gt convoy land)
+  gt sling gt-abc gastown --merge=direct  # Push directly to main (no MR)
+  gt sling gt-abc gastown --merge=local   # Merge locally, push main
+  gt sling gt-abc gastown --owned --merge=direct  # Full caller control`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runSling,
 }
@@ -107,13 +113,15 @@ var (
 	slingHookRawBead bool     // --hook-raw-bead: hook raw bead without default formula (expert mode)
 
 	// Flags migrated for polecat spawning (used by sling for work assignment)
-	slingCreate   bool   // --create: create polecat if it doesn't exist
-	slingForce    bool   // --force: force spawn even if polecat has unread mail
-	slingAccount  string // --account: Claude Code account handle to use
-	slingAgent    string // --agent: override runtime agent for this sling/spawn
-	slingNoConvoy bool   // --no-convoy: skip auto-convoy creation
-	slingConvoy   string // --convoy: add to existing convoy instead of creating new one
-	slingNoMerge  bool   // --no-merge: skip merge queue on completion (for upstream PRs/human review)
+	slingCreate        bool   // --create: create polecat if it doesn't exist
+	slingForce         bool   // --force: force spawn even if polecat has unread mail
+	slingAccount       string // --account: Claude Code account handle to use
+	slingAgent         string // --agent: override runtime agent for this sling/spawn
+	slingNoConvoy      bool   // --no-convoy: skip auto-convoy creation
+	slingConvoy        string // --convoy: add to existing convoy instead of creating new one
+	slingNoMerge       bool   // --no-merge: skip merge queue on completion (for upstream PRs/human review)
+	slingMergeStrategy string // --merge: merge strategy (direct/mr/local)
+	slingOwned         bool   // --owned: caller-owned convoy (no witness/refinery)
 )
 
 func init() {
@@ -133,6 +141,8 @@ func init() {
 	slingCmd.Flags().StringVar(&slingConvoy, "convoy", "", "Add to existing convoy instead of creating new one")
 	slingCmd.Flags().BoolVar(&slingHookRawBead, "hook-raw-bead", false, "Hook raw bead without default formula (expert mode)")
 	slingCmd.Flags().BoolVar(&slingNoMerge, "no-merge", false, "Skip merge queue on completion (keep work on feature branch for review)")
+	slingCmd.Flags().StringVar(&slingMergeStrategy, "merge", "", "Merge strategy: direct (push to main), mr (refinery), local (merge locally)")
+	slingCmd.Flags().BoolVar(&slingOwned, "owned", false, "Create caller-owned convoy (caller manages lifecycle via gt convoy land)")
 
 	rootCmd.AddCommand(slingCmd)
 }
@@ -630,6 +640,24 @@ func runSling(cmd *cobra.Command, args []string) error {
 			fmt.Printf("%s Could not store no_merge in bead: %v\n", style.Dim.Render("Warning:"), err)
 		} else {
 			fmt.Printf("%s No-merge mode enabled (work stays on feature branch)\n", style.Bold.Render("✓"))
+		}
+	}
+
+	// Store merge strategy in bead if specified
+	if slingMergeStrategy != "" {
+		if err := storeMergeStrategyInBead(beadID, slingMergeStrategy); err != nil {
+			fmt.Printf("%s Could not store merge strategy in bead: %v\n", style.Dim.Render("Warning:"), err)
+		} else {
+			fmt.Printf("%s Merge strategy: %s\n", style.Bold.Render("✓"), slingMergeStrategy)
+		}
+	}
+
+	// Store convoy_owned flag in bead if specified
+	if slingOwned {
+		if err := storeConvoyOwnedInBead(beadID, true); err != nil {
+			fmt.Printf("%s Could not store convoy_owned in bead: %v\n", style.Dim.Render("Warning:"), err)
+		} else {
+			fmt.Printf("%s Convoy owned: caller-managed (use gt convoy land)\n", style.Bold.Render("✓"))
 		}
 	}
 

@@ -357,6 +357,37 @@ func runDone(cmd *cobra.Command, args []string) error {
 				// Skip MR creation, go to witness notification
 				goto notifyWitness
 			}
+
+			// Check for merge_strategy - direct/local merge locally, mr uses refinery
+			if attachmentFields != nil && attachmentFields.MergeStrategy != "" {
+				mergeStrategy := attachmentFields.MergeStrategy
+				if mergeStrategy == "direct" || mergeStrategy == "local" {
+					fmt.Printf("%s Merge strategy: %s (direct push to main)\n", style.Bold.Render("→"), mergeStrategy)
+					fmt.Printf("  Branch: %s\n", branch)
+					fmt.Printf("  Issue: %s\n", issueID)
+					fmt.Println()
+
+					// Checkout main, merge feature branch, push
+					if err := g.Checkout(defaultBranch); err != nil {
+						return fmt.Errorf("checkout %s: %w", defaultBranch, err)
+					}
+					if err := g.Pull("origin", defaultBranch); err != nil {
+						style.PrintWarning("could not pull latest %s: %v", defaultBranch, err)
+					}
+					if err := g.Merge(branch); err != nil {
+						return fmt.Errorf("merge %s into %s: %w\nResolve conflicts manually and retry.", branch, defaultBranch, err)
+					}
+					if err := g.Push("origin", defaultBranch, false); err != nil {
+						return fmt.Errorf("push %s to origin: %w", defaultBranch, err)
+					}
+
+					fmt.Printf("%s Merged and pushed directly to %s\n", style.Bold.Render("✓"), defaultBranch)
+
+					// Skip MR creation, go to witness notification
+					goto notifyWitness
+				}
+				// For "mr" strategy, fall through to normal MR creation
+			}
 		}
 
 		// Determine target branch (auto-detect integration branch if applicable)

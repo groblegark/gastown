@@ -83,19 +83,21 @@ func looksLikeIssueID(s string) bool {
 
 // Convoy command flags
 var (
-	convoyMolecule     string
-	convoyNotify       string
-	convoyOwner        string
-	convoyStatusJSON   bool
-	convoyListJSON     bool
-	convoyListStatus   string
-	convoyListAll      bool
-	convoyListTree     bool
-	convoyInteractive  bool
-	convoyStrandedJSON bool
-	convoyCloseReason  string
-	convoyCloseNotify  string
-	convoyCheckDryRun  bool
+	convoyMolecule      string
+	convoyNotify        string
+	convoyOwner         string
+	convoyOwned         bool   // Caller-owned convoy (no witness/refinery management)
+	convoyMergeStrategy string // Merge strategy: direct, mr, local
+	convoyStatusJSON    bool
+	convoyListJSON      bool
+	convoyListStatus    string
+	convoyListAll       bool
+	convoyListTree      bool
+	convoyInteractive   bool
+	convoyStrandedJSON  bool
+	convoyCloseReason   string
+	convoyCloseNotify   string
+	convoyCheckDryRun   bool
 )
 
 var convoyCmd = &cobra.Command{
@@ -150,12 +152,27 @@ The --owner flag specifies who requested the convoy (receives completion
 notification by default). If not specified, defaults to created_by.
 The --notify flag adds additional subscribers beyond the owner.
 
+OWNERSHIP MODES:
+  Standard (default): Witness monitors, Refinery merges, auto-close on completion.
+
+  Caller-owned (--owned): Caller manages lifecycle directly:
+    - No witness monitoring or death warrant involvement
+    - Caller polls status with 'gt convoy status'
+    - Caller finalizes with 'gt convoy land' when complete
+    - Useful for human-supervised or development work
+
+MERGE STRATEGIES (--merge):
+  mr (default):  Create MR, Refinery manages merge queue
+  direct:        Push directly to main (trusted work, no MR)
+  local:         Merge locally, push to main (review in worktree)
+
 Examples:
   gt convoy create "Deploy v2.0" gt-abc bd-xyz
   gt convoy create "Release prep" gt-abc --notify           # defaults to mayor/
   gt convoy create "Release prep" gt-abc --notify ops/      # notify ops/
   gt convoy create "Feature rollout" gt-a gt-b --owner mayor/ --notify ops/
-  gt convoy create "Feature rollout" gt-a gt-b gt-c --molecule mol-release`,
+  gt convoy create "Feature rollout" gt-a gt-b gt-c --molecule mol-release
+  gt convoy create "Quick fix" gt-xyz --owned --merge=direct  # caller-owned, direct push`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runConvoyCreate,
 }
@@ -260,12 +277,47 @@ Examples:
 	RunE: runConvoyClose,
 }
 
+// Land command flags
+var (
+	convoyLandForce   bool
+	convoyLandDryRun  bool
+	convoyLandCleanup bool
+)
+
+var convoyLandCmd = &cobra.Command{
+	Use:   "land <convoy-id>",
+	Short: "Finalize a caller-owned convoy",
+	Long: `Finalize a caller-owned convoy when all work is complete.
+
+This is the caller-managed equivalent of auto-close. For --owned convoys,
+the caller is responsible for landing the convoy when work is done.
+
+WHAT LAND DOES:
+  1. Verifies all tracked issues are complete (closed status)
+  2. Optionally cleans up polecat worktrees (--cleanup)
+  3. Closes the convoy bead
+
+Unlike 'convoy close', 'land' verifies work completion first. Use 'close'
+when you want to force-close regardless of status.
+
+Examples:
+  gt convoy land hq-cv-abc                    # Land when all complete
+  gt convoy land hq-cv-abc --force            # Land even if incomplete
+  gt convoy land hq-cv-abc --cleanup          # Also remove worktrees
+  gt convoy land hq-cv-abc --dry-run          # Preview without acting`,
+	Args: cobra.ExactArgs(1),
+	RunE: runConvoyLand,
+}
+
 func init() {
 	// Create flags
 	convoyCreateCmd.Flags().StringVar(&convoyMolecule, "molecule", "", "Associated molecule ID")
 	convoyCreateCmd.Flags().StringVar(&convoyOwner, "owner", "", "Owner who requested convoy (gets completion notification)")
 	convoyCreateCmd.Flags().StringVar(&convoyNotify, "notify", "", "Additional address to notify on completion (default: mayor/ if flag used without value)")
 	convoyCreateCmd.Flags().Lookup("notify").NoOptDefVal = "mayor/"
+	convoyCreateCmd.Flags().BoolVar(&convoyOwned, "owned", false, "Caller-owned convoy (caller manages lifecycle, no witness/refinery)")
+	convoyCreateCmd.Flags().StringVar(&convoyMergeStrategy, "merge", "", "Merge strategy for tracked work: direct (push to main), mr (refinery), local (merge locally)")
+	convoyCreateCmd.Flags().Lookup("merge").NoOptDefVal = "mr"
 
 	// Status flags
 	convoyStatusCmd.Flags().BoolVar(&convoyStatusJSON, "json", false, "Output as JSON")
@@ -289,6 +341,11 @@ func init() {
 	convoyCloseCmd.Flags().StringVar(&convoyCloseReason, "reason", "", "Reason for closing the convoy")
 	convoyCloseCmd.Flags().StringVar(&convoyCloseNotify, "notify", "", "Agent to notify on close (e.g., mayor/)")
 
+	// Land flags
+	convoyLandCmd.Flags().BoolVarP(&convoyLandForce, "force", "f", false, "Land even if tracked issues are incomplete")
+	convoyLandCmd.Flags().BoolVar(&convoyLandDryRun, "dry-run", false, "Preview what would happen without acting")
+	convoyLandCmd.Flags().BoolVar(&convoyLandCleanup, "cleanup", false, "Also remove polecat worktrees")
+
 	// Add subcommands
 	convoyCmd.AddCommand(convoyCreateCmd)
 	convoyCmd.AddCommand(convoyStatusCmd)
@@ -297,6 +354,7 @@ func init() {
 	convoyCmd.AddCommand(convoyCheckCmd)
 	convoyCmd.AddCommand(convoyStrandedCmd)
 	convoyCmd.AddCommand(convoyCloseCmd)
+	convoyCmd.AddCommand(convoyLandCmd)
 
 	rootCmd.AddCommand(convoyCmd)
 }
@@ -353,6 +411,12 @@ func runConvoyCreate(cmd *cobra.Command, args []string) error {
 	}
 	if convoyMolecule != "" {
 		description += fmt.Sprintf("\nMolecule: %s", convoyMolecule)
+	}
+	if convoyOwned {
+		description += "\nOwned: true"
+	}
+	if convoyMergeStrategy != "" {
+		description += fmt.Sprintf("\nMerge: %s", convoyMergeStrategy)
 	}
 
 	// Generate convoy ID with cv- prefix
@@ -420,8 +484,18 @@ func runConvoyCreate(cmd *cobra.Command, args []string) error {
 	if convoyMolecule != "" {
 		fmt.Printf("  Molecule: %s\n", convoyMolecule)
 	}
+	if convoyOwned {
+		fmt.Printf("  Owned:    %s\n", style.Bold.Render("caller-managed"))
+	}
+	if convoyMergeStrategy != "" {
+		fmt.Printf("  Merge:    %s\n", convoyMergeStrategy)
+	}
 
-	fmt.Printf("\n  %s\n", style.Dim.Render("Convoy auto-closes when all tracked issues complete"))
+	if convoyOwned {
+		fmt.Printf("\n  %s\n", style.Dim.Render("Use 'gt convoy land' to finalize when complete"))
+	} else {
+		fmt.Printf("\n  %s\n", style.Dim.Render("Convoy auto-closes when all tracked issues complete"))
+	}
 
 	return nil
 }
@@ -727,6 +801,146 @@ func sendCloseNotification(addr, convoyID, title, reason string) {
 	} else {
 		fmt.Printf("  Notified: %s\n", addr)
 	}
+}
+
+// runConvoyLand finalizes a caller-owned convoy when all work is complete.
+func runConvoyLand(cmd *cobra.Command, args []string) error {
+	convoyID := args[0]
+
+	townBeads, err := getTownBeadsDir()
+	if err != nil {
+		return err
+	}
+
+	// Get convoy details
+	showArgs := []string{"show", convoyID, "--json"}
+	showCmd := newBdCmd(townBeads, showArgs...)
+	var stdout bytes.Buffer
+	showCmd.Stdout = &stdout
+
+	if err := showCmd.Run(); err != nil {
+		return fmt.Errorf("convoy '%s' not found", convoyID)
+	}
+
+	if len(stdout.Bytes()) == 0 {
+		return fmt.Errorf("convoy '%s' not found", convoyID)
+	}
+
+	var convoys []struct {
+		ID          string `json:"id"`
+		Title       string `json:"title"`
+		Status      string `json:"status"`
+		Type        string `json:"issue_type"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &convoys); err != nil {
+		return fmt.Errorf("parsing convoy data: %w", err)
+	}
+
+	if len(convoys) == 0 {
+		return fmt.Errorf("convoy '%s' not found", convoyID)
+	}
+
+	convoy := convoys[0]
+
+	// Verify it's actually a convoy type
+	if convoy.Type != "convoy" {
+		return fmt.Errorf("'%s' is not a convoy (type: %s)", convoyID, convoy.Type)
+	}
+
+	// Idempotent: if already closed, just report it
+	if convoy.Status == "closed" {
+		fmt.Printf("%s Convoy %s is already landed\n", style.Dim.Render("○"), convoyID)
+		return nil
+	}
+
+	// Get tracked issues and check completion status
+	tracked := getTrackedIssues(townBeads, convoyID)
+	var incomplete []trackedIssueInfo
+	for _, t := range tracked {
+		if t.Status != "closed" {
+			incomplete = append(incomplete, t)
+		}
+	}
+
+	// Report status
+	if convoyLandDryRun {
+		fmt.Printf("%s DRY RUN - Would land convoy 🚚 %s: %s\n\n", style.Warning.Render("⚠"), convoyID, convoy.Title)
+	}
+
+	fmt.Printf("  Tracked: %d issues (%d complete, %d incomplete)\n", len(tracked), len(tracked)-len(incomplete), len(incomplete))
+
+	// If incomplete and not forced, show details and fail
+	if len(incomplete) > 0 && !convoyLandForce {
+		fmt.Printf("\n  %s Incomplete issues:\n", style.Warning.Render("⚠"))
+		for _, t := range incomplete {
+			symbol := "○"
+			if t.Status == "in_progress" {
+				symbol = "▶"
+			}
+			fmt.Printf("    %s %s: %s [%s]\n", symbol, t.ID, t.Title, t.Status)
+		}
+		fmt.Printf("\n  Use --force to land anyway, or wait for work to complete.\n")
+		return fmt.Errorf("convoy has %d incomplete issues", len(incomplete))
+	}
+
+	if convoyLandDryRun {
+		if convoyLandCleanup {
+			fmt.Printf("  Would clean up worktrees for completed issues\n")
+		}
+		fmt.Printf("  Would close convoy bead\n")
+		return nil
+	}
+
+	// Optional: clean up polecat worktrees
+	if convoyLandCleanup {
+		cleanedCount := cleanupConvoyWorktrees(tracked)
+		if cleanedCount > 0 {
+			fmt.Printf("  Cleaned up %d worktree(s)\n", cleanedCount)
+		}
+	}
+
+	// Close the convoy
+	reason := "Landed via gt convoy land"
+	if len(incomplete) > 0 {
+		reason = fmt.Sprintf("Force-landed with %d incomplete issues", len(incomplete))
+	}
+
+	closeArgs := []string{"close", convoyID, "-r", reason}
+	closeCmd := newBdCmd(townBeads, closeArgs...)
+
+	if err := closeCmd.Run(); err != nil {
+		return fmt.Errorf("closing convoy: %w", err)
+	}
+
+	fmt.Printf("%s Landed convoy 🚚 %s: %s\n", style.Bold.Render("✓"), convoyID, convoy.Title)
+
+	// Send completion notification
+	notifyConvoyCompletion(townBeads, convoyID, convoy.Title)
+
+	return nil
+}
+
+// cleanupConvoyWorktrees removes worktrees for completed issues in a convoy.
+// Returns the number of worktrees cleaned up.
+func cleanupConvoyWorktrees(tracked []trackedIssueInfo) int {
+	cleanedCount := 0
+	for _, t := range tracked {
+		if t.Status == "closed" && t.Assignee != "" {
+			// Try to clean up worktree - this is best-effort
+			// The assignee format is like "gastown/polecats/nux"
+			parts := strings.Split(t.Assignee, "/")
+			if len(parts) >= 3 && parts[1] == "polecats" {
+				polecatName := parts[2]
+				// Use gt worktree remove to clean up
+				wtCmd := exec.Command("gt", "worktree", "remove", polecatName, "--force")
+				if err := wtCmd.Run(); err == nil {
+					cleanedCount++
+				}
+			}
+		}
+	}
+	return cleanedCount
 }
 
 // strandedConvoyInfo holds info about a stranded convoy.

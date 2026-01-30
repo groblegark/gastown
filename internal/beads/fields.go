@@ -22,6 +22,8 @@ type AttachmentFields struct {
 	AttachedArgs     string // Natural language args passed via gt sling --args (no-tmux mode)
 	DispatchedBy     string // Agent ID that dispatched this work (for completion notification)
 	NoMerge          bool   // If true, gt done skips merge queue (for upstream PRs/human review)
+	MergeStrategy    string // Merge strategy: direct (push to main), mr (refinery), local (merge locally)
+	ConvoyOwned      bool   // If true, convoy is caller-managed (no witness/refinery)
 }
 
 // ParseAttachmentFields extracts attachment fields from an issue's description.
@@ -69,6 +71,12 @@ func ParseAttachmentFields(issue *Issue) *AttachmentFields {
 		case "no_merge", "no-merge", "nomerge":
 			fields.NoMerge = strings.ToLower(value) == "true"
 			hasFields = true
+		case "merge_strategy", "merge-strategy", "mergestrategy":
+			fields.MergeStrategy = value
+			hasFields = true
+		case "convoy_owned", "convoy-owned", "convoyowned":
+			fields.ConvoyOwned = strings.ToLower(value) == "true"
+			hasFields = true
 		}
 	}
 
@@ -102,6 +110,12 @@ func FormatAttachmentFields(fields *AttachmentFields) string {
 	if fields.NoMerge {
 		lines = append(lines, "no_merge: true")
 	}
+	if fields.MergeStrategy != "" {
+		lines = append(lines, "merge_strategy: "+fields.MergeStrategy)
+	}
+	if fields.ConvoyOwned {
+		lines = append(lines, "convoy_owned: true")
+	}
 
 	return strings.Join(lines, "\n")
 }
@@ -127,6 +141,12 @@ func SetAttachmentFields(issue *Issue, fields *AttachmentFields) string {
 		"no_merge":          true,
 		"no-merge":          true,
 		"nomerge":           true,
+		"merge_strategy":    true,
+		"merge-strategy":    true,
+		"mergestrategy":     true,
+		"convoy_owned":      true,
+		"convoy-owned":      true,
+		"convoyowned":       true,
 	}
 
 	// Collect non-attachment lines from existing description

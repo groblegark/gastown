@@ -66,10 +66,24 @@ func isTrackedByConvoy(beadID string) string {
 	return ""
 }
 
+// ConvoyOptions holds optional settings for convoy creation.
+type ConvoyOptions struct {
+	Owned         bool   // Caller-owned (no witness/refinery)
+	MergeStrategy string // direct, mr, or local
+}
+
 // createAutoConvoy creates an auto-convoy for a single issue and tracks it.
 // The convoy is assigned to the same agent that is working on the tracked bead.
 // Returns the created convoy ID.
 func createAutoConvoy(beadID, beadTitle, assignee string) (string, error) {
+	return createAutoConvoyWithOptions(beadID, beadTitle, assignee, ConvoyOptions{
+		Owned:         slingOwned,
+		MergeStrategy: slingMergeStrategy,
+	})
+}
+
+// createAutoConvoyWithOptions creates an auto-convoy with specified options.
+func createAutoConvoyWithOptions(beadID, beadTitle, assignee string, opts ConvoyOptions) (string, error) {
 	townRoot, err := workspace.FindFromCwd()
 	if err != nil {
 		return "", fmt.Errorf("finding town root: %w", err)
@@ -82,6 +96,14 @@ func createAutoConvoy(beadID, beadTitle, assignee string) (string, error) {
 	// Create convoy with title "Work: <issue-title>"
 	convoyTitle := fmt.Sprintf("Work: %s", beadTitle)
 	description := fmt.Sprintf("Auto-created convoy tracking %s", beadID)
+
+	// Add ownership metadata if specified
+	if opts.Owned {
+		description += "\nOwned: true"
+	}
+	if opts.MergeStrategy != "" {
+		description += fmt.Sprintf("\nMerge: %s", opts.MergeStrategy)
+	}
 
 	createArgs := []string{
 		"create",
