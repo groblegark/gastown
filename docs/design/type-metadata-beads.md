@@ -342,172 +342,186 @@ bd script run check-url-exists --arg "https://example.com"
 
 ## Default Type Metadata
 
-Ship these type metadata beads by default. Decision types are organized by **action pattern** (how the decision works) rather than domain (what it's about), based on analysis of actual Gas Town formula patterns.
+Ship these type metadata beads by default. Decision types answer: **"Why is the agent asking the human?"** - organized by what the agent needs from the human, derived from actual Gas Town formula patterns.
 
-### Decision Types (Action-Based)
+### Decision Types (Agent-Centric)
 
-#### 1. `meta-decision-approval` (✅)
-**Binary yes/no gate decisions with structured criteria.**
+#### 1. `confirmation` - "I'm about to do X, is that right?"
+**High-stakes action needs human sign-off before proceeding.**
 
-Derived from: code-review synthesis, mol-polecat-review-pr
+Derived from: mol-shutdown-dance (death warrants), mol-town-shutdown (blockers)
 
-**Required fields:**
-- `subject` - What is being evaluated
-- `criteria` - Checklist of evaluation criteria
-- `recommendation` - APPROVE | REQUEST_CHANGES | BLOCK
+**When to use:** Agent is confident about the action but it's irreversible or high-risk.
 
-**Example options:** Approve | Request Changes | Needs Discussion | Block
+**Required context:**
+- `action` - What the agent is about to do
+- `why` - Why this action is needed
+- `reversible` - Can this be undone? (true/false)
+- `impact` - What happens if this goes wrong
 
-**Subtypes:**
-- `approval/merge` - Code review merge decisions
-- `approval/deploy` - Deployment go/no-go
-- `approval/access` - Permission grants
-
----
-
-#### 2. `meta-decision-triage` (🔀)
-**Multi-option routing decisions with condition→action mappings.**
-
-Derived from: mol-boot-triage, mol-upstream-pr-intake
-
-**Required fields:**
-- `situation` - Current state being triaged
-- `decision_matrix` - Condition → Action mappings considered
-- `selected_action` - Which action and why
-
-**Example options:** START | NOTHING | NUDGE | WAKE | INTERRUPT
-
-**Subtypes:**
-- `triage/alert` - Incident response routing
-- `triage/intake` - New work categorization
-- `triage/support` - User request routing
+**Example options:**
+- "Proceed with shutdown"
+- "Wait, let me check something first"
+- "Abort - don't do this"
 
 ---
 
-#### 3. `meta-decision-investigation` (🔍)
-**Open-ended exploration before committing to an approach.**
+#### 2. `ambiguity` - "The requirements could mean A or B"
+**Multiple valid interpretations, need human to clarify intent.**
 
-Derived from: design.formula convoy, mol-goblin-scout-patrol
+Derived from: design.formula (Open Questions), feature spec interpretation
 
-**Required fields:**
-- `question` - What are we trying to understand?
-- `findings` - What was discovered
-- `dimensions` - Aspects explored (optional, for convoy-style)
+**When to use:** Agent found multiple reasonable ways to interpret the task.
 
-**Example options:** Proceed with finding A | Explore further | Escalate for input
+**Required context:**
+- `interpretations` - List of valid interpretations found
+- `leaning` - Which interpretation the agent thinks is right
+- `why_unclear` - What's ambiguous in the original request
 
-**Subtypes:**
-- `investigation/bug` - Root cause analysis
-- `investigation/design` - Architecture exploration
-- `investigation/research` - Technical research
-
----
-
-#### 4. `meta-decision-resolution` (🔧)
-**How to handle failures, conflicts, or blockers.**
-
-Derived from: mol-refinery-patrol conflict handling, mol-convoy-feed dispatch failures
-
-**Required fields:**
-- `failure` - What went wrong
-- `options_tried` - What was already attempted
-- `proposed_fix` - Recommended resolution
-
-**Example options:** Retry | Skip | Abort | Escalate | Manual fix
-
-**Subtypes:**
-- `resolution/conflict` - Merge/rebase conflicts
-- `resolution/failure` - Test/build failures
-- `resolution/blocker` - Dependency blockers
+**Example options:**
+- "Interpretation A: strict mode"
+- "Interpretation B: permissive mode"
+- "Both - implement A with B as fallback"
 
 ---
 
-#### 5. `meta-decision-scope` (📏)
-**Mode/preset selection before work begins.**
+#### 3. `tradeoff` - "Option A vs B, each has pros/cons"
+**No clear winner - depends on human priorities.**
 
-Derived from: code-review presets, design scope hints, upstream-pr-intake modes
+Derived from: code-review synthesis (conflicting findings), architecture decisions
 
-**Required fields:**
-- `modes_available` - What options exist
-- `tradeoffs` - Pros/cons of each mode
-- `context` - Why this scope decision matters
+**When to use:** Agent evaluated options but the "right" choice depends on values/priorities the agent can't determine.
 
-**Example options:** Light (fast) | Standard | Thorough (comprehensive)
+**Required context:**
+- `options` - The alternatives considered
+- `analysis` - Pros and cons of each
+- `recommendation` - Agent's suggestion if forced to choose
+- `deciding_factor` - What would tip the balance
 
-**Subtypes:**
-- `scope/review` - Review depth (gate vs full)
-- `scope/implementation` - MVP vs complete
-- `scope/rollout` - Phased deployment scope
+**Example options:**
+- "Redis: Fast but adds ops complexity"
+- "SQLite: Simple but single-node only"
+- "Neither - rethink the approach"
 
 ---
 
-#### 6. `meta-decision-escalation` (🚨)
-**When to involve humans or higher-level coordination.**
+#### 4. `stuck` - "I can't proceed without X"
+**Agent is blocked and needs something from the human.**
 
-Derived from: polecat stuck patterns, deacon patrol escalation chains
+Derived from: polecat escalation patterns, mol-convoy-feed (no capacity)
 
-**Required fields:**
+**When to use:** Agent hit a wall - missing info, external dependency, access needed.
+
+**Required context:**
 - `blocker` - What's preventing progress
-- `attempted` - What autonomous resolution was tried
-- `why_escalate` - Why human input is needed
+- `tried` - What the agent already attempted
+- `need` - What would unblock (specific ask)
 
-**Example options:** Continue trying | Escalate to human | Abort task
-
-**Subtypes:**
-- `escalation/stuck` - Agent is blocked
-- `escalation/conflict` - Multiple agents disagree
-- `escalation/risk` - High-risk action needs approval
+**Example options:**
+- "I'll get you the credentials"
+- "Skip this part, move on"
+- "Let me take over this piece"
 
 ---
 
-#### 7. `meta-decision-synthesis` (🧩)
-**Combining multiple inputs into a unified recommendation.**
+#### 5. `checkpoint` - "Here's where I am, any course corrections?"
+**Periodic check-in during long work.**
 
-Derived from: design.formula synthesis, code-review synthesis
+Derived from: rule-of-five (iterative refinement), shiny workflow stages
 
-**Required fields:**
-- `inputs` - Sources being synthesized (legs, dimensions, etc.)
-- `conflicts` - Where inputs disagree
-- `unified_recommendation` - Combined output
+**When to use:** Agent wants to confirm direction before investing more effort. Good for expensive or long-running work.
 
-**Example options:** Accept synthesis | Request more input | Split decision
+**Required context:**
+- `progress` - What's been accomplished so far
+- `next_steps` - What the agent plans to do next
+- `concerns` - Anything the agent is uncertain about
 
-**Subtypes:**
-- `synthesis/review` - Combining reviewer feedback
-- `synthesis/design` - Combining design dimensions
-- `synthesis/consensus` - Multi-stakeholder alignment
+**Example options:**
+- "Looks good, continue"
+- "Adjust: focus more on X"
+- "Stop - we need to rethink this"
 
 ---
 
-### Legacy Domain Types (for backwards compatibility)
+#### 6. `quality` - "Is this good enough?"
+**Subjective judgment call about completeness or quality.**
 
-These content-based types map to the action types above:
+Derived from: rule-of-five (excellence pass), code-review (merge readiness)
 
-| Legacy Type | Maps To | Notes |
-|-------------|---------|-------|
-| `architecture` | `investigation/design` | Design exploration |
-| `debugging` | `investigation/bug` + `resolution/failure` | Root cause + fix |
-| `feature` | `scope/implementation` | Scope decisions |
-| `process` | `approval` or `scope` | Depends on context |
-| `prioritization` | `triage/intake` | Work routing |
+**When to use:** Agent finished something but "good enough" is subjective.
+
+**Required context:**
+- `artifact` - What was produced (link/description)
+- `assessment` - Agent's evaluation of quality
+- `gaps` - Known limitations or missing pieces
+- `bar` - What standard the agent was aiming for
+
+**Example options:**
+- "Ship it - good enough for now"
+- "Polish more - address the gaps first"
+- "Rethink - doesn't meet the bar"
+
+---
+
+#### 7. `exception` - "Something unexpected happened"
+**Error or unusual situation, need guidance on how to proceed.**
+
+Derived from: mol-orphan-scan (RESET/RECOVER/ESCALATE), mol-refinery-patrol (test failures)
+
+**When to use:** Agent encountered something outside normal flow and isn't sure how to handle it.
+
+**Required context:**
+- `situation` - What happened (error, unexpected state, edge case)
+- `options` - Possible ways to proceed
+- `recommendation` - What agent thinks is best
+- `risk` - What could go wrong with each option
+
+**Example options:**
+- "Retry - probably transient"
+- "Skip and continue"
+- "Abort and investigate"
+- "I'll handle this manually"
+
+---
+
+#### 8. `prioritization` - "Multiple things need doing, what first?"
+**Agent has competing tasks or directions.**
+
+Derived from: mol-convoy-feed (dispatch order), triage patterns
+
+**When to use:** Agent can see multiple valid work items but needs human to set priority.
+
+**Required context:**
+- `candidates` - What's competing for attention
+- `analysis` - Why each matters (urgency, impact)
+- `constraints` - Time/resource limitations
+- `suggestion` - Agent's proposed order
+
+**Example options:**
+- "A first, then B"
+- "B first - A can wait"
+- "Do both in parallel"
+- "Skip C entirely"
 
 ### Validators
-- `vld-not-empty` - Check field has content
-- `vld-has-options` - Check decision has at least 2 options
-- `vld-bead-exists` - Check referenced bead ID exists
-- `vld-matrix-format` - Check condition→action matrix format
-- `vld-json-valid` - Check valid JSON structure
-- `vld-url-format` - Check URL format valid
-- `vld-url-exists` - Check URL returns 200
+
+Validators ensure decision context is useful for humans:
+
+- `vld-not-empty` - Required field has content
+- `vld-has-options` - Decision has 2-4 actionable options
+- `vld-options-distinct` - Options are meaningfully different
+- `vld-recommendation-present` - Agent provided a recommendation
+- `vld-bead-exists` - Referenced bead ID exists
+- `vld-json-valid` - Valid JSON structure
 
 ### Scripts
-- `scr-check-not-empty` - String length check
-- `scr-check-options-count` - Count options >= 2
-- `scr-check-bead-exists` - bd show exit code
-- `scr-check-matrix-format` - Validate triage matrix
-- `scr-check-json-valid` - jq validation
-- `scr-check-url-format` - Regex validation
-- `scr-check-url-exists` - curl HTTP check
+
+- `scr-check-not-empty` - String length > 0
+- `scr-check-options-count` - 2 <= count <= 4
+- `scr-check-options-distinct` - No duplicate option labels
+- `scr-check-has-recommendation` - Context includes recommendation field
+- `scr-check-bead-exists` - bd show returns 0
+- `scr-check-json-valid` - jq parses successfully
 
 ## Migration Path
 
