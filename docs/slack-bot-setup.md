@@ -168,6 +168,82 @@ SSE: Connected to decision events stream
 - Check interactivity is enabled in Slack app
 - Verify trigger ID is being received (enable debug mode)
 
+## Channel Routing Configuration
+
+The Slack bot supports per-agent channel routing via a `slack.json` configuration file. This enables the "Break Out" feature, which creates dedicated channels for specific agents.
+
+### Configuration File Location
+
+The bot looks for `slack.json` in these locations (in order):
+
+1. `$GT_ROOT/settings/slack.json`
+2. `~/gt/settings/slack.json`
+3. `<town-root>/settings/slack.json`
+
+### Minimal Configuration (for Break Out)
+
+To enable the Break Out feature, create a minimal `slack.json`:
+
+```bash
+mkdir -p ~/gt/settings
+cat > ~/gt/settings/slack.json << 'EOF'
+{
+  "type": "slack",
+  "version": 1,
+  "enabled": true,
+  "default_channel": "C0123456789"
+}
+EOF
+```
+
+Replace `C0123456789` with your notifications channel ID.
+
+### Full Configuration (per-agent routing)
+
+For advanced channel routing, see the example at `docs/examples/slack.json.example`:
+
+```json
+{
+  "type": "slack",
+  "version": 1,
+  "enabled": true,
+  "default_channel": "C0123456789",
+  "channels": {
+    "gastown/polecats/*": "C_GASTOWN_POLECATS",
+    "gastown/crew/*": "C_GASTOWN_CREW",
+    "*/polecats/*": "C_ALL_POLECATS"
+  }
+}
+```
+
+Pattern matching:
+- `*` matches any single path segment
+- More specific patterns take precedence
+- Patterns without wildcards match exactly
+
+### Break Out Feature
+
+The "Break Out" button appears on decision notifications when:
+1. The `slack.json` config exists and is valid
+2. The bot has `channels:manage` scope (for creating channels)
+
+When clicked, Break Out:
+1. Creates a dedicated channel for the agent (e.g., `#gt-decisions-gastown-crew-wolf`)
+2. Routes future decisions from that agent to the new channel
+3. Reposts any pending decisions to the new channel
+
+Overrides created by Break Out are saved to `slack.json` in the `overrides` field.
+
+### Troubleshooting Channel Routing
+
+**"Break Out is not available: channel router not configured"**
+- Create `slack.json` in one of the locations listed above
+- Verify the file contains valid JSON with `enabled: true`
+
+**Break Out button not appearing**
+- The button only shows when the decision has a `requested_by` field
+- Check that the router is loaded: look for "Channel router auto-loaded" in logs
+
 ## Debug Mode
 
 Run with `-debug` for verbose logging:
