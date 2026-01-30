@@ -1,6 +1,8 @@
-.PHONY: build install clean test test-safe generate deploy
+.PHONY: build install clean test test-safe generate deploy \
+        build-slackbot install-slackbot deploy-slackbot deploy-all
 
 BINARY := gt
+SLACKBOT := gtslack
 BUILD_DIR := .
 INSTALL_DIR := $(HOME)/.local/bin
 DEPLOY_DIR := $(HOME)/local/bin
@@ -54,7 +56,9 @@ endif
 
 clean:
 	rm -f $(BUILD_DIR)/$(BINARY)
+	rm -f $(BUILD_DIR)/$(SLACKBOT)
 	rm -f $(TMP_BUILD)
+	rm -f /tmp/$(SLACKBOT)-build
 
 test:
 	go test ./...
@@ -62,3 +66,28 @@ test:
 # Resource-constrained test mode: runs one package at a time with limited CPUs
 test-safe:
 	GOMAXPROCS=2 go test -p 1 -v ./...
+
+# === Slackbot (gtslack) targets ===
+
+build-slackbot: generate
+	go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(SLACKBOT) ./cmd/gtslack
+	@echo "Built $(SLACKBOT)"
+
+install-slackbot: build-slackbot
+	@mkdir -p $(INSTALL_DIR)
+	@rm -f $(INSTALL_DIR)/$(SLACKBOT)
+	@cp $(BUILD_DIR)/$(SLACKBOT) $(INSTALL_DIR)/$(SLACKBOT)
+	@echo "Installed $(SLACKBOT) to $(INSTALL_DIR)/$(SLACKBOT)"
+
+deploy-slackbot: generate
+	@echo "==> Building $(SLACKBOT) to temp location..."
+	go build -ldflags "$(LDFLAGS)" -o /tmp/$(SLACKBOT)-build ./cmd/gtslack
+	@echo "==> Creating deploy directory if needed..."
+	@mkdir -p $(DEPLOY_DIR)
+	@echo "==> Deploying $(SLACKBOT) to $(DEPLOY_DIR)/$(SLACKBOT)..."
+	@mv /tmp/$(SLACKBOT)-build $(DEPLOY_DIR)/$(SLACKBOT)
+	@echo "✓ Deployed $(SLACKBOT) to $(DEPLOY_DIR)/$(SLACKBOT)"
+
+# Deploy both gt and gtslack
+deploy-all: deploy deploy-slackbot
+	@echo "✓ Deployed all binaries"
