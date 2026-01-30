@@ -1481,6 +1481,15 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 				slack.NewTextBlockObject("mrkdwn", chainInfo, false, false),
 			),
 		)
+
+		// Check for type mismatch warning
+		if mismatchWarning := checkSuccessorTypeMismatch(b.rpcClient, decision.PredecessorID, decision.Context); mismatchWarning != "" {
+			blocks = append(blocks,
+				slack.NewContextBlock("",
+					slack.NewTextBlockObject("mrkdwn", mismatchWarning, false, false),
+				),
+			)
+		}
 	}
 
 	// Show context inline if available (with JSON formatting)
@@ -1658,6 +1667,15 @@ func (b *Bot) notifyDecisionToChannel(decision rpcclient.Decision, channelID str
 				slack.NewTextBlockObject("mrkdwn", chainInfo, false, false),
 			),
 		)
+
+		// Check for type mismatch warning
+		if mismatchWarning := checkSuccessorTypeMismatch(b.rpcClient, decision.PredecessorID, decision.Context); mismatchWarning != "" {
+			blocks = append(blocks,
+				slack.NewContextBlock("",
+					slack.NewTextBlockObject("mrkdwn", mismatchWarning, false, false),
+				),
+			)
+		}
 	}
 
 	// Show context inline with JSON formatting
@@ -1990,4 +2008,55 @@ func buildChainInfoText(predecessorID string) string {
 	}
 	return fmt.Sprintf("🔗 _Chained from: %s_", predecessorID)
 }
+
+// checkSuccessorTypeMismatch checks if predecessor suggested a type that doesn't match current.
+// Returns warning text if mismatch, empty string otherwise.
+func checkSuccessorTypeMismatch(rpcClient *rpcclient.Client, predecessorID, currentContext string) string {
+	if predecessorID == "" || rpcClient == nil {
+		return ""
+	}
+
+	// Get predecessor decision
+	predecessor, err := rpcClient.GetDecision(context.Background(), predecessorID)
+	if err != nil || predecessor == nil {
+		return ""
+	}
+
+	// Extract suggested type from predecessor's rationale
+	rationale := predecessor.Rationale
+	if rationale == "" {
+		return ""
+	}
+
+	const prefix = "→ [Suggested successor type: "
+	const suffix = "]"
+
+	idx := strings.Index(rationale, prefix)
+	if idx == -1 {
+		return ""
+	}
+
+	start := idx + len(prefix)
+	remaining := rationale[start:]
+	endIdx := strings.Index(remaining, suffix)
+	if endIdx == -1 {
+		return ""
+	}
+
+	suggestedType := remaining[:endIdx]
+
+	// Extract current type from context
+	currentType := extractTypeFromContext(currentContext)
+
+	// Check for mismatch
+	if suggestedType != "" && currentType != suggestedType {
+		if currentType == "" {
+			return fmt.Sprintf("⚠️ _Predecessor suggested type '%s' but agent didn't specify a type_", suggestedType)
+		}
+		return fmt.Sprintf("⚠️ _Predecessor suggested type '%s' but agent used '%s'_", suggestedType, currentType)
+	}
+
+	return ""
+}
+
 
