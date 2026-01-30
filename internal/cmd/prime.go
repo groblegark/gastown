@@ -211,6 +211,9 @@ func runPrime(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Output applicable advice for this agent
+	outputAdviceContext(ctx)
+
 	// Output handoff content if present
 	outputHandoffContent(ctx)
 
