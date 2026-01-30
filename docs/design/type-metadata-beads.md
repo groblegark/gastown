@@ -1,478 +1,464 @@
-# Type Metadata Beads Design
+# Decision Types Design
 
-> Extending the beads type system with configurable validation rules
+> Lightweight type system for structured decision context
 > Part of epic: bd-epc-decision_type_templates_subtype
 
 ## Summary
 
 Decision types answer: **"Why is the agent asking the human?"**
 
-| Type | Agent Says... | When To Use |
-|------|--------------|-------------|
-| `confirmation` | "I'm about to do X, is that right?" | High-stakes/irreversible action |
-| `ambiguity` | "Requirements could mean A or B" | Multiple valid interpretations |
-| `tradeoff` | "Option A vs B, each has pros/cons" | No clear winner, human sets priority |
-| `stuck` | "I can't proceed without X" | Agent is blocked |
-| `checkpoint` | "Here's where I am, any corrections?" | Mid-work check-in |
-| `quality` | "Is this good enough?" | Subjective judgment call |
-| `exception` | "Something unexpected happened" | Error or unusual situation |
-| `prioritization` | "Multiple things need doing, what first?" | Competing tasks |
+| Type | Agent Says... | Emoji |
+|------|--------------|-------|
+| `confirmation` | "I'm about to do X, is that right?" | ⚠️ |
+| `ambiguity` | "Requirements could mean A or B" | ❓ |
+| `tradeoff` | "Option A vs B, each has pros/cons" | ⚖️ |
+| `stuck` | "I can't proceed without X" | 🚧 |
+| `checkpoint` | "Here's where I am, any corrections?" | 📍 |
+| `quality` | "Is this good enough?" | ✨ |
+| `exception` | "Something unexpected happened" | ⚡ |
+| `prioritization` | "Multiple things need doing, what first?" | 🎯 |
 
-These types are derived from analysis of 20+ Gas Town formulas (code-review, design, boot-triage, shutdown-dance, witness-patrol, polecat-work, orphan-scan, etc.).
-
-## Problem Statement
-
-We want decision beads to have structured context requirements based on their type. Rather than hardcoding these rules, we need a flexible system where:
-
-1. Type validation rules are themselves beads (versionable, auditable)
-2. Validators can run custom scripts (also beads)
-3. The system is extensible to other bead types, not just decisions
+Derived from analysis of 20+ Gas Town formulas.
 
 ## Architecture
 
+**Simple script-based validation.** No bead types, no JSON schemas, just scripts.
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Bead Creation                             │
-│  gt decision request --type tradeoff --context "..."             │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Type Metadata Lookup                          │
-│  Find: type-meta bead for type=decision, subtype=tradeoff        │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Validation Pipeline                           │
-│  For each required_field:                                        │
-│    1. Check field present in context                             │
-│    2. If validator_bead specified, run it                        │
-│    3. Validator loads script_bead, executes                      │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Result                                        │
-│  Pass: Create bead with type + subtype                          │
-│  Fail: Return errors with helpful messages                       │
-└─────────────────────────────────────────────────────────────────┘
+gt decision request --type tradeoff --context '{...}'
+        │
+        ▼
+┌─────────────────────────────────────┐
+│  1. Look up type in DecisionTypes   │
+│     (hardcoded Go map)              │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│  2. Run validator script            │
+│     ~/.config/gt/validators/        │
+│       decision-type-tradeoff.sh     │
+│     (stdin = context JSON)          │
+└─────────────────┬───────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────┐
+│  3. Script exits 0? Create decision │
+│     Script exits 1? Show stderr     │
+└─────────────────────────────────────┘
 ```
 
-## Decision Types
+**Key insight:** Reuse the existing validator execution pattern from `internal/validator/executor.go`. Validation is just "call a script, check exit code."
 
-### 1. `confirmation` - "I'm about to do X, is that right?"
+## Implementation
 
-**High-stakes action needs human sign-off before proceeding.**
+### 1. Type Registry (~100 lines)
 
-Derived from: mol-shutdown-dance (death warrants), mol-town-shutdown (blockers)
+New file: `internal/decision/types.go`
 
-**When to use:** Agent is confident about the action but it's irreversible or high-risk.
+```go
+package decision
 
-**Required context:**
-```json
-{
-  "action": "Delete all polecat sandboxes and restart Gas Town",
-  "why": "Corrupted state detected, fresh start needed",
-  "reversible": false,
-  "impact": "All in-progress work will be lost if not committed"
+type TypeDef struct {
+    Name        string
+    Emoji       string
+    Label       string
+    Description string
+    Required    []string  // Context fields to check (basic validation)
+}
+
+var Types = map[string]TypeDef{
+    "confirmation": {
+        Name:        "confirmation",
+        Emoji:       "⚠️",
+        Label:       "Confirmation",
+        Description: "High-stakes action needs sign-off",
+        Required:    []string{"action", "impact"},
+    },
+    "ambiguity": {
+        Name:        "ambiguity",
+        Emoji:       "❓",
+        Label:       "Ambiguity",
+        Description: "Multiple valid interpretations",
+        Required:    []string{"interpretations"},
+    },
+    "tradeoff": {
+        Name:        "tradeoff",
+        Emoji:       "⚖️",
+        Label:       "Tradeoff",
+        Description: "Options with pros/cons, human sets priority",
+        Required:    []string{"options", "recommendation"},
+    },
+    "stuck": {
+        Name:        "stuck",
+        Emoji:       "🚧",
+        Label:       "Stuck",
+        Description: "Agent is blocked, needs something",
+        Required:    []string{"blocker", "tried"},
+    },
+    "checkpoint": {
+        Name:        "checkpoint",
+        Emoji:       "📍",
+        Label:       "Checkpoint",
+        Description: "Mid-work check-in",
+        Required:    []string{"progress", "next_steps"},
+    },
+    "quality": {
+        Name:        "quality",
+        Emoji:       "✨",
+        Label:       "Quality",
+        Description: "Subjective judgment call",
+        Required:    []string{"artifact", "assessment"},
+    },
+    "exception": {
+        Name:        "exception",
+        Emoji:       "⚡",
+        Label:       "Exception",
+        Description: "Unexpected situation",
+        Required:    []string{"situation", "recommendation"},
+    },
+    "prioritization": {
+        Name:        "prioritization",
+        Emoji:       "🎯",
+        Label:       "Prioritization",
+        Description: "Competing tasks, need ordering",
+        Required:    []string{"candidates", "constraints"},
+    },
+}
+
+func GetType(name string) (TypeDef, bool) {
+    t, ok := Types[name]
+    return t, ok
+}
+
+func ListTypes() []TypeDef {
+    // Return sorted list
 }
 ```
 
-**Example options:**
-- "Proceed with shutdown"
-- "Wait, let me check something first"
-- "Abort - don't do this"
+### 2. Script-Based Validation (~50 lines)
 
-**Emoji:** ⚠️
+Extend `internal/validator/executor.go` or add to `internal/decision/validate.go`:
 
----
+```go
+// ValidateType runs the type-specific validator script.
+// Script receives context JSON on stdin, exits 0 for valid, 1 for invalid.
+func ValidateType(typeName, contextJSON string) error {
+    typedef, ok := Types[typeName]
+    if !ok {
+        return fmt.Errorf("unknown decision type: %s", typeName)
+    }
 
-### 2. `ambiguity` - "The requirements could mean A or B"
+    // Basic required field check (fast path)
+    if err := checkRequiredFields(typedef.Required, contextJSON); err != nil {
+        return err
+    }
 
-**Multiple valid interpretations, need human to clarify intent.**
+    // Look for custom validator script
+    scriptPath := findTypeValidator(typeName)
+    if scriptPath == "" {
+        return nil  // No custom script, basic validation passed
+    }
 
-Derived from: design.formula (Open Questions), feature spec interpretation
+    // Run script with context on stdin
+    cmd := exec.Command(scriptPath)
+    cmd.Stdin = strings.NewReader(contextJSON)
+    var stderr bytes.Buffer
+    cmd.Stderr = &stderr
 
-**When to use:** Agent found multiple reasonable ways to interpret the task.
+    if err := cmd.Run(); err != nil {
+        return fmt.Errorf("validation failed: %s", stderr.String())
+    }
 
-**Required context:**
-```json
-{
-  "interpretations": [
-    "A: Validate on every keystroke (strict)",
-    "B: Validate on blur/submit only (permissive)"
-  ],
-  "leaning": "B - better UX, less annoying",
-  "why_unclear": "Spec says 'validate input' but doesn't specify when"
+    return nil
+}
+
+func findTypeValidator(typeName string) string {
+    // Check standard locations:
+    // 1. ~/.config/gt/validators/decision-type-{name}.sh
+    // 2. .gt/validators/decision-type-{name}.sh
+    // 3. Built-in (embedded)
+}
+
+func checkRequiredFields(required []string, contextJSON string) error {
+    var ctx map[string]interface{}
+    if err := json.Unmarshal([]byte(contextJSON), &ctx); err != nil {
+        return fmt.Errorf("context must be valid JSON object: %w", err)
+    }
+
+    var missing []string
+    for _, field := range required {
+        if _, ok := ctx[field]; !ok {
+            missing = append(missing, field)
+        }
+    }
+
+    if len(missing) > 0 {
+        return fmt.Errorf("missing required context fields: %v", missing)
+    }
+    return nil
 }
 ```
 
-**Example options:**
-- "Interpretation A: Strict validation"
-- "Interpretation B: Permissive validation"
-- "Both - strict with debounce"
+### 3. CLI Changes (~30 lines)
 
-**Emoji:** ❓
+In `internal/cmd/decision_impl.go`:
 
----
+```go
+// Add flag
+var decisionType string
 
-### 3. `tradeoff` - "Option A vs B, each has pros/cons"
+func init() {
+    decisionRequestCmd.Flags().StringVar(&decisionType, "type", "",
+        "Decision type (confirmation, ambiguity, tradeoff, stuck, checkpoint, quality, exception, prioritization)")
+}
 
-**No clear winner - depends on human priorities.**
+func runDecisionRequest(cmd *cobra.Command, args []string) error {
+    // ... existing validation ...
 
-Derived from: code-review synthesis (conflicting findings), architecture decisions
+    // Type validation (if specified)
+    if decisionType != "" {
+        if err := decision.ValidateType(decisionType, decisionContext); err != nil {
+            return fmt.Errorf("--%s type validation failed: %w", decisionType, err)
+        }
+    }
 
-**When to use:** Agent evaluated options but the "right" choice depends on values/priorities the agent can't determine.
-
-**Required context:**
-```json
-{
-  "options": ["Redis", "SQLite", "In-memory"],
-  "analysis": {
-    "Redis": {"pros": ["distributed", "persistent"], "cons": ["ops overhead"]},
-    "SQLite": {"pros": ["simple", "no deps"], "cons": ["single-node"]},
-    "In-memory": {"pros": ["fastest"], "cons": ["volatile"]}
-  },
-  "recommendation": "Redis - we'll need multi-node eventually",
-  "deciding_factor": "How important is ops simplicity vs future scalability?"
+    // ... rest of function ...
 }
 ```
 
-**Example options:**
-- "Redis: Distributed, future-proof"
-- "SQLite: Simple, good enough for now"
-- "In-memory: Fastest, accept volatility"
+### 4. Slack Rendering (~20 lines)
 
-**Emoji:** ⚖️
+In `internal/slackbot/bot.go`, update `formatDecisionMessage`:
 
----
+```go
+func formatDecisionMessage(fields *beads.DecisionFields) string {
+    var sb strings.Builder
 
-### 4. `stuck` - "I can't proceed without X"
+    // Add type prefix if present
+    if fields.Type != "" {
+        if typedef, ok := decision.GetType(fields.Type); ok {
+            sb.WriteString(typedef.Emoji)
+            sb.WriteString(" ")
+            sb.WriteString(typedef.Label)
+            sb.WriteString(": ")
+        }
+    }
 
-**Agent is blocked and needs something from the human.**
-
-Derived from: polecat escalation patterns, mol-convoy-feed (no capacity)
-
-**When to use:** Agent hit a wall - missing info, external dependency, access needed.
-
-**Required context:**
-```json
-{
-  "blocker": "Need AWS credentials to test S3 integration",
-  "tried": [
-    "Checked .env files - not present",
-    "Checked secrets manager - no access",
-    "Asked in #infra channel - no response"
-  ],
-  "need": "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for dev account"
+    sb.WriteString(fields.Question)
+    // ... rest of formatting ...
 }
 ```
 
-**Example options:**
-- "I'll get you the credentials"
-- "Skip S3 testing, mock it instead"
-- "Let me take over this piece"
+## Example Validator Scripts
 
-**Emoji:** 🚧
+Scripts are simple. They read context JSON from stdin, validate, exit 0 or 1.
 
----
+### `decision-type-tradeoff.sh`
 
-### 5. `checkpoint` - "Here's where I am, any course corrections?"
+```bash
+#!/bin/bash
+# Validate tradeoff decision context
 
-**Periodic check-in during long work.**
+ctx=$(cat)
 
-Derived from: rule-of-five (iterative refinement), shiny workflow stages
-
-**When to use:** Agent wants to confirm direction before investing more effort. Good for expensive or long-running work.
-
-**Required context:**
-```json
-{
-  "progress": "Completed API design and data model. Tests passing.",
-  "next_steps": "Implement the CLI commands and integration tests",
-  "concerns": "The data model might be over-normalized - 6 tables for what could be 2"
-}
-```
-
-**Example options:**
-- "Looks good, continue"
-- "Simplify the data model first"
-- "Stop - let's discuss the API design"
-
-**Emoji:** 📍
-
----
-
-### 6. `quality` - "Is this good enough?"
-
-**Subjective judgment call about completeness or quality.**
-
-Derived from: rule-of-five (excellence pass), code-review (merge readiness)
-
-**When to use:** Agent finished something but "good enough" is subjective.
-
-**Required context:**
-```json
-{
-  "artifact": "PR #123: Add user authentication",
-  "assessment": "Functional and tested, but error messages are generic",
-  "gaps": [
-    "No rate limiting on login endpoint",
-    "Error messages don't help users fix issues",
-    "No password strength indicator"
-  ],
-  "bar": "Production-ready MVP"
-}
-```
-
-**Example options:**
-- "Ship it - good enough for MVP"
-- "Add rate limiting before merge"
-- "Needs more polish - address all gaps"
-
-**Emoji:** ✨
-
----
-
-### 7. `exception` - "Something unexpected happened"
-
-**Error or unusual situation, need guidance on how to proceed.**
-
-Derived from: mol-orphan-scan (RESET/RECOVER/ESCALATE), mol-refinery-patrol (test failures)
-
-**When to use:** Agent encountered something outside normal flow and isn't sure how to handle it.
-
-**Required context:**
-```json
-{
-  "situation": "Found 3 orphaned polecats with uncommitted work",
-  "options": [
-    "RESET: Discard work, return issues to open",
-    "RECOVER: Try to commit and push their work",
-    "ESCALATE: Need human to inspect the code"
-  ],
-  "recommendation": "RECOVER - the git log shows meaningful commits",
-  "risk": "RECOVER might push broken code if tests weren't run"
-}
-```
-
-**Example options:**
-- "RECOVER: Try to save the work"
-- "RESET: Discard and restart fresh"
-- "ESCALATE: I'll look at it manually"
-
-**Emoji:** ⚡
-
----
-
-### 8. `prioritization` - "Multiple things need doing, what first?"
-
-**Agent has competing tasks or directions.**
-
-Derived from: mol-convoy-feed (dispatch order), triage patterns
-
-**When to use:** Agent can see multiple valid work items but needs human to set priority.
-
-**Required context:**
-```json
-{
-  "candidates": [
-    {"id": "gt-123", "title": "Fix login crash", "severity": "P0"},
-    {"id": "gt-456", "title": "Add OAuth support", "severity": "P1"},
-    {"id": "gt-789", "title": "Refactor auth module", "severity": "P2"}
-  ],
-  "analysis": {
-    "gt-123": "Blocking users, quick fix (~1h)",
-    "gt-456": "Blocking sales demo Friday",
-    "gt-789": "Tech debt, no deadline"
-  },
-  "constraints": "Can only finish 2 before EOD",
-  "suggestion": "gt-123 first (users blocked), then gt-456 (demo)"
-}
-```
-
-**Example options:**
-- "123 then 456: Fix crash, then OAuth"
-- "456 then 123: Demo is more important"
-- "Just 123: Focus on the crash, OAuth can wait"
-
-**Emoji:** 🎯
-
----
-
-## New Bead Types
-
-### 1. `type-meta` - Type Metadata Bead
-
-Defines validation rules and UI metadata for a decision type.
-
-**Prefix:** `meta-`
-
-**Example:**
-```yaml
-ID: meta-decision-tradeoff
-Type: type-meta
-
-for_type: decision
-for_subtype: tradeoff
-
-emoji: "⚖️"
-label: "Tradeoff Decision"
-description: "No clear winner - depends on human priorities"
-
-required_fields:
-  - name: options
-    description: "The alternatives being considered"
-    validator_bead: vld-has-options
-
-  - name: analysis
-    description: "Pros and cons of each option"
-    validator_bead: null
-
-  - name: recommendation
-    description: "Agent's suggestion if forced to choose"
-    validator_bead: vld-not-empty
-
-  - name: deciding_factor
-    description: "What would tip the balance"
-    validator_bead: null
-
-example: |
-  {
-    "options": ["Redis", "SQLite"],
-    "analysis": {"Redis": {...}, "SQLite": {...}},
-    "recommendation": "Redis",
-    "deciding_factor": "How important is ops simplicity?"
-  }
-```
-
-### 2. `validator` - Validator Bead
-
-Defines a validation rule that can be applied to fields.
-
-**Prefix:** `vld-`
-
-**Example:**
-```yaml
-ID: vld-has-options
-Type: validator
-
-name: "has-options"
-description: "Verify decision has 2-4 distinct options"
-
-script_bead: scr-check-options-count
-extract_mode: json_field
-extract_path: "options"
-
-error_template: "Decision must have 2-4 options, found {value}"
-timeout_ms: 1000
-```
-
-### 3. `script` - Script Bead
-
-Stores executable validation logic.
-
-**Prefix:** `scr-`
-
-**Example:**
-```yaml
-ID: scr-check-options-count
-Type: script
-
-name: "check-options-count"
-description: "Verify array has 2-4 items"
-
-interpreter: /bin/bash
-script: |
-  count=$(echo "$1" | jq 'length')
-  if [ "$count" -ge 2 ] && [ "$count" -le 4 ]; then
-    exit 0
-  else
-    echo "Expected 2-4 options, got $count" >&2
+# Check options is an array with 2+ items
+options_count=$(echo "$ctx" | jq '.options | length')
+if [ "$options_count" -lt 2 ]; then
+    echo "tradeoff requires at least 2 options, got $options_count" >&2
     exit 1
-  fi
+fi
 
-allowed_commands: [jq]
-max_runtime_ms: 1000
+# Check recommendation exists and isn't empty
+rec=$(echo "$ctx" | jq -r '.recommendation // empty')
+if [ -z "$rec" ]; then
+    echo "tradeoff requires a recommendation" >&2
+    exit 1
+fi
+
+exit 0
 ```
 
-## Validators
+### `decision-type-stuck.js` (Node.js example)
 
-Standard validators for decision quality:
+```javascript
+#!/usr/bin/env node
+const ctx = JSON.parse(require('fs').readFileSync(0, 'utf8'));
 
-| Validator | Purpose |
-|-----------|---------|
-| `vld-not-empty` | Required field has content |
-| `vld-has-options` | Decision has 2-4 actionable options |
-| `vld-options-distinct` | Options are meaningfully different |
-| `vld-recommendation-present` | Agent provided a recommendation |
-| `vld-json-valid` | Valid JSON structure |
+if (!ctx.blocker || ctx.blocker.trim() === '') {
+    console.error('stuck requires a blocker description');
+    process.exit(1);
+}
+
+if (!Array.isArray(ctx.tried) || ctx.tried.length === 0) {
+    console.error('stuck requires at least one thing you tried');
+    process.exit(1);
+}
+
+process.exit(0);
+```
 
 ## CLI Usage
 
 ```bash
-# Create a tradeoff decision
+# Create typed decision
 gt decision request \
   --type tradeoff \
   --prompt "Which caching strategy?" \
-  --context '{"options": ["Redis", "SQLite"], "analysis": {...}, ...}' \
+  --context '{"options": ["Redis", "SQLite"], "recommendation": "Redis"}' \
   --option "Redis: Distributed" \
   --option "SQLite: Simple"
 
-# List available decision types
+# List available types
 gt decision types
 
-# Show type requirements
+# Show type details
 gt decision types show tradeoff
 ```
 
-## Slack Rendering
+## Decision Types Detail
 
-Decisions display their type with emoji and structured context:
+### 1. `confirmation` ⚠️
 
-```
-⚖️ Tradeoff Decision: Which caching strategy?
+**"I'm about to do X, is that right?"**
 
-**Options under consideration:**
-• Redis - Distributed, persistent
-• SQLite - Simple, no deps
+High-stakes action needs human sign-off before proceeding.
 
-**Agent's analysis:**
-Redis handles our multi-node future but adds ops overhead.
-SQLite is simpler but won't scale.
+| Field | Required | Description |
+|-------|----------|-------------|
+| `action` | Yes | What the agent is about to do |
+| `impact` | Yes | What happens if this proceeds |
+| `reversible` | No | Boolean: can this be undone? |
+| `why` | No | Why the agent wants to do this |
 
-**Recommendation:** Redis
-**Deciding factor:** How important is ops simplicity vs scalability?
+---
 
-[Redis] [SQLite] [Neither]
-```
+### 2. `ambiguity` ❓
 
-## Migration Path
+**"The requirements could mean A or B"**
 
-### Phase 1: Schema
-- Add `subtype` column to issues table
-- Add new bead types: `type-meta`, `validator`, `script`
-- Create default type metadata beads for 8 decision types
+Multiple valid interpretations, need human to clarify intent.
 
-### Phase 2: Validation
-- Implement type metadata lookup
-- Implement required field validation
-- Implement validator/script execution
+| Field | Required | Description |
+|-------|----------|-------------|
+| `interpretations` | Yes | Array of possible interpretations |
+| `leaning` | No | Which interpretation agent prefers |
+| `why_unclear` | No | What makes this ambiguous |
 
-### Phase 3: CLI
-- Add `--type` flag to `gt decision request`
-- Add `gt decision types` command
-- Update `bd decision create` to validate
+---
 
-### Phase 4: Integration
-- Update Slack rendering for types
-- Add type emoji/label to notifications
-- Track type usage metrics
+### 3. `tradeoff` ⚖️
+
+**"Option A vs B, each has pros/cons"**
+
+No clear winner - depends on human priorities.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `options` | Yes | Array of options being considered |
+| `recommendation` | Yes | Agent's suggestion if forced to choose |
+| `analysis` | No | Pros/cons breakdown per option |
+| `deciding_factor` | No | What would tip the balance |
+
+---
+
+### 4. `stuck` 🚧
+
+**"I can't proceed without X"**
+
+Agent is blocked and needs something from the human.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `blocker` | Yes | What's blocking progress |
+| `tried` | Yes | Array of things already attempted |
+| `need` | No | Specific thing that would unblock |
+
+---
+
+### 5. `checkpoint` 📍
+
+**"Here's where I am, any course corrections?"**
+
+Periodic check-in during long work.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `progress` | Yes | What's been accomplished |
+| `next_steps` | Yes | What's planned next |
+| `concerns` | No | Any worries or risks |
+
+---
+
+### 6. `quality` ✨
+
+**"Is this good enough?"**
+
+Subjective judgment call about completeness or quality.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `artifact` | Yes | What's being evaluated |
+| `assessment` | Yes | Agent's quality assessment |
+| `gaps` | No | Known shortcomings |
+| `bar` | No | Quality standard being measured against |
+
+---
+
+### 7. `exception` ⚡
+
+**"Something unexpected happened"**
+
+Error or unusual situation, need guidance.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `situation` | Yes | What happened |
+| `recommendation` | Yes | Agent's suggested action |
+| `options` | No | Possible ways to handle it |
+| `risk` | No | What could go wrong |
+
+---
+
+### 8. `prioritization` 🎯
+
+**"Multiple things need doing, what first?"**
+
+Agent has competing tasks or directions.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `candidates` | Yes | Array of work items |
+| `constraints` | Yes | Time/resource limits |
+| `analysis` | No | Brief analysis per candidate |
+| `suggestion` | No | Agent's recommended order |
+
+---
+
+## Implementation Estimate
+
+| Component | Lines | Files |
+|-----------|-------|-------|
+| `types.go` | ~100 | 1 new |
+| `validate.go` | ~50 | 1 new |
+| `decision_impl.go` changes | ~30 | modify |
+| `bot.go` changes | ~20 | modify |
+| Built-in validator scripts | ~100 | 8 new |
+| Tests | ~100 | 2 new |
+| **Total** | **~400** | 12 files |
+
+## Migration
+
+**Single phase:**
+1. Add `--type` flag to `gt decision request`
+2. Add type validation (Go code + scripts)
+3. Update Slack rendering to show emoji/label
+4. Ship default validator scripts
+
+No schema changes. No new bead types. Types are optional - existing decisions continue to work.
 
 ## Success Metrics
 
-- Agents use typed decisions >80% of the time
-- Humans resolve typed decisions 30% faster (better context)
-- Validation catches incomplete decisions before creation
-- Type distribution matches formula patterns (tradeoff, stuck, checkpoint most common)
+- Agents use typed decisions >50% of the time
+- Type validation catches missing context before creation
+- Humans can glance at emoji to understand decision category
