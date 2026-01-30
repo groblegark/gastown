@@ -158,6 +158,19 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Check if predecessor suggested a successor type
+	if decisionPredecessor != "" {
+		suggestedType := checkPredecessorSuggestedType(townRoot, decisionPredecessor)
+		if suggestedType != "" {
+			if decisionType == "" {
+				style.PrintWarning("Predecessor suggested successor type '%s' but --type was not specified", suggestedType)
+				style.PrintWarning("Consider: gt decision request --type=%s ...", suggestedType)
+			} else if decisionType != suggestedType {
+				style.PrintWarning("Predecessor suggested successor type '%s' but --type=%s was used", suggestedType, decisionType)
+			}
+		}
+	}
+
 	// Embed type in context if specified (for Slack rendering)
 	contextToStore := decisionContext
 	if decisionType != "" {
@@ -1741,6 +1754,52 @@ func extractTypeFromContext(context string) string {
 		return typeVal
 	}
 	return ""
+}
+
+// checkPredecessorSuggestedType looks up a predecessor decision and extracts
+// any suggested successor type from its resolution rationale.
+// Returns the suggested type or empty string if none found.
+func checkPredecessorSuggestedType(townRoot, predecessorID string) string {
+	if predecessorID == "" {
+		return ""
+	}
+
+	// Look up the predecessor decision using gt decision show (has full resolution data)
+	output, err := exec.Command("gt", "decision", "show", predecessorID, "--json").Output()
+	if err != nil {
+		return ""
+	}
+
+	var decision struct {
+		Rationale string `json:"rationale"`
+	}
+
+	if err := json.Unmarshal(output, &decision); err != nil {
+		return ""
+	}
+
+	rationale := decision.Rationale
+	if rationale == "" {
+		return ""
+	}
+
+	// Look for "→ [Suggested successor type: X]" pattern
+	const prefix = "→ [Suggested successor type: "
+	const suffix = "]"
+
+	idx := strings.Index(rationale, prefix)
+	if idx == -1 {
+		return ""
+	}
+
+	start := idx + len(prefix)
+	remaining := rationale[start:]
+	endIdx := strings.Index(remaining, suffix)
+	if endIdx == -1 {
+		return ""
+	}
+
+	return remaining[:endIdx]
 }
 
 // Note: Fail-then-File and successor schema validation moved to scripts:

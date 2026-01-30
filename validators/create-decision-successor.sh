@@ -17,8 +17,8 @@ if [ -z "$predecessor_id" ]; then
   exit 0
 fi
 
-# Load predecessor decision via bd
-pred_json=$(bd show "$predecessor_id" --json 2>/dev/null) || {
+# Load predecessor decision via bd (handle array output)
+pred_raw=$(bd show "$predecessor_id" --json 2>/dev/null) || {
   cat <<EOF
 {
   "valid": false,
@@ -29,8 +29,26 @@ EOF
   exit 1
 }
 
-# Check if predecessor is resolved
-chosen_index=$(echo "$pred_json" | jq -r '.chosen_index // 0')
+# bd show returns array, extract first element
+pred_json=$(echo "$pred_raw" | jq '.[0] // .')
+
+# Check if predecessor is resolved (for decisions, check close_reason or labels)
+status=$(echo "$pred_json" | jq -r '.status // "open"')
+if [ "$status" != "closed" ]; then
+  cat <<EOF
+{
+  "valid": false,
+  "blocking": true,
+  "errors": ["Predecessor decision $predecessor_id is not yet resolved"],
+  "warnings": ["You must wait for the predecessor to be resolved before creating a follow-up decision."]
+}
+EOF
+  exit 1
+fi
+
+# For newer decisions, chosen_index may not be stored in the bead itself
+# Just pass validation if it's closed - the successor type check is handled in code
+chosen_index=$(echo "$pred_json" | jq -r '.chosen_index // 1')
 if [ "$chosen_index" = "0" ] || [ "$chosen_index" = "null" ]; then
   cat <<EOF
 {
