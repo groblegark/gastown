@@ -569,3 +569,89 @@ func (r *Router) MigrateToBeads() error {
 
 	return nil
 }
+
+// ChannelMode represents an agent's preferred channel routing mode.
+type ChannelMode string
+
+const (
+	// ChannelModeGeneral routes to the default/general channel.
+	ChannelModeGeneral ChannelMode = "general"
+	// ChannelModeAgent routes to a dedicated per-agent channel.
+	ChannelModeAgent ChannelMode = "agent"
+	// ChannelModeEpic routes to a channel based on the work's parent epic.
+	ChannelModeEpic ChannelMode = "epic"
+	// ChannelModeDM routes to a direct message with the overseer.
+	ChannelModeDM ChannelMode = "dm"
+)
+
+// ValidChannelModes is the list of valid channel mode values.
+var ValidChannelModes = []ChannelMode{
+	ChannelModeGeneral,
+	ChannelModeAgent,
+	ChannelModeEpic,
+	ChannelModeDM,
+}
+
+// IsValidChannelMode checks if a string is a valid channel mode.
+func IsValidChannelMode(mode string) bool {
+	for _, m := range ValidChannelModes {
+		if string(m) == mode {
+			return true
+		}
+	}
+	return false
+}
+
+// GetAgentChannelMode retrieves the channel mode preference for an agent.
+// Returns empty string if no preference is set.
+// Agent format: "rig/role/name" (e.g., "gastown/polecats/furiosa")
+func GetAgentChannelMode(agent string) (ChannelMode, error) {
+	// Normalize agent name for config key (replace / with .)
+	key := "slack.channel_mode." + strings.ReplaceAll(agent, "/", ".")
+	value, err := bdConfigGet(key)
+	if err != nil {
+		return "", err
+	}
+	if value == "" {
+		return "", nil
+	}
+	return ChannelMode(value), nil
+}
+
+// SetAgentChannelMode sets the channel mode preference for an agent.
+// Agent format: "rig/role/name" (e.g., "gastown/polecats/furiosa")
+func SetAgentChannelMode(agent string, mode ChannelMode) error {
+	if !IsValidChannelMode(string(mode)) {
+		return fmt.Errorf("invalid channel mode %q: must be one of %v", mode, ValidChannelModes)
+	}
+	key := "slack.channel_mode." + strings.ReplaceAll(agent, "/", ".")
+	return bdConfigSet(key, string(mode))
+}
+
+// ClearAgentChannelMode removes the channel mode preference for an agent.
+func ClearAgentChannelMode(agent string) error {
+	key := "slack.channel_mode." + strings.ReplaceAll(agent, "/", ".")
+	// bd config set with empty value effectively unsets
+	return bdConfigSet(key, "")
+}
+
+// GetDefaultChannelMode returns the default channel mode for all agents.
+// Returns empty string if no default is set.
+func GetDefaultChannelMode() (ChannelMode, error) {
+	value, err := bdConfigGet("slack.default_channel_mode")
+	if err != nil {
+		return "", err
+	}
+	if value == "" {
+		return "", nil
+	}
+	return ChannelMode(value), nil
+}
+
+// SetDefaultChannelMode sets the default channel mode for all agents.
+func SetDefaultChannelMode(mode ChannelMode) error {
+	if !IsValidChannelMode(string(mode)) {
+		return fmt.Errorf("invalid channel mode %q: must be one of %v", mode, ValidChannelModes)
+	}
+	return bdConfigSet("slack.default_channel_mode", string(mode))
+}
