@@ -23,6 +23,7 @@ import (
 	"github.com/steveyegge/gastown/internal/style"
 	decisionTUI "github.com/steveyegge/gastown/internal/tui/decision"
 	"github.com/steveyegge/gastown/internal/util"
+	"github.com/steveyegge/gastown/internal/validator"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -92,21 +93,50 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 		options = append(options, opt)
 	}
 
-	// Validate FILE option when failure context detected (Fail-then-File principle)
-	if !decisionNoFileCheck && hasFailureContext(decisionPrompt, decisionContext) {
-		if !hasFileOption(options) {
-			return fmt.Errorf("failure context detected but no FILE option provided.\n\n"+
-				"The prompt mentions an error/failure. Per the 'Fail then File' principle,\n"+
-				"decisions about failures should include an option to file a tracking bug.\n\n"+
-				"Suggested option:\n  --option \"%s\"\n\n"+
-				"Use --no-file-check to skip this validation.", suggestFileOption())
+	// Run script-based validators (unless --no-file-check skips all validation)
+	if !decisionNoFileCheck {
+		// Parse context as map for validators
+		var contextMap map[string]interface{}
+		if decisionContext != "" {
+			_ = json.Unmarshal([]byte(decisionContext), &contextMap)
 		}
-	}
 
-	// Validate successor schema if predecessor is specified (decision chaining)
-	if decisionPredecessor != "" {
-		if err := validateSuccessorSchema(townRoot, decisionPredecessor, decisionContext); err != nil {
-			return fmt.Errorf("successor schema validation failed: %w", err)
+		// Convert options for validator input
+		var validatorOptions []validator.OptionInput
+		for _, opt := range options {
+			validatorOptions = append(validatorOptions, validator.OptionInput{
+				Label:       opt.Label,
+				Description: opt.Description,
+				Recommended: opt.Recommended,
+			})
+		}
+
+		// Build validator input
+		validatorInput := validator.DecisionInput{
+			Prompt:        decisionPrompt,
+			Context:       contextMap,
+			Options:       validatorOptions,
+			PredecessorID: decisionPredecessor,
+			Type:          decisionType,
+		}
+
+		// Run create validators
+		result := validator.RunCreateValidators(townRoot, validatorInput)
+		if !result.Passed {
+			// Show errors
+			for _, e := range result.Errors {
+				style.PrintError("%s", e)
+			}
+			// Show warnings as advice
+			for _, w := range result.Warnings {
+				style.PrintWarning("Advice: %s", w)
+			}
+			return fmt.Errorf("validation failed (use --no-file-check to skip)")
+		}
+
+		// Show any warnings even on success
+		for _, w := range result.Warnings {
+			style.PrintWarning("%s", w)
 		}
 	}
 
@@ -1405,109 +1435,6 @@ func containsString(slice []string, s string) bool {
 	return false
 }
 
-// --- Fail-then-File validation ---
-
-// failureKeywords are patterns that indicate a failure context in the prompt or context.
-// These are matched as whole words (with word boundaries) to avoid false positives like
-// "delivered" matching "error" or "fail" matching "failure-mode" in design discussions.
-var failureKeywords = []string{
-	"error", "errors", "failed", "fails", "failing", "failure", "bug", "bugs",
-	"broke", "broken", "stuck", "crash", "crashed", "crashing",
-	"exception", "panic", "panicked", "fatal",
-	"cannot", "unable", "doesn't work", "does not work", "not working",
-	"won't work", "will not work", "stopped working",
-	"400", "401", "403", "404", "500", "502", "503", "504", // HTTP error codes
-}
-
-// failureExclusions are patterns that indicate a false positive (design discussion, not actual failure).
-var failureExclusions = []string{
-	"fail vs", "vs fail", "fail or", "or fail",
-	"failure mode", "failure context", "failure detection",
-	"hard fail", "soft fail", "fail-then-file", "fail then file",
-	"on failure", "on error", "error handling", "error mode",
-	"validation", "strictness", "blocking vs", "vs blocking",
-}
-
-// fileKeywords are patterns that indicate an option mentions filing/tracking.
-var fileKeywords = []string{
-	"file", "bug", "track", "bd create", "investigate", "report",
-	"create issue", "create bead", "open issue", "log issue",
-}
-
-// hasFailureContext checks if the prompt or context contains failure indicators.
-// It uses word boundary matching to avoid false positives on partial matches
-// (e.g., "delivered" should not match "error").
-func hasFailureContext(prompt, context string) bool {
-	combined := strings.ToLower(prompt + " " + context)
-
-	// First check exclusions - if it looks like a design discussion, skip
-	for _, excl := range failureExclusions {
-		if strings.Contains(combined, excl) {
-			return false
-		}
-	}
-
-	// Check for failure keywords as whole words
-	for _, keyword := range failureKeywords {
-		if containsWholeWord(combined, keyword) {
-			return true
-		}
-	}
-	return false
-}
-
-// containsWholeWord checks if text contains keyword as a complete word.
-func containsWholeWord(text, keyword string) bool {
-	idx := strings.Index(text, keyword)
-	for idx != -1 {
-		// Check character before
-		beforeOK := idx == 0 || !isWordChar(text[idx-1])
-		// Check character after
-		endIdx := idx + len(keyword)
-		afterOK := endIdx == len(text) || !isWordChar(text[endIdx])
-
-		if beforeOK && afterOK {
-			return true
-		}
-
-		// Search for next occurrence
-		if endIdx < len(text) {
-			nextIdx := strings.Index(text[endIdx:], keyword)
-			if nextIdx == -1 {
-				break
-			}
-			idx = endIdx + nextIdx
-		} else {
-			break
-		}
-	}
-	return false
-}
-
-// isWordChar returns true if c is alphanumeric or underscore.
-func isWordChar(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-		(c >= '0' && c <= '9') || c == '_'
-}
-
-// hasFileOption checks if any option mentions filing/tracking bugs.
-func hasFileOption(options []beads.DecisionOption) bool {
-	for _, opt := range options {
-		combined := strings.ToLower(opt.Label + " " + opt.Description)
-		for _, keyword := range fileKeywords {
-			if strings.Contains(combined, keyword) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// suggestFileOption returns a suggested option text for filing a bug.
-func suggestFileOption() string {
-	return "File bug: Create tracking bead to investigate root cause"
-}
-
 // --- Decision Chain Visualization ---
 
 // chainNode represents a node in the decision chain tree.
@@ -1739,102 +1666,7 @@ func printChainTree(node *chainNode, prefix string, isLast bool) {
 	}
 }
 
-// --- Decision Chaining Validation ---
-
-// validateSuccessorSchema validates that the current decision's context conforms
-// to the successor schema defined by the predecessor's chosen option.
-//
-// Schema format in predecessor's context:
-//
-//	{
-//	  "successor_schemas": {
-//	    "Option Label": {
-//	      "required": ["key1", "key2"],
-//	      "type": "object"
-//	    }
-//	  }
-//	}
-func validateSuccessorSchema(townRoot, predecessorID, currentContext string) error {
-	// Load predecessor decision
-	bd := beads.New(beads.ResolveBeadsDir(townRoot))
-	_, predFields, err := bd.GetDecisionBead(predecessorID)
-	if err != nil {
-		return fmt.Errorf("failed to load predecessor %s: %w", predecessorID, err)
-	}
-	if predFields == nil {
-		return fmt.Errorf("predecessor decision not found: %s", predecessorID)
-	}
-
-	// Check if predecessor is resolved
-	if predFields.ChosenIndex == 0 {
-		return fmt.Errorf("predecessor decision %s is not yet resolved", predecessorID)
-	}
-
-	// Get chosen option label
-	if predFields.ChosenIndex < 1 || predFields.ChosenIndex > len(predFields.Options) {
-		return fmt.Errorf("predecessor has invalid chosen index: %d", predFields.ChosenIndex)
-	}
-	chosenLabel := predFields.Options[predFields.ChosenIndex-1].Label
-
-	// Parse predecessor's context to get successor schemas
-	if predFields.Context == "" {
-		// No context, no schema to validate against
-		return nil
-	}
-
-	var predContext map[string]interface{}
-	if err := json.Unmarshal([]byte(predFields.Context), &predContext); err != nil {
-		// Predecessor context isn't a JSON object, skip validation
-		return nil
-	}
-
-	// Look for successor_schemas
-	schemas, ok := predContext["successor_schemas"].(map[string]interface{})
-	if !ok {
-		// No successor_schemas defined, skip validation
-		return nil
-	}
-
-	// Get schema for chosen option
-	schema, ok := schemas[chosenLabel].(map[string]interface{})
-	if !ok {
-		// No schema for this option, skip validation
-		return nil
-	}
-
-	// Parse current context
-	if currentContext == "" {
-		// Check if schema has required fields
-		if required, ok := schema["required"].([]interface{}); ok && len(required) > 0 {
-			return fmt.Errorf("successor schema requires context with keys: %v", required)
-		}
-		return nil
-	}
-
-	var ctx map[string]interface{}
-	if err := json.Unmarshal([]byte(currentContext), &ctx); err != nil {
-		// Current context isn't an object, can't validate required fields
-		return nil
-	}
-
-	// Validate required fields
-	if required, ok := schema["required"].([]interface{}); ok {
-		var missing []string
-		for _, r := range required {
-			key, ok := r.(string)
-			if !ok {
-				continue
-			}
-			if _, exists := ctx[key]; !exists {
-				missing = append(missing, key)
-			}
-		}
-		if len(missing) > 0 {
-			return fmt.Errorf("successor schema requires missing context keys: %v\nChosen option '%s' from predecessor %s defines schema: %v",
-				missing, chosenLabel, predecessorID, schema)
-		}
-	}
-
-	return nil
-}
+// Note: Fail-then-File and successor schema validation moved to scripts:
+// - validators/create-decision-fail-file.sh
+// - validators/create-decision-successor.sh
 

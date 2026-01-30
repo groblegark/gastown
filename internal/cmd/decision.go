@@ -13,6 +13,7 @@ var (
 	decisionBlocks       string   // Primary flag (--blocks)
 	decisionParent       string   // Parent bead relationship
 	decisionPredecessor  string   // Predecessor decision for chaining
+	decisionType         string   // Decision type for validation
 	decisionUrgency      string
 	decisionJSON         bool
 	decisionListJSON     bool
@@ -386,6 +387,7 @@ func init() {
 	decisionRequestCmd.Flags().StringVarP(&decisionUrgency, "urgency", "u", "medium", "Urgency level: high, medium, low")
 	decisionRequestCmd.Flags().BoolVar(&decisionJSON, "json", false, "Output as JSON")
 	decisionRequestCmd.Flags().BoolVar(&decisionNoFileCheck, "no-file-check", false, "Skip FILE option validation for failure contexts")
+	decisionRequestCmd.Flags().StringVar(&decisionType, "type", "", "Decision type (validated by create-decision-type-{name} script if present)")
 
 	// Aliases for backward compatibility
 	decisionRequestCmd.Flags().StringVarP(&decisionPrompt, "question", "q", "", "Alias for --prompt (deprecated)")
