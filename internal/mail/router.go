@@ -678,6 +678,10 @@ func (r *Router) sendToSingle(msg *Message) error {
 		ccIdentity := AddressToIdentity(cc)
 		labels = append(labels, "cc:"+ccIdentity)
 	}
+	// Add read label if pre-read (bd-bug-mail_inbox_shows_decision_resolutions)
+	if msg.PreRead {
+		labels = append(labels, "read")
+	}
 
 	// Build command: bd create <subject> --type=message --assignee=<recipient> -d <body>
 	args := []string{"create", msg.Subject,

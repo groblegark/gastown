@@ -112,6 +112,12 @@ type Message struct {
 	// Use this when you're sending a separate nudge to avoid double-notification (hq-t1wcr5).
 	SkipNotify bool `json:"skip_notify,omitempty"`
 
+	// PreRead marks the message as already read when delivered.
+	// Use this for informational notifications that don't require action.
+	// The message will still appear in inbox but won't show as "unread".
+	// Fix for bd-bug-mail_inbox_shows_decision_resolutions.
+	PreRead bool `json:"pre_read,omitempty"`
+
 	// Queue is the queue name for queue-routed messages.
 	// Mutually exclusive with To and Channel - a message is either direct, queued, or broadcast.
 	Queue string `json:"queue,omitempty"`

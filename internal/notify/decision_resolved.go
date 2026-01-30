@@ -42,7 +42,8 @@ func DecisionResolved(townRoot, decisionID string, fields beads.DecisionFields, 
 			Body:       body,
 			Type:       mail.TypeTask,
 			Priority:   mail.PriorityNormal,
-			SkipNotify: true, // We send an explicit nudge below - skip mail notification to avoid double-nudge (hq-t1wcr5)
+			SkipNotify: true,  // We send an explicit nudge below - skip mail notification to avoid double-nudge (hq-t1wcr5)
+			PreRead:    true,  // Mark as read on delivery - informational, agent already gets nudge (bd-bug-mail_inbox_shows_decision_resolutions)
 		}
 
 		if err := router.Send(msg); err != nil {
