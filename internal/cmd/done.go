@@ -666,17 +666,11 @@ func updateAgentStateOnDone(cwd, townRoot, exitType, _ string) { // issueID unus
 		return
 	}
 
-	// Use rig path for slot commands - bd slot doesn't route from town root
-	// IMPORTANT: Use the rig's directory (not polecat worktree) so bd commands
-	// work even if the polecat worktree is deleted.
-	var beadsPath string
-	switch ctx.Role {
-	case RoleMayor, RoleDeacon:
-		beadsPath = townRoot
-	default:
-		beadsPath = filepath.Join(townRoot, ctx.Rig)
-	}
-	bd := beads.New(beadsPath)
+	// BUG FIX (hq--bug-polecat_done_doesn_t_clear_hook_bead): Use town root for all agent beads.
+	// Agent beads now use hq- prefix and are stored in town-level beads, regardless of role.
+	// Previously, polecats used rig path which couldn't find hq-* prefixed agent beads.
+	// The witness handlers already use townRoot correctly (see handlers.go:105).
+	bd := beads.New(townRoot)
 
 	// BUG FIX (gt-vwjz6): Close hooked beads before clearing the hook.
 	// Previously, the agent's hook_bead slot was cleared but the hooked bead itself
