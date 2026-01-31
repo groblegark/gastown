@@ -313,6 +313,31 @@ an idle state.
 
 ---
 
+## Agent Advice
+
+**Advice appears automatically in your `gt prime` output.** This is guidance from humans
+and crew members to help you work effectively.
+
+**You'll see advice at startup:**
+- **Global** - Applies to all agents
+- **Rig** - Applies to agents in your rig
+- **Role** - Applies to your role type (polecat, crew, etc.)
+- **Agent** - Specific to you
+
+**When working, if you discover something others should know:**
+```bash
+# File advice for future agents working in this rig
+bd advice add "Description" -d "Details about what to do" --rig {{rig}}
+```
+
+**Common advice patterns:**
+- Workarounds for known issues
+- Team conventions for this codebase
+- Important commands or workflows
+- Gotchas discovered during work
+
+---
+
 ## Do NOT
 
 - Push to main (Refinery does this)
