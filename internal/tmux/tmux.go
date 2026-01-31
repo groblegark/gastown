@@ -831,11 +831,12 @@ func (t *Tmux) IsSessionAttached(target string) bool {
 // Note: This always performs the resize. Use WakePaneIfDetached to skip
 // attached sessions where the wake is unnecessary.
 func (t *Tmux) WakePane(target string) {
-	// Resize pane down by 1 row, then up by 1 row
+	// Shrink pane by 1 row (-D = down/shrink), then grow back by 1 row (-U = up/grow)
 	// This triggers SIGWINCH without changing the final pane size
-	_, _ = t.run("resize-pane", "-t", target, "-y", "-1")
+	// Note: -D/-U are for relative adjustments; -y sets absolute height (which doesn't work here)
+	_, _ = t.run("resize-pane", "-t", target, "-D", "1")
 	time.Sleep(50 * time.Millisecond)
-	_, _ = t.run("resize-pane", "-t", target, "-y", "+1")
+	_, _ = t.run("resize-pane", "-t", target, "-U", "1")
 }
 
 // WakePaneIfDetached triggers a SIGWINCH only if the session is detached.
