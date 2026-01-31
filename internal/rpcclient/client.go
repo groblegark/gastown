@@ -1166,3 +1166,271 @@ func (c *Client) CloseConvoy(ctx context.Context, convoyID, reason, notify strin
 
 	return convoy, nil
 }
+
+// ActivityEvent represents an event from the activity feed.
+type ActivityEvent struct {
+	Timestamp  string
+	Source     string
+	Type       string
+	Actor      string
+	Payload    map[string]interface{}
+	Visibility string
+	Summary    string // For curated feed events
+	Count      int    // For aggregated events
+}
+
+// EventFilter specifies criteria for filtering events.
+type EventFilter struct {
+	Types      []string // Filter by event types (empty = all)
+	Actor      string   // Filter by actor (empty = all)
+	Rig        string   // Filter by rig (empty = all)
+	Visibility string   // Filter by visibility ("audit", "feed", "both", or empty for all)
+	After      string   // Only events after this timestamp (RFC3339)
+	Before     string   // Only events before this timestamp (RFC3339)
+}
+
+// ListEventsRequest contains the parameters for listing events via RPC.
+type ListEventsRequest struct {
+	Filter  *EventFilter
+	Limit   int  // Maximum events (default: 100, max: 1000)
+	Curated bool // Read from curated feed (true) or raw events (false)
+}
+
+// ListEvents fetches events from the activity feed.
+func (c *Client) ListEvents(ctx context.Context, req ListEventsRequest) ([]ActivityEvent, int, error) {
+	body := map[string]interface{}{
+		"curated": req.Curated,
+	}
+	if req.Limit > 0 {
+		body["limit"] = req.Limit
+	}
+	if req.Filter != nil {
+		filter := map[string]interface{}{}
+		if len(req.Filter.Types) > 0 {
+			filter["types"] = req.Filter.Types
+		}
+		if req.Filter.Actor != "" {
+			filter["actor"] = req.Filter.Actor
+		}
+		if req.Filter.Rig != "" {
+			filter["rig"] = req.Filter.Rig
+		}
+		if req.Filter.Visibility != "" {
+			filter["visibility"] = visibilityToProto(req.Filter.Visibility)
+		}
+		if req.Filter.After != "" {
+			filter["after"] = req.Filter.After
+		}
+		if req.Filter.Before != "" {
+			filter["before"] = req.Filter.Before
+		}
+		if len(filter) > 0 {
+			body["filter"] = filter
+		}
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.ActivityService/ListEvents",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, 0, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Events []struct {
+			Timestamp  string                 `json:"timestamp"`
+			Source     string                 `json:"source"`
+			Type       string                 `json:"type"`
+			Actor      string                 `json:"actor"`
+			Payload    map[string]interface{} `json:"payload"`
+			Visibility string                 `json:"visibility"`
+			Summary    string                 `json:"summary"`
+			Count      int                    `json:"count"`
+		} `json:"events"`
+		TotalCount int `json:"totalCount"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, 0, fmt.Errorf("decoding response: %w", err)
+	}
+
+	var events []ActivityEvent
+	for _, e := range result.Events {
+		events = append(events, ActivityEvent{
+			Timestamp:  e.Timestamp,
+			Source:     e.Source,
+			Type:       e.Type,
+			Actor:      e.Actor,
+			Payload:    e.Payload,
+			Visibility: visibilityToString(e.Visibility),
+			Summary:    e.Summary,
+			Count:      e.Count,
+		})
+	}
+
+	return events, result.TotalCount, nil
+}
+
+// WatchEvents streams events from the activity feed.
+// The callback is called for each new event received.
+// Returns when the context is canceled or an error occurs.
+func (c *Client) WatchEvents(ctx context.Context, filter *EventFilter, curated bool, callback func(ActivityEvent) error) error {
+	// Polling implementation - checks for events every second.
+	// Track seen events by timestamp to avoid duplicates
+	lastTimestamp := ""
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			// Build filter with "after" to only get new events
+			reqFilter := filter
+			if lastTimestamp != "" {
+				if reqFilter == nil {
+					reqFilter = &EventFilter{}
+				} else {
+					// Copy filter to avoid mutating the original
+					filterCopy := *reqFilter
+					reqFilter = &filterCopy
+				}
+				reqFilter.After = lastTimestamp
+			}
+
+			events, _, err := c.ListEvents(ctx, ListEventsRequest{
+				Filter:  reqFilter,
+				Limit:   100,
+				Curated: curated,
+			})
+			if err != nil {
+				// Log error but continue polling
+				fmt.Printf("RPC error: %v\n", err)
+				continue
+			}
+
+			// Events are returned newest first, so process in reverse
+			for i := len(events) - 1; i >= 0; i-- {
+				e := events[i]
+				if e.Timestamp > lastTimestamp {
+					lastTimestamp = e.Timestamp
+					if err := callback(e); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+}
+
+// EmitEventRequest contains the parameters for emitting an event via RPC.
+type EmitEventRequest struct {
+	Type       string
+	Actor      string
+	Payload    map[string]interface{}
+	Visibility string // "audit", "feed", or "both" (default: "feed")
+}
+
+// EmitEvent writes a new event to the activity log via RPC.
+func (c *Client) EmitEvent(ctx context.Context, req EmitEventRequest) (string, error) {
+	body := map[string]interface{}{
+		"type":  req.Type,
+		"actor": req.Actor,
+	}
+	if len(req.Payload) > 0 {
+		body["payload"] = req.Payload
+	}
+	if req.Visibility != "" {
+		body["visibility"] = visibilityToProto(req.Visibility)
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return "", fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.ActivityService/EmitEvent",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Timestamp string `json:"timestamp"`
+		Success   bool   `json:"success"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decoding response: %w", err)
+	}
+
+	if !result.Success {
+		return "", fmt.Errorf("emit event failed")
+	}
+
+	return result.Timestamp, nil
+}
+
+func visibilityToProto(v string) string {
+	switch v {
+	case "audit":
+		return "VISIBILITY_AUDIT"
+	case "feed":
+		return "VISIBILITY_FEED"
+	case "both":
+		return "VISIBILITY_BOTH"
+	default:
+		return "VISIBILITY_FEED"
+	}
+}
+
+func visibilityToString(v string) string {
+	switch v {
+	case "VISIBILITY_AUDIT":
+		return "audit"
+	case "VISIBILITY_FEED":
+		return "feed"
+	case "VISIBILITY_BOTH":
+		return "both"
+	default:
+		if v != "" {
+			return v
+		}
+		return "feed"
+	}
+}

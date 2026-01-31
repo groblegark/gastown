@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,6 +30,7 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/tmux"
 
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -1271,7 +1276,8 @@ func (s *ConvoyServer) AddToConvoy(
 	// Reopen if closed
 	reopened := false
 	if issue.Status == "closed" {
-		if err := client.Update(issue.ID, beads.UpdateOptions{Status: "open"}); err != nil {
+		openStatus := "open"
+		if err := client.Update(issue.ID, beads.UpdateOptions{Status: &openStatus}); err != nil {
 			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("reopening convoy: %w", err))
 		}
 		reopened = true
@@ -1477,10 +1483,402 @@ func (s *ConvoyServer) getTrackedIssues(townBeadsPath, convoyID string) []tracke
 			ID:        dep.ID,
 			Title:     dep.Title,
 			Status:    dep.Status,
-			IssueType: dep.IssueType,
+			IssueType: dep.Type,
 			Assignee:  dep.Assignee,
 		})
 	}
 
 	return tracked
+}
+
+// ActivityServer implements the ActivityService.
+type ActivityServer struct {
+	townRoot string
+}
+
+var _ gastownv1connect.ActivityServiceHandler = (*ActivityServer)(nil)
+
+func NewActivityServer(townRoot string) *ActivityServer {
+	return &ActivityServer{townRoot: townRoot}
+}
+
+func (s *ActivityServer) ListEvents(
+	ctx context.Context,
+	req *connect.Request[gastownv1.ListEventsRequest],
+) (*connect.Response[gastownv1.ListEventsResponse], error) {
+	limit := int(req.Msg.Limit)
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+
+	var events []*gastownv1.ActivityEvent
+	var totalCount int
+
+	if req.Msg.Curated {
+		// Read from curated feed file
+		events, totalCount = s.readFeedEvents(req.Msg.Filter, limit)
+	} else {
+		// Read from raw events file
+		events, totalCount = s.readRawEvents(req.Msg.Filter, limit)
+	}
+
+	return connect.NewResponse(&gastownv1.ListEventsResponse{
+		Events:     events,
+		TotalCount: int32(totalCount),
+	}), nil
+}
+
+func (s *ActivityServer) WatchEvents(
+	ctx context.Context,
+	req *connect.Request[gastownv1.WatchEventsRequest],
+	stream *connect.ServerStream[gastownv1.ActivityEvent],
+) error {
+	// Determine which file to watch
+	eventsFile := filepath.Join(s.townRoot, ".events.jsonl")
+	if req.Msg.Curated {
+		eventsFile = filepath.Join(s.townRoot, ".feed.jsonl")
+	}
+
+	// Send backfill if requested
+	if req.Msg.IncludeBackfill {
+		backfillCount := int(req.Msg.BackfillCount)
+		if backfillCount <= 0 {
+			backfillCount = 10
+		}
+		if backfillCount > 100 {
+			backfillCount = 100
+		}
+
+		var events []*gastownv1.ActivityEvent
+		if req.Msg.Curated {
+			events, _ = s.readFeedEvents(req.Msg.Filter, backfillCount)
+		} else {
+			events, _ = s.readRawEvents(req.Msg.Filter, backfillCount)
+		}
+
+		// Send in reverse order (oldest first for backfill)
+		for i := len(events) - 1; i >= 0; i-- {
+			if err := stream.Send(events[i]); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Open file for tailing
+	file, err := os.Open(eventsFile)
+	if err != nil {
+		// If file doesn't exist, create it
+		file, err = os.OpenFile(eventsFile, os.O_RDONLY|os.O_CREATE, 0644)
+		if err != nil {
+			return connect.NewError(connect.CodeInternal, fmt.Errorf("opening events file: %w", err))
+		}
+	}
+	defer file.Close()
+
+	// Seek to end
+	if _, err := file.Seek(0, io.SeekEnd); err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("seeking to end: %w", err))
+	}
+
+	reader := bufio.NewReader(file)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			// Read available lines
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					break // No more data
+				}
+
+				event := s.parseLine(line, req.Msg.Curated)
+				if event == nil {
+					continue
+				}
+
+				// Apply filter
+				if !s.matchesFilter(event, req.Msg.Filter) {
+					continue
+				}
+
+				if err := stream.Send(event); err != nil {
+					return err
+				}
+			}
+		}
+	}
+}
+
+func (s *ActivityServer) EmitEvent(
+	ctx context.Context,
+	req *connect.Request[gastownv1.EmitEventRequest],
+) (*connect.Response[gastownv1.EmitEventResponse], error) {
+	if req.Msg.Type == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("event type is required"))
+	}
+	if req.Msg.Actor == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("actor is required"))
+	}
+
+	// Convert visibility
+	visibility := "feed"
+	switch req.Msg.Visibility {
+	case gastownv1.Visibility_VISIBILITY_AUDIT:
+		visibility = "audit"
+	case gastownv1.Visibility_VISIBILITY_BOTH:
+		visibility = "both"
+	}
+
+	// Convert payload from protobuf Struct to map
+	var payload map[string]interface{}
+	if req.Msg.Payload != nil {
+		payload = structToMap(req.Msg.Payload)
+	}
+
+	// Write event using the events package
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	event := map[string]interface{}{
+		"ts":         timestamp,
+		"source":     "rpc",
+		"type":       req.Msg.Type,
+		"actor":      req.Msg.Actor,
+		"visibility": visibility,
+	}
+	if payload != nil {
+		event["payload"] = payload
+	}
+
+	// Append to events file
+	eventsPath := filepath.Join(s.townRoot, ".events.jsonl")
+	data, err := json.Marshal(event)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("marshaling event: %w", err))
+	}
+	data = append(data, '\n')
+
+	f, err := os.OpenFile(eventsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("opening events file: %w", err))
+	}
+	defer f.Close()
+
+	if _, err := f.Write(data); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("writing event: %w", err))
+	}
+
+	return connect.NewResponse(&gastownv1.EmitEventResponse{
+		Timestamp: timestamp,
+		Success:   true,
+	}), nil
+}
+
+// readRawEvents reads events from the raw events file.
+func (s *ActivityServer) readRawEvents(filter *gastownv1.EventFilter, limit int) ([]*gastownv1.ActivityEvent, int) {
+	eventsPath := filepath.Join(s.townRoot, ".events.jsonl")
+	return s.readEventsFromFile(eventsPath, filter, limit, false)
+}
+
+// readFeedEvents reads events from the curated feed file.
+func (s *ActivityServer) readFeedEvents(filter *gastownv1.EventFilter, limit int) ([]*gastownv1.ActivityEvent, int) {
+	feedPath := filepath.Join(s.townRoot, ".feed.jsonl")
+	return s.readEventsFromFile(feedPath, filter, limit, true)
+}
+
+// readEventsFromFile reads events from a JSONL file with filtering.
+func (s *ActivityServer) readEventsFromFile(filePath string, filter *gastownv1.EventFilter, limit int, isCurated bool) ([]*gastownv1.ActivityEvent, int) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, 0
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var events []*gastownv1.ActivityEvent
+	totalCount := 0
+
+	// Read from end (newest first)
+	for i := len(lines) - 1; i >= 0 && len(events) < limit; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+
+		event := s.parseLine(line, isCurated)
+		if event == nil {
+			continue
+		}
+
+		totalCount++
+
+		// Apply filter
+		if !s.matchesFilter(event, filter) {
+			continue
+		}
+
+		events = append(events, event)
+	}
+
+	return events, totalCount
+}
+
+// parseLine parses a JSON line into an ActivityEvent.
+func (s *ActivityServer) parseLine(line string, isCurated bool) *gastownv1.ActivityEvent {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal([]byte(line), &raw); err != nil {
+		return nil
+	}
+
+	event := &gastownv1.ActivityEvent{}
+
+	if ts, ok := raw["ts"].(string); ok {
+		event.Timestamp = ts
+	}
+	if source, ok := raw["source"].(string); ok {
+		event.Source = source
+	}
+	if typ, ok := raw["type"].(string); ok {
+		event.Type = typ
+	}
+	if actor, ok := raw["actor"].(string); ok {
+		event.Actor = actor
+	}
+	if payload, ok := raw["payload"].(map[string]interface{}); ok {
+		event.Payload = mapToStruct(payload)
+	}
+	if visibility, ok := raw["visibility"].(string); ok {
+		switch visibility {
+		case "audit":
+			event.Visibility = gastownv1.Visibility_VISIBILITY_AUDIT
+		case "feed":
+			event.Visibility = gastownv1.Visibility_VISIBILITY_FEED
+		case "both":
+			event.Visibility = gastownv1.Visibility_VISIBILITY_BOTH
+		}
+	}
+
+	// Curated feed has additional fields
+	if isCurated {
+		if summary, ok := raw["summary"].(string); ok {
+			event.Summary = summary
+		}
+		if count, ok := raw["count"].(float64); ok {
+			event.Count = int32(count)
+		}
+	}
+
+	return event
+}
+
+// matchesFilter checks if an event matches the given filter.
+func (s *ActivityServer) matchesFilter(event *gastownv1.ActivityEvent, filter *gastownv1.EventFilter) bool {
+	if filter == nil {
+		return true
+	}
+
+	// Filter by types
+	if len(filter.Types) > 0 {
+		found := false
+		for _, t := range filter.Types {
+			if event.Type == t {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	// Filter by actor
+	if filter.Actor != "" && event.Actor != filter.Actor {
+		return false
+	}
+
+	// Filter by visibility
+	if filter.Visibility != gastownv1.Visibility_VISIBILITY_UNSPECIFIED && event.Visibility != filter.Visibility {
+		return false
+	}
+
+	// Filter by timestamp
+	if filter.After != "" {
+		afterTime, err := time.Parse(time.RFC3339, filter.After)
+		if err == nil {
+			eventTime, err := time.Parse(time.RFC3339, event.Timestamp)
+			if err == nil && eventTime.Before(afterTime) {
+				return false
+			}
+		}
+	}
+
+	if filter.Before != "" {
+		beforeTime, err := time.Parse(time.RFC3339, filter.Before)
+		if err == nil {
+			eventTime, err := time.Parse(time.RFC3339, event.Timestamp)
+			if err == nil && eventTime.After(beforeTime) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// structToMap converts a protobuf Struct to a Go map.
+func structToMap(s *structpb.Struct) map[string]interface{} {
+	if s == nil {
+		return nil
+	}
+	result := make(map[string]interface{})
+	for k, v := range s.Fields {
+		result[k] = valueToInterface(v)
+	}
+	return result
+}
+
+// valueToInterface converts a protobuf Value to a Go interface{}.
+func valueToInterface(v *structpb.Value) interface{} {
+	if v == nil {
+		return nil
+	}
+	switch x := v.Kind.(type) {
+	case *structpb.Value_NullValue:
+		return nil
+	case *structpb.Value_NumberValue:
+		return x.NumberValue
+	case *structpb.Value_StringValue:
+		return x.StringValue
+	case *structpb.Value_BoolValue:
+		return x.BoolValue
+	case *structpb.Value_StructValue:
+		return structToMap(x.StructValue)
+	case *structpb.Value_ListValue:
+		var list []interface{}
+		for _, item := range x.ListValue.Values {
+			list = append(list, valueToInterface(item))
+		}
+		return list
+	default:
+		return nil
+	}
+}
+
+// mapToStruct converts a Go map to a protobuf Struct.
+func mapToStruct(m map[string]interface{}) *structpb.Struct {
+	if m == nil {
+		return nil
+	}
+	s, err := structpb.NewStruct(m)
+	if err != nil {
+		return nil
+	}
+	return s
 }
