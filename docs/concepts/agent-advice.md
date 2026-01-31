@@ -58,28 +58,38 @@ Advice targeting uses the standard Gas Town identity format:
 | Deacon | `deacon` | `deacon` |
 | Mayor | `mayor` | `mayor` |
 
-## Creating Advice
+## Managing Advice
 
-### Basic Syntax
+### The `bd advice` Command
+
+The `bd advice` command provides dedicated subcommands for managing advice beads:
+
+```bash
+bd advice add     # Create new advice
+bd advice list    # List advice beads
+bd advice remove  # Remove advice
+```
+
+### Creating Advice with `bd advice add`
 
 ```bash
 # Global advice (all agents)
-bd create -t advice "Always verify git status before pushing" \
+bd advice add "Always verify git status before pushing" \
   -d "Run 'git status' to check for uncommitted changes before 'git push'"
 
 # Role-targeted advice (all polecats)
-bd create -t advice "Check hook before checking mail" \
-  --advice-target-role polecat \
+bd advice add "Check hook before checking mail" \
+  --role polecat \
   -d "The hook is authoritative. Always run 'gt hook' first on startup."
 
 # Rig-targeted advice (all agents in gastown)
-bd create -t advice "Use fimbaz account for spawning" \
-  --advice-target-rig gastown \
+bd advice add "Use fimbaz account for spawning" \
+  --rig gastown \
   -d "The matthewbaker account has credential issues. Use --account fimbaz."
 
 # Agent-specific advice
-bd create -t advice "You own the shiny formula" \
-  --advice-target-agent gastown/crew/prime_analyst \
+bd advice add "You own the shiny formula" \
+  --agent gastown/crew/prime_analyst \
   -d "Monitor polecats using shiny and iterate on the formula based on results."
 ```
 
@@ -87,39 +97,58 @@ bd create -t advice "You own the shiny formula" \
 
 | Flag | Purpose | Example Value |
 |------|---------|---------------|
-| `--advice-target-agent` | Target specific agent | `gastown/polecats/alpha` |
-| `--advice-target-role` | Target role class | `polecat`, `crew`, `witness` |
-| `--advice-target-rig` | Target all agents in rig | `gastown`, `beads` |
+| `--agent` | Target specific agent | `gastown/polecats/alpha` |
+| `--role` | Target role class | `polecat`, `crew`, `witness` |
+| `--rig` | Target all agents in rig | `gastown`, `beads` |
 
 Only one targeting flag should be used per advice bead. Using multiple creates
 ambiguous matching behavior.
 
-## Listing Advice
+### Listing Advice with `bd advice list`
 
 ```bash
-# List all advice
-bd list -t advice
+# List all advice (formatted output)
+bd advice list
 
-# List with full details (JSON)
-bd list -t advice --json
+# Verbose output with targeting details
+bd advice list --verbose
 
-# Filter by status
-bd list -t advice --status open
+# Filter by scope
+bd advice list --role polecat
+bd advice list --rig gastown
+bd advice list --agent gastown/crew/joe
 ```
 
-## Removing Advice
-
-Advice beads follow standard bead lifecycle. To remove outdated advice:
+### Removing Advice with `bd advice remove`
 
 ```bash
 # Close advice (marks as no longer active)
-bd close gt-tsk-xyz -r "No longer applicable after deploy"
+bd advice remove gt-tsk-xyz
 
-# Or update status directly
-bd update gt-tsk-xyz --status closed
+# With removal reason
+bd advice remove gt-tsk-xyz -r "No longer applicable after deploy"
+
+# Permanently delete (not just close)
+bd advice remove gt-tsk-xyz --delete
 ```
 
-Closed advice is not shown to agents.
+### Alternative: Using Generic Commands
+
+You can also manage advice using standard `bd` commands:
+
+```bash
+# Create via bd create
+bd create -t advice "Title" --advice-target-role polecat -d "Description"
+
+# List via bd list
+bd list -t advice --json
+
+# Close via bd close
+bd close gt-tsk-xyz -r "Reason"
+```
+
+The `bd advice` subcommands are convenience wrappers that provide cleaner syntax
+and advice-specific filtering options.
 
 ## Delivery Pipeline
 
