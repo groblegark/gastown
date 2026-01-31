@@ -43,12 +43,10 @@ func (e *bdError) ContainsError(substr string) bool {
 func runBdCommand(args []string, workDir, beadsDir string, extraEnv ...string) ([]byte, error) {
 	_ = workDir // Intentionally unused - see comment above
 
-	// Use --no-daemon to bypass daemon connection issues with Dolt symlinked databases.
-	// The --no-daemon flag auto-starts a dolt sql-server if needed and keeps it running
-	// for subsequent commands, so there's minimal performance impact.
-	// See: hq-vvbubs, hq-33lwcx for context on the daemon/symlink issue.
-	allArgs := append([]string{"--no-daemon"}, args...)
-	cmd := exec.Command("bd", allArgs...) //nolint:gosec // G204: bd is a trusted internal tool
+	// Use the daemon for connection pooling. Previous --no-daemon was causing
+	// massive connection churn (~17 connections/second with 32 agents).
+	// See: hq-i97ri for the fix, hq-vvbubs/hq-33lwcx for original daemon issues.
+	cmd := exec.Command("bd", args...) //nolint:gosec // G204: bd is a trusted internal tool
 	// Don't set cmd.Dir - use current directory to avoid daemon timeout issue
 
 	env := append(cmd.Environ(), "BEADS_DIR="+beadsDir)
