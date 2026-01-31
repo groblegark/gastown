@@ -233,6 +233,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 	var hookWorkDir string                  // Working directory for running bd hook commands
 	var hookSetAtomically bool              // True if hook was set during polecat spawn (skip redundant update)
 	var delayedDogInfo *DogDispatchInfo     // For delayed dog session start after hook is set
+	var crewTargetRig, crewTargetName string // Track crew target for mail notification (hq--bug-gt_sling_crew_doesn_t_send_mail)
 
 	// Deferred spawn: don't spawn polecat until AFTER formula instantiation succeeds.
 	// This prevents orphan polecats when formula fails (GH #gt-e9o).
@@ -241,6 +242,11 @@ func runSling(cmd *cobra.Command, args []string) error {
 
 	if len(args) > 1 {
 		target := args[1]
+
+		// Check if target is a crew member for mail notification (hq--bug-gt_sling_crew_doesn_t_send_mail)
+		if rig, name, ok := parseCrewTarget(target); ok {
+			crewTargetRig, crewTargetName = rig, name
+		}
 
 		// Resolve "." to current agent identity (like git's "." meaning current directory)
 		if target == "." {
@@ -669,6 +675,29 @@ func runSling(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%s Work attached to hook (status=hooked)\n", style.Bold.Render("✓"))
+
+	// Send mail notification to crew member about new work assignment (hq--bug-gt_sling_crew_doesn_t_send_mail)
+	if crewTargetName != "" {
+		router := mail.NewRouter(townRoot)
+		crewAddress := fmt.Sprintf("%s/crew/%s", crewTargetRig, crewTargetName)
+		workMailSubject := fmt.Sprintf("WORK: %s", info.Title)
+		workMailBody := fmt.Sprintf("Bead: %s\nAssigned by: %s\n\nWork is on your hook. Run 'gt hook' to view details.",
+			beadID, detectActor())
+		workMsg := &mail.Message{
+			From:       detectActor(),
+			To:         crewAddress,
+			Subject:    workMailSubject,
+			Body:       workMailBody,
+			Type:       mail.TypeTask,
+			Priority:   mail.PriorityNormal,
+			SkipNotify: true, // We'll send a tmux nudge separately
+		}
+		if err := router.Send(workMsg); err != nil {
+			fmt.Printf("%s Could not send mail notification to crew: %v\n", style.Dim.Render("Warning:"), err)
+		} else {
+			fmt.Printf("%s Mail notification sent to %s\n", style.Bold.Render("📬"), crewAddress)
+		}
+	}
 
 	// Log sling event to activity feed
 	actor := detectActor()
