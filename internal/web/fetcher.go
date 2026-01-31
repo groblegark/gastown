@@ -14,14 +14,15 @@ import (
 
 	"github.com/steveyegge/gastown/internal/activity"
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
 // Command timeout constants
 const (
-	cmdTimeout      = 5 * time.Second // timeout for most commands
-	ghCmdTimeout    = 10 * time.Second // longer timeout for GitHub API calls
-	tmuxCmdTimeout  = 2 * time.Second  // short timeout for tmux queries
+	cmdTimeout     = 15 * time.Second // timeout for most commands (bd can be slow with large datasets)
+	ghCmdTimeout   = 10 * time.Second // longer timeout for GitHub API calls
+	tmuxCmdTimeout = 2 * time.Second  // short timeout for tmux queries
 )
 
 // runCmd executes a command with a timeout and returns stdout.
@@ -53,9 +54,14 @@ func runBdCmd(beadsDir string, args ...string) (*bytes.Buffer, error) {
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return nil, fmt.Errorf("bd timed out after %v", cmdTimeout)
+		}
+		// If we got some output, return it anyway (bd may exit non-zero with warnings)
+		if stdout.Len() > 0 {
+			return &stdout, nil
 		}
 		return nil, err
 	}
@@ -80,7 +86,6 @@ func NewLiveConvoyFetcher() (*LiveConvoyFetcher, error) {
 		townBeads: filepath.Join(townRoot, ".beads"),
 	}, nil
 }
-
 
 // FetchConvoys fetches all open convoys with their activity data.
 func (f *LiveConvoyFetcher) FetchConvoys() ([]ConvoyRow, error) {
@@ -648,8 +653,8 @@ func determineColorClass(ciStatus, mergeable string) string {
 	return "mq-yellow"
 }
 
-// FetchPolecats fetches all running polecat and refinery sessions with activity data.
-func (f *LiveConvoyFetcher) FetchPolecats() ([]PolecatRow, error) {
+// FetchWorkers fetches all running worker sessions (polecats and refinery) with activity data.
+func (f *LiveConvoyFetcher) FetchWorkers() ([]WorkerRow, error) {
 	// Load registered rigs to filter sessions
 	rigsConfigPath := filepath.Join(f.townRoot, "mayor", "rigs.json")
 	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
@@ -676,7 +681,7 @@ func (f *LiveConvoyFetcher) FetchPolecats() ([]PolecatRow, error) {
 	// Pre-fetch merge queue count to determine refinery idle status
 	mergeQueueCount := f.getMergeQueueCount()
 
-	var polecats []PolecatRow
+	var workers []WorkerRow
 	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
 
 	for _, line := range lines {
@@ -696,13 +701,13 @@ func (f *LiveConvoyFetcher) FetchPolecats() ([]PolecatRow, error) {
 			continue
 		}
 
-		// Parse session name: gt-roxas-dag -> rig=roxas, polecat=dag
+		// Parse session name: gt-roxas-dag -> rig=roxas, worker=dag
 		nameParts := strings.SplitN(sessionName, "-", 3)
 		if len(nameParts) != 3 {
 			continue
 		}
 		rig := nameParts[1]
-		polecat := nameParts[2]
+		workerName := nameParts[2]
 
 		// Skip rigs not registered in this workspace
 		if !registeredRigs[rig] {
@@ -710,9 +715,14 @@ func (f *LiveConvoyFetcher) FetchPolecats() ([]PolecatRow, error) {
 		}
 
 		// Skip non-worker sessions (witness, mayor, deacon, boot)
-		// Note: refinery is included to show idle/processing status
-		if polecat == "witness" || polecat == "mayor" || polecat == "deacon" || polecat == "boot" {
+		if workerName == "witness" || workerName == "mayor" || workerName == "deacon" || workerName == "boot" {
 			continue
+		}
+
+		// Determine agent type: refinery is its own permanent role, others are polecats (ephemeral)
+		agentType := "polecat"
+		if workerName == "refinery" {
+			agentType = "refinery"
 		}
 
 		// Parse activity timestamp
@@ -725,27 +735,27 @@ func (f *LiveConvoyFetcher) FetchPolecats() ([]PolecatRow, error) {
 
 		// Get status hint - special handling for refinery
 		var statusHint string
-		if polecat == "refinery" {
+		if workerName == "refinery" {
 			statusHint = f.getRefineryStatusHint(mergeQueueCount)
 		} else {
-			statusHint = f.getPolecatStatusHint(sessionName)
+			statusHint = f.getWorkerStatusHint(sessionName)
 		}
 
-		// Look up assigned issue for this polecat
-		// Assignee format: "rigname/polecats/polecatname"
-		assignee := fmt.Sprintf("%s/polecats/%s", rig, polecat)
+		// Look up assigned issue for this worker
+		// Assignee format: "rigname/polecats/workername"
+		assignee := fmt.Sprintf("%s/polecats/%s", rig, workerName)
 		var issueID, issueTitle string
 		if issue, ok := assignedIssues[assignee]; ok {
 			issueID = issue.ID
 			issueTitle = issue.Title
-		// Keep full title - CSS handles overflow
+			// Keep full title - CSS handles overflow
 		}
 
 		// Calculate work status based on activity age and issue assignment
-		workStatus := calculatePolecatWorkStatus(activityAge, issueID, polecat)
+		workStatus := calculateWorkerWorkStatus(activityAge, issueID, workerName)
 
-		polecats = append(polecats, PolecatRow{
-			Name:         polecat,
+		workers = append(workers, WorkerRow{
+			Name:         workerName,
 			Rig:          rig,
 			SessionID:    sessionName,
 			LastActivity: activity.Calculate(activityTime),
@@ -753,10 +763,11 @@ func (f *LiveConvoyFetcher) FetchPolecats() ([]PolecatRow, error) {
 			IssueID:      issueID,
 			IssueTitle:   issueTitle,
 			WorkStatus:   workStatus,
+			AgentType:    agentType,
 		})
 	}
 
-	return polecats, nil
+	return workers, nil
 }
 
 // assignedIssue holds issue info for the assigned issues map.
@@ -797,11 +808,11 @@ func (f *LiveConvoyFetcher) getAssignedIssuesMap() map[string]assignedIssue {
 	return result
 }
 
-// calculatePolecatWorkStatus determines the polecat's work status based on activity and assignment.
+// calculateWorkerWorkStatus determines the worker's work status based on activity and assignment.
 // Returns: "working", "stale", "stuck", or "idle"
-func calculatePolecatWorkStatus(activityAge time.Duration, issueID, polecatName string) string {
+func calculateWorkerWorkStatus(activityAge time.Duration, issueID, workerName string) string {
 	// Refinery has special handling - it's always "working" if it has PRs
-	if polecatName == "refinery" {
+	if workerName == "refinery" {
 		return "working"
 	}
 
@@ -821,8 +832,8 @@ func calculatePolecatWorkStatus(activityAge time.Duration, issueID, polecatName 
 	}
 }
 
-// getPolecatStatusHint captures the last non-empty line from a polecat's pane.
-func (f *LiveConvoyFetcher) getPolecatStatusHint(sessionName string) string {
+// getWorkerStatusHint captures the last non-empty line from a worker's pane.
+func (f *LiveConvoyFetcher) getWorkerStatusHint(sessionName string) string {
 	stdout, err := runCmd(tmuxCmdTimeout, "tmux", "capture-pane", "-t", sessionName, "-p", "-J")
 	if err != nil {
 		return ""
@@ -915,13 +926,13 @@ func (f *LiveConvoyFetcher) FetchMail() ([]MailRow, error) {
 	}
 
 	var messages []struct {
-		ID        string `json:"id"`
-		Title     string `json:"title"`
-		Status    string `json:"status"`
-		CreatedAt string `json:"created_at"`
-		Priority  int    `json:"priority"`
-		Assignee  string `json:"assignee"`  // "to" address stored here
-		CreatedBy string `json:"created_by"` // "from" address
+		ID        string   `json:"id"`
+		Title     string   `json:"title"`
+		Status    string   `json:"status"`
+		CreatedAt string   `json:"created_at"`
+		Priority  int      `json:"priority"`
+		Assignee  string   `json:"assignee"`   // "to" address stored here
+		CreatedBy string   `json:"created_by"` // "from" address
 		Labels    []string `json:"labels"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &messages); err != nil {
@@ -1015,7 +1026,7 @@ func formatAgentAddress(addr string) string {
 	if addr == "mayor/" || addr == "mayor" {
 		return "Mayor"
 	}
-	
+
 	parts := strings.Split(addr, "/")
 	if len(parts) >= 3 && parts[1] == "polecats" {
 		return fmt.Sprintf("%s (%s)", parts[2], parts[0])
@@ -1214,7 +1225,7 @@ func (f *LiveConvoyFetcher) FetchHealth() (*HealthRow, error) {
 	heartbeatFile := filepath.Join(f.townRoot, "deacon", "heartbeat.json")
 	if data, err := os.ReadFile(heartbeatFile); err == nil {
 		var hb struct {
-			Timestamp       time.Time `json:"timestamp"`
+			LastHeartbeat   time.Time `json:"last_heartbeat"`
 			Cycle           int64     `json:"cycle"`
 			HealthyAgents   int       `json:"healthy_agents"`
 			UnhealthyAgents int       `json:"unhealthy_agents"`
@@ -1223,9 +1234,13 @@ func (f *LiveConvoyFetcher) FetchHealth() (*HealthRow, error) {
 			row.DeaconCycle = hb.Cycle
 			row.HealthyAgents = hb.HealthyAgents
 			row.UnhealthyAgents = hb.UnhealthyAgents
-			age := time.Since(hb.Timestamp)
-			row.DeaconHeartbeat = formatMailAge(age)
-			row.HeartbeatFresh = age < 5*time.Minute
+			if !hb.LastHeartbeat.IsZero() {
+				age := time.Since(hb.LastHeartbeat)
+				row.DeaconHeartbeat = formatMailAge(age)
+				row.HeartbeatFresh = age < 5*time.Minute
+			} else {
+				row.DeaconHeartbeat = "no timestamp"
+			}
 		}
 	} else {
 		row.DeaconHeartbeat = "no heartbeat"
@@ -1439,7 +1454,10 @@ func (f *LiveConvoyFetcher) FetchMayor() (*MayorStatus, error) {
 		IsAttached: false,
 	}
 
-	// Check if gt-mayor tmux session exists
+	// Get the actual mayor session name (e.g., "hq-mayor")
+	mayorSessionName := session.MayorSessionName()
+
+	// Check if mayor tmux session exists
 	stdout, err := runCmd(tmuxCmdTimeout, "tmux", "list-sessions", "-F", "#{session_name}:#{session_activity}")
 	if err != nil {
 		// tmux not running or no sessions
@@ -1448,9 +1466,9 @@ func (f *LiveConvoyFetcher) FetchMayor() (*MayorStatus, error) {
 
 	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
 	for _, line := range lines {
-		if strings.HasPrefix(line, "gt-mayor:") {
+		if strings.HasPrefix(line, mayorSessionName+":") {
 			status.IsAttached = true
-			status.SessionName = "gt-mayor"
+			status.SessionName = mayorSessionName
 
 			// Parse activity timestamp
 			parts := strings.SplitN(line, ":", 2)

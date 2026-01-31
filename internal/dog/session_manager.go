@@ -141,8 +141,8 @@ func (m *SessionManager) Start(dogName string, opts SessionStartOptions) error {
 		_ = m.tmux.SetEnvironment(sessionID, k, v)
 	}
 
-	// Apply dog theming (dogs use deacon theme as they're deacon's workers)
-	theme := tmux.DeaconTheme()
+	// Apply dog theming
+	theme := tmux.DogTheme()
 	_ = m.tmux.ConfigureGasTownSession(sessionID, theme, "", dogName, "dog")
 
 	// Wait for Claude to start

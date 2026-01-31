@@ -9,8 +9,10 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/config"
@@ -26,11 +28,11 @@ const DefaultTimeout = 10 * time.Second
 // which can cause garbled input and missed Enter keys.
 var sessionNudgeLocks sync.Map // map[string]*sync.Mutex
 
-// versionPattern matches Claude Code version numbers like "2.0.76"
-var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
-
 // validSessionNameRe validates session names to prevent shell injection
 var validSessionNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// versionPattern matches Claude Code version strings as process names (e.g., "1.0.16")
+var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
 // Common errors
 var (
@@ -265,15 +267,14 @@ func (t *Tmux) KillSessionWithProcesses(name string) error {
 		// Note: Processes that called setsid() will have a new PGID and won't be killed here
 		pgid := getProcessGroupID(pid)
 		if pgid != "" && pgid != "0" && pgid != "1" {
-			// Kill process group with negative PGID (POSIX convention)
-			// Use SIGTERM first for graceful shutdown
-			// NOTE: The "--" is CRITICAL! Without it, procps-ng kill (v4.0.4+)
-			// misparses "-PGID" as an option and ends up calling kill(-1) which
-			// kills ALL processes! See https://github.com/groblegark/gastown/blob/main/MURDER_INVESTIGATION.md
-			_ = exec.Command("kill", "-TERM", "--", "-"+pgid).Run()
+			// Kill process group using syscall.Kill() directly, rather than shelling
+			// out to /usr/bin/kill which has parsing ambiguity with negative PGIDs.
+			// procps-ng kill (v4.0.4+) misparses "-PGID" and can kill ALL processes.
+			// syscall.Kill with negative PID targets the process group (POSIX).
+			pgidInt, _ := strconv.Atoi(pgid)
+			_ = syscall.Kill(-pgidInt, syscall.SIGTERM)
 			time.Sleep(100 * time.Millisecond)
-			// Force kill any remaining processes in the group
-			_ = exec.Command("kill", "-KILL", "--", "-"+pgid).Run()
+			_ = syscall.Kill(-pgidInt, syscall.SIGKILL)
 		}
 
 		// Also walk the process tree for any descendants that might have called setsid()
@@ -472,11 +473,12 @@ func (t *Tmux) KillPaneProcesses(pane string) error {
 	// - Are not direct children but stayed in the same process group
 	pgid := getProcessGroupID(pid)
 	if pgid != "" && pgid != "0" && pgid != "1" {
-		// Kill process group with negative PGID (POSIX convention)
-		// NOTE: The "--" is CRITICAL! See comment in KillSessionWithProcesses.
-		_ = exec.Command("kill", "-TERM", "--", "-"+pgid).Run()
+		// Kill process group using syscall.Kill() directly.
+		// See comment in KillSessionWithProcesses for why we avoid exec.Command("kill").
+		pgidInt, _ := strconv.Atoi(pgid)
+		_ = syscall.Kill(-pgidInt, syscall.SIGTERM)
 		time.Sleep(100 * time.Millisecond)
-		_ = exec.Command("kill", "-KILL", "--", "-"+pgid).Run()
+		_ = syscall.Kill(-pgidInt, syscall.SIGKILL)
 	}
 
 	// Also walk the process tree for any descendants that might have called setsid()

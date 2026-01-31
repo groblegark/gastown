@@ -748,7 +748,13 @@ func runSling(cmd *cobra.Command, args []string) error {
 	}
 
 	// Try to inject the "start now" prompt (graceful if no tmux)
-	if targetPane == "" {
+	// Skip for freshly spawned polecats - SessionManager.Start() already sent StartupNudge.
+	// Note: In deferred spawn mode (GH #gt-e9o), the polecat session was started
+	// in the deferred spawn block above after formula instantiation succeeded.
+	freshlySpawned := deferredRigName != ""
+	if freshlySpawned {
+		// Fresh polecat already got StartupNudge from SessionManager.Start()
+	} else if targetPane == "" {
 		fmt.Printf("%s No pane to nudge (agent will discover work via gt prime)\n", style.Dim.Render("○"))
 	} else {
 		// Ensure agent is ready before nudging (prevents race condition where

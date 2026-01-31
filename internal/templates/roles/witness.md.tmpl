@@ -274,7 +274,12 @@ A fresh Witness with empty context can handle emergencies better than one with
 1. Read `state.json` for `patrol_count` and `extraordinary_action`
 2. If `extraordinary_action == true` → hand off immediately
 3. If `patrol_count >= 15` → hand off
-4. Otherwise → increment `patrol_count`, save state, create new wisp
+4. Otherwise → use `await-signal` to sleep until activity (30s-5m backoff when idle)
+5. After waking, increment `patrol_count`, save state, create new wisp
+
+**Idle sleep prevents crash loops**: When the rig has no polecats, await-signal
+ensures minimum time between patrols (30s base, exponential backoff to 5m max).
+This prevents the witness from spinning in a tight loop when there's nothing to do.
 
 **Handoff command:** `gt handoff -s "Witness cycle" -m "Completed N patrols, no incidents"`
 

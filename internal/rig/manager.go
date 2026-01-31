@@ -276,7 +276,7 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 
 	// Check if directory already exists
 	if _, err := os.Stat(rigPath); err == nil {
-		return nil, fmt.Errorf("directory already exists: %s", rigPath)
+		return nil, fmt.Errorf("directory already exists: %s\n\nTo adopt an existing directory, use --adopt:\n  gt rig add %s --adopt", rigPath, opts.Name)
 	}
 
 	// Track whether user explicitly provided --prefix (before deriving)
@@ -484,6 +484,12 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	// Create refinery CLAUDE.md (overrides any from cloned repo)
 	if err := m.createRoleCLAUDEmd(refineryRigPath, "refinery", opts.Name, ""); err != nil {
 		return nil, fmt.Errorf("creating refinery CLAUDE.md: %w", err)
+	}
+	// Copy overlay files from .runtime/overlay/ to refinery root.
+	// This allows services to have .env and other config files at their root.
+	if err := CopyOverlay(rigPath, refineryRigPath); err != nil {
+		// Non-fatal - log warning but continue
+		fmt.Printf("  Warning: Could not copy overlay files to refinery: %v\n", err)
 	}
 	// Create refinery hooks for patrol triggering (at refinery/ level, not rig/)
 	refineryPath := filepath.Dir(refineryRigPath)
@@ -1016,6 +1022,114 @@ func (m *Manager) RemoveRig(name string) error {
 }
 
 // ListRigNames returns the names of all registered rigs.
+// RegisterRigOptions contains options for registering an existing rig directory.
+type RegisterRigOptions struct {
+	Name        string // Rig name (directory name)
+	GitURL      string // Override git URL (auto-detected from origin if empty)
+	BeadsPrefix string // Beads issue prefix (defaults to derived from name or existing config)
+	Force       bool   // Register even if directory structure looks incomplete
+}
+
+// RegisterRigResult contains the result of registering a rig.
+type RegisterRigResult struct {
+	Name          string // Rig name
+	GitURL        string // Detected or provided git URL
+	BeadsPrefix   string // Detected or derived beads prefix
+	FromConfig    bool   // True if values were read from existing config.json
+	DefaultBranch string // Default branch from existing config (if any)
+}
+
+// RegisterRig registers an existing rig directory with the town.
+// Complementary to AddRig: while AddRig creates a new rig from scratch,
+// RegisterRig adopts an existing directory structure.
+func (m *Manager) RegisterRig(opts RegisterRigOptions) (*RegisterRigResult, error) {
+	if m.RigExists(opts.Name) {
+		return nil, ErrRigExists
+	}
+
+	if strings.ContainsAny(opts.Name, "-. ") {
+		sanitized := strings.NewReplacer("-", "_", ".", "_", " ", "_").Replace(opts.Name)
+		sanitized = strings.ToLower(sanitized)
+		return nil, fmt.Errorf("rig name %q contains invalid characters; hyphens, dots, and spaces are reserved for agent ID parsing. Try %q instead (underscores are allowed)", opts.Name, sanitized)
+	}
+
+	rigPath := filepath.Join(m.townRoot, opts.Name)
+
+	info, err := os.Stat(rigPath)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("directory does not exist: %s", rigPath)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("checking directory: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("not a directory: %s", rigPath)
+	}
+
+	result := &RegisterRigResult{Name: opts.Name}
+
+	// Try to load existing config.json
+	existingConfig, err := LoadRigConfig(rigPath)
+	if err == nil && existingConfig != nil {
+		result.FromConfig = true
+		if opts.GitURL == "" {
+			result.GitURL = existingConfig.GitURL
+		}
+		if opts.BeadsPrefix == "" && existingConfig.Beads != nil {
+			result.BeadsPrefix = existingConfig.Beads.Prefix
+		}
+		result.DefaultBranch = existingConfig.DefaultBranch
+	}
+
+	// If no git URL, try to detect from git remote
+	if result.GitURL == "" && opts.GitURL == "" {
+		detectedURL, detectErr := m.detectGitURL(rigPath)
+		if detectErr != nil && !opts.Force {
+			return nil, fmt.Errorf("could not detect git URL (use --url to specify, or --force to skip): %w", detectErr)
+		}
+		result.GitURL = detectedURL
+	}
+	if opts.GitURL != "" {
+		result.GitURL = opts.GitURL
+	}
+
+	// Derive beads prefix
+	if result.BeadsPrefix == "" && opts.BeadsPrefix == "" {
+		result.BeadsPrefix = deriveBeadsPrefix(opts.Name)
+	}
+	if opts.BeadsPrefix != "" {
+		result.BeadsPrefix = opts.BeadsPrefix
+	}
+
+	// Register in town config
+	m.config.Rigs[opts.Name] = config.RigEntry{
+		GitURL:  result.GitURL,
+		AddedAt: time.Now(),
+		BeadsConfig: &config.BeadsConfig{
+			Prefix: result.BeadsPrefix,
+		},
+	}
+
+	return result, nil
+}
+
+// detectGitURL attempts to detect the git remote URL from an existing repository.
+func (m *Manager) detectGitURL(rigPath string) (string, error) {
+	possiblePaths := []string{
+		rigPath,
+		filepath.Join(rigPath, "mayor", "rig"),
+		filepath.Join(rigPath, "refinery", "rig"),
+	}
+	for _, p := range possiblePaths {
+		g := git.NewGitWithDir(p, "")
+		url, err := g.RemoteURL("origin")
+		if err == nil && url != "" {
+			return strings.TrimSpace(url), nil
+		}
+	}
+	return "", fmt.Errorf("no git repository with origin remote found in %s", rigPath)
+}
+
 func (m *Manager) ListRigNames() []string {
 	names := make([]string, 0, len(m.config.Rigs))
 	for name := range m.config.Rigs {

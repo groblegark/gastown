@@ -45,9 +45,10 @@ type Daemon struct {
 	logger       *log.Logger
 	ctx          context.Context
 	cancel       context.CancelFunc
-	curator      *feed.Curator
+	curator       *feed.Curator
 	convoyWatcher *ConvoyWatcher
-	doltServer   *DoltServerManager
+	doltServer    *DoltServerManager
+	krcPruner     *KRCPruner
 
 	// Mass death detection: track recent session deaths
 	deathsMu     sync.Mutex
@@ -177,6 +178,19 @@ func (d *Daemon) Run() error {
 		d.logger.Printf("Warning: failed to start convoy watcher: %v", err)
 	} else {
 		d.logger.Println("Convoy watcher started")
+	}
+
+	// Start KRC pruner for automatic ephemeral data cleanup
+	krcPruner, err := NewKRCPruner(d.config.TownRoot, d.logger.Printf)
+	if err != nil {
+		d.logger.Printf("Warning: failed to create KRC pruner: %v", err)
+	} else {
+		d.krcPruner = krcPruner
+		if err := d.krcPruner.Start(); err != nil {
+			d.logger.Printf("Warning: failed to start KRC pruner: %v", err)
+		} else {
+			d.logger.Println("KRC pruner started")
+		}
 	}
 
 	// Initial heartbeat
@@ -730,6 +744,12 @@ func (d *Daemon) shutdown(state *State) error { //nolint:unparam // error return
 	if d.convoyWatcher != nil {
 		d.convoyWatcher.Stop()
 		d.logger.Println("Convoy watcher stopped")
+	}
+
+	// Stop KRC pruner
+	if d.krcPruner != nil {
+		d.krcPruner.Stop()
+		d.logger.Println("KRC pruner stopped")
 	}
 
 	// Stop Dolt server if we're managing it
