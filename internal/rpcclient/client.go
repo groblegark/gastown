@@ -1832,3 +1832,194 @@ func messageTypeToProto(t string) string {
 		return "MESSAGE_TYPE_NOTIFICATION"
 	}
 }
+
+// PeekSession captures the last N lines from a tmux session's pane via RPC.
+func (c *Client) PeekSession(ctx context.Context, session string, lines int, all bool) (string, []string, bool, error) {
+	body := map[string]interface{}{
+		"session": session,
+	}
+	if lines > 0 {
+		body["lines"] = lines
+	}
+	if all {
+		body["all"] = true
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.TerminalService/PeekSession",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return "", nil, false, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return "", nil, false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, false, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Output string   `json:"output"`
+		Lines  []string `json:"lines"`
+		Exists bool     `json:"exists"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", nil, false, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return result.Output, result.Lines, result.Exists, nil
+}
+
+// ListTmuxSessions returns all active tmux sessions via RPC.
+func (c *Client) ListTmuxSessions(ctx context.Context, prefix string) ([]string, error) {
+	body := map[string]interface{}{}
+	if prefix != "" {
+		body["prefix"] = prefix
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.TerminalService/ListSessions",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Sessions []string `json:"sessions"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return result.Sessions, nil
+}
+
+// HasTmuxSession checks if a specific tmux session exists via RPC.
+func (c *Client) HasTmuxSession(ctx context.Context, session string) (bool, error) {
+	body := map[string]interface{}{
+		"session": session,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return false, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.TerminalService/HasSession",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return false, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Exists bool `json:"exists"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return result.Exists, nil
+}
+
+// TerminalUpdate represents a streaming update of terminal content.
+type TerminalUpdate struct {
+	Output    string
+	Lines     []string
+	Exists    bool
+	Timestamp string
+}
+
+// WatchSession streams terminal output updates via RPC.
+// The callback is called for each terminal update received.
+// Returns when the context is canceled, the session dies, or an error occurs.
+func (c *Client) WatchSession(ctx context.Context, session string, lines, intervalMs int, callback func(TerminalUpdate) error) error {
+	// Polling implementation
+	if lines <= 0 {
+		lines = 50
+	}
+	if intervalMs < 100 {
+		intervalMs = 1000
+	}
+
+	ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			output, lineSlice, exists, err := c.PeekSession(ctx, session, lines, false)
+			if err != nil {
+				// Log error but continue polling
+				continue
+			}
+
+			update := TerminalUpdate{
+				Output:    output,
+				Lines:     lineSlice,
+				Exists:    exists,
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+			}
+
+			if err := callback(update); err != nil {
+				return err
+			}
+
+			// Stop if session no longer exists
+			if !exists {
+				return nil
+			}
+		}
+	}
+}

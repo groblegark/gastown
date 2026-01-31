@@ -1,7 +1,7 @@
 // Package main implements the Gas Town mobile RPC server using Connect-RPC.
 //
 // This server exposes StatusService, MailService, DecisionService, ConvoyService,
-// and ActivityService for mobile client access to Gas Town functionality.
+// ActivityService, and TerminalService for mobile client access to Gas Town functionality.
 package main
 
 import (
@@ -97,6 +97,7 @@ func main() {
 	decisionServer.SetPoller(decisionPoller) // Wire up poller to prevent duplicates
 	convoyServer := NewConvoyServer(root)
 	activityServer := NewActivityServer(root)
+	terminalServer := NewTerminalServer()
 
 	// Set up interceptors
 	var opts []connect.HandlerOption
@@ -123,6 +124,9 @@ func main() {
 
 	activityPath, activityHandler := gastownv1connect.NewActivityServiceHandler(activityServer, opts...)
 	mux.Handle(activityPath, activityHandler)
+
+	terminalPath, terminalHandler := gastownv1connect.NewTerminalServiceHandler(terminalServer, opts...)
+	mux.Handle(terminalPath, terminalHandler)
 
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +155,7 @@ func main() {
 	log.Printf("  %s", decisionPath)
 	log.Printf("  %s", convoyPath)
 	log.Printf("  %s", activityPath)
+	log.Printf("  %s", terminalPath)
 	log.Printf("  /health")
 
 	// Start server (TLS or plain HTTP)

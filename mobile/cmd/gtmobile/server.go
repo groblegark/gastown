@@ -2034,3 +2034,189 @@ func mapToStruct(m map[string]interface{}) *structpb.Struct {
 	}
 	return s
 }
+
+// TerminalServer implements the TerminalService.
+type TerminalServer struct {
+	tmux *tmux.Tmux
+}
+
+var _ gastownv1connect.TerminalServiceHandler = (*TerminalServer)(nil)
+
+func NewTerminalServer() *TerminalServer {
+	return &TerminalServer{tmux: tmux.NewTmux()}
+}
+
+func (s *TerminalServer) PeekSession(
+	ctx context.Context,
+	req *connect.Request[gastownv1.PeekSessionRequest],
+) (*connect.Response[gastownv1.PeekSessionResponse], error) {
+	session := req.Msg.Session
+	if session == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session name is required"))
+	}
+
+	// Check if session exists
+	exists, err := s.tmux.HasSession(session)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	if !exists {
+		return connect.NewResponse(&gastownv1.PeekSessionResponse{
+			Exists: false,
+		}), nil
+	}
+
+	// Determine how many lines to capture
+	lines := int(req.Msg.Lines)
+	if lines <= 0 {
+		lines = 50
+	}
+	if lines > 1000 {
+		lines = 1000
+	}
+
+	var output string
+	if req.Msg.All {
+		output, err = s.tmux.CapturePaneAll(session)
+	} else {
+		output, err = s.tmux.CapturePane(session, lines)
+	}
+
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("capturing pane: %w", err))
+	}
+
+	// Split into lines
+	var lineSlice []string
+	if output != "" {
+		lineSlice = strings.Split(output, "\n")
+	}
+
+	return connect.NewResponse(&gastownv1.PeekSessionResponse{
+		Output: output,
+		Lines:  lineSlice,
+		Exists: true,
+	}), nil
+}
+
+func (s *TerminalServer) ListSessions(
+	ctx context.Context,
+	req *connect.Request[gastownv1.ListSessionsRequest],
+) (*connect.Response[gastownv1.ListSessionsResponse], error) {
+	sessions, err := s.tmux.ListSessions()
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	// Apply prefix filter if specified
+	if req.Msg.Prefix != "" {
+		var filtered []string
+		for _, sess := range sessions {
+			if strings.HasPrefix(sess, req.Msg.Prefix) {
+				filtered = append(filtered, sess)
+			}
+		}
+		sessions = filtered
+	}
+
+	return connect.NewResponse(&gastownv1.ListSessionsResponse{
+		Sessions: sessions,
+	}), nil
+}
+
+func (s *TerminalServer) HasSession(
+	ctx context.Context,
+	req *connect.Request[gastownv1.HasSessionRequest],
+) (*connect.Response[gastownv1.HasSessionResponse], error) {
+	if req.Msg.Session == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session name is required"))
+	}
+
+	exists, err := s.tmux.HasSession(req.Msg.Session)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&gastownv1.HasSessionResponse{
+		Exists: exists,
+	}), nil
+}
+
+func (s *TerminalServer) WatchSession(
+	ctx context.Context,
+	req *connect.Request[gastownv1.WatchSessionRequest],
+	stream *connect.ServerStream[gastownv1.TerminalUpdate],
+) error {
+	session := req.Msg.Session
+	if session == "" {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session name is required"))
+	}
+
+	lines := int(req.Msg.Lines)
+	if lines <= 0 {
+		lines = 50
+	}
+	if lines > 1000 {
+		lines = 1000
+	}
+
+	intervalMs := int(req.Msg.IntervalMs)
+	if intervalMs < 100 {
+		intervalMs = 1000
+	}
+
+	ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			// Check if session exists
+			exists, err := s.tmux.HasSession(session)
+			if err != nil {
+				// Send error update
+				if err := stream.Send(&gastownv1.TerminalUpdate{
+					Exists:    false,
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+				}); err != nil {
+					return err
+				}
+				continue
+			}
+
+			if !exists {
+				// Session no longer exists
+				if err := stream.Send(&gastownv1.TerminalUpdate{
+					Exists:    false,
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+				}); err != nil {
+					return err
+				}
+				return nil // Stop watching when session dies
+			}
+
+			// Capture output
+			output, err := s.tmux.CapturePane(session, lines)
+			if err != nil {
+				continue
+			}
+
+			var lineSlice []string
+			if output != "" {
+				lineSlice = strings.Split(output, "\n")
+			}
+
+			if err := stream.Send(&gastownv1.TerminalUpdate{
+				Output:    output,
+				Lines:     lineSlice,
+				Exists:    true,
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+			}); err != nil {
+				return err
+			}
+		}
+	}
+}
