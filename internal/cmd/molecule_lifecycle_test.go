@@ -138,6 +138,8 @@ exit /b 0
 	t.Setenv("GT_CREW", "")
 	t.Setenv("TMUX_PANE", "")
 	t.Setenv("GT_TEST_NO_NUDGE", "1")
+	// Skip hook verification since stub bd doesn't track state
+	t.Setenv("GT_TEST_SKIP_HOOK_VERIFY", "1")
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -338,6 +340,8 @@ exit /b 0
 	t.Setenv("GT_CREW", "")
 	t.Setenv("TMUX_PANE", "")
 	t.Setenv("GT_TEST_NO_NUDGE", "1")
+	// Skip hook verification since stub bd doesn't track state
+	t.Setenv("GT_TEST_SKIP_HOOK_VERIFY", "1")
 
 	cwd, err := os.Getwd()
 	if err != nil {
