@@ -5,12 +5,17 @@
 package rpcserver
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -29,6 +34,7 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/tmux"
 
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -464,14 +470,31 @@ func (s *DecisionServer) Resolve(
 		resolvedBy = "rpc-client"
 	}
 
-	// Resolve the decision
-	if err := client.ResolveDecision(
-		req.Msg.DecisionId,
-		int(req.Msg.ChosenIndex),
-		req.Msg.Rationale,
-		resolvedBy,
-	); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resolving decision: %w", err))
+	// Special handling for chosen_index = 0: "Other" with custom text
+	// In this case, rationale contains the user's custom response text
+	if req.Msg.ChosenIndex == 0 {
+		if req.Msg.Rationale == "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				fmt.Errorf("custom text is required for 'Other' responses (chosen_index=0)"))
+		}
+		// Resolve with custom text (no predefined option)
+		if err := client.ResolveDecisionWithCustomText(
+			req.Msg.DecisionId,
+			req.Msg.Rationale,
+			resolvedBy,
+		); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resolving decision with custom text: %w", err))
+		}
+	} else {
+		// Standard resolution with predefined option
+		if err := client.ResolveDecision(
+			req.Msg.DecisionId,
+			int(req.Msg.ChosenIndex),
+			req.Msg.Rationale,
+			resolvedBy,
+		); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resolving decision: %w", err))
+		}
 	}
 
 	// Fetch the updated decision
@@ -1077,6 +1100,925 @@ func escapeJSON(s string) string {
 	return result
 }
 
+// ConvoyServer implements the ConvoyService.
+type ConvoyServer struct {
+	townRoot string
+}
+
+var _ gastownv1connect.ConvoyServiceHandler = (*ConvoyServer)(nil)
+
+// NewConvoyServer creates a new ConvoyServer.
+func NewConvoyServer(townRoot string) *ConvoyServer {
+	return &ConvoyServer{townRoot: townRoot}
+}
+
+func (s *ConvoyServer) ListConvoys(
+	ctx context.Context,
+	req *connect.Request[gastownv1.ListConvoysRequest],
+) (*connect.Response[gastownv1.ListConvoysResponse], error) {
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	statusFilter := "open"
+	switch req.Msg.Status {
+	case gastownv1.ConvoyStatusFilter_CONVOY_STATUS_FILTER_CLOSED:
+		statusFilter = "closed"
+	case gastownv1.ConvoyStatusFilter_CONVOY_STATUS_FILTER_ALL:
+		statusFilter = "all"
+	}
+
+	issues, err := client.List(beads.ListOptions{
+		Type:     "convoy",
+		Status:   statusFilter,
+		Priority: -1,
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	var convoys []*gastownv1.Convoy
+	for _, issue := range issues {
+		convoy := s.issueToConvoy(*issue)
+		if req.Msg.Tree {
+			tracked := s.getTrackedIssues(townBeadsPath, issue.ID)
+			convoy.TrackedCount = int32(len(tracked))
+			completed := 0
+			for _, t := range tracked {
+				if t.Status == "closed" {
+					completed++
+				}
+			}
+			convoy.CompletedCount = int32(completed)
+			convoy.Progress = fmt.Sprintf("%d/%d", completed, len(tracked))
+		}
+		convoys = append(convoys, convoy)
+	}
+
+	return connect.NewResponse(&gastownv1.ListConvoysResponse{
+		Convoys: convoys,
+		Total:   int32(len(convoys)),
+	}), nil
+}
+
+func (s *ConvoyServer) GetConvoyStatus(
+	ctx context.Context,
+	req *connect.Request[gastownv1.GetConvoyStatusRequest],
+) (*connect.Response[gastownv1.GetConvoyStatusResponse], error) {
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	issue, err := client.Show(req.Msg.ConvoyId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if issue == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
+	}
+
+	convoy := s.issueToConvoy(*issue)
+	tracked := s.getTrackedIssues(townBeadsPath, issue.ID)
+
+	var protoTracked []*gastownv1.TrackedIssue
+	completed := 0
+	for _, t := range tracked {
+		if t.Status == "closed" {
+			completed++
+		}
+		protoTracked = append(protoTracked, &gastownv1.TrackedIssue{
+			Id:        t.ID,
+			Title:     t.Title,
+			Status:    t.Status,
+			IssueType: t.IssueType,
+			Assignee:  t.Assignee,
+			Worker:    t.Worker,
+			WorkerAge: t.WorkerAge,
+		})
+	}
+
+	convoy.TrackedCount = int32(len(tracked))
+	convoy.CompletedCount = int32(completed)
+	convoy.Progress = fmt.Sprintf("%d/%d", completed, len(tracked))
+
+	return connect.NewResponse(&gastownv1.GetConvoyStatusResponse{
+		Convoy:    convoy,
+		Tracked:   protoTracked,
+		Completed: int32(completed),
+		Total:     int32(len(tracked)),
+	}), nil
+}
+
+func (s *ConvoyServer) CreateConvoy(
+	ctx context.Context,
+	req *connect.Request[gastownv1.CreateConvoyRequest],
+) (*connect.Response[gastownv1.CreateConvoyResponse], error) {
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	description := fmt.Sprintf("Convoy tracking %d issues", len(req.Msg.IssueIds))
+	if req.Msg.Owner != "" {
+		description += fmt.Sprintf("\nOwner: %s", req.Msg.Owner)
+	}
+	if req.Msg.Notify != "" {
+		description += fmt.Sprintf("\nNotify: %s", req.Msg.Notify)
+	}
+	if req.Msg.Molecule != "" {
+		description += fmt.Sprintf("\nMolecule: %s", req.Msg.Molecule)
+	}
+	if req.Msg.Owned {
+		description += "\nOwned: true"
+	}
+	if req.Msg.MergeStrategy != "" {
+		description += fmt.Sprintf("\nMerge: %s", req.Msg.MergeStrategy)
+	}
+
+	issue, err := client.Create(beads.CreateOptions{
+		Type:        "convoy",
+		Title:       req.Msg.Name,
+		Description: description,
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("creating convoy: %w", err))
+	}
+
+	trackedCount := 0
+	for _, issueID := range req.Msg.IssueIds {
+		if err := client.AddTypedDependency(issue.ID, issueID, "tracks"); err != nil {
+			log.Printf("WARN: couldn't track %s: %v", issueID, err)
+		} else {
+			trackedCount++
+		}
+	}
+
+	convoy := s.issueToConvoy(*issue)
+	convoy.TrackedCount = int32(trackedCount)
+
+	return connect.NewResponse(&gastownv1.CreateConvoyResponse{
+		Convoy:       convoy,
+		TrackedCount: int32(trackedCount),
+	}), nil
+}
+
+func (s *ConvoyServer) AddToConvoy(
+	ctx context.Context,
+	req *connect.Request[gastownv1.AddToConvoyRequest],
+) (*connect.Response[gastownv1.AddToConvoyResponse], error) {
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	issue, err := client.Show(req.Msg.ConvoyId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if issue == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
+	}
+
+	reopened := false
+	if issue.Status == "closed" {
+		openStatus := "open"
+		if err := client.Update(issue.ID, beads.UpdateOptions{Status: &openStatus}); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("reopening convoy: %w", err))
+		}
+		reopened = true
+	}
+
+	addedCount := 0
+	for _, issueID := range req.Msg.IssueIds {
+		if err := client.AddTypedDependency(issue.ID, issueID, "tracks"); err != nil {
+			log.Printf("WARN: couldn't add %s: %v", issueID, err)
+		} else {
+			addedCount++
+		}
+	}
+
+	convoy := s.issueToConvoy(*issue)
+	if reopened {
+		convoy.Status = "open"
+	}
+
+	return connect.NewResponse(&gastownv1.AddToConvoyResponse{
+		Convoy:     convoy,
+		AddedCount: int32(addedCount),
+		Reopened:   reopened,
+	}), nil
+}
+
+func (s *ConvoyServer) CloseConvoy(
+	ctx context.Context,
+	req *connect.Request[gastownv1.CloseConvoyRequest],
+) (*connect.Response[gastownv1.CloseConvoyResponse], error) {
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	issue, err := client.Show(req.Msg.ConvoyId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if issue == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
+	}
+
+	if issue.Status == "closed" {
+		convoy := s.issueToConvoy(*issue)
+		return connect.NewResponse(&gastownv1.CloseConvoyResponse{Convoy: convoy}), nil
+	}
+
+	reason := req.Msg.Reason
+	if reason == "" {
+		reason = "Closed via RPC"
+	}
+	if err := client.CloseWithReason(reason, issue.ID); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("closing convoy: %w", err))
+	}
+
+	convoy := s.issueToConvoy(*issue)
+	convoy.Status = "closed"
+
+	return connect.NewResponse(&gastownv1.CloseConvoyResponse{Convoy: convoy}), nil
+}
+
+func (s *ConvoyServer) WatchConvoys(
+	ctx context.Context,
+	req *connect.Request[gastownv1.WatchConvoysRequest],
+	stream *connect.ServerStream[gastownv1.ConvoyUpdate],
+) error {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	seen := make(map[string]string)
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	issues, _ := client.List(beads.ListOptions{Type: "convoy", Status: "all", Priority: -1})
+	for _, issue := range issues {
+		seen[issue.ID] = issue.Status
+		convoy := s.issueToConvoy(*issue)
+		if err := stream.Send(&gastownv1.ConvoyUpdate{
+			Timestamp:  timestamppb.Now(),
+			ConvoyId:   issue.ID,
+			UpdateType: "existing",
+			Convoy:     convoy,
+		}); err != nil {
+			return err
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			issues, err := client.List(beads.ListOptions{Type: "convoy", Status: "all", Priority: -1})
+			if err != nil {
+				continue
+			}
+
+			for _, issue := range issues {
+				oldStatus, exists := seen[issue.ID]
+				if !exists {
+					seen[issue.ID] = issue.Status
+					convoy := s.issueToConvoy(*issue)
+					if err := stream.Send(&gastownv1.ConvoyUpdate{
+						Timestamp:  timestamppb.Now(),
+						ConvoyId:   issue.ID,
+						UpdateType: "created",
+						Convoy:     convoy,
+					}); err != nil {
+						return err
+					}
+				} else if oldStatus != issue.Status {
+					seen[issue.ID] = issue.Status
+					convoy := s.issueToConvoy(*issue)
+					updateType := "updated"
+					if issue.Status == "closed" {
+						updateType = "closed"
+					}
+					if err := stream.Send(&gastownv1.ConvoyUpdate{
+						Timestamp:  timestamppb.Now(),
+						ConvoyId:   issue.ID,
+						UpdateType: updateType,
+						Convoy:     convoy,
+					}); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+}
+
+func (s *ConvoyServer) issueToConvoy(issue beads.Issue) *gastownv1.Convoy {
+	convoy := &gastownv1.Convoy{
+		Id:     issue.ID,
+		Title:  issue.Title,
+		Status: issue.Status,
+	}
+
+	if issue.Description != "" {
+		for _, line := range strings.Split(issue.Description, "\n") {
+			if strings.HasPrefix(line, "Owner: ") {
+				convoy.Owner = strings.TrimPrefix(line, "Owner: ")
+			} else if strings.HasPrefix(line, "Notify: ") {
+				convoy.Notify = strings.TrimPrefix(line, "Notify: ")
+			} else if strings.HasPrefix(line, "Molecule: ") {
+				convoy.Molecule = strings.TrimPrefix(line, "Molecule: ")
+			} else if strings.HasPrefix(line, "Owned: ") {
+				convoy.Owned = strings.TrimPrefix(line, "Owned: ") == "true"
+			} else if strings.HasPrefix(line, "Merge: ") {
+				convoy.MergeStrategy = strings.TrimPrefix(line, "Merge: ")
+			}
+		}
+	}
+
+	if issue.CreatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, issue.CreatedAt); err == nil {
+			convoy.CreatedAt = timestamppb.New(t)
+		}
+	}
+	if issue.ClosedAt != "" {
+		if t, err := time.Parse(time.RFC3339, issue.ClosedAt); err == nil {
+			convoy.ClosedAt = timestamppb.New(t)
+		}
+	}
+
+	return convoy
+}
+
+type trackedIssueInfo struct {
+	ID        string
+	Title     string
+	Status    string
+	IssueType string
+	Assignee  string
+	Worker    string
+	WorkerAge string
+}
+
+func (s *ConvoyServer) getTrackedIssues(townBeadsPath, convoyID string) []trackedIssueInfo {
+	client := beads.New(townBeadsPath)
+
+	deps, err := client.ListDependencies(convoyID, "down", "tracks")
+	if err != nil {
+		return nil
+	}
+
+	var tracked []trackedIssueInfo
+	for _, dep := range deps {
+		tracked = append(tracked, trackedIssueInfo{
+			ID:        dep.ID,
+			Title:     dep.Title,
+			Status:    dep.Status,
+			IssueType: dep.Type,
+			Assignee:  dep.Assignee,
+		})
+	}
+
+	return tracked
+}
+
+// ActivityServer implements the ActivityService.
+type ActivityServer struct {
+	townRoot string
+}
+
+var _ gastownv1connect.ActivityServiceHandler = (*ActivityServer)(nil)
+
+// NewActivityServer creates a new ActivityServer.
+func NewActivityServer(townRoot string) *ActivityServer {
+	return &ActivityServer{townRoot: townRoot}
+}
+
+func (s *ActivityServer) ListEvents(
+	ctx context.Context,
+	req *connect.Request[gastownv1.ListEventsRequest],
+) (*connect.Response[gastownv1.ListEventsResponse], error) {
+	limit := int(req.Msg.Limit)
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+
+	var events []*gastownv1.ActivityEvent
+	var totalCount int
+
+	if req.Msg.Curated {
+		events, totalCount = s.readFeedEvents(req.Msg.Filter, limit)
+	} else {
+		events, totalCount = s.readRawEvents(req.Msg.Filter, limit)
+	}
+
+	return connect.NewResponse(&gastownv1.ListEventsResponse{
+		Events:     events,
+		TotalCount: int32(totalCount),
+	}), nil
+}
+
+func (s *ActivityServer) WatchEvents(
+	ctx context.Context,
+	req *connect.Request[gastownv1.WatchEventsRequest],
+	stream *connect.ServerStream[gastownv1.ActivityEvent],
+) error {
+	eventsFile := filepath.Join(s.townRoot, ".events.jsonl")
+	if req.Msg.Curated {
+		eventsFile = filepath.Join(s.townRoot, ".feed.jsonl")
+	}
+
+	if req.Msg.IncludeBackfill {
+		backfillCount := int(req.Msg.BackfillCount)
+		if backfillCount <= 0 {
+			backfillCount = 10
+		}
+		if backfillCount > 100 {
+			backfillCount = 100
+		}
+
+		var events []*gastownv1.ActivityEvent
+		if req.Msg.Curated {
+			events, _ = s.readFeedEvents(req.Msg.Filter, backfillCount)
+		} else {
+			events, _ = s.readRawEvents(req.Msg.Filter, backfillCount)
+		}
+
+		for i := len(events) - 1; i >= 0; i-- {
+			if err := stream.Send(events[i]); err != nil {
+				return err
+			}
+		}
+	}
+
+	file, err := os.Open(eventsFile)
+	if err != nil {
+		file, err = os.OpenFile(eventsFile, os.O_RDONLY|os.O_CREATE, 0644)
+		if err != nil {
+			return connect.NewError(connect.CodeInternal, fmt.Errorf("opening events file: %w", err))
+		}
+	}
+	defer file.Close()
+
+	if _, err := file.Seek(0, io.SeekEnd); err != nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("seeking to end: %w", err))
+	}
+
+	reader := bufio.NewReader(file)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					break
+				}
+
+				event := s.parseLine(line, req.Msg.Curated)
+				if event == nil {
+					continue
+				}
+
+				if !s.matchesFilter(event, req.Msg.Filter) {
+					continue
+				}
+
+				if err := stream.Send(event); err != nil {
+					return err
+				}
+			}
+		}
+	}
+}
+
+func (s *ActivityServer) EmitEvent(
+	ctx context.Context,
+	req *connect.Request[gastownv1.EmitEventRequest],
+) (*connect.Response[gastownv1.EmitEventResponse], error) {
+	if req.Msg.Type == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("event type is required"))
+	}
+	if req.Msg.Actor == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("actor is required"))
+	}
+
+	visibility := "feed"
+	switch req.Msg.Visibility {
+	case gastownv1.Visibility_VISIBILITY_AUDIT:
+		visibility = "audit"
+	case gastownv1.Visibility_VISIBILITY_BOTH:
+		visibility = "both"
+	}
+
+	var payload map[string]interface{}
+	if req.Msg.Payload != nil {
+		payload = structToMap(req.Msg.Payload)
+	}
+
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	event := map[string]interface{}{
+		"ts":         timestamp,
+		"source":     "rpc",
+		"type":       req.Msg.Type,
+		"actor":      req.Msg.Actor,
+		"visibility": visibility,
+	}
+	if payload != nil {
+		event["payload"] = payload
+	}
+
+	eventsPath := filepath.Join(s.townRoot, ".events.jsonl")
+	data, err := json.Marshal(event)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("marshaling event: %w", err))
+	}
+	data = append(data, '\n')
+
+	f, err := os.OpenFile(eventsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("opening events file: %w", err))
+	}
+	defer f.Close()
+
+	if _, err := f.Write(data); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("writing event: %w", err))
+	}
+
+	return connect.NewResponse(&gastownv1.EmitEventResponse{
+		Timestamp: timestamp,
+		Success:   true,
+	}), nil
+}
+
+func (s *ActivityServer) readRawEvents(filter *gastownv1.EventFilter, limit int) ([]*gastownv1.ActivityEvent, int) {
+	eventsPath := filepath.Join(s.townRoot, ".events.jsonl")
+	return s.readEventsFromFile(eventsPath, filter, limit, false)
+}
+
+func (s *ActivityServer) readFeedEvents(filter *gastownv1.EventFilter, limit int) ([]*gastownv1.ActivityEvent, int) {
+	feedPath := filepath.Join(s.townRoot, ".feed.jsonl")
+	return s.readEventsFromFile(feedPath, filter, limit, true)
+}
+
+func (s *ActivityServer) readEventsFromFile(filePath string, filter *gastownv1.EventFilter, limit int, isCurated bool) ([]*gastownv1.ActivityEvent, int) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, 0
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var events []*gastownv1.ActivityEvent
+	totalCount := 0
+
+	for i := len(lines) - 1; i >= 0 && len(events) < limit; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+
+		event := s.parseLine(line, isCurated)
+		if event == nil {
+			continue
+		}
+
+		totalCount++
+
+		if !s.matchesFilter(event, filter) {
+			continue
+		}
+
+		events = append(events, event)
+	}
+
+	return events, totalCount
+}
+
+func (s *ActivityServer) parseLine(line string, isCurated bool) *gastownv1.ActivityEvent {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal([]byte(line), &raw); err != nil {
+		return nil
+	}
+
+	event := &gastownv1.ActivityEvent{}
+
+	if ts, ok := raw["ts"].(string); ok {
+		event.Timestamp = ts
+	}
+	if source, ok := raw["source"].(string); ok {
+		event.Source = source
+	}
+	if typ, ok := raw["type"].(string); ok {
+		event.Type = typ
+	}
+	if actor, ok := raw["actor"].(string); ok {
+		event.Actor = actor
+	}
+	if payload, ok := raw["payload"].(map[string]interface{}); ok {
+		event.Payload = mapToStruct(payload)
+	}
+	if visibility, ok := raw["visibility"].(string); ok {
+		switch visibility {
+		case "audit":
+			event.Visibility = gastownv1.Visibility_VISIBILITY_AUDIT
+		case "feed":
+			event.Visibility = gastownv1.Visibility_VISIBILITY_FEED
+		case "both":
+			event.Visibility = gastownv1.Visibility_VISIBILITY_BOTH
+		}
+	}
+
+	if isCurated {
+		if summary, ok := raw["summary"].(string); ok {
+			event.Summary = summary
+		}
+		if count, ok := raw["count"].(float64); ok {
+			event.Count = int32(count)
+		}
+	}
+
+	return event
+}
+
+func (s *ActivityServer) matchesFilter(event *gastownv1.ActivityEvent, filter *gastownv1.EventFilter) bool {
+	if filter == nil {
+		return true
+	}
+
+	if len(filter.Types) > 0 {
+		found := false
+		for _, t := range filter.Types {
+			if event.Type == t {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	if filter.Actor != "" && event.Actor != filter.Actor {
+		return false
+	}
+
+	if filter.Visibility != gastownv1.Visibility_VISIBILITY_UNSPECIFIED && event.Visibility != filter.Visibility {
+		return false
+	}
+
+	if filter.After != "" {
+		afterTime, err := time.Parse(time.RFC3339, filter.After)
+		if err == nil {
+			eventTime, err := time.Parse(time.RFC3339, event.Timestamp)
+			if err == nil && eventTime.Before(afterTime) {
+				return false
+			}
+		}
+	}
+
+	if filter.Before != "" {
+		beforeTime, err := time.Parse(time.RFC3339, filter.Before)
+		if err == nil {
+			eventTime, err := time.Parse(time.RFC3339, event.Timestamp)
+			if err == nil && eventTime.After(beforeTime) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+func structToMap(s *structpb.Struct) map[string]interface{} {
+	if s == nil {
+		return nil
+	}
+	result := make(map[string]interface{})
+	for k, v := range s.Fields {
+		result[k] = valueToInterface(v)
+	}
+	return result
+}
+
+func valueToInterface(v *structpb.Value) interface{} {
+	if v == nil {
+		return nil
+	}
+	switch x := v.Kind.(type) {
+	case *structpb.Value_NullValue:
+		return nil
+	case *structpb.Value_NumberValue:
+		return x.NumberValue
+	case *structpb.Value_StringValue:
+		return x.StringValue
+	case *structpb.Value_BoolValue:
+		return x.BoolValue
+	case *structpb.Value_StructValue:
+		return structToMap(x.StructValue)
+	case *structpb.Value_ListValue:
+		var list []interface{}
+		for _, item := range x.ListValue.Values {
+			list = append(list, valueToInterface(item))
+		}
+		return list
+	default:
+		return nil
+	}
+}
+
+func mapToStruct(m map[string]interface{}) *structpb.Struct {
+	if m == nil {
+		return nil
+	}
+	s, err := structpb.NewStruct(m)
+	if err != nil {
+		return nil
+	}
+	return s
+}
+
+// TerminalServer implements the TerminalService.
+type TerminalServer struct {
+	tmuxClient *tmux.Tmux
+}
+
+var _ gastownv1connect.TerminalServiceHandler = (*TerminalServer)(nil)
+
+// NewTerminalServer creates a new TerminalServer.
+func NewTerminalServer() *TerminalServer {
+	return &TerminalServer{tmuxClient: tmux.NewTmux()}
+}
+
+func (s *TerminalServer) PeekSession(
+	ctx context.Context,
+	req *connect.Request[gastownv1.PeekSessionRequest],
+) (*connect.Response[gastownv1.PeekSessionResponse], error) {
+	session := req.Msg.Session
+	if session == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session name is required"))
+	}
+
+	exists, err := s.tmuxClient.HasSession(session)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	if !exists {
+		return connect.NewResponse(&gastownv1.PeekSessionResponse{
+			Exists: false,
+		}), nil
+	}
+
+	lines := int(req.Msg.Lines)
+	if lines <= 0 {
+		lines = 50
+	}
+	if lines > 1000 {
+		lines = 1000
+	}
+
+	var output string
+	if req.Msg.All {
+		output, err = s.tmuxClient.CapturePaneAll(session)
+	} else {
+		output, err = s.tmuxClient.CapturePane(session, lines)
+	}
+
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("capturing pane: %w", err))
+	}
+
+	var lineSlice []string
+	if output != "" {
+		lineSlice = strings.Split(output, "\n")
+	}
+
+	return connect.NewResponse(&gastownv1.PeekSessionResponse{
+		Output: output,
+		Lines:  lineSlice,
+		Exists: true,
+	}), nil
+}
+
+func (s *TerminalServer) ListSessions(
+	ctx context.Context,
+	req *connect.Request[gastownv1.ListSessionsRequest],
+) (*connect.Response[gastownv1.ListSessionsResponse], error) {
+	sessions, err := s.tmuxClient.ListSessions()
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	if req.Msg.Prefix != "" {
+		var filtered []string
+		for _, sess := range sessions {
+			if strings.HasPrefix(sess, req.Msg.Prefix) {
+				filtered = append(filtered, sess)
+			}
+		}
+		sessions = filtered
+	}
+
+	return connect.NewResponse(&gastownv1.ListSessionsResponse{
+		Sessions: sessions,
+	}), nil
+}
+
+func (s *TerminalServer) HasSession(
+	ctx context.Context,
+	req *connect.Request[gastownv1.HasSessionRequest],
+) (*connect.Response[gastownv1.HasSessionResponse], error) {
+	if req.Msg.Session == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session name is required"))
+	}
+
+	exists, err := s.tmuxClient.HasSession(req.Msg.Session)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&gastownv1.HasSessionResponse{
+		Exists: exists,
+	}), nil
+}
+
+func (s *TerminalServer) WatchSession(
+	ctx context.Context,
+	req *connect.Request[gastownv1.WatchSessionRequest],
+	stream *connect.ServerStream[gastownv1.TerminalUpdate],
+) error {
+	session := req.Msg.Session
+	if session == "" {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session name is required"))
+	}
+
+	lines := int(req.Msg.Lines)
+	if lines <= 0 {
+		lines = 50
+	}
+	if lines > 1000 {
+		lines = 1000
+	}
+
+	intervalMs := int(req.Msg.IntervalMs)
+	if intervalMs < 100 {
+		intervalMs = 1000
+	}
+
+	ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			exists, err := s.tmuxClient.HasSession(session)
+			if err != nil {
+				if err := stream.Send(&gastownv1.TerminalUpdate{
+					Exists:    false,
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+				}); err != nil {
+					return err
+				}
+				continue
+			}
+
+			if !exists {
+				if err := stream.Send(&gastownv1.TerminalUpdate{
+					Exists:    false,
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+				}); err != nil {
+					return err
+				}
+				return nil
+			}
+
+			output, err := s.tmuxClient.CapturePane(session, lines)
+			if err != nil {
+				continue
+			}
+
+			var lineSlice []string
+			if output != "" {
+				lineSlice = strings.Split(output, "\n")
+			}
+
+			if err := stream.Send(&gastownv1.TerminalUpdate{
+				Output:    output,
+				Lines:     lineSlice,
+				Exists:    true,
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+			}); err != nil {
+				return err
+			}
+		}
+	}
+}
+
 // ServerConfig contains configuration for the RPC server.
 type ServerConfig struct {
 	Port     int
@@ -1131,6 +2073,9 @@ func RunServer(cfg ServerConfig) error {
 	mailServer := NewMailServer(root)
 	decisionServer := NewDecisionServer(root, decisionBus)
 	decisionServer.SetPoller(decisionPoller) // Wire up poller to prevent duplicates
+	convoyServer := NewConvoyServer(root)
+	activityServer := NewActivityServer(root)
+	terminalServer := NewTerminalServer()
 
 	// Set up interceptors
 	var opts []connect.HandlerOption
@@ -1151,6 +2096,15 @@ func RunServer(cfg ServerConfig) error {
 
 	decisionPath, decisionHandler := gastownv1connect.NewDecisionServiceHandler(decisionServer, opts...)
 	mux.Handle(decisionPath, decisionHandler)
+
+	convoyPath, convoyHandler := gastownv1connect.NewConvoyServiceHandler(convoyServer, opts...)
+	mux.Handle(convoyPath, convoyHandler)
+
+	activityPath, activityHandler := gastownv1connect.NewActivityServiceHandler(activityServer, opts...)
+	mux.Handle(activityPath, activityHandler)
+
+	terminalPath, terminalHandler := gastownv1connect.NewTerminalServiceHandler(terminalServer, opts...)
+	mux.Handle(terminalPath, terminalHandler)
 
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -1177,6 +2131,9 @@ func RunServer(cfg ServerConfig) error {
 	log.Printf("  %s", statusPath)
 	log.Printf("  %s", mailPath)
 	log.Printf("  %s", decisionPath)
+	log.Printf("  %s", convoyPath)
+	log.Printf("  %s", activityPath)
+	log.Printf("  %s", terminalPath)
 	log.Printf("  /health")
 
 	// Start server (TLS or plain HTTP)
