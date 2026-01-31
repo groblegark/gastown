@@ -43,6 +43,7 @@ func outputAdviceContext(ctx RoleInfo) {
 
 	// Filter advice that applies to this agent
 	applicable := filterApplicableAdvice(adviceBeads, agentID, roleType, rigName)
+	explain(len(applicable) > 0, fmt.Sprintf("Advice: %d of %d beads apply to %s", len(applicable), len(adviceBeads), agentID))
 	if len(applicable) == 0 {
 		return
 	}
@@ -68,29 +69,30 @@ func outputAdviceContext(ctx RoleInfo) {
 
 // buildAgentID constructs the full agent identifier from role context.
 // Format: <rig>/<role-type>/<name> e.g., "gastown/polecats/alpha" or "gastown/crew/decision_notify"
+// Town-level roles (Mayor, Deacon) return simple identifiers without rig prefix.
 func buildAgentID(ctx RoleInfo) string {
-	if ctx.Rig == "" {
-		return ""
-	}
-
 	switch ctx.Role {
+	case RoleMayor:
+		return "mayor"
+	case RoleDeacon:
+		return "deacon"
 	case RolePolecat:
-		if ctx.Polecat != "" {
+		if ctx.Rig != "" && ctx.Polecat != "" {
 			return fmt.Sprintf("%s/polecats/%s", ctx.Rig, ctx.Polecat)
 		}
 	case RoleCrew:
 		// Note: Crew name is also stored in ctx.Polecat field
-		if ctx.Polecat != "" {
+		if ctx.Rig != "" && ctx.Polecat != "" {
 			return fmt.Sprintf("%s/crew/%s", ctx.Rig, ctx.Polecat)
 		}
 	case RoleWitness:
-		return fmt.Sprintf("%s/witness", ctx.Rig)
+		if ctx.Rig != "" {
+			return fmt.Sprintf("%s/witness", ctx.Rig)
+		}
 	case RoleRefinery:
-		return fmt.Sprintf("%s/refinery", ctx.Rig)
-	case RoleDeacon:
-		return "deacon"
-	case RoleMayor:
-		return "mayor"
+		if ctx.Rig != "" {
+			return fmt.Sprintf("%s/refinery", ctx.Rig)
+		}
 	}
 
 	return ""
