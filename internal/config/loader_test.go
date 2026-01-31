@@ -3651,6 +3651,26 @@ func TestQuoteForShell(t *testing.T) {
 			input: "`$HOME`",
 			want:  "\"\\`\\$HOME\\`\"",
 		},
+		{
+			name:  "string with newline",
+			input: "line1\nline2",
+			want:  `"line1\nline2"`,
+		},
+		{
+			name:  "string with carriage return",
+			input: "line1\rline2",
+			want:  `"line1\rline2"`,
+		},
+		{
+			name:  "string with tab",
+			input: "col1\tcol2",
+			want:  `"col1\tcol2"`,
+		},
+		{
+			name:  "multiline prompt",
+			input: "[GAS TOWN] test <- sender • time • topic\n\nInstructions here",
+			want:  `"[GAS TOWN] test <- sender • time • topic\n\nInstructions here"`,
+		},
 	}
 
 	for _, tt := range tests {

@@ -627,16 +627,25 @@ func defaultInstructionsFile(provider string) string {
 }
 
 // quoteForShell quotes a string for safe shell usage.
+// Wraps in double quotes and escapes characters that are special in double-quoted strings:
+// - backslash (escape character)
+// - double quote (string delimiter)
+// - backtick (command substitution)
+// - dollar sign (variable expansion)
+// - newline (causes shell parsing issues when passed through tmux respawn-pane)
+// - carriage return (similar to newline)
+// - tab (escaped for consistency)
 func quoteForShell(s string) string {
-	// Wrap in double quotes, escaping characters that are special in double-quoted strings:
-	// - backslash (escape character)
-	// - double quote (string delimiter)
-	// - backtick (command substitution)
-	// - dollar sign (variable expansion)
 	escaped := strings.ReplaceAll(s, `\`, `\\`)
 	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 	escaped = strings.ReplaceAll(escaped, "`", "\\`")
 	escaped = strings.ReplaceAll(escaped, "$", `\$`)
+	// Escape newlines to avoid shell parsing issues when commands are passed
+	// through tmux respawn-pane. Claude Code will receive \n sequences, which
+	// is acceptable for prompt formatting.
+	escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+	escaped = strings.ReplaceAll(escaped, "\r", `\r`)
+	escaped = strings.ReplaceAll(escaped, "\t", `\t`)
 	return `"` + escaped + `"`
 }
 
