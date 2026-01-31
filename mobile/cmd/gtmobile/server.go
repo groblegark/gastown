@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -1084,4 +1085,402 @@ func escapeJSON(s string) string {
 		}
 	}
 	return result
+}
+
+// ConvoyServer implements the ConvoyService.
+type ConvoyServer struct {
+	townRoot string
+}
+
+var _ gastownv1connect.ConvoyServiceHandler = (*ConvoyServer)(nil)
+
+func NewConvoyServer(townRoot string) *ConvoyServer {
+	return &ConvoyServer{townRoot: townRoot}
+}
+
+func (s *ConvoyServer) ListConvoys(
+	ctx context.Context,
+	req *connect.Request[gastownv1.ListConvoysRequest],
+) (*connect.Response[gastownv1.ListConvoysResponse], error) {
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	// Determine status filter for bd list
+	statusFilter := "open"
+	switch req.Msg.Status {
+	case gastownv1.ConvoyStatusFilter_CONVOY_STATUS_FILTER_CLOSED:
+		statusFilter = "closed"
+	case gastownv1.ConvoyStatusFilter_CONVOY_STATUS_FILTER_ALL:
+		statusFilter = "all"
+	}
+
+	// Get convoys from beads using List with Type option
+	issues, err := client.List(beads.ListOptions{
+		Type:     "convoy",
+		Status:   statusFilter,
+		Priority: -1,
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	var convoys []*gastownv1.Convoy
+	for _, issue := range issues {
+		convoy := s.issueToConvoy(*issue)
+
+		// If tree view requested, get tracked issues
+		if req.Msg.Tree {
+			tracked := s.getTrackedIssues(townBeadsPath, issue.ID)
+			convoy.TrackedCount = int32(len(tracked))
+			completed := 0
+			for _, t := range tracked {
+				if t.Status == "closed" {
+					completed++
+				}
+			}
+			convoy.CompletedCount = int32(completed)
+			convoy.Progress = fmt.Sprintf("%d/%d", completed, len(tracked))
+		}
+
+		convoys = append(convoys, convoy)
+	}
+
+	return connect.NewResponse(&gastownv1.ListConvoysResponse{
+		Convoys: convoys,
+		Total:   int32(len(convoys)),
+	}), nil
+}
+
+func (s *ConvoyServer) GetConvoyStatus(
+	ctx context.Context,
+	req *connect.Request[gastownv1.GetConvoyStatusRequest],
+) (*connect.Response[gastownv1.GetConvoyStatusResponse], error) {
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	issue, err := client.Show(req.Msg.ConvoyId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if issue == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
+	}
+
+	convoy := s.issueToConvoy(*issue)
+	tracked := s.getTrackedIssues(townBeadsPath, issue.ID)
+
+	var protoTracked []*gastownv1.TrackedIssue
+	completed := 0
+	for _, t := range tracked {
+		if t.Status == "closed" {
+			completed++
+		}
+		protoTracked = append(protoTracked, &gastownv1.TrackedIssue{
+			Id:        t.ID,
+			Title:     t.Title,
+			Status:    t.Status,
+			IssueType: t.IssueType,
+			Assignee:  t.Assignee,
+			Worker:    t.Worker,
+			WorkerAge: t.WorkerAge,
+		})
+	}
+
+	convoy.TrackedCount = int32(len(tracked))
+	convoy.CompletedCount = int32(completed)
+	convoy.Progress = fmt.Sprintf("%d/%d", completed, len(tracked))
+
+	return connect.NewResponse(&gastownv1.GetConvoyStatusResponse{
+		Convoy:    convoy,
+		Tracked:   protoTracked,
+		Completed: int32(completed),
+		Total:     int32(len(tracked)),
+	}), nil
+}
+
+func (s *ConvoyServer) CreateConvoy(
+	ctx context.Context,
+	req *connect.Request[gastownv1.CreateConvoyRequest],
+) (*connect.Response[gastownv1.CreateConvoyResponse], error) {
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	// Build description with metadata
+	description := fmt.Sprintf("Convoy tracking %d issues", len(req.Msg.IssueIds))
+	if req.Msg.Owner != "" {
+		description += fmt.Sprintf("\nOwner: %s", req.Msg.Owner)
+	}
+	if req.Msg.Notify != "" {
+		description += fmt.Sprintf("\nNotify: %s", req.Msg.Notify)
+	}
+	if req.Msg.Molecule != "" {
+		description += fmt.Sprintf("\nMolecule: %s", req.Msg.Molecule)
+	}
+	if req.Msg.Owned {
+		description += "\nOwned: true"
+	}
+	if req.Msg.MergeStrategy != "" {
+		description += fmt.Sprintf("\nMerge: %s", req.Msg.MergeStrategy)
+	}
+
+	// Create the convoy bead
+	issue, err := client.Create(beads.CreateOptions{
+		Type:        "convoy",
+		Title:       req.Msg.Name,
+		Description: description,
+	})
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("creating convoy: %w", err))
+	}
+
+	// Add tracking dependencies for each issue
+	trackedCount := 0
+	for _, issueID := range req.Msg.IssueIds {
+		if err := client.AddTypedDependency(issue.ID, issueID, "tracks"); err != nil {
+			log.Printf("WARN: couldn't track %s: %v", issueID, err)
+		} else {
+			trackedCount++
+		}
+	}
+
+	convoy := s.issueToConvoy(*issue)
+	convoy.TrackedCount = int32(trackedCount)
+
+	return connect.NewResponse(&gastownv1.CreateConvoyResponse{
+		Convoy:       convoy,
+		TrackedCount: int32(trackedCount),
+	}), nil
+}
+
+func (s *ConvoyServer) AddToConvoy(
+	ctx context.Context,
+	req *connect.Request[gastownv1.AddToConvoyRequest],
+) (*connect.Response[gastownv1.AddToConvoyResponse], error) {
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	// Get current convoy
+	issue, err := client.Show(req.Msg.ConvoyId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if issue == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
+	}
+
+	// Reopen if closed
+	reopened := false
+	if issue.Status == "closed" {
+		if err := client.Update(issue.ID, beads.UpdateOptions{Status: "open"}); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("reopening convoy: %w", err))
+		}
+		reopened = true
+	}
+
+	// Add tracking dependencies
+	addedCount := 0
+	for _, issueID := range req.Msg.IssueIds {
+		if err := client.AddTypedDependency(issue.ID, issueID, "tracks"); err != nil {
+			log.Printf("WARN: couldn't add %s: %v", issueID, err)
+		} else {
+			addedCount++
+		}
+	}
+
+	convoy := s.issueToConvoy(*issue)
+	if reopened {
+		convoy.Status = "open"
+	}
+
+	return connect.NewResponse(&gastownv1.AddToConvoyResponse{
+		Convoy:     convoy,
+		AddedCount: int32(addedCount),
+		Reopened:   reopened,
+	}), nil
+}
+
+func (s *ConvoyServer) CloseConvoy(
+	ctx context.Context,
+	req *connect.Request[gastownv1.CloseConvoyRequest],
+) (*connect.Response[gastownv1.CloseConvoyResponse], error) {
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	// Get current convoy
+	issue, err := client.Show(req.Msg.ConvoyId)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if issue == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
+	}
+
+	// Idempotent: if already closed, just return
+	if issue.Status == "closed" {
+		convoy := s.issueToConvoy(*issue)
+		return connect.NewResponse(&gastownv1.CloseConvoyResponse{Convoy: convoy}), nil
+	}
+
+	// Close the convoy
+	reason := req.Msg.Reason
+	if reason == "" {
+		reason = "Closed via RPC"
+	}
+	if err := client.CloseWithReason(reason, issue.ID); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("closing convoy: %w", err))
+	}
+
+	convoy := s.issueToConvoy(*issue)
+	convoy.Status = "closed"
+
+	return connect.NewResponse(&gastownv1.CloseConvoyResponse{Convoy: convoy}), nil
+}
+
+func (s *ConvoyServer) WatchConvoys(
+	ctx context.Context,
+	req *connect.Request[gastownv1.WatchConvoysRequest],
+	stream *connect.ServerStream[gastownv1.ConvoyUpdate],
+) error {
+	// For now, implement as polling (similar to decision watch)
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	seen := make(map[string]string) // convoy ID -> status
+
+	// Initial fetch
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	issues, _ := client.List(beads.ListOptions{Type: "convoy", Status: "all", Priority: -1})
+	for _, issue := range issues {
+		seen[issue.ID] = issue.Status
+		convoy := s.issueToConvoy(*issue)
+		if err := stream.Send(&gastownv1.ConvoyUpdate{
+			Timestamp:  timestamppb.Now(),
+			ConvoyId:   issue.ID,
+			UpdateType: "existing",
+			Convoy:     convoy,
+		}); err != nil {
+			return err
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			issues, err := client.List(beads.ListOptions{Type: "convoy", Status: "all", Priority: -1})
+			if err != nil {
+				continue
+			}
+
+			for _, issue := range issues {
+				oldStatus, exists := seen[issue.ID]
+				if !exists {
+					// New convoy
+					seen[issue.ID] = issue.Status
+					convoy := s.issueToConvoy(*issue)
+					if err := stream.Send(&gastownv1.ConvoyUpdate{
+						Timestamp:  timestamppb.Now(),
+						ConvoyId:   issue.ID,
+						UpdateType: "created",
+						Convoy:     convoy,
+					}); err != nil {
+						return err
+					}
+				} else if oldStatus != issue.Status {
+					// Status changed
+					seen[issue.ID] = issue.Status
+					convoy := s.issueToConvoy(*issue)
+					updateType := "updated"
+					if issue.Status == "closed" {
+						updateType = "closed"
+					}
+					if err := stream.Send(&gastownv1.ConvoyUpdate{
+						Timestamp:  timestamppb.Now(),
+						ConvoyId:   issue.ID,
+						UpdateType: updateType,
+						Convoy:     convoy,
+					}); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+}
+
+// issueToConvoy converts a beads issue to a proto Convoy.
+func (s *ConvoyServer) issueToConvoy(issue beads.Issue) *gastownv1.Convoy {
+	convoy := &gastownv1.Convoy{
+		Id:     issue.ID,
+		Title:  issue.Title,
+		Status: issue.Status,
+	}
+
+	// Parse metadata from description
+	if issue.Description != "" {
+		for _, line := range strings.Split(issue.Description, "\n") {
+			if strings.HasPrefix(line, "Owner: ") {
+				convoy.Owner = strings.TrimPrefix(line, "Owner: ")
+			} else if strings.HasPrefix(line, "Notify: ") {
+				convoy.Notify = strings.TrimPrefix(line, "Notify: ")
+			} else if strings.HasPrefix(line, "Molecule: ") {
+				convoy.Molecule = strings.TrimPrefix(line, "Molecule: ")
+			} else if strings.HasPrefix(line, "Owned: ") {
+				convoy.Owned = strings.TrimPrefix(line, "Owned: ") == "true"
+			} else if strings.HasPrefix(line, "Merge: ") {
+				convoy.MergeStrategy = strings.TrimPrefix(line, "Merge: ")
+			}
+		}
+	}
+
+	// Parse timestamps
+	if issue.CreatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, issue.CreatedAt); err == nil {
+			convoy.CreatedAt = timestamppb.New(t)
+		}
+	}
+	if issue.ClosedAt != "" {
+		if t, err := time.Parse(time.RFC3339, issue.ClosedAt); err == nil {
+			convoy.ClosedAt = timestamppb.New(t)
+		}
+	}
+
+	return convoy
+}
+
+// trackedIssueInfo holds info about an issue being tracked by a convoy.
+type trackedIssueInfo struct {
+	ID        string
+	Title     string
+	Status    string
+	IssueType string
+	Assignee  string
+	Worker    string
+	WorkerAge string
+}
+
+// getTrackedIssues fetches issues tracked by a convoy.
+func (s *ConvoyServer) getTrackedIssues(townBeadsPath, convoyID string) []trackedIssueInfo {
+	client := beads.New(townBeadsPath)
+
+	deps, err := client.ListDependencies(convoyID, "down", "tracks")
+	if err != nil {
+		return nil
+	}
+
+	var tracked []trackedIssueInfo
+	for _, dep := range deps {
+		tracked = append(tracked, trackedIssueInfo{
+			ID:        dep.ID,
+			Title:     dep.Title,
+			Status:    dep.Status,
+			IssueType: dep.IssueType,
+			Assignee:  dep.Assignee,
+		})
+	}
+
+	return tracked
 }

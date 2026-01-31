@@ -95,6 +95,7 @@ func main() {
 	mailServer := NewMailServer(root)
 	decisionServer := NewDecisionServer(root, decisionBus)
 	decisionServer.SetPoller(decisionPoller) // Wire up poller to prevent duplicates
+	convoyServer := NewConvoyServer(root)
 
 	// Set up interceptors
 	var opts []connect.HandlerOption
@@ -115,6 +116,9 @@ func main() {
 
 	decisionPath, decisionHandler := gastownv1connect.NewDecisionServiceHandler(decisionServer, opts...)
 	mux.Handle(decisionPath, decisionHandler)
+
+	convoyPath, convoyHandler := gastownv1connect.NewConvoyServiceHandler(convoyServer, opts...)
+	mux.Handle(convoyPath, convoyHandler)
 
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +145,7 @@ func main() {
 	log.Printf("  %s", statusPath)
 	log.Printf("  %s", mailPath)
 	log.Printf("  %s", decisionPath)
+	log.Printf("  %s", convoyPath)
 	log.Printf("  /health")
 
 	// Start server (TLS or plain HTTP)

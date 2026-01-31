@@ -745,3 +745,424 @@ func (c *Client) ValidateDecisionContext(ctx context.Context, context string, pr
 
 	return result.Valid, result.Errors, nil
 }
+
+// Convoy represents a convoy from the RPC API.
+type Convoy struct {
+	ID             string
+	Title          string
+	Status         string
+	Owner          string
+	Notify         string
+	Molecule       string
+	Owned          bool
+	MergeStrategy  string
+	CreatedAt      string
+	ClosedAt       string
+	TrackedCount   int
+	CompletedCount int
+	Progress       string
+}
+
+// TrackedIssue represents an issue tracked by a convoy.
+type TrackedIssue struct {
+	ID        string
+	Title     string
+	Status    string
+	IssueType string
+	Assignee  string
+	Worker    string
+	WorkerAge string
+}
+
+// ListConvoys fetches convoys from the RPC server.
+// status: "open", "closed", "all"
+func (c *Client) ListConvoys(ctx context.Context, status string, tree bool) ([]Convoy, error) {
+	body := map[string]interface{}{}
+	switch status {
+	case "open":
+		body["status"] = "CONVOY_STATUS_FILTER_OPEN"
+	case "closed":
+		body["status"] = "CONVOY_STATUS_FILTER_CLOSED"
+	case "all":
+		body["status"] = "CONVOY_STATUS_FILTER_ALL"
+	}
+	if tree {
+		body["tree"] = true
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.ConvoyService/ListConvoys",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Convoys []struct {
+			ID             string `json:"id"`
+			Title          string `json:"title"`
+			Status         string `json:"status"`
+			Owner          string `json:"owner"`
+			Notify         string `json:"notify"`
+			Molecule       string `json:"molecule"`
+			Owned          bool   `json:"owned"`
+			MergeStrategy  string `json:"mergeStrategy"`
+			CreatedAt      string `json:"createdAt"`
+			ClosedAt       string `json:"closedAt"`
+			TrackedCount   int    `json:"trackedCount"`
+			CompletedCount int    `json:"completedCount"`
+			Progress       string `json:"progress"`
+		} `json:"convoys"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	var convoys []Convoy
+	for _, c := range result.Convoys {
+		convoys = append(convoys, Convoy{
+			ID:             c.ID,
+			Title:          c.Title,
+			Status:         c.Status,
+			Owner:          c.Owner,
+			Notify:         c.Notify,
+			Molecule:       c.Molecule,
+			Owned:          c.Owned,
+			MergeStrategy:  c.MergeStrategy,
+			CreatedAt:      c.CreatedAt,
+			ClosedAt:       c.ClosedAt,
+			TrackedCount:   c.TrackedCount,
+			CompletedCount: c.CompletedCount,
+			Progress:       c.Progress,
+		})
+	}
+
+	return convoys, nil
+}
+
+// GetConvoyStatus fetches detailed status for a convoy.
+func (c *Client) GetConvoyStatus(ctx context.Context, convoyID string) (*Convoy, []TrackedIssue, error) {
+	body := map[string]interface{}{
+		"convoyId": convoyID,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.ConvoyService/GetConvoyStatus",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Convoy struct {
+			ID             string `json:"id"`
+			Title          string `json:"title"`
+			Status         string `json:"status"`
+			Owner          string `json:"owner"`
+			Notify         string `json:"notify"`
+			Molecule       string `json:"molecule"`
+			Owned          bool   `json:"owned"`
+			MergeStrategy  string `json:"mergeStrategy"`
+			CreatedAt      string `json:"createdAt"`
+			ClosedAt       string `json:"closedAt"`
+			TrackedCount   int    `json:"trackedCount"`
+			CompletedCount int    `json:"completedCount"`
+			Progress       string `json:"progress"`
+		} `json:"convoy"`
+		Tracked []struct {
+			ID        string `json:"id"`
+			Title     string `json:"title"`
+			Status    string `json:"status"`
+			IssueType string `json:"issueType"`
+			Assignee  string `json:"assignee"`
+			Worker    string `json:"worker"`
+			WorkerAge string `json:"workerAge"`
+		} `json:"tracked"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	convoy := &Convoy{
+		ID:             result.Convoy.ID,
+		Title:          result.Convoy.Title,
+		Status:         result.Convoy.Status,
+		Owner:          result.Convoy.Owner,
+		Notify:         result.Convoy.Notify,
+		Molecule:       result.Convoy.Molecule,
+		Owned:          result.Convoy.Owned,
+		MergeStrategy:  result.Convoy.MergeStrategy,
+		CreatedAt:      result.Convoy.CreatedAt,
+		ClosedAt:       result.Convoy.ClosedAt,
+		TrackedCount:   result.Convoy.TrackedCount,
+		CompletedCount: result.Convoy.CompletedCount,
+		Progress:       result.Convoy.Progress,
+	}
+
+	var tracked []TrackedIssue
+	for _, t := range result.Tracked {
+		tracked = append(tracked, TrackedIssue{
+			ID:        t.ID,
+			Title:     t.Title,
+			Status:    t.Status,
+			IssueType: t.IssueType,
+			Assignee:  t.Assignee,
+			Worker:    t.Worker,
+			WorkerAge: t.WorkerAge,
+		})
+	}
+
+	return convoy, tracked, nil
+}
+
+// CreateConvoyRequest contains the parameters for creating a convoy via RPC.
+type CreateConvoyRequest struct {
+	Name          string
+	IssueIDs      []string
+	Owner         string
+	Notify        string
+	Molecule      string
+	Owned         bool
+	MergeStrategy string
+}
+
+// CreateConvoy creates a new convoy via the RPC server.
+func (c *Client) CreateConvoy(ctx context.Context, req CreateConvoyRequest) (*Convoy, int, error) {
+	body := map[string]interface{}{
+		"name":     req.Name,
+		"issueIds": req.IssueIDs,
+	}
+	if req.Owner != "" {
+		body["owner"] = req.Owner
+	}
+	if req.Notify != "" {
+		body["notify"] = req.Notify
+	}
+	if req.Molecule != "" {
+		body["molecule"] = req.Molecule
+	}
+	if req.Owned {
+		body["owned"] = true
+	}
+	if req.MergeStrategy != "" {
+		body["mergeStrategy"] = req.MergeStrategy
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.ConvoyService/CreateConvoy",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, 0, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Convoy struct {
+			ID             string `json:"id"`
+			Title          string `json:"title"`
+			Status         string `json:"status"`
+			Owner          string `json:"owner"`
+			Notify         string `json:"notify"`
+			Molecule       string `json:"molecule"`
+			Owned          bool   `json:"owned"`
+			MergeStrategy  string `json:"mergeStrategy"`
+			TrackedCount   int    `json:"trackedCount"`
+			CompletedCount int    `json:"completedCount"`
+			Progress       string `json:"progress"`
+		} `json:"convoy"`
+		TrackedCount int `json:"trackedCount"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, 0, fmt.Errorf("decoding response: %w", err)
+	}
+
+	convoy := &Convoy{
+		ID:             result.Convoy.ID,
+		Title:          result.Convoy.Title,
+		Status:         result.Convoy.Status,
+		Owner:          result.Convoy.Owner,
+		Notify:         result.Convoy.Notify,
+		Molecule:       result.Convoy.Molecule,
+		Owned:          result.Convoy.Owned,
+		MergeStrategy:  result.Convoy.MergeStrategy,
+		TrackedCount:   result.Convoy.TrackedCount,
+		CompletedCount: result.Convoy.CompletedCount,
+		Progress:       result.Convoy.Progress,
+	}
+
+	return convoy, result.TrackedCount, nil
+}
+
+// AddToConvoy adds issues to an existing convoy.
+func (c *Client) AddToConvoy(ctx context.Context, convoyID string, issueIDs []string) (*Convoy, int, bool, error) {
+	body := map[string]interface{}{
+		"convoyId": convoyID,
+		"issueIds": issueIDs,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.ConvoyService/AddToConvoy",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, 0, false, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, false, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Convoy struct {
+			ID     string `json:"id"`
+			Title  string `json:"title"`
+			Status string `json:"status"`
+		} `json:"convoy"`
+		AddedCount int  `json:"addedCount"`
+		Reopened   bool `json:"reopened"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, 0, false, fmt.Errorf("decoding response: %w", err)
+	}
+
+	convoy := &Convoy{
+		ID:     result.Convoy.ID,
+		Title:  result.Convoy.Title,
+		Status: result.Convoy.Status,
+	}
+
+	return convoy, result.AddedCount, result.Reopened, nil
+}
+
+// CloseConvoy closes a convoy via the RPC server.
+func (c *Client) CloseConvoy(ctx context.Context, convoyID, reason, notify string) (*Convoy, error) {
+	body := map[string]interface{}{
+		"convoyId": convoyID,
+	}
+	if reason != "" {
+		body["reason"] = reason
+	}
+	if notify != "" {
+		body["notify"] = notify
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.ConvoyService/CloseConvoy",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Convoy struct {
+			ID     string `json:"id"`
+			Title  string `json:"title"`
+			Status string `json:"status"`
+		} `json:"convoy"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	convoy := &Convoy{
+		ID:     result.Convoy.ID,
+		Title:  result.Convoy.Title,
+		Status: result.Convoy.Status,
+	}
+
+	return convoy, nil
+}

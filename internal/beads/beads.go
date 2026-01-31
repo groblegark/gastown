@@ -708,6 +708,37 @@ func (b *Beads) AddDependency(issue, dependsOn string) error {
 	return err
 }
 
+// AddTypedDependency adds a typed dependency (e.g., "blocks", "tracks").
+func (b *Beads) AddTypedDependency(issue, dependsOn, depType string) error {
+	_, err := b.run("dep", "add", issue, dependsOn, "--type="+depType)
+	return err
+}
+
+// ListDependencies lists dependencies for an issue.
+// direction: "up" (what this depends on), "down" (what depends on this)
+// depType: filter by type (e.g., "blocks", "tracks"), empty for all
+func (b *Beads) ListDependencies(issue, direction, depType string) ([]*Issue, error) {
+	args := []string{"dep", "list", issue, "--json"}
+	if direction != "" {
+		args = append(args, "--direction="+direction)
+	}
+	if depType != "" {
+		args = append(args, "--type="+depType)
+	}
+
+	out, err := b.run(args...)
+	if err != nil {
+		return nil, err
+	}
+
+	var issues []*Issue
+	if err := json.Unmarshal(out, &issues); err != nil {
+		return nil, fmt.Errorf("parsing dep list output: %w", err)
+	}
+
+	return issues, nil
+}
+
 // RemoveDependency removes a dependency.
 func (b *Beads) RemoveDependency(issue, dependsOn string) error {
 	_, err := b.run("dep", "remove", issue, dependsOn)
