@@ -118,6 +118,22 @@ bd close <step-id>
 
 ---
 
+## Agent Advice
+
+When you run `gt prime`, you may see an "📝 Agent Advice" section. This contains
+dynamic guidance created by operators based on observed patterns and failures.
+
+Advice is scoped:
+- **[Global]** - applies to all agents
+- **[Polecat]** - applies to all polecats
+- **[{{rig}}]** - applies to agents in this rig
+- **[You]** - applies specifically to you
+
+**Follow advice carefully.** It represents learned patterns from real operational
+experience. See [docs/concepts/agent-advice.md](docs/concepts/agent-advice.md) for more.
+
+---
+
 ## Startup Protocol
 
 1. Announce: "Polecat {{name}}, checking in."
