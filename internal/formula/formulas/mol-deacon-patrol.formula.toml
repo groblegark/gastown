@@ -404,7 +404,24 @@ DOCKED rigs are globally shut down - do NOT:
 - Attempt restarts
 Simply skip them and move to the next rig.
 
-**IMPORTANT: Idle Town Protocol**
+**CRITICAL: Always check session status and restart stopped sessions**
+For each rig, ALWAYS check if the witness and refinery sessions are running:
+```bash
+gt witness status <rig>
+gt refinery status <rig>
+```
+
+**If status shows "○ stopped" (not running), restart IMMEDIATELY:**
+```bash
+gt witness restart <rig>   # If witness stopped
+gt refinery restart <rig>  # If refinery stopped
+```
+
+This is non-negotiable. Stopped sessions must be restarted regardless of whether
+there is active work in the town. The Idle Town Protocol below only affects
+NUDGES, not session existence checks.
+
+**Idle Town Protocol (affects nudges only)**
 Before sending health check nudges, check if the town is idle:
 ```bash
 # Check for active work
@@ -413,20 +430,12 @@ bd list --status=in_progress --limit=5
 
 If NO active work (empty result or only patrol molecules):
 - **Skip HEALTH_CHECK nudges** - don't disturb idle agents
-- Just verify sessions exist via status commands
+- Session status checks above still happen - restart any stopped sessions
 - The town should be silent when healthy and idle
 
 If ACTIVE work exists:
-- Proceed with health check nudges below
-
-**ZFC Principle**: You (Claude) make the judgment call about what is "stuck" or "unresponsive" - there are no hardcoded thresholds in Go. Read the signals, consider context, and decide.
-
-For each rig, run:
+- Send health check nudges to verify responsiveness:
 ```bash
-gt witness status <rig>
-gt refinery status <rig>
-
-# ONLY if active work exists - health ping (clears backoff as side effect)
 gt nudge <rig>/witness 'HEALTH_CHECK from deacon'
 gt nudge <rig>/refinery 'HEALTH_CHECK from deacon'
 ```
@@ -437,6 +446,10 @@ gt nudge <rig>/refinery 'HEALTH_CHECK from deacon'
 
 This ensures patrol agents remain responsive during active work periods.
 
+**ZFC Principle**: You (Claude) make the judgment call about what is "stuck" or
+"unresponsive" - there are no hardcoded thresholds in Go. Read the signals,
+consider context, and decide.
+
 **Signals to assess:**
 
 | Component | Healthy Signals | Concerning Signals |
@@ -444,7 +457,17 @@ This ensures patrol agents remain responsive during active work periods.
 | Witness | State: running, recent activity | State: not running, no heartbeat |
 | Refinery | State: running, queue processing | Queue stuck, merge failures |
 
-**Tracking unresponsive cycles:**
+**Two-tier health model:**
+
+1. **Session existence** (checked always): Is the tmux session running?
+   - If NO → Restart immediately (no cycle counting needed)
+   - If YES → Proceed to responsiveness check (if active work)
+
+2. **Session responsiveness** (checked when active work exists): Does the agent
+   respond to HEALTH_CHECK nudges?
+   - Track unresponsive cycles for agents that ARE running but NOT responding
+
+**Tracking unresponsive cycles (for running-but-unresponsive agents):**
 
 Maintain in your patrol state (persisted across cycles):
 ```
@@ -458,19 +481,13 @@ health_state:
       last_seen_healthy: <timestamp>
 ```
 
-**Decision matrix** (you decide the thresholds based on context):
+**Decision matrix for unresponsive (but running) agents:**
 
 | Cycles Unresponsive | Suggested Action |
 |---------------------|------------------|
 | 1-2 | Note it, check again next cycle |
 | 3-4 | Attempt restart: gt witness restart <rig> |
 | 5+ | Escalate to Mayor with context |
-
-**Restart commands:**
-```bash
-gt witness restart <rig>
-gt refinery restart <rig>
-```
 
 **Escalation:**
 ```bash

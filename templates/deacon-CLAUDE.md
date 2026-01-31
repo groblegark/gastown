@@ -73,6 +73,19 @@ gt deacon health-check <rig>/refinery
 | 0 | Agent healthy or in cooldown | Continue to next agent |
 | 1 | Error occurred | Log and continue |
 | 2 | Force-kill recommended | Execute force-kill (see below) |
+| 3 | Session not running | Restart the agent (see below) |
+
+### 3.5. Handle Session Not Running (Exit Code 3)
+
+When `gt deacon health-check` returns exit code 3, the session isn't running:
+
+```bash
+# Restart the agent immediately
+gt witness restart <rig>   # For witness
+gt refinery restart <rig>  # For refinery
+```
+
+This is distinct from force-kill - the session simply doesn't exist and needs to be started.
 
 ### 4. Handle Force-Kill Recommendations
 
