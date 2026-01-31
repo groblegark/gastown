@@ -421,6 +421,72 @@ func (c *Client) ResolveDecision(ctx context.Context, decisionID string, chosenI
 	}, nil
 }
 
+// ResolveDecisionWithCustomText resolves a decision with custom text response (the "Other" option).
+// This uses chosen_index=0 to indicate a custom text response without selecting a predefined option.
+// The customText parameter contains the user's response text.
+func (c *Client) ResolveDecisionWithCustomText(ctx context.Context, decisionID, customText, resolvedBy string) (*Decision, error) {
+	body := map[string]interface{}{
+		"decisionId":  decisionID,
+		"chosenIndex": 0, // 0 indicates "Other" with custom text
+		"rationale":   customText,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.DecisionService/Resolve",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+	if resolvedBy != "" {
+		httpReq.Header.Set("X-GT-Resolved-By", resolvedBy)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	// Parse response
+	var result struct {
+		Decision struct {
+			ID          string `json:"id"`
+			Question    string `json:"question"`
+			Context     string `json:"context"`
+			ChosenIndex int    `json:"chosenIndex"`
+			Rationale   string `json:"rationale"`
+			ResolvedBy  string `json:"resolvedBy"`
+			Resolved    bool   `json:"resolved"`
+		} `json:"decision"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &Decision{
+		ID:          result.Decision.ID,
+		Question:    result.Decision.Question,
+		Context:     result.Decision.Context,
+		ChosenIndex: result.Decision.ChosenIndex,
+		Rationale:   result.Decision.Rationale,
+		Resolved:    result.Decision.Resolved,
+	}, nil
+}
+
 // GetDecision fetches a specific decision by ID via the RPC server.
 func (c *Client) GetDecision(ctx context.Context, decisionID string) (*Decision, error) {
 	body := map[string]interface{}{

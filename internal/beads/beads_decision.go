@@ -460,6 +460,34 @@ func (b *Beads) resolveBdDecision(dp *BdDecisionPoint, id string, chosenIndex in
 	return err
 }
 
+// ResolveDecisionWithCustomText resolves a decision with custom text response (no predefined option).
+// This is used for the "Other" option where users provide their own response.
+// It uses --accept-guidance to close the decision directly with the custom text.
+func (b *Beads) ResolveDecisionWithCustomText(id, customText, resolvedBy string) error {
+	if customText == "" {
+		return fmt.Errorf("custom text is required for 'Other' responses")
+	}
+
+	// Build respond command with --accept-guidance to accept custom text as directive
+	args := []string{"decision", "respond", id, "--text=" + customText, "--accept-guidance", "--no-daemon"}
+	if resolvedBy != "" {
+		args = append(args, "--by="+resolvedBy)
+	}
+
+	if _, err := b.run(args...); err != nil {
+		return err
+	}
+
+	// Add implicit:custom_text label to mark this as a custom text resolution
+	issue, err := b.Show(id)
+	if err != nil {
+		return nil // Decision is resolved, label failure is non-fatal
+	}
+
+	newLabels := append(issue.Labels, "implicit:custom_text")
+	return b.Update(id, UpdateOptions{SetLabels: newLabels})
+}
+
 // GetDecisionBead retrieves a decision bead by ID.
 // Returns nil if not found.
 // Supports both gt decisions (with gt:decision label) and bd decisions (from decision_points table).

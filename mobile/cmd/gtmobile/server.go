@@ -448,14 +448,31 @@ func (s *DecisionServer) Resolve(
 		resolvedBy = "rpc-client"
 	}
 
-	// Resolve the decision
-	if err := client.ResolveDecision(
-		req.Msg.DecisionId,
-		int(req.Msg.ChosenIndex),
-		req.Msg.Rationale,
-		resolvedBy,
-	); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resolving decision: %w", err))
+	// Special handling for chosen_index = 0: "Other" with custom text
+	// In this case, rationale contains the user's custom response text
+	if req.Msg.ChosenIndex == 0 {
+		if req.Msg.Rationale == "" {
+			return nil, connect.NewError(connect.CodeInvalidArgument,
+				fmt.Errorf("custom text is required for 'Other' responses (chosen_index=0)"))
+		}
+		// Resolve with custom text (no predefined option)
+		if err := client.ResolveDecisionWithCustomText(
+			req.Msg.DecisionId,
+			req.Msg.Rationale,
+			resolvedBy,
+		); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resolving decision with custom text: %w", err))
+		}
+	} else {
+		// Standard resolution with predefined option
+		if err := client.ResolveDecision(
+			req.Msg.DecisionId,
+			int(req.Msg.ChosenIndex),
+			req.Msg.Rationale,
+			resolvedBy,
+		); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resolving decision: %w", err))
+		}
 	}
 
 	// Fetch the updated decision
@@ -496,7 +513,15 @@ func (s *DecisionServer) Resolve(
 	// Get chosen label from fields, with fallback to request index and proto options
 	chosenLabel := ""
 	chosenIndex := int(req.Msg.ChosenIndex) // Use request index as ground truth
-	if chosenIndex > 0 && chosenIndex <= len(fields.Options) {
+	if chosenIndex == 0 {
+		// "Other" response with custom text - use truncated rationale as label
+		chosenLabel = "Other"
+		if len(req.Msg.Rationale) > 50 {
+			chosenLabel = "Other: " + req.Msg.Rationale[:47] + "..."
+		} else if req.Msg.Rationale != "" {
+			chosenLabel = "Other: " + req.Msg.Rationale
+		}
+	} else if chosenIndex > 0 && chosenIndex <= len(fields.Options) {
 		chosenLabel = fields.Options[chosenIndex-1].Label
 	}
 	// Fallback: if fields.Options is empty but proto options exist, use those

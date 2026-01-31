@@ -373,7 +373,10 @@ func (b *Bot) handleInteraction(callback slack.InteractionCallback) {
 		case "dismiss_decision":
 			b.handleDismissDecision(callback, action.Value)
 		default:
-			if strings.HasPrefix(action.ActionID, "resolve_") {
+			if strings.HasPrefix(action.ActionID, "resolve_other_") {
+				decisionID := strings.TrimPrefix(action.ActionID, "resolve_other_")
+				b.handleResolveOther(callback, decisionID)
+			} else if strings.HasPrefix(action.ActionID, "resolve_") {
 				b.handleResolveDecision(callback, action)
 			} else if strings.HasPrefix(action.ActionID, "show_context_") {
 				decisionID := strings.TrimPrefix(action.ActionID, "show_context_")
@@ -747,6 +750,99 @@ func (b *Bot) handleResolveDecision(callback slack.InteractionCallback, action *
 	}
 }
 
+// handleResolveOther handles the "Other" button click for custom text responses.
+// Opens a modal where users can enter their own response instead of choosing a predefined option.
+func (b *Bot) handleResolveOther(callback slack.InteractionCallback, decisionID string) {
+	// Fetch decision details for the modal
+	ctx := context.Background()
+	decisions, err := b.rpcClient.ListPendingDecisions(ctx)
+	if err != nil {
+		b.postEphemeral(callback.Channel.ID, callback.User.ID,
+			fmt.Sprintf("Error fetching decision: %v", err))
+		return
+	}
+
+	var decision *rpcclient.Decision
+	for _, d := range decisions {
+		if d.ID == decisionID {
+			decision = &d
+			break
+		}
+	}
+
+	if decision == nil {
+		b.postEphemeral(callback.Channel.ID, callback.User.ID,
+			fmt.Sprintf("Decision %s not found or already resolved.", decisionID))
+		return
+	}
+
+	// Open modal for custom text input
+	messageTs := callback.Message.Timestamp
+	log.Printf("Slack: [DEBUG] Opening 'Other' modal for %s - messageTs=%q channelID=%s", decisionID, messageTs, callback.Channel.ID)
+	modalRequest := b.buildOtherModal(decisionID, decision.Question, callback.Channel.ID, messageTs)
+
+	_, err = b.client.OpenView(callback.TriggerID, modalRequest)
+	if err != nil {
+		log.Printf("Slack: Error opening 'Other' modal: %v", err)
+		b.postEphemeral(callback.Channel.ID, callback.User.ID,
+			fmt.Sprintf("Error opening dialog: %v", err))
+	}
+}
+
+// buildOtherModal creates a modal for entering custom text response (the "Other" option).
+func (b *Bot) buildOtherModal(decisionID, question, channelID, messageTs string) slack.ModalViewRequest {
+	// Truncate question if too long for display
+	displayQuestion := question
+	if len(displayQuestion) > 200 {
+		displayQuestion = displayQuestion[:197] + "..."
+	}
+
+	// Private metadata to pass through to submission (format: other:id:channel:messageTs)
+	metadata := fmt.Sprintf("other:%s:%s:%s", decisionID, channelID, messageTs)
+
+	return slack.ModalViewRequest{
+		Type:            slack.VTModal,
+		CallbackID:      "resolve_other_modal",
+		Title:           slack.NewTextBlockObject("plain_text", "Custom Response", false, false),
+		Submit:          slack.NewTextBlockObject("plain_text", "Submit", false, false),
+		Close:           slack.NewTextBlockObject("plain_text", "Cancel", false, false),
+		PrivateMetadata: metadata,
+		Blocks: slack.Blocks{
+			BlockSet: []slack.Block{
+				slack.NewSectionBlock(
+					slack.NewTextBlockObject("mrkdwn",
+						fmt.Sprintf("*Decision:* %s\n\n%s", decisionID, displayQuestion),
+						false, false,
+					),
+					nil, nil,
+				),
+				slack.NewSectionBlock(
+					slack.NewTextBlockObject("mrkdwn",
+						"*None of the predefined options fit?*\nProvide your own guidance below.",
+						false, false,
+					),
+					nil, nil,
+				),
+				slack.NewDividerBlock(),
+				func() *slack.InputBlock {
+					textInput := slack.NewPlainTextInputBlockElement(
+						slack.NewTextBlockObject("plain_text", "Enter your response...", false, false),
+						"custom_text_input",
+					)
+					textInput.Multiline = true
+					ib := slack.NewInputBlock(
+						"custom_text_block",
+						slack.NewTextBlockObject("plain_text", "Your Response", false, false),
+						slack.NewTextBlockObject("plain_text", "Describe what you want the agent to do", false, false),
+						textInput,
+					)
+					return ib
+				}(),
+			},
+		},
+	}
+}
+
 // handleShowContext opens a modal with the full decision context
 func (b *Bot) handleShowContext(callback slack.InteractionCallback, decisionID string) {
 	ctx := context.Background()
@@ -972,10 +1068,71 @@ func buildSchemaTypeOptions() []*slack.OptionBlockObject {
 }
 
 func (b *Bot) handleViewSubmission(callback slack.InteractionCallback) {
-	if callback.View.CallbackID != "resolve_decision_modal" {
+	switch callback.View.CallbackID {
+	case "resolve_decision_modal":
+		b.handleResolveModalSubmission(callback)
+	case "resolve_other_modal":
+		b.handleOtherModalSubmission(callback)
+	}
+}
+
+// handleOtherModalSubmission processes the "Other" custom text response modal.
+func (b *Bot) handleOtherModalSubmission(callback slack.InteractionCallback) {
+	// Parse private metadata (format: "other:decisionID:channelID:messageTs")
+	metadata := callback.View.PrivateMetadata
+	parts := strings.Split(metadata, ":")
+	if len(parts) < 4 || parts[0] != "other" {
+		log.Printf("Slack: Invalid 'Other' modal metadata: %s", metadata)
 		return
 	}
 
+	decisionID := parts[1]
+	channelID := parts[2]
+	messageTs := parts[3]
+	log.Printf("Slack: [DEBUG] 'Other' modal submitted for %s - messageTs=%q channelID=%s", decisionID, messageTs, channelID)
+
+	// Get custom text from form
+	customText := ""
+	if customBlock, ok := callback.View.State.Values["custom_text_block"]; ok {
+		if customInput, ok := customBlock["custom_text_input"]; ok {
+			customText = customInput.Value
+		}
+	}
+
+	if customText == "" {
+		b.postEphemeral(channelID, callback.User.ID, "Custom response text is required.")
+		return
+	}
+
+	// Add user attribution
+	userAttribution := fmt.Sprintf("Resolved via Slack (Other) by <@%s>", callback.User.ID)
+	fullText := customText + "\n\n— " + userAttribution
+
+	// Resolve via RPC with custom text
+	ctx := context.Background()
+	resolvedBy := fmt.Sprintf("slack:%s", callback.User.ID)
+	resolved, err := b.rpcClient.ResolveDecisionWithCustomText(ctx, decisionID, fullText, resolvedBy)
+	if err != nil {
+		b.postErrorMessage(channelID, callback.User.ID, decisionID, err)
+		return
+	}
+
+	// Edit the original message to show resolved state
+	if messageTs != "" {
+		b.updateMessageAsResolved(channelID, messageTs, resolved.ID, resolved.Question, resolved.Context, "Other: "+customText, fullText, callback.User.ID)
+	} else {
+		b.postEphemeral(channelID, callback.User.ID,
+			fmt.Sprintf("✅ Decision resolved with custom response: %s", customText))
+	}
+
+	// Post to notification channel if configured and different
+	if b.channelID != "" && b.channelID != channelID {
+		b.postResolutionNotification(decisionID, "Other: "+customText, callback.User.ID)
+	}
+}
+
+// handleResolveModalSubmission processes the regular resolve modal (with predefined option).
+func (b *Bot) handleResolveModalSubmission(callback slack.InteractionCallback) {
 	// Parse private metadata (format: "decisionID:chosenIndex:channelID:messageTs|optionLabel")
 	metadata := callback.View.PrivateMetadata
 	labelSep := strings.LastIndex(metadata, "|")
@@ -1904,6 +2061,24 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 				),
 			)
 		}
+
+		// Add "Other" option for custom text response
+		blocks = append(blocks,
+			slack.NewSectionBlock(
+				slack.NewTextBlockObject("mrkdwn",
+					"*Other*\n_None of the above? Provide your own response._",
+					false, false,
+				),
+				nil,
+				slack.NewAccessory(
+					slack.NewButtonBlockElement(
+						fmt.Sprintf("resolve_other_%s", decision.ID),
+						decision.ID,
+						slack.NewTextBlockObject("plain_text", "Other...", false, false),
+					),
+				),
+			),
+		)
 	}
 
 	// Add action buttons: Dismiss, and Break Out / Unbreak Out
@@ -2075,6 +2250,24 @@ func (b *Bot) notifyDecisionToChannel(decision rpcclient.Decision, channelID str
 				),
 			)
 		}
+
+		// Add "Other" option for custom text response
+		blocks = append(blocks,
+			slack.NewSectionBlock(
+				slack.NewTextBlockObject("mrkdwn",
+					"*Other*\n_None of the above? Provide your own response._",
+					false, false,
+				),
+				nil,
+				slack.NewAccessory(
+					slack.NewButtonBlockElement(
+						fmt.Sprintf("resolve_other_%s", decision.ID),
+						decision.ID,
+						slack.NewTextBlockObject("plain_text", "Other...", false, false),
+					),
+				),
+			),
+		)
 	}
 
 	// Show Dismiss and Unbreak Out buttons (since we're in a break-out channel)
