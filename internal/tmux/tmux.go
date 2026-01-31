@@ -1584,6 +1584,18 @@ func (t *Tmux) RespawnPane(pane, command string) error {
 	return err
 }
 
+// RespawnPaneWithWorkDir kills all processes in a pane and starts a new command with a working directory.
+// Like RespawnPane but allows specifying the working directory for the new process.
+func (t *Tmux) RespawnPaneWithWorkDir(pane, workDir, command string) error {
+	args := []string{"respawn-pane", "-k", "-t", pane}
+	if workDir != "" {
+		args = append(args, "-c", workDir)
+	}
+	args = append(args, command)
+	_, err := t.run(args...)
+	return err
+}
+
 // ClearHistory clears the scrollback history buffer for a pane.
 // This resets copy-mode display from [0/N] to [0/0].
 // The pane parameter should be a pane ID (e.g., "%0") or session:window.pane format.
