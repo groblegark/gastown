@@ -54,6 +54,9 @@ type Bot struct {
 
 	// Bot identity for filtering out own messages in thread replies
 	botUserID string
+
+	// User notification preferences
+	preferenceManager *PreferenceManager // Manages per-user DM opt-in and notification settings
 }
 
 // Config holds configuration for the Slack bot.
@@ -149,18 +152,19 @@ func New(cfg Config) (*Bot, error) {
 	}
 
 	bot := &Bot{
-		client:           client,
-		socketMode:       socketClient,
-		rpcClient:        rpcClient,
-		channelID:        cfg.ChannelID,
-		router:           router,
-		debug:            cfg.Debug,
-		townRoot:         townRoot,
-		dynamicChannels:  cfg.DynamicChannels,
-		channelPrefix:    channelPrefix,
-		channelCache:     make(map[string]string),
-		autoInviteUsers:  cfg.AutoInviteUsers,
-		decisionMessages: make(map[string]messageInfo),
+		client:            client,
+		socketMode:        socketClient,
+		rpcClient:         rpcClient,
+		channelID:         cfg.ChannelID,
+		router:            router,
+		debug:             cfg.Debug,
+		townRoot:          townRoot,
+		dynamicChannels:   cfg.DynamicChannels,
+		channelPrefix:     channelPrefix,
+		channelCache:      make(map[string]string),
+		autoInviteUsers:   cfg.AutoInviteUsers,
+		decisionMessages:  make(map[string]messageInfo),
+		preferenceManager: NewPreferenceManager(townRoot),
 	}
 	log.Printf("Slack: Bot created with router=%v", bot.router != nil)
 	return bot, nil
@@ -386,6 +390,8 @@ func (b *Bot) handleInteraction(callback slack.InteractionCallback) {
 			b.handleUnbreakOut(callback, action.Value)
 		case "dismiss_decision":
 			b.handleDismissDecision(callback, action.Value)
+		case "open_preferences":
+			b.handleOpenPreferences(callback)
 		default:
 			if strings.HasPrefix(action.ActionID, "peek_") {
 				decisionID := strings.TrimPrefix(action.ActionID, "peek_")
@@ -992,6 +998,111 @@ func (b *Bot) handleShowContext(callback slack.InteractionCallback, decisionID s
 	}
 }
 
+// handleOpenPreferences opens the notification preferences modal for the user.
+func (b *Bot) handleOpenPreferences(callback slack.InteractionCallback) {
+	userID := callback.User.ID
+	modalRequest := b.buildPreferencesModal(userID)
+	_, err := b.client.OpenView(callback.TriggerID, modalRequest)
+	if err != nil {
+		log.Printf("Slack: Error opening preferences modal: %v", err)
+		b.postEphemeral(callback.Channel.ID, userID,
+			fmt.Sprintf("Error opening preferences: %v", err))
+	}
+}
+
+// buildPreferencesModal creates a modal for users to manage their notification preferences.
+func (b *Bot) buildPreferencesModal(userID string) slack.ModalViewRequest {
+	prefs := b.preferenceManager.GetUserPreferences(userID)
+
+	// Build notification level options
+	levelOptions := []*slack.OptionBlockObject{
+		slack.NewOptionBlockObject("all", slack.NewTextBlockObject("plain_text", "All decisions", false, false), nil),
+		slack.NewOptionBlockObject("high", slack.NewTextBlockObject("plain_text", "High urgency only", false, false), nil),
+		slack.NewOptionBlockObject("muted", slack.NewTextBlockObject("plain_text", "Muted", false, false), nil),
+	}
+
+	// Find current level option
+	var currentLevel *slack.OptionBlockObject
+	for _, opt := range levelOptions {
+		if opt.Value == prefs.NotificationLevel {
+			currentLevel = opt
+			break
+		}
+	}
+	if currentLevel == nil {
+		currentLevel = levelOptions[1] // Default to "high"
+	}
+
+	// Build DM opt-in checkbox
+	dmOptInOption := slack.NewOptionBlockObject(
+		"dm_opt_in",
+		slack.NewTextBlockObject("mrkdwn", "*Receive decisions as DMs*\nGet decision notifications as direct messages", false, false),
+		nil,
+	)
+	dmCheckbox := slack.NewCheckboxGroupsBlockElement("dm_opt_in", dmOptInOption)
+	if prefs.DMOptIn {
+		dmCheckbox.InitialOptions = []*slack.OptionBlockObject{dmOptInOption}
+	}
+
+	// Build thread notifications checkbox
+	threadOption := slack.NewOptionBlockObject(
+		"thread_notify",
+		slack.NewTextBlockObject("mrkdwn", "*Thread reply notifications*\nGet notified when decisions are resolved", false, false),
+		nil,
+	)
+	threadCheckbox := slack.NewCheckboxGroupsBlockElement("thread_notify", threadOption)
+	if prefs.ThreadNotifications {
+		threadCheckbox.InitialOptions = []*slack.OptionBlockObject{threadOption}
+	}
+
+	return slack.ModalViewRequest{
+		Type:            slack.VTModal,
+		CallbackID:      "preferences_modal",
+		Title:           slack.NewTextBlockObject("plain_text", "Notification Preferences", false, false),
+		Submit:          slack.NewTextBlockObject("plain_text", "Save", false, false),
+		Close:           slack.NewTextBlockObject("plain_text", "Cancel", false, false),
+		PrivateMetadata: userID,
+		Blocks: slack.Blocks{
+			BlockSet: []slack.Block{
+				slack.NewSectionBlock(
+					slack.NewTextBlockObject("mrkdwn",
+						"Configure how you receive Gas Town decision notifications.",
+						false, false,
+					),
+					nil, nil,
+				),
+				slack.NewDividerBlock(),
+				// DM opt-in checkbox
+				slack.NewInputBlock(
+					"dm_opt_in_block",
+					slack.NewTextBlockObject("plain_text", "Direct Messages", false, false),
+					nil,
+					dmCheckbox,
+				).WithOptional(true),
+				// Notification level dropdown
+				slack.NewInputBlock(
+					"notification_level_block",
+					slack.NewTextBlockObject("plain_text", "Notification Level", false, false),
+					nil,
+					slack.NewOptionsSelectBlockElement(
+						slack.OptTypeStatic,
+						slack.NewTextBlockObject("plain_text", "Select level", false, false),
+						"notification_level",
+						levelOptions...,
+					).WithInitialOption(currentLevel),
+				),
+				// Thread notifications checkbox
+				slack.NewInputBlock(
+					"thread_notify_block",
+					slack.NewTextBlockObject("plain_text", "Thread Notifications", false, false),
+					nil,
+					threadCheckbox,
+				).WithOptional(true),
+			},
+		},
+	}
+}
+
 // buildContextModal creates a modal view for displaying full decision context
 func (b *Bot) buildContextModal(decision *rpcclient.Decision) slack.ModalViewRequest {
 	var blocks []slack.Block
@@ -1194,6 +1305,8 @@ func (b *Bot) handleViewSubmission(callback slack.InteractionCallback) {
 		b.handleResolveModalSubmission(callback)
 	case "resolve_other_modal":
 		b.handleOtherModalSubmission(callback)
+	case "preferences_modal":
+		b.handlePreferencesModalSubmission(callback)
 	}
 }
 
@@ -1250,6 +1363,60 @@ func (b *Bot) handleOtherModalSubmission(callback slack.InteractionCallback) {
 	if b.channelID != "" && b.channelID != channelID {
 		b.postResolutionNotification(decisionID, "Other: "+customText, callback.User.ID)
 	}
+}
+
+// handlePreferencesModalSubmission processes the notification preferences modal.
+func (b *Bot) handlePreferencesModalSubmission(callback slack.InteractionCallback) {
+	userID := callback.View.PrivateMetadata
+	if userID == "" {
+		userID = callback.User.ID
+	}
+
+	// Extract values from the modal submission
+	values := callback.View.State.Values
+
+	// Check DM opt-in (checkbox returns selected options array)
+	dmOptIn := false
+	if dmBlock, ok := values["dm_opt_in_block"]; ok {
+		if dmInput, ok := dmBlock["dm_opt_in"]; ok {
+			dmOptIn = len(dmInput.SelectedOptions) > 0
+		}
+	}
+
+	// Get notification level (static select returns single selected option)
+	notificationLevel := "high" // default
+	if levelBlock, ok := values["notification_level_block"]; ok {
+		if levelInput, ok := levelBlock["notification_level"]; ok {
+			if levelInput.SelectedOption.Value != "" {
+				notificationLevel = levelInput.SelectedOption.Value
+			}
+		}
+	}
+
+	// Check thread notifications (checkbox)
+	threadNotify := false
+	if threadBlock, ok := values["thread_notify_block"]; ok {
+		if threadInput, ok := threadBlock["thread_notify"]; ok {
+			threadNotify = len(threadInput.SelectedOptions) > 0
+		}
+	}
+
+	// Update preferences
+	_ = b.preferenceManager.SetDMOptIn(userID, dmOptIn)
+	_ = b.preferenceManager.SetNotificationLevel(userID, notificationLevel)
+	_ = b.preferenceManager.SetThreadNotifications(userID, threadNotify)
+
+	// Persist to disk
+	if err := b.preferenceManager.Save(); err != nil {
+		log.Printf("Slack: Warning: failed to save preferences: %v", err)
+	}
+
+	log.Printf("Slack: Preferences saved for user %s: dm_opt_in=%v, level=%s, thread_notify=%v",
+		userID, dmOptIn, notificationLevel, threadNotify)
+
+	// Note: Modal submissions don't require a response message as the modal auto-closes.
+	// But we can't post ephemeral without a channel. The user will see the modal close
+	// which implicitly indicates success.
 }
 
 // handleResolveModalSubmission processes the regular resolve modal (with predefined option).
@@ -2202,7 +2369,7 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 		)
 	}
 
-	// Add action buttons: Dismiss, Peek, and Break Out / Unbreak Out
+	// Add action buttons: Dismiss, Peek, DM Me, and Break Out / Unbreak Out
 	dismissButton := slack.NewButtonBlockElement(
 		"dismiss_decision",
 		decision.ID,
@@ -2213,6 +2380,13 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 		"peek_"+decision.ID,
 		decision.ID,
 		slack.NewTextBlockObject("plain_text", "👁️ Peek", false, false),
+	)
+
+	// DM preferences button - allows users to opt-in to DM notifications
+	dmButton := slack.NewButtonBlockElement(
+		"open_preferences",
+		decision.ID,
+		slack.NewTextBlockObject("plain_text", "🔔 DM Me", false, false),
 	)
 
 	if decision.RequestedBy != "" {
@@ -2234,15 +2408,17 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 			slack.NewActionBlock("",
 				dismissButton,
 				peekButton,
+				dmButton,
 				breakOutButton,
 			),
 		)
 	} else {
-		// No agent identity - just show dismiss and peek
+		// No agent identity - just show dismiss, peek, and DM
 		blocks = append(blocks,
 			slack.NewActionBlock("",
 				dismissButton,
 				peekButton,
+				dmButton,
 			),
 		)
 	}
@@ -2259,7 +2435,51 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 		}
 		b.decisionMessagesMu.Unlock()
 	}
+
+	// Send DMs to users who have opted in
+	b.sendDMsToOptedInUsers(decision, blocks)
+
 	return err
+}
+
+// sendDMsToOptedInUsers sends the decision notification to all users who have opted in to DMs.
+func (b *Bot) sendDMsToOptedInUsers(decision rpcclient.Decision, blocks []slack.Block) {
+	// Get all users who are eligible for DMs
+	eligibleUsers := b.preferenceManager.ListUsers()
+	for _, userID := range eligibleUsers {
+		if !b.preferenceManager.IsEligibleForDM(userID) {
+			continue
+		}
+
+		// Check notification level preference
+		prefs := b.preferenceManager.GetUserPreferences(userID)
+		if prefs.NotificationLevel == "muted" {
+			continue
+		}
+		if prefs.NotificationLevel == "high" && decision.Urgency != "high" {
+			continue
+		}
+
+		// Open DM channel with user
+		channel, _, _, err := b.client.OpenConversation(&slack.OpenConversationParameters{
+			Users: []string{userID},
+		})
+		if err != nil {
+			log.Printf("Slack: Failed to open DM with user %s: %v", userID, err)
+			continue
+		}
+
+		// Send decision notification to user's DM
+		_, _, err = b.client.PostMessage(channel.ID,
+			slack.MsgOptionBlocks(blocks...),
+			slack.MsgOptionText(fmt.Sprintf("Decision notification: %s", decision.Question), false),
+		)
+		if err != nil {
+			log.Printf("Slack: Failed to send DM to user %s: %v", userID, err)
+		} else if b.debug {
+			log.Printf("Slack: Sent decision %s to user %s via DM", decision.ID, userID)
+		}
+	}
 }
 
 // notifyDecisionToChannel posts a decision notification to a specific channel.
@@ -2399,7 +2619,7 @@ func (b *Bot) notifyDecisionToChannel(decision rpcclient.Decision, channelID str
 		)
 	}
 
-	// Show Dismiss, Peek, and Unbreak Out buttons (since we're in a break-out channel)
+	// Show Dismiss, Peek, DM Me, and Unbreak Out buttons (since we're in a break-out channel)
 	dismissButton := slack.NewButtonBlockElement(
 		"dismiss_decision",
 		decision.ID,
@@ -2412,11 +2632,19 @@ func (b *Bot) notifyDecisionToChannel(decision rpcclient.Decision, channelID str
 		slack.NewTextBlockObject("plain_text", "👁️ Peek", false, false),
 	)
 
+	// DM preferences button - allows users to opt-in to DM notifications
+	dmButton := slack.NewButtonBlockElement(
+		"open_preferences",
+		decision.ID,
+		slack.NewTextBlockObject("plain_text", "🔔 DM Me", false, false),
+	)
+
 	if decision.RequestedBy != "" {
 		blocks = append(blocks,
 			slack.NewActionBlock("",
 				dismissButton,
 				peekButton,
+				dmButton,
 				slack.NewButtonBlockElement(
 					"unbreak_out",
 					decision.RequestedBy,
@@ -2429,6 +2657,7 @@ func (b *Bot) notifyDecisionToChannel(decision rpcclient.Decision, channelID str
 			slack.NewActionBlock("",
 				dismissButton,
 				peekButton,
+				dmButton,
 			),
 		)
 	}
