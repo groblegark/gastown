@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/slack-go/slack/socketmode"
 
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/rpcclient"
 	slackrouter "github.com/steveyegge/gastown/internal/slack"
 	"github.com/steveyegge/gastown/internal/util"
@@ -49,6 +51,9 @@ type Bot struct {
 	// Decision message tracking for auto-dismiss
 	decisionMessages   map[string]messageInfo // decision ID → message info
 	decisionMessagesMu sync.RWMutex           // Protects decisionMessages
+
+	// Bot identity for filtering out own messages in thread replies
+	botUserID string
 }
 
 // Config holds configuration for the Slack bot.
@@ -163,6 +168,15 @@ func New(cfg Config) (*Bot, error) {
 
 // Run starts the bot event loop. Blocks until context is canceled.
 func (b *Bot) Run(ctx context.Context) error {
+	// Get bot's user ID for filtering out own messages in thread replies (gt-8d5q52.1)
+	authResp, err := b.client.AuthTest()
+	if err != nil {
+		log.Printf("Slack: Warning: failed to get bot user ID: %v", err)
+	} else {
+		b.botUserID = authResp.UserID
+		log.Printf("Slack: Bot user ID: %s", b.botUserID)
+	}
+
 	go func() {
 		for evt := range b.socketMode.Events {
 			b.handleEvent(evt)
@@ -2423,6 +2437,12 @@ func (b *Bot) handleEventsAPI(event slackevents.EventsAPIEvent) {
 		switch ev := innerEvent.Data.(type) {
 		case *slackevents.ChannelCreatedEvent:
 			b.handleChannelCreated(ev)
+		case *slackevents.MessageEvent:
+			// Handle thread replies on decision messages (gt-8d5q52.1)
+			// Only process thread replies (has ThreadTimeStamp) that are not subtypes (edits, deletes, etc.)
+			if ev.ThreadTimeStamp != "" && ev.SubType == "" {
+				b.handleThreadReply(ev)
+			}
 		}
 	}
 }
@@ -2441,6 +2461,89 @@ func (b *Bot) handleChannelCreated(event *slackevents.ChannelCreatedEvent) {
 	}
 
 	log.Printf("Slack: Successfully joined new channel #%s", channelName)
+}
+
+// handleThreadReply processes thread replies on decision messages (gt-8d5q52.1).
+// It checks if the thread is a decision thread and forwards human replies to the requesting agent.
+func (b *Bot) handleThreadReply(ev *slackevents.MessageEvent) {
+	// Filter out bot's own messages
+	if ev.User == b.botUserID || ev.BotID != "" {
+		return
+	}
+
+	// Look up decision by thread timestamp
+	decisionID := b.getDecisionByThread(ev.Channel, ev.ThreadTimeStamp)
+	if decisionID == "" {
+		return // Not a decision thread
+	}
+
+	// Get decision details to find the requesting agent
+	ctx := context.Background()
+	decision, err := b.rpcClient.GetDecision(ctx, decisionID)
+	if err != nil {
+		log.Printf("Slack: Failed to get decision %s for thread reply: %v", decisionID, err)
+		return
+	}
+
+	// Don't forward if no requesting agent
+	if decision.RequestedBy == "" || decision.RequestedBy == "unknown" {
+		log.Printf("Slack: Ignoring thread reply on decision %s - no requesting agent", decisionID)
+		return
+	}
+
+	// Get user info for display name
+	userName := ev.User
+	if userInfo, err := b.client.GetUserInfo(ev.User); err == nil {
+		userName = userInfo.RealName
+		if userName == "" {
+			userName = userInfo.Name
+		}
+	}
+
+	// Forward reply to agent
+	b.forwardThreadReplyToAgent(decision.RequestedBy, decisionID, decision.Question, userName, ev.Text)
+
+	log.Printf("Slack: Forwarded thread reply from %s to %s on decision %s", userName, decision.RequestedBy, decisionID)
+}
+
+// getDecisionByThread looks up a decision ID by channel and thread timestamp.
+// This is a reverse lookup on the decisionMessages map.
+func (b *Bot) getDecisionByThread(channelID, threadTS string) string {
+	b.decisionMessagesMu.RLock()
+	defer b.decisionMessagesMu.RUnlock()
+
+	for decisionID, msgInfo := range b.decisionMessages {
+		if msgInfo.channelID == channelID && msgInfo.timestamp == threadTS {
+			return decisionID
+		}
+	}
+	return ""
+}
+
+// forwardThreadReplyToAgent sends a thread reply to the requesting agent via nudge and mail.
+func (b *Bot) forwardThreadReplyToAgent(agentAddress, decisionID, question, userName, message string) {
+	semanticSlug := util.GenerateDecisionSlug(decisionID, question)
+
+	// Send nudge (immediate notification)
+	nudgeMsg := fmt.Sprintf("[THREAD REPLY on %s] %s says: %s", semanticSlug, userName, message)
+	nudgeCmd := exec.Command("gt", "nudge", agentAddress, nudgeMsg) //nolint:gosec // trusted internal command
+	if err := nudgeCmd.Run(); err != nil {
+		log.Printf("Slack: Failed to nudge %s for thread reply: %v", agentAddress, err)
+	}
+
+	// Send mail (persistent notification)
+	router := mail.NewRouter(b.townRoot)
+	msg := &mail.Message{
+		From:     userName,
+		To:       agentAddress,
+		Subject:  fmt.Sprintf("[THREAD REPLY] %s", semanticSlug),
+		Body:     fmt.Sprintf("Reply from %s on decision thread:\n\n%s\n\n---\nDecision: %s\nQuestion: %s", userName, message, decisionID, question),
+		Type:     mail.TypeTask,
+		Priority: mail.PriorityNormal,
+	}
+	if err := router.Send(msg); err != nil {
+		log.Printf("Slack: Failed to mail %s for thread reply: %v", agentAddress, err)
+	}
 }
 
 // JoinAllChannels lists all public channels and joins those the bot isn't in (gt-baeko).
