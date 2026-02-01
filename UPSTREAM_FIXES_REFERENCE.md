@@ -322,6 +322,14 @@ For quick lookup, here are all the mentioned commits:
 | PR | Title | Status | Date |
 |----|-------|--------|------|
 | [#1156](https://github.com/steveyegge/gastown/pull/1156) | fix(deacon): improve session stability with startup consistency | Open | 2026-02-01 |
+| pending | feat(beads): Dolt lock retry logic with exponential backoff | Branch pushed | 2026-02-01 |
+
+### Pending: Dolt Lock Retry (branch: upstream-pr/dolt-retry)
+
+Branch pushed to `groblegark/gastown`. Create PR manually when rate limit resets:
+- Complements upstream's semaphore approach (88666ecb)
+- Adds exponential backoff retry for transient lock contention
+- 30 retries, 100ms initial delay, 1s max delay
 
 ---
 
