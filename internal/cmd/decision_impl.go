@@ -321,6 +321,15 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 	}
 	_ = events.LogFeed(events.TypeDecisionRequested, agentID, payload)
 
+	// Set turn marker so turn-check knows a decision was offered this turn
+	// This replaces the PostToolUse hook approach which was error-prone
+	if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
+		if err := createTurnMarker(sessionID); err != nil {
+			// Non-fatal - just log warning
+			fmt.Fprintf(os.Stderr, "Warning: failed to set turn marker: %v\n", err)
+		}
+	}
+
 	// Output
 	if decisionJSON {
 		result := map[string]interface{}{
