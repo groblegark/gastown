@@ -317,6 +317,14 @@ For quick lookup, here are all the mentioned commits:
 
 ---
 
-**Last updated:** 2026-01-13
-**Upstream status:** Checked on 2026-01-13
-**Next review:** 2026-02-13 (one month)
+## Submitted PRs to Upstream
+
+| PR | Title | Status | Date |
+|----|-------|--------|------|
+| [#1156](https://github.com/steveyegge/gastown/pull/1156) | fix(deacon): improve session stability with startup consistency | Open | 2026-02-01 |
+
+---
+
+**Last updated:** 2026-02-01
+**Upstream status:** Checked on 2026-02-01
+**Next review:** 2026-03-01 (one month)
