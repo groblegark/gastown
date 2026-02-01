@@ -84,26 +84,26 @@ Security lead sees security-focused advice, not generic crew advice.
 
 ## Implementation
 
-### Phase 1: Agent Bead Fields
+### Phase 1: Native Issue Fields
 
-**In beads (AgentFields struct):**
+**In beads (types/types.go Issue struct):**
 ```go
-type AgentFields struct {
+type Issue struct {
     // ... existing fields ...
 
-    // Advice subscription customization
-    AdviceSubscriptions        []string // Additional labels to subscribe to
-    AdviceSubscriptionsExclude []string // Labels to exclude from auto-subscriptions
+    // Advice subscription customization (native DB columns)
+    AdviceSubscriptions        []string `json:"advice_subscriptions,omitempty"`
+    AdviceSubscriptionsExclude []string `json:"advice_subscriptions_exclude,omitempty"`
 }
 ```
 
-**Parsing/formatting in beads_agent.go:**
-```go
-case "advice_subscriptions":
-    fields.AdviceSubscriptions = strings.Split(value, ",")
-case "advice_subscriptions_exclude":
-    fields.AdviceSubscriptionsExclude = strings.Split(value, ",")
-```
+**NO description parsing** - these are native DB columns like `HookBead` and `AgentState`.
+The legacy description-parsing pattern in `beads_agent.go` is being phased out.
+
+**Storage layer changes:**
+- Add columns to issues table (Dolt schema)
+- Update INSERT/SELECT to include new fields
+- Update JSONL export/import
 
 ### Phase 2: bd advice list --for Enhancement
 
