@@ -701,8 +701,8 @@ func getMailPreview(identity string, maxLen int) (int, string) {
 func getMailPreviewWithRoot(identity string, maxLen int, townRoot string) (int, string) {
 	// Try cache first (reduces Dolt load significantly with many sessions)
 	if townRoot != "" {
-		if count, subject := statusline.GetCachedMailPreview(townRoot, identity, maxLen); count > 0 {
-			return count, subject
+		if count, subject, cacheHit := statusline.GetCachedMailPreview(townRoot, identity, maxLen); cacheHit {
+			return count, subject // Cache hit - return result (may be 0 if no unread mail)
 		}
 		// Cache miss or stale - fall through to direct query
 	}
@@ -742,8 +742,8 @@ func getHookedWork(identity string, maxLen int, beadsDir string) string {
 	// Try cache first (reduces Dolt load significantly with many sessions)
 	townRoot := findTownRootFromDir(beadsDir)
 	if townRoot != "" {
-		if cached := statusline.GetCachedHookedWork(townRoot, identity, maxLen); cached != "" {
-			return cached
+		if cached, cacheHit := statusline.GetCachedHookedWork(townRoot, identity, maxLen); cacheHit {
+			return cached // Cache hit - return result (may be empty if no hooked work)
 		}
 		// Cache miss or stale - fall through to direct query
 	}

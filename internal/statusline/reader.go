@@ -4,16 +4,24 @@ package statusline
 // This is used by gt status-line to get cached data.
 
 // GetCachedHookedWork returns cached hooked work for an identity.
-// Returns empty string if cache is stale or identity not found.
-func GetCachedHookedWork(townRoot, identity string, maxLen int) string {
+// Returns (work, cacheHit) where:
+//   - cacheHit=false: cache stale or identity not found, caller should query directly
+//   - cacheHit=true, work="": identity found in cache but has no hooked work
+//   - cacheHit=true, work="...": identity found with hooked work
+func GetCachedHookedWork(townRoot, identity string, maxLen int) (string, bool) {
 	cache := LoadCache(townRoot)
 	if cache == nil || cache.IsStale() {
-		return "" // Stale cache - signal to fall back to direct query
+		return "", false // Stale cache - signal to fall back to direct query
 	}
 
 	data := cache.GetIdentity(identity)
-	if data == nil || data.HookedWork == "" {
-		return ""
+	if data == nil {
+		return "", false // Identity not in cache - fall back to direct query
+	}
+
+	// Cache hit - identity is in cache (even if no hooked work)
+	if data.HookedWork == "" {
+		return "", true // Valid cache hit: no hooked work
 	}
 
 	// Truncate if needed
@@ -21,20 +29,28 @@ func GetCachedHookedWork(townRoot, identity string, maxLen int) string {
 	if len(work) > maxLen {
 		work = work[:maxLen-1] + "\u2026"
 	}
-	return work
+	return work, true
 }
 
 // GetCachedMailPreview returns cached mail preview for an identity.
-// Returns (0, "") if cache is stale or identity not found.
-func GetCachedMailPreview(townRoot, identity string, maxLen int) (int, string) {
+// Returns (count, subject, cacheHit) where:
+//   - cacheHit=false: cache stale or identity not found, caller should query directly
+//   - cacheHit=true, count=0: identity found in cache but has no unread mail
+//   - cacheHit=true, count>0: identity found with unread mail
+func GetCachedMailPreview(townRoot, identity string, maxLen int) (int, string, bool) {
 	cache := LoadCache(townRoot)
 	if cache == nil || cache.IsStale() {
-		return 0, "" // Stale cache - signal to fall back to direct query
+		return 0, "", false // Stale cache - signal to fall back to direct query
 	}
 
 	data := cache.GetIdentity(identity)
-	if data == nil || data.MailUnread == 0 {
-		return 0, ""
+	if data == nil {
+		return 0, "", false // Identity not in cache - fall back to direct query
+	}
+
+	// Cache hit - identity is in cache (even if no unread mail)
+	if data.MailUnread == 0 {
+		return 0, "", true // Valid cache hit: no unread mail
 	}
 
 	// Truncate subject if needed
@@ -42,20 +58,28 @@ func GetCachedMailPreview(townRoot, identity string, maxLen int) (int, string) {
 	if len(subject) > maxLen {
 		subject = subject[:maxLen-1] + "\u2026"
 	}
-	return data.MailUnread, subject
+	return data.MailUnread, subject, true
 }
 
 // GetCachedCurrentWork returns cached current work (in_progress bead) for an identity.
-// Returns empty string if cache is stale or identity not found.
-func GetCachedCurrentWork(townRoot, identity string, maxLen int) string {
+// Returns (work, cacheHit) where:
+//   - cacheHit=false: cache stale or identity not found, caller should query directly
+//   - cacheHit=true, work="": identity found in cache but has no current work
+//   - cacheHit=true, work="...": identity found with current work
+func GetCachedCurrentWork(townRoot, identity string, maxLen int) (string, bool) {
 	cache := LoadCache(townRoot)
 	if cache == nil || cache.IsStale() {
-		return "" // Stale cache - signal to fall back to direct query
+		return "", false // Stale cache - signal to fall back to direct query
 	}
 
 	data := cache.GetIdentity(identity)
-	if data == nil || data.CurrentWork == "" {
-		return ""
+	if data == nil {
+		return "", false // Identity not in cache - fall back to direct query
+	}
+
+	// Cache hit - identity is in cache (even if no current work)
+	if data.CurrentWork == "" {
+		return "", true // Valid cache hit: no current work
 	}
 
 	// Truncate if needed
@@ -63,7 +87,7 @@ func GetCachedCurrentWork(townRoot, identity string, maxLen int) string {
 	if len(work) > maxLen {
 		work = work[:maxLen-1] + "\u2026"
 	}
-	return work
+	return work, true
 }
 
 // CacheAvailable returns true if a non-stale cache exists.
