@@ -13,9 +13,6 @@
 # instead of SQLite database
 # no-db: false
 
-# Disable daemon for RPC communication (forces direct database access)
-# no-daemon: false
-
 # Disable auto-flush of database to JSONL after mutations
 # no-auto-flush: false
 
@@ -75,5 +72,3 @@ storage-backend: dolt
 
 sync.mode: "dolt-native"
 
-# Disable daemon (dolt backend connects directly to dolt sql-server)
-no-daemon: true
