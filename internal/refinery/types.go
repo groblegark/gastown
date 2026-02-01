@@ -79,11 +79,11 @@ const (
 // MergeConfig contains configuration for the merge process.
 type MergeConfig struct {
 	// RunTests controls whether tests are run after merge.
-	// Default: true
+	// Default: false (polecats already run tests before submitting to MQ)
 	RunTests bool `json:"run_tests"`
 
 	// TestCommand is the command to run for testing.
-	// Default: "go test ./..."
+	// Only used if RunTests is explicitly enabled.
 	TestCommand string `json:"test_command"`
 
 	// DeleteMergedBranches controls whether merged branches are deleted.
@@ -101,10 +101,13 @@ type MergeConfig struct {
 }
 
 // DefaultMergeConfig returns the default merge configuration.
+// Note: RunTests defaults to false because polecats already run tests
+// before submitting work to the merge queue. Re-running tests wastes
+// API tokens and time. Enable explicitly via rig config if needed.
 func DefaultMergeConfig() MergeConfig {
 	return MergeConfig{
-		RunTests:             true,
-		TestCommand:          "go test ./...",
+		RunTests:             false, // polecats already test before MQ submission
+		TestCommand:          "",    // empty until explicitly configured
 		DeleteMergedBranches: true,
 		PushRetryCount:       3,
 		PushRetryDelayMs:     1000,

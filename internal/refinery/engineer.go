@@ -117,6 +117,10 @@ func IsPRStrategy(s string) bool {
 }
 
 // DefaultMergeQueueConfig returns sensible defaults for merge queue configuration.
+// Note: RunTests defaults to false because polecats already run tests before
+// submitting to the merge queue. Re-running tests wastes API tokens and time
+// (especially since refinery runs as a Claude Code session). Enable explicitly
+// via rig config.json if needed for extra safety.
 func DefaultMergeQueueConfig() *MergeQueueConfig {
 	return &MergeQueueConfig{
 		Enabled:              true,
@@ -124,8 +128,8 @@ func DefaultMergeQueueConfig() *MergeQueueConfig {
 		TargetBranch:         "main",
 		IntegrationBranches:  true,
 		OnConflict:           "assign_back",
-		RunTests:             true,
-		TestCommand:          "",
+		RunTests:             false, // polecats already test before MQ submission
+		TestCommand:          "",    // empty until explicitly configured
 		DeleteMergedBranches: true,
 		RetryFlakyTests:      1,
 		PollInterval:         30 * time.Second,

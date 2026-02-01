@@ -432,11 +432,11 @@ func TestDefaultMergeQueueConfig(t *testing.T) {
 	if cfg.OnConflict != OnConflictAssignBack {
 		t.Errorf("OnConflict = %q, want %q", cfg.OnConflict, OnConflictAssignBack)
 	}
-	if !cfg.RunTests {
-		t.Error("RunTests should be true by default")
+	if cfg.RunTests {
+		t.Error("RunTests should be false by default (polecats already test)")
 	}
-	if cfg.TestCommand != "go test ./..." {
-		t.Errorf("TestCommand = %q, want 'go test ./...'", cfg.TestCommand)
+	if cfg.TestCommand != "" {
+		t.Errorf("TestCommand = %q, want empty string (until explicitly configured)", cfg.TestCommand)
 	}
 	if !cfg.DeleteMergedBranches {
 		t.Error("DeleteMergedBranches should be true by default")

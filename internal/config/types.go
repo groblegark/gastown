@@ -714,9 +714,11 @@ type MergeQueueConfig struct {
 	OnConflict string `json:"on_conflict"`
 
 	// RunTests controls whether to run tests before merging.
+	// Default: false (polecats already run tests before submitting to MQ)
 	RunTests bool `json:"run_tests"`
 
 	// TestCommand is the command to run for tests.
+	// Only used if RunTests is explicitly enabled.
 	TestCommand string `json:"test_command,omitempty"`
 
 	// DeleteMergedBranches controls whether to delete branches after merging.
@@ -806,6 +808,10 @@ func IsPRStrategy(strategy string) bool {
 }
 
 // DefaultMergeQueueConfig returns a MergeQueueConfig with sensible defaults.
+// Note: RunTests defaults to false because polecats already run tests before
+// submitting to the merge queue. Re-running tests wastes API tokens and time
+// (especially since refinery runs as a Claude Code session). Enable explicitly
+// via rig config.json if needed for extra safety.
 func DefaultMergeQueueConfig() *MergeQueueConfig {
 	return &MergeQueueConfig{
 		Enabled:              true,
@@ -813,8 +819,8 @@ func DefaultMergeQueueConfig() *MergeQueueConfig {
 		TargetBranch:         "main",
 		IntegrationBranches:  true,
 		OnConflict:           OnConflictAssignBack,
-		RunTests:             true,
-		TestCommand:          "go test ./...",
+		RunTests:             false, // polecats already test before MQ submission
+		TestCommand:          "",    // empty until explicitly configured
 		DeleteMergedBranches: true,
 		RetryFlakyTests:      1,
 		PollInterval:         "30s",
