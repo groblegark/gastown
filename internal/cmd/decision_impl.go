@@ -1213,11 +1213,55 @@ type turnHookInput struct {
 }
 
 // readTurnHookInput reads and parses hook JSON from stdin.
+// Returns an error if stdin has no data available (not called from a hook).
 func readTurnHookInput() (*turnHookInput, error) {
-	data, err := io.ReadAll(os.Stdin)
+	// Check stdin mode to determine if we're called from a hook
+	fileInfo, err := os.Stdin.Stat()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot stat stdin: %w", err)
 	}
+
+	// If stdin is a terminal (CharDevice), we're not being called from a hook
+	if fileInfo.Mode()&os.ModeCharDevice != 0 {
+		return nil, fmt.Errorf("stdin is a terminal, not a hook")
+	}
+
+	// If stdin is a regular file or /dev/null (size 0), check if it has data
+	// For pipes (ModeNamedPipe), we need to read - but hooks always provide data
+	if fileInfo.Mode()&os.ModeNamedPipe == 0 {
+		// Not a pipe - check size
+		if fileInfo.Size() == 0 {
+			return nil, fmt.Errorf("stdin is empty, not a hook")
+		}
+	}
+
+	// For pipes, use a timeout to avoid blocking indefinitely
+	// Claude Code hooks always provide data immediately
+	done := make(chan struct{})
+	var data []byte
+	var readErr error
+
+	go func() {
+		data, readErr = io.ReadAll(os.Stdin)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Read completed
+	case <-time.After(100 * time.Millisecond):
+		// Timeout - stdin had no data, not a hook call
+		return nil, fmt.Errorf("stdin read timeout, not a hook")
+	}
+
+	if readErr != nil {
+		return nil, readErr
+	}
+
+	if len(data) == 0 {
+		return nil, fmt.Errorf("stdin is empty, not a hook")
+	}
+
 	var input turnHookInput
 	if err := json.Unmarshal(data, &input); err != nil {
 		return nil, err
