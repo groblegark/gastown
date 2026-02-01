@@ -61,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && (gt mail check --inject || true)"
+            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && (gt decision auto-close --inject || true) && (gt mail check --inject || true) && (bd decision check --inject || true) && (gt decision turn-clear || true)"
           }
         ]
       }
@@ -75,6 +75,15 @@
             "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && gt inject drain --quiet && gt nudge drain --quiet"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && gt decision turn-mark"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -83,7 +92,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && _stdin=$(cat) && echo \"$_stdin\" | gt costs record"
+            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && _stdin=$(cat) && echo \"$_stdin\" | gt decision turn-check --soft"
           }
         ]
       }

@@ -93,7 +93,7 @@ func createValidSettings(t *testing.T, path string) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "gt costs record && gt decision turn-check",
+							"command": "gt decision turn-check",
 						},
 					},
 				},
@@ -143,7 +143,7 @@ func createStaleSettings(t *testing.T, path string, missingElements ...string) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "gt costs record --session $CLAUDE_SESSION_ID",
+							"command": "gt decision turn-check",
 						},
 					},
 				},
@@ -419,13 +419,13 @@ func TestClaudeSettingsCheck_MissingStopHook(t *testing.T) {
 	}
 	found := false
 	for _, d := range result.Details {
-		if strings.Contains(d, "Stop hook") {
+		if strings.Contains(d, "turn-check hook") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected details to mention Stop hook, got %v", result.Details)
+		t.Errorf("expected details to mention turn-check hook, got %v", result.Details)
 	}
 }
 
