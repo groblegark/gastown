@@ -27,6 +27,7 @@ import (
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/statusline"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/wisp"
@@ -45,10 +46,11 @@ type Daemon struct {
 	logger       *log.Logger
 	ctx          context.Context
 	cancel       context.CancelFunc
-	curator       *feed.Curator
-	convoyWatcher *ConvoyWatcher
-	doltServer    *DoltServerManager
-	krcPruner     *KRCPruner
+	curator        *feed.Curator
+	convoyWatcher  *ConvoyWatcher
+	doltServer     *DoltServerManager
+	krcPruner      *KRCPruner
+	statusCache    *statusline.CacheManager
 
 	// Mass death detection: track recent session deaths
 	deathsMu     sync.Mutex
@@ -191,6 +193,15 @@ func (d *Daemon) Run() error {
 		} else {
 			d.logger.Println("KRC pruner started")
 		}
+	}
+
+	// Start status line cache manager (reduces Dolt query load from tmux status bars)
+	updater := statusline.NewUpdater(d.config.TownRoot)
+	d.statusCache = statusline.NewCacheManager(d.config.TownRoot, updater.Update)
+	if err := d.statusCache.Start(); err != nil {
+		d.logger.Printf("Warning: failed to start status cache: %v", err)
+	} else {
+		d.logger.Println("Status line cache started")
 	}
 
 	// Initial heartbeat
@@ -750,6 +761,12 @@ func (d *Daemon) shutdown(state *State) error { //nolint:unparam // error return
 	if d.krcPruner != nil {
 		d.krcPruner.Stop()
 		d.logger.Println("KRC pruner stopped")
+	}
+
+	// Stop status line cache manager
+	if d.statusCache != nil {
+		d.statusCache.Stop()
+		d.logger.Println("Status line cache stopped")
 	}
 
 	// Stop Dolt server if we're managing it

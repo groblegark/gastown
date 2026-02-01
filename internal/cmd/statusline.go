@@ -11,6 +11,7 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/mail"
+	"github.com/steveyegge/gastown/internal/statusline"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -698,6 +699,14 @@ func getMailPreview(identity string, maxLen int) (int, string) {
 
 // getMailPreviewWithRoot is like getMailPreview but uses an explicit town root.
 func getMailPreviewWithRoot(identity string, maxLen int, townRoot string) (int, string) {
+	// Try cache first (reduces Dolt load significantly with many sessions)
+	if townRoot != "" {
+		if count, subject := statusline.GetCachedMailPreview(townRoot, identity, maxLen); count > 0 {
+			return count, subject
+		}
+		// Cache miss or stale - fall through to direct query
+	}
+
 	// Use NewMailboxFromAddress to normalize identity (e.g., gastown/crew/gus -> gastown/gus)
 	mailbox := mail.NewMailboxFromAddress(identity, townRoot)
 
@@ -728,6 +737,15 @@ func getHookedWork(identity string, maxLen int, beadsDir string) string {
 		if err != nil {
 			return ""
 		}
+	}
+
+	// Try cache first (reduces Dolt load significantly with many sessions)
+	townRoot := findTownRootFromDir(beadsDir)
+	if townRoot != "" {
+		if cached := statusline.GetCachedHookedWork(townRoot, identity, maxLen); cached != "" {
+			return cached
+		}
+		// Cache miss or stale - fall through to direct query
 	}
 
 	b := beads.New(beadsDir)
@@ -783,4 +801,15 @@ func getCurrentWork(t *tmux.Tmux, session string, maxLen int) string {
 		display = display[:maxLen-1] + "…"
 	}
 	return display
+}
+
+// findTownRootFromDir attempts to find the town root from a directory path.
+// This is used to locate the status line cache for cache-first lookups.
+func findTownRootFromDir(dir string) string {
+	// Use workspace.Find which walks up to find the town root
+	townRoot, err := workspace.Find(dir)
+	if err != nil {
+		return ""
+	}
+	return townRoot
 }
