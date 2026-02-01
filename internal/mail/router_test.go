@@ -809,6 +809,38 @@ func TestAgentBeadToAddress(t *testing.T) {
 			bead: &agentBead{ID: "hq-dog-alpha"},
 			want: "dog/alpha",
 		},
+		// Town-namespaced agent beads (hq-town-rig-role[-name])
+		// These are created by CrewBeadIDTown, PolecatBeadIDTown, etc. when town name is provided
+		{
+			name: "town-namespaced witness",
+			bead: &agentBead{ID: "hq-gt11-gastown-witness"},
+			want: "gastown/witness",
+		},
+		{
+			name: "town-namespaced refinery",
+			bead: &agentBead{ID: "hq-gt11-gastown-refinery"},
+			want: "gastown/refinery",
+		},
+		{
+			name: "town-namespaced crew worker",
+			bead: &agentBead{ID: "hq-gt11-gastown-crew-max"},
+			want: "gastown/max",
+		},
+		{
+			name: "town-namespaced polecat worker",
+			bead: &agentBead{ID: "hq-gt11-gastown-polecat-Toast"},
+			want: "gastown/Toast",
+		},
+		{
+			name: "town-namespaced crew with hyphenated name",
+			bead: &agentBead{ID: "hq-gt11-gastown-crew-decision-notify"},
+			want: "gastown/decision-notify",
+		},
+		{
+			name: "town-namespaced polecat with hyphenated name",
+			bead: &agentBead{ID: "hq-gt11-beads-polecat-my-agent"},
+			want: "beads/my-agent",
+		},
 	}
 
 	for _, tt := range tests {

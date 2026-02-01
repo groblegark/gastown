@@ -308,9 +308,10 @@ func agentBeadToAddress(bead *agentBead) string {
 
 	// Parse agent bead IDs by stripping the prefix and extracting components.
 	// Both hq- and gt- prefixed IDs follow the same structure after the prefix:
-	//   <prefix>-<role>                    → town-level singleton (mayor, deacon)
-	//   <prefix>-<rig>-<role>              → rig-level singleton (witness, refinery)
-	//   <prefix>-<rig>-<role>-<name>       → rig-level named agent (crew, polecat)
+	//   <prefix>-<role>                         → town-level singleton (mayor, deacon)
+	//   <prefix>-<rig>-<role>                   → rig-level singleton (witness, refinery)
+	//   <prefix>-<rig>-<role>-<name>            → rig-level named agent (crew, polecat)
+	//   <prefix>-<town>-<rig>-<role>[-<name>]   → town-namespaced agent (hq-gt11-gastown-crew-max)
 	var rest string
 	if strings.HasPrefix(id, "hq-") {
 		rest = strings.TrimPrefix(id, "hq-")
@@ -335,15 +336,37 @@ func agentBeadToAddress(bead *agentBead) string {
 		}
 		// Rig singleton: hq-gastown-witness → gastown/witness
 		return parts[0] + "/" + parts[1]
+	case 3:
+		// Could be:
+		// - Rig-level singleton with town: hq-gt11-gastown-witness → gastown/witness
+		// - Rig-level named agent without town: gt-gastown-crew-max → gastown/max
+		if parts[0] == "dog" {
+			// Town-level dog with hyphenated name: hq-dog-my-dog → dog/my-dog
+			return "dog/" + strings.Join(parts[1:], "-")
+		}
+		// Check if parts[2] is a known singleton role (town-namespaced singleton)
+		if parts[2] == "witness" || parts[2] == "refinery" {
+			// Town-namespaced singleton: hq-gt11-gastown-witness → gastown/witness
+			return parts[1] + "/" + parts[2]
+		}
+		// Named agent without town: gt-gastown-crew-max → gastown/max
+		return parts[0] + "/" + parts[2]
 	default:
-		// Rig named agent: hq-gastown-crew-max, gt-gastown-polecat-Toast
-		// Use rig/name format (role is implicit in the bead, not in the address)
-		if len(parts) >= 3 {
+		// 4+ parts: could be town-namespaced named agent or hyphenated name
+		if len(parts) >= 4 {
 			if parts[0] == "dog" {
-				// Town-level dog with hyphenated name: hq-dog-my-dog → dog/my-dog
+				// Town-level dog with hyphenated name: hq-dog-my-dog-name → dog/my-dog-name
 				return "dog/" + strings.Join(parts[1:], "-")
 			}
-			// Rejoin if name has hyphens: gt-gastown-polecat-my-agent → gastown/my-agent
+			// Check if parts[2] is a known role (town-namespaced named agent)
+			// Format: hq-town-rig-role-name → rig/name
+			// Example: hq-gt11-gastown-crew-max → gastown/max
+			if parts[2] == "crew" || parts[2] == "polecat" {
+				// Town-namespaced named agent
+				name := strings.Join(parts[3:], "-")
+				return parts[1] + "/" + name
+			}
+			// Non-town format with hyphenated name: gt-gastown-polecat-my-agent → gastown/my-agent
 			name := strings.Join(parts[2:], "-")
 			return parts[0] + "/" + name
 		}
