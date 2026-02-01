@@ -519,6 +519,84 @@ func TestGetTrackingConvoyTitle_InvalidTownRoot(t *testing.T) {
 	}
 }
 
+// TestGetDecisionByThread tests the reverse lookup of decision ID by thread (gt-8d5q52.1).
+func TestGetDecisionByThread(t *testing.T) {
+	bot := &Bot{
+		decisionMessages: make(map[string]messageInfo),
+	}
+
+	// Seed with some decision messages
+	bot.decisionMessages["decision-1"] = messageInfo{channelID: "C123", timestamp: "1234.5678"}
+	bot.decisionMessages["decision-2"] = messageInfo{channelID: "C456", timestamp: "2345.6789"}
+	bot.decisionMessages["decision-3"] = messageInfo{channelID: "C123", timestamp: "3456.7890"}
+
+	tests := []struct {
+		name       string
+		channelID  string
+		threadTS   string
+		expectedID string
+	}{
+		{
+			name:       "finds decision by exact match",
+			channelID:  "C123",
+			threadTS:   "1234.5678",
+			expectedID: "decision-1",
+		},
+		{
+			name:       "finds second decision",
+			channelID:  "C456",
+			threadTS:   "2345.6789",
+			expectedID: "decision-2",
+		},
+		{
+			name:       "finds decision in same channel different thread",
+			channelID:  "C123",
+			threadTS:   "3456.7890",
+			expectedID: "decision-3",
+		},
+		{
+			name:       "returns empty for non-existent thread",
+			channelID:  "C123",
+			threadTS:   "9999.9999",
+			expectedID: "",
+		},
+		{
+			name:       "returns empty for non-existent channel",
+			channelID:  "C999",
+			threadTS:   "1234.5678",
+			expectedID: "",
+		},
+		{
+			name:       "returns empty for mismatched channel and thread",
+			channelID:  "C456",
+			threadTS:   "1234.5678",
+			expectedID: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := bot.getDecisionByThread(tt.channelID, tt.threadTS)
+			if got != tt.expectedID {
+				t.Errorf("getDecisionByThread(%q, %q) = %q, want %q",
+					tt.channelID, tt.threadTS, got, tt.expectedID)
+			}
+		})
+	}
+}
+
+// TestGetDecisionByThread_Empty tests that empty map returns empty string.
+func TestGetDecisionByThread_Empty(t *testing.T) {
+	bot := &Bot{
+		decisionMessages: make(map[string]messageInfo),
+	}
+
+	got := bot.getDecisionByThread("C123", "1234.5678")
+	if got != "" {
+		t.Errorf("expected empty string for empty decisionMessages map, got %q", got)
+	}
+}
+
 // TestResolveChannelForDecision_PriorityOrder tests that the routing priority
 // is respected: convoy > epic > agent.
 func TestResolveChannelForDecision_PriorityOrder(t *testing.T) {
