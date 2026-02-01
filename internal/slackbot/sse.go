@@ -269,7 +269,7 @@ func (l *SSEListener) handleCancelledDecision(de decisionEvent) {
 // and notifies Slack about them. Uses the slack_notified label to track notification state.
 func (l *SSEListener) catchUpMissedDecisions() {
 	// Query for open gate-type decisions without the slack_notified label
-	out, err := exec.Command("bd", "q", "type:gate status:open -label:slack_notified", "--ids").Output()
+	out, err := exec.Command("bd", "q", "type:gate status:open -label:slack_notified").Output()
 	if err != nil {
 		log.Printf("SSE: Error querying for missed decisions: %v", err)
 		return
