@@ -16,19 +16,24 @@ type AdviceBead struct {
 }
 
 // outputAdviceContext queries and outputs advice applicable to this agent.
-// Advice is matched using label-based targeting:
-// 1. Agent-specific: label "agent:<id>" matches agent ID
-// 2. Role-specific: label "role:<type>" matches role type
-// 3. Rig-specific: label "rig:<name>" matches rig name
-// 4. Global: label "global" or no targeting labels
+// Delegates subscription matching to beads via `bd advice list --for=<agent-id>`.
+// The beads CLI implements the subscription model where agents auto-subscribe to:
+//   - global
+//   - agent:<their-id>
+//   - rig:<their-rig>
+//   - role:<their-role>
+//
+// See docs/design/advice-subscription-model-v2.md in beads repo for details.
 func outputAdviceContext(ctx RoleInfo) {
-	// Build agent identity for matching
+	// Build agent identity for subscription matching
 	agentID := buildAgentID(ctx)
-	roleType := string(ctx.Role)
-	rigName := ctx.Rig
+	if agentID == "" {
+		explain(false, "Advice: could not build agent ID")
+		return
+	}
 
-	// Query all advice beads
-	adviceBeads, err := queryAdviceBeads()
+	// Query advice using beads subscription model
+	adviceBeads, err := queryAdviceForAgent(agentID)
 	if err != nil {
 		// Silently skip if bd isn't available or query fails
 		explain(false, fmt.Sprintf("Advice query failed: %v", err))
@@ -39,18 +44,13 @@ func outputAdviceContext(ctx RoleInfo) {
 		return
 	}
 
-	// Filter advice that applies to this agent
-	applicable := filterApplicableAdvice(adviceBeads, agentID, roleType, rigName)
-	explain(len(applicable) > 0, fmt.Sprintf("Advice: %d of %d beads apply to %s", len(applicable), len(adviceBeads), agentID))
-	if len(applicable) == 0 {
-		return
-	}
+	explain(true, fmt.Sprintf("Advice: %d beads matched subscriptions for %s", len(adviceBeads), agentID))
 
 	// Output advice section
 	fmt.Println()
 	fmt.Println("## 📝 Agent Advice")
 	fmt.Println()
-	for _, advice := range applicable {
+	for _, advice := range adviceBeads {
 		// Show scope indicator
 		scope := getAdviceScope(advice)
 		fmt.Printf("**[%s]** %s\n", scope, advice.Title)
@@ -96,12 +96,22 @@ func buildAgentID(ctx RoleInfo) string {
 	return ""
 }
 
-// queryAdviceBeads fetches all advice beads from the beads database.
-func queryAdviceBeads() ([]AdviceBead, error) {
-	cmd := exec.Command("bd", "list", "-t", "advice", "--json", "--limit", "100")
+// queryAdviceForAgent fetches advice beads matching the agent's subscriptions.
+// Uses `bd advice list --for=<agent-id>` which auto-subscribes to:
+//   - global
+//   - agent:<agent-id>
+//   - rig:<rig-name>
+//   - role:<role-type>
+//
+// Note: Due to gt-1n0zy5, `bd advice list --for --json` returns null labels.
+// We work around this by fetching IDs from --for, then looking up full beads
+// from `bd list -t advice --json` which includes labels.
+func queryAdviceForAgent(agentID string) ([]AdviceBead, error) {
+	// Step 1: Get filtered IDs using subscription model
+	cmd := exec.Command("bd", "advice", "list", "--for="+agentID, "--json")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("bd list advice: %w", err)
+		return nil, fmt.Errorf("bd advice list --for=%s: %w", agentID, err)
 	}
 
 	// Handle empty result
@@ -109,73 +119,44 @@ func queryAdviceBeads() ([]AdviceBead, error) {
 		return nil, nil
 	}
 
-	var beads []AdviceBead
-	if err := json.Unmarshal(output, &beads); err != nil {
-		return nil, fmt.Errorf("parsing advice beads: %w", err)
+	// Parse to get IDs
+	var filteredBeads []AdviceBead
+	if err := json.Unmarshal(output, &filteredBeads); err != nil {
+		return nil, fmt.Errorf("parsing filtered advice: %w", err)
 	}
 
-	return beads, nil
-}
+	if len(filteredBeads) == 0 {
+		return nil, nil
+	}
 
-// filterApplicableAdvice returns advice beads that apply to this agent.
-// Advice matches based on label targeting - see matchesAdvice for details.
-func filterApplicableAdvice(beads []AdviceBead, agentID, roleType, rigName string) []AdviceBead {
+	// Build ID set for lookup
+	wantIDs := make(map[string]bool)
+	for _, b := range filteredBeads {
+		wantIDs[b.ID] = true
+	}
+
+	// Step 2: Fetch all advice with labels
+	cmd2 := exec.Command("bd", "list", "-t", "advice", "--json", "--limit", "200")
+	output2, err := cmd2.Output()
+	if err != nil {
+		// Fall back to filtered results without labels
+		return filteredBeads, nil
+	}
+
+	var allBeads []AdviceBead
+	if err := json.Unmarshal(output2, &allBeads); err != nil {
+		return filteredBeads, nil
+	}
+
+	// Step 3: Return only matching beads (with labels)
 	var result []AdviceBead
-
-	for _, bead := range beads {
-		if matchesAdvice(bead, agentID, roleType, rigName) {
-			result = append(result, bead)
+	for _, b := range allBeads {
+		if wantIDs[b.ID] {
+			result = append(result, b)
 		}
 	}
 
-	return result
-}
-
-// matchesAdvice checks if an advice bead applies to the given agent context.
-// Advice uses label-based targeting:
-//   - agent:<id> matches specific agent
-//   - role:<type> matches role type (polecat, crew, witness, etc.)
-//   - rig:<name> matches all agents in a rig
-//   - global or no targeting labels = applies to everyone
-func matchesAdvice(bead AdviceBead, agentID, roleType, rigName string) bool {
-	// Check for targeting labels
-	hasAgentLabel := false
-	hasRoleLabel := false
-	hasRigLabel := false
-	hasGlobalLabel := false
-
-	for _, label := range bead.Labels {
-		switch {
-		case strings.HasPrefix(label, "agent:"):
-			hasAgentLabel = true
-			targetAgent := strings.TrimPrefix(label, "agent:")
-			if targetAgent == agentID {
-				return true
-			}
-		case strings.HasPrefix(label, "role:"):
-			hasRoleLabel = true
-			targetRole := strings.TrimPrefix(label, "role:")
-			if targetRole == roleType {
-				return true
-			}
-		case strings.HasPrefix(label, "rig:"):
-			hasRigLabel = true
-			targetRig := strings.TrimPrefix(label, "rig:")
-			if targetRig == rigName {
-				return true
-			}
-		case label == "global":
-			hasGlobalLabel = true
-		}
-	}
-
-	// If any targeting labels were present but didn't match, exclude
-	if hasAgentLabel || hasRoleLabel || hasRigLabel {
-		return false
-	}
-
-	// Global label or no targeting labels = applies to everyone
-	return hasGlobalLabel || len(bead.Labels) == 0
+	return result, nil
 }
 
 // getAdviceScope returns a human-readable scope indicator for the advice.
