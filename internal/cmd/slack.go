@@ -660,6 +660,12 @@ func runSlackStart(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := bot.Run(ctx); err != nil {
+		// Graceful shutdown via SIGTERM/SIGINT results in context.Canceled
+		// This is expected behavior, not an error - return nil for clean exit
+		if ctx.Err() == context.Canceled {
+			log.Println("Slack bot stopped gracefully")
+			return nil
+		}
 		return fmt.Errorf("bot error: %w", err)
 	}
 	return nil
