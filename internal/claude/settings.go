@@ -148,6 +148,68 @@ func EnsureMCPConfigAt(workDir, mcpFile string) error {
 	return nil
 }
 
+// EnsureSkills sets up skill symlinks in .claude/skills/ directory.
+// It looks for skill definitions in rigRoot/skill-library/ and creates
+// symlinks to each SKILL.md file. This enables slash commands like /handoff.
+// The function is idempotent - it won't create duplicate symlinks.
+func EnsureSkills(workDir, rigRoot string) error {
+	skillLibrary := filepath.Join(rigRoot, "skill-library")
+	skillsDir := filepath.Join(workDir, ".claude", "skills")
+
+	// Check if skill-library exists
+	entries, err := os.ReadDir(skillLibrary)
+	if os.IsNotExist(err) {
+		// No skill-library - nothing to do
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading skill-library: %w", err)
+	}
+
+	// Create skills directory if needed
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		return fmt.Errorf("creating skills directory: %w", err)
+	}
+
+	// Calculate relative path from skills dir to skill-library
+	// From: workDir/.claude/skills/
+	// To: rigRoot/skill-library/
+	relPath, err := filepath.Rel(skillsDir, skillLibrary)
+	if err != nil {
+		return fmt.Errorf("calculating relative path: %w", err)
+	}
+
+	// Create symlinks for each skill
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		skillName := entry.Name()
+		skillMD := filepath.Join(skillLibrary, skillName, "SKILL.md")
+
+		// Check if SKILL.md exists
+		if _, err := os.Stat(skillMD); os.IsNotExist(err) {
+			continue
+		}
+
+		symlinkPath := filepath.Join(skillsDir, skillName)
+
+		// Skip if symlink already exists
+		if _, err := os.Lstat(symlinkPath); err == nil {
+			continue
+		}
+
+		// Create relative symlink
+		target := filepath.Join(relPath, skillName, "SKILL.md")
+		if err := os.Symlink(target, symlinkPath); err != nil {
+			return fmt.Errorf("creating symlink for skill %s: %w", skillName, err)
+		}
+	}
+
+	return nil
+}
+
 // EnsureSettingsForAccount ensures settings.json exists for a specific account.
 // If accountConfigDir is provided, settings are installed there (per-account).
 // If accountConfigDir is empty, falls back to workDir (per-workspace).

@@ -583,6 +583,13 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 		return fmt.Errorf("ensuring runtime settings: %w", err)
 	}
 
+	// Ensure skills are set up in the shared crew/.claude/skills/ directory.
+	// This enables slash commands like /handoff for all crew workers.
+	if err := claude.EnsureSkills(crewBaseDir, m.rig.Path); err != nil {
+		// Non-fatal - skills are nice to have but not critical
+		fmt.Printf("Warning: could not set up skills: %v\n", err)
+	}
+
 	// Ensure the .claude symlink exists in the worker directory.
 	// This is critical: Claude Code only reads .claude/settings.json from the CWD,
 	// so each worker needs a symlink to the shared crew/.claude directory.
