@@ -152,7 +152,7 @@ Understand what the test expects vs. what's happening.
 
 Look for platform-specific code:
 - `syscall.*` calls (often Unix-only)
-- `/` vs `\` path separators
+- `/` vs `\\` path separators
 - File permissions (0755 doesn't mean the same on Windows)
 
 Check if build tags are needed:
