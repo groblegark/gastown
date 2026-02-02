@@ -2023,3 +2023,1422 @@ func (c *Client) WatchSession(ctx context.Context, session string, lines, interv
 		}
 	}
 }
+
+// ============================================================================
+// SlingService Client Methods
+// ============================================================================
+
+// SlingRequest contains the parameters for slinging work via RPC.
+type SlingRequest struct {
+	BeadID        string
+	Target        string
+	Args          string
+	Subject       string
+	Message       string
+	Create        bool
+	Force         bool
+	NoConvoy      bool
+	Convoy        string
+	NoMerge       bool
+	MergeStrategy string
+	Owned         bool
+	Account       string
+	Agent         string
+}
+
+// SlingResponse contains the result of slinging work.
+type SlingResponse struct {
+	BeadID         string
+	TargetAgent    string
+	ConvoyID       string
+	PolecatSpawned bool
+	PolecatName    string
+	BeadTitle      string
+	ConvoyCreated  bool
+}
+
+// Sling assigns a bead to a target agent via RPC.
+func (c *Client) Sling(ctx context.Context, req SlingRequest) (*SlingResponse, error) {
+	body := map[string]interface{}{
+		"beadId": req.BeadID,
+	}
+	if req.Target != "" {
+		body["target"] = req.Target
+	}
+	if req.Args != "" {
+		body["args"] = req.Args
+	}
+	if req.Subject != "" {
+		body["subject"] = req.Subject
+	}
+	if req.Message != "" {
+		body["message"] = req.Message
+	}
+	if req.Create {
+		body["create"] = true
+	}
+	if req.Force {
+		body["force"] = true
+	}
+	if req.NoConvoy {
+		body["noConvoy"] = true
+	}
+	if req.Convoy != "" {
+		body["convoy"] = req.Convoy
+	}
+	if req.NoMerge {
+		body["noMerge"] = true
+	}
+	if req.MergeStrategy != "" {
+		body["mergeStrategy"] = mergeStrategyToProto(req.MergeStrategy)
+	}
+	if req.Owned {
+		body["owned"] = true
+	}
+	if req.Account != "" {
+		body["account"] = req.Account
+	}
+	if req.Agent != "" {
+		body["agent"] = req.Agent
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.SlingService/Sling",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		BeadID         string `json:"beadId"`
+		TargetAgent    string `json:"targetAgent"`
+		ConvoyID       string `json:"convoyId"`
+		PolecatSpawned bool   `json:"polecatSpawned"`
+		PolecatName    string `json:"polecatName"`
+		BeadTitle      string `json:"beadTitle"`
+		ConvoyCreated  bool   `json:"convoyCreated"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &SlingResponse{
+		BeadID:         result.BeadID,
+		TargetAgent:    result.TargetAgent,
+		ConvoyID:       result.ConvoyID,
+		PolecatSpawned: result.PolecatSpawned,
+		PolecatName:    result.PolecatName,
+		BeadTitle:      result.BeadTitle,
+		ConvoyCreated:  result.ConvoyCreated,
+	}, nil
+}
+
+// SlingFormulaRequest contains the parameters for slinging a formula via RPC.
+type SlingFormulaRequest struct {
+	Formula string
+	Target  string
+	OnBead  string
+	Vars    map[string]string
+	Args    string
+	Subject string
+	Message string
+	Create  bool
+	Force   bool
+	Account string
+	Agent   string
+}
+
+// SlingFormulaResponse contains the result of slinging a formula.
+type SlingFormulaResponse struct {
+	WispID         string
+	TargetAgent    string
+	BeadID         string
+	ConvoyID       string
+	PolecatSpawned bool
+	PolecatName    string
+}
+
+// SlingFormula instantiates and slings a formula via RPC.
+func (c *Client) SlingFormula(ctx context.Context, req SlingFormulaRequest) (*SlingFormulaResponse, error) {
+	body := map[string]interface{}{
+		"formula": req.Formula,
+	}
+	if req.Target != "" {
+		body["target"] = req.Target
+	}
+	if req.OnBead != "" {
+		body["onBead"] = req.OnBead
+	}
+	if len(req.Vars) > 0 {
+		body["vars"] = req.Vars
+	}
+	if req.Args != "" {
+		body["args"] = req.Args
+	}
+	if req.Subject != "" {
+		body["subject"] = req.Subject
+	}
+	if req.Message != "" {
+		body["message"] = req.Message
+	}
+	if req.Create {
+		body["create"] = true
+	}
+	if req.Force {
+		body["force"] = true
+	}
+	if req.Account != "" {
+		body["account"] = req.Account
+	}
+	if req.Agent != "" {
+		body["agent"] = req.Agent
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.SlingService/SlingFormula",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		WispID         string `json:"wispId"`
+		TargetAgent    string `json:"targetAgent"`
+		BeadID         string `json:"beadId"`
+		ConvoyID       string `json:"convoyId"`
+		PolecatSpawned bool   `json:"polecatSpawned"`
+		PolecatName    string `json:"polecatName"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &SlingFormulaResponse{
+		WispID:         result.WispID,
+		TargetAgent:    result.TargetAgent,
+		BeadID:         result.BeadID,
+		ConvoyID:       result.ConvoyID,
+		PolecatSpawned: result.PolecatSpawned,
+		PolecatName:    result.PolecatName,
+	}, nil
+}
+
+// Unsling removes work from an agent's hook via RPC.
+func (c *Client) Unsling(ctx context.Context, beadID string, force bool) (string, string, bool, error) {
+	body := map[string]interface{}{
+		"beadId": beadID,
+	}
+	if force {
+		body["force"] = true
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return "", "", false, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.SlingService/Unsling",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return "", "", false, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return "", "", false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", false, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		BeadID        string `json:"beadId"`
+		PreviousAgent string `json:"previousAgent"`
+		WasIncomplete bool   `json:"wasIncomplete"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", false, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return result.BeadID, result.PreviousAgent, result.WasIncomplete, nil
+}
+
+// HookedBead represents a bead hooked to an agent.
+type HookedBead struct {
+	ID               string
+	Title            string
+	BeadType         string
+	Priority         string
+	HookedAt         string
+	AttachedMolecule string
+	ConvoyID         string
+}
+
+// GetWorkload returns all hooked beads for an agent via RPC.
+func (c *Client) GetWorkload(ctx context.Context, agent string) ([]HookedBead, int, error) {
+	body := map[string]interface{}{
+		"agent": agent,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.SlingService/GetWorkload",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, 0, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Beads []struct {
+			ID               string `json:"id"`
+			Title            string `json:"title"`
+			BeadType         string `json:"beadType"`
+			Priority         string `json:"priority"`
+			HookedAt         string `json:"hookedAt"`
+			AttachedMolecule string `json:"attachedMolecule"`
+			ConvoyID         string `json:"convoyId"`
+		} `json:"beads"`
+		Total int `json:"total"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, 0, fmt.Errorf("decoding response: %w", err)
+	}
+
+	var beads []HookedBead
+	for _, b := range result.Beads {
+		beads = append(beads, HookedBead{
+			ID:               b.ID,
+			Title:            b.Title,
+			BeadType:         b.BeadType,
+			Priority:         b.Priority,
+			HookedAt:         b.HookedAt,
+			AttachedMolecule: b.AttachedMolecule,
+			ConvoyID:         b.ConvoyID,
+		})
+	}
+
+	return beads, result.Total, nil
+}
+
+func mergeStrategyToProto(s string) string {
+	switch s {
+	case "direct":
+		return "MERGE_STRATEGY_DIRECT"
+	case "mr":
+		return "MERGE_STRATEGY_MR"
+	case "local":
+		return "MERGE_STRATEGY_LOCAL"
+	default:
+		return "MERGE_STRATEGY_UNSPECIFIED"
+	}
+}
+
+// ============================================================================
+// AgentService Client Methods
+// ============================================================================
+
+// Agent represents an agent (crew worker or polecat) from the RPC API.
+type Agent struct {
+	Address      string
+	Name         string
+	Rig          string
+	Type         string
+	State        string
+	Session      string
+	WorkDir      string
+	Branch       string
+	HookedBead   string
+	HookedTitle  string
+	UnreadMail   int
+	StartedAt    string
+	LastActivity string
+	GitStatus    string
+	ConvoyID     string
+}
+
+// ListAgents fetches agents from the RPC server.
+func (c *Client) ListAgents(ctx context.Context, rig string, agentType string, includeStopped, includeGlobal bool) ([]Agent, int, int, error) {
+	body := map[string]interface{}{}
+	if rig != "" {
+		body["rig"] = rig
+	}
+	if agentType != "" {
+		body["type"] = agentTypeToProto(agentType)
+	}
+	if includeStopped {
+		body["includeStopped"] = true
+	}
+	if includeGlobal {
+		body["includeGlobal"] = true
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.AgentService/ListAgents",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, 0, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Agents []struct {
+			Address      string `json:"address"`
+			Name         string `json:"name"`
+			Rig          string `json:"rig"`
+			Type         string `json:"type"`
+			State        string `json:"state"`
+			Session      string `json:"session"`
+			WorkDir      string `json:"workDir"`
+			Branch       string `json:"branch"`
+			HookedBead   string `json:"hookedBead"`
+			HookedTitle  string `json:"hookedTitle"`
+			UnreadMail   int    `json:"unreadMail"`
+			StartedAt    string `json:"startedAt"`
+			LastActivity string `json:"lastActivity"`
+			GitStatus    string `json:"gitStatus"`
+			ConvoyID     string `json:"convoyId"`
+		} `json:"agents"`
+		Total   int `json:"total"`
+		Running int `json:"running"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, 0, 0, fmt.Errorf("decoding response: %w", err)
+	}
+
+	var agents []Agent
+	for _, a := range result.Agents {
+		agents = append(agents, Agent{
+			Address:      a.Address,
+			Name:         a.Name,
+			Rig:          a.Rig,
+			Type:         agentTypeToString(a.Type),
+			State:        agentStateToString(a.State),
+			Session:      a.Session,
+			WorkDir:      a.WorkDir,
+			Branch:       a.Branch,
+			HookedBead:   a.HookedBead,
+			HookedTitle:  a.HookedTitle,
+			UnreadMail:   a.UnreadMail,
+			StartedAt:    a.StartedAt,
+			LastActivity: a.LastActivity,
+			GitStatus:    a.GitStatus,
+			ConvoyID:     a.ConvoyID,
+		})
+	}
+
+	return agents, result.Total, result.Running, nil
+}
+
+// GetAgent fetches a specific agent by address via RPC.
+func (c *Client) GetAgent(ctx context.Context, agentAddr string) (*Agent, []string, error) {
+	body := map[string]interface{}{
+		"agent": agentAddr,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.AgentService/GetAgent",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Agent struct {
+			Address      string `json:"address"`
+			Name         string `json:"name"`
+			Rig          string `json:"rig"`
+			Type         string `json:"type"`
+			State        string `json:"state"`
+			Session      string `json:"session"`
+			WorkDir      string `json:"workDir"`
+			Branch       string `json:"branch"`
+			HookedBead   string `json:"hookedBead"`
+			HookedTitle  string `json:"hookedTitle"`
+			UnreadMail   int    `json:"unreadMail"`
+			StartedAt    string `json:"startedAt"`
+			LastActivity string `json:"lastActivity"`
+			GitStatus    string `json:"gitStatus"`
+			ConvoyID     string `json:"convoyId"`
+		} `json:"agent"`
+		RecentOutput []string `json:"recentOutput"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	agent := &Agent{
+		Address:      result.Agent.Address,
+		Name:         result.Agent.Name,
+		Rig:          result.Agent.Rig,
+		Type:         agentTypeToString(result.Agent.Type),
+		State:        agentStateToString(result.Agent.State),
+		Session:      result.Agent.Session,
+		WorkDir:      result.Agent.WorkDir,
+		Branch:       result.Agent.Branch,
+		HookedBead:   result.Agent.HookedBead,
+		HookedTitle:  result.Agent.HookedTitle,
+		UnreadMail:   result.Agent.UnreadMail,
+		StartedAt:    result.Agent.StartedAt,
+		LastActivity: result.Agent.LastActivity,
+		GitStatus:    result.Agent.GitStatus,
+		ConvoyID:     result.Agent.ConvoyID,
+	}
+
+	return agent, result.RecentOutput, nil
+}
+
+// SpawnPolecatRequest contains the parameters for spawning a polecat via RPC.
+type SpawnPolecatRequest struct {
+	Rig           string
+	Name          string
+	Account       string
+	AgentOverride string
+	HookBead      string
+}
+
+// SpawnPolecat spawns a new polecat via RPC.
+func (c *Client) SpawnPolecat(ctx context.Context, req SpawnPolecatRequest) (*Agent, string, error) {
+	body := map[string]interface{}{
+		"rig": req.Rig,
+	}
+	if req.Name != "" {
+		body["name"] = req.Name
+	}
+	if req.Account != "" {
+		body["account"] = req.Account
+	}
+	if req.AgentOverride != "" {
+		body["agentOverride"] = req.AgentOverride
+	}
+	if req.HookBead != "" {
+		body["hookBead"] = req.HookBead
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, "", fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.AgentService/SpawnPolecat",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Agent struct {
+			Address string `json:"address"`
+			Name    string `json:"name"`
+			Rig     string `json:"rig"`
+			Type    string `json:"type"`
+			State   string `json:"state"`
+			Session string `json:"session"`
+			WorkDir string `json:"workDir"`
+		} `json:"agent"`
+		Session string `json:"session"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, "", fmt.Errorf("decoding response: %w", err)
+	}
+
+	agent := &Agent{
+		Address: result.Agent.Address,
+		Name:    result.Agent.Name,
+		Rig:     result.Agent.Rig,
+		Type:    agentTypeToString(result.Agent.Type),
+		State:   agentStateToString(result.Agent.State),
+		Session: result.Agent.Session,
+		WorkDir: result.Agent.WorkDir,
+	}
+
+	return agent, result.Session, nil
+}
+
+// StopAgent stops an agent's session via RPC.
+func (c *Client) StopAgent(ctx context.Context, agentAddr string, force bool, reason string) (*Agent, bool, error) {
+	body := map[string]interface{}{
+		"agent": agentAddr,
+	}
+	if force {
+		body["force"] = true
+	}
+	if reason != "" {
+		body["reason"] = reason
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, false, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.AgentService/StopAgent",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, false, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, false, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Agent struct {
+			Address string `json:"address"`
+			Name    string `json:"name"`
+			State   string `json:"state"`
+		} `json:"agent"`
+		HadIncompleteWork bool `json:"hadIncompleteWork"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, false, fmt.Errorf("decoding response: %w", err)
+	}
+
+	agent := &Agent{
+		Address: result.Agent.Address,
+		Name:    result.Agent.Name,
+		State:   agentStateToString(result.Agent.State),
+	}
+
+	return agent, result.HadIncompleteWork, nil
+}
+
+// NudgeAgent sends a message to an agent's terminal via RPC.
+func (c *Client) NudgeAgent(ctx context.Context, agentAddr, message string, urgent bool) (bool, string, error) {
+	body := map[string]interface{}{
+		"agent":   agentAddr,
+		"message": message,
+	}
+	if urgent {
+		body["urgent"] = true
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return false, "", fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.AgentService/NudgeAgent",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return false, "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return false, "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, "", fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Delivered bool   `json:"delivered"`
+		Session   string `json:"session"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, "", fmt.Errorf("decoding response: %w", err)
+	}
+
+	return result.Delivered, result.Session, nil
+}
+
+// PeekAgent returns recent terminal output from an agent via RPC.
+func (c *Client) PeekAgent(ctx context.Context, agentAddr string, lines int, all bool) (string, []string, bool, error) {
+	body := map[string]interface{}{
+		"agent": agentAddr,
+	}
+	if lines > 0 {
+		body["lines"] = lines
+	}
+	if all {
+		body["all"] = true
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.AgentService/PeekAgent",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return "", nil, false, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return "", nil, false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, false, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Output string   `json:"output"`
+		Lines  []string `json:"lines"`
+		Exists bool     `json:"exists"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", nil, false, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return result.Output, result.Lines, result.Exists, nil
+}
+
+func agentTypeToProto(t string) string {
+	switch t {
+	case "crew":
+		return "AGENT_TYPE_CREW"
+	case "polecat":
+		return "AGENT_TYPE_POLECAT"
+	case "witness":
+		return "AGENT_TYPE_WITNESS"
+	case "refinery":
+		return "AGENT_TYPE_REFINERY"
+	case "mayor":
+		return "AGENT_TYPE_MAYOR"
+	case "deacon":
+		return "AGENT_TYPE_DEACON"
+	default:
+		return "AGENT_TYPE_UNSPECIFIED"
+	}
+}
+
+func agentTypeToString(t string) string {
+	switch t {
+	case "AGENT_TYPE_CREW":
+		return "crew"
+	case "AGENT_TYPE_POLECAT":
+		return "polecat"
+	case "AGENT_TYPE_WITNESS":
+		return "witness"
+	case "AGENT_TYPE_REFINERY":
+		return "refinery"
+	case "AGENT_TYPE_MAYOR":
+		return "mayor"
+	case "AGENT_TYPE_DEACON":
+		return "deacon"
+	default:
+		if t != "" && !strings.HasPrefix(t, "AGENT_TYPE_") {
+			return t
+		}
+		return "unknown"
+	}
+}
+
+func agentStateToString(s string) string {
+	switch s {
+	case "AGENT_STATE_RUNNING":
+		return "running"
+	case "AGENT_STATE_STOPPED":
+		return "stopped"
+	case "AGENT_STATE_WORKING":
+		return "working"
+	case "AGENT_STATE_IDLE":
+		return "idle"
+	case "AGENT_STATE_STUCK":
+		return "stuck"
+	case "AGENT_STATE_DONE":
+		return "done"
+	default:
+		if s != "" && !strings.HasPrefix(s, "AGENT_STATE_") {
+			return s
+		}
+		return "unknown"
+	}
+}
+
+// ============================================================================
+// BeadsService Client Methods
+// ============================================================================
+
+// Issue represents a beads issue from the RPC API.
+type Issue struct {
+	ID              string
+	Title           string
+	Description     string
+	Status          string
+	Priority        int
+	Type            string
+	CreatedAt       string
+	UpdatedAt       string
+	ClosedAt        string
+	Parent          string
+	Assignee        string
+	CreatedBy       string
+	Labels          []string
+	Children        []string
+	DependsOn       []string
+	Blocks          []string
+	BlockedBy       []string
+	DependencyCount int
+	DependentCount  int
+	BlockedByCount  int
+	HookBead        string
+	AgentState      string
+}
+
+// ListIssuesRequest contains the parameters for listing issues via RPC.
+type ListIssuesRequest struct {
+	Status     string
+	Type       string
+	Label      string
+	Priority   int
+	Parent     string
+	Assignee   string
+	NoAssignee bool
+	Limit      int
+	Offset     int
+}
+
+// ListIssues fetches issues from the RPC server.
+func (c *Client) ListIssues(ctx context.Context, req ListIssuesRequest) ([]Issue, int, error) {
+	body := map[string]interface{}{}
+	if req.Status != "" {
+		body["status"] = req.Status
+	}
+	if req.Type != "" {
+		body["type"] = issueTypeToProto(req.Type)
+	}
+	if req.Label != "" {
+		body["label"] = req.Label
+	}
+	if req.Priority >= 0 {
+		body["priority"] = req.Priority
+	}
+	if req.Parent != "" {
+		body["parent"] = req.Parent
+	}
+	if req.Assignee != "" {
+		body["assignee"] = req.Assignee
+	}
+	if req.NoAssignee {
+		body["noAssignee"] = true
+	}
+	if req.Limit > 0 {
+		body["limit"] = req.Limit
+	}
+	if req.Offset > 0 {
+		body["offset"] = req.Offset
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.BeadsService/ListIssues",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, 0, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Issues []issueJSON `json:"issues"`
+		Total  int         `json:"total"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, 0, fmt.Errorf("decoding response: %w", err)
+	}
+
+	var issues []Issue
+	for _, i := range result.Issues {
+		issues = append(issues, issueFromJSON(i))
+	}
+
+	return issues, result.Total, nil
+}
+
+// GetIssue fetches a specific issue by ID via RPC.
+func (c *Client) GetIssue(ctx context.Context, issueID string) (*Issue, error) {
+	body := map[string]interface{}{
+		"id": issueID,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.BeadsService/GetIssue",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Issue issueJSON `json:"issue"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	issue := issueFromJSON(result.Issue)
+	return &issue, nil
+}
+
+// CreateIssueRequest contains the parameters for creating an issue via RPC.
+type CreateIssueRequest struct {
+	Title       string
+	Type        string
+	Priority    int
+	Description string
+	Parent      string
+	Assignee    string
+	Labels      []string
+	Actor       string
+	ID          string
+	Ephemeral   bool
+}
+
+// CreateIssue creates a new issue via RPC.
+func (c *Client) CreateIssue(ctx context.Context, req CreateIssueRequest) (*Issue, error) {
+	body := map[string]interface{}{
+		"title": req.Title,
+	}
+	if req.Type != "" {
+		body["type"] = issueTypeToProto(req.Type)
+	}
+	if req.Priority >= 0 {
+		body["priority"] = req.Priority
+	}
+	if req.Description != "" {
+		body["description"] = req.Description
+	}
+	if req.Parent != "" {
+		body["parent"] = req.Parent
+	}
+	if req.Assignee != "" {
+		body["assignee"] = req.Assignee
+	}
+	if len(req.Labels) > 0 {
+		body["labels"] = req.Labels
+	}
+	if req.Actor != "" {
+		body["actor"] = req.Actor
+	}
+	if req.ID != "" {
+		body["id"] = req.ID
+	}
+	if req.Ephemeral {
+		body["ephemeral"] = true
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.BeadsService/CreateIssue",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Issue issueJSON `json:"issue"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	issue := issueFromJSON(result.Issue)
+	return &issue, nil
+}
+
+// CloseIssues closes one or more issues via RPC.
+func (c *Client) CloseIssues(ctx context.Context, ids []string, reason string) (int, []string, error) {
+	body := map[string]interface{}{
+		"ids": ids,
+	}
+	if reason != "" {
+		body["reason"] = reason
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return 0, nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.BeadsService/CloseIssues",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return 0, nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		ClosedCount int      `json:"closedCount"`
+		FailedIds   []string `json:"failedIds"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return result.ClosedCount, result.FailedIds, nil
+}
+
+// SearchIssues searches issues by text query via RPC.
+func (c *Client) SearchIssues(ctx context.Context, query string, status, issueType, label, assignee string, limit int) ([]Issue, int, error) {
+	body := map[string]interface{}{
+		"query": query,
+	}
+	if status != "" {
+		body["status"] = status
+	}
+	if issueType != "" {
+		body["type"] = issueTypeToProto(issueType)
+	}
+	if label != "" {
+		body["label"] = label
+	}
+	if assignee != "" {
+		body["assignee"] = assignee
+	}
+	if limit > 0 {
+		body["limit"] = limit
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.BeadsService/SearchIssues",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, 0, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Issues []issueJSON `json:"issues"`
+		Total  int         `json:"total"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, 0, fmt.Errorf("decoding response: %w", err)
+	}
+
+	var issues []Issue
+	for _, i := range result.Issues {
+		issues = append(issues, issueFromJSON(i))
+	}
+
+	return issues, result.Total, nil
+}
+
+// GetReadyIssues returns issues ready to work (not blocked) via RPC.
+func (c *Client) GetReadyIssues(ctx context.Context, label string, limit int) ([]Issue, int, error) {
+	body := map[string]interface{}{}
+	if label != "" {
+		body["label"] = label
+	}
+	if limit > 0 {
+		body["limit"] = limit
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.BeadsService/GetReadyIssues",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, 0, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Issues []issueJSON `json:"issues"`
+		Total  int         `json:"total"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, 0, fmt.Errorf("decoding response: %w", err)
+	}
+
+	var issues []Issue
+	for _, i := range result.Issues {
+		issues = append(issues, issueFromJSON(i))
+	}
+
+	return issues, result.Total, nil
+}
+
+// Helper types and functions for JSON parsing
+
+type issueJSON struct {
+	ID              string   `json:"id"`
+	Title           string   `json:"title"`
+	Description     string   `json:"description"`
+	Status          string   `json:"status"`
+	Priority        int      `json:"priority"`
+	Type            string   `json:"type"`
+	CreatedAt       string   `json:"createdAt"`
+	UpdatedAt       string   `json:"updatedAt"`
+	ClosedAt        string   `json:"closedAt"`
+	Parent          string   `json:"parent"`
+	Assignee        string   `json:"assignee"`
+	CreatedBy       string   `json:"createdBy"`
+	Labels          []string `json:"labels"`
+	Children        []string `json:"children"`
+	DependsOn       []string `json:"dependsOn"`
+	Blocks          []string `json:"blocks"`
+	BlockedBy       []string `json:"blockedBy"`
+	DependencyCount int      `json:"dependencyCount"`
+	DependentCount  int      `json:"dependentCount"`
+	BlockedByCount  int      `json:"blockedByCount"`
+	HookBead        string   `json:"hookBead"`
+	AgentState      string   `json:"agentState"`
+}
+
+func issueFromJSON(j issueJSON) Issue {
+	return Issue{
+		ID:              j.ID,
+		Title:           j.Title,
+		Description:     j.Description,
+		Status:          issueStatusToString(j.Status),
+		Priority:        j.Priority,
+		Type:            issueTypeToString(j.Type),
+		CreatedAt:       j.CreatedAt,
+		UpdatedAt:       j.UpdatedAt,
+		ClosedAt:        j.ClosedAt,
+		Parent:          j.Parent,
+		Assignee:        j.Assignee,
+		CreatedBy:       j.CreatedBy,
+		Labels:          j.Labels,
+		Children:        j.Children,
+		DependsOn:       j.DependsOn,
+		Blocks:          j.Blocks,
+		BlockedBy:       j.BlockedBy,
+		DependencyCount: j.DependencyCount,
+		DependentCount:  j.DependentCount,
+		BlockedByCount:  j.BlockedByCount,
+		HookBead:        j.HookBead,
+		AgentState:      j.AgentState,
+	}
+}
+
+func issueTypeToProto(t string) string {
+	switch t {
+	case "task":
+		return "ISSUE_TYPE_TASK"
+	case "bug":
+		return "ISSUE_TYPE_BUG"
+	case "feature":
+		return "ISSUE_TYPE_FEATURE"
+	case "epic":
+		return "ISSUE_TYPE_EPIC"
+	case "chore":
+		return "ISSUE_TYPE_CHORE"
+	case "merge-request":
+		return "ISSUE_TYPE_MERGE_REQUEST"
+	case "molecule":
+		return "ISSUE_TYPE_MOLECULE"
+	case "gate":
+		return "ISSUE_TYPE_GATE"
+	case "message":
+		return "ISSUE_TYPE_MESSAGE"
+	case "decision":
+		return "ISSUE_TYPE_DECISION"
+	case "convoy":
+		return "ISSUE_TYPE_CONVOY"
+	default:
+		return "ISSUE_TYPE_UNSPECIFIED"
+	}
+}
+
+func issueTypeToString(t string) string {
+	switch t {
+	case "ISSUE_TYPE_TASK":
+		return "task"
+	case "ISSUE_TYPE_BUG":
+		return "bug"
+	case "ISSUE_TYPE_FEATURE":
+		return "feature"
+	case "ISSUE_TYPE_EPIC":
+		return "epic"
+	case "ISSUE_TYPE_CHORE":
+		return "chore"
+	case "ISSUE_TYPE_MERGE_REQUEST":
+		return "merge-request"
+	case "ISSUE_TYPE_MOLECULE":
+		return "molecule"
+	case "ISSUE_TYPE_GATE":
+		return "gate"
+	case "ISSUE_TYPE_MESSAGE":
+		return "message"
+	case "ISSUE_TYPE_DECISION":
+		return "decision"
+	case "ISSUE_TYPE_CONVOY":
+		return "convoy"
+	default:
+		if t != "" && !strings.HasPrefix(t, "ISSUE_TYPE_") {
+			return t
+		}
+		return "unknown"
+	}
+}
+
+func issueStatusToString(s string) string {
+	switch s {
+	case "ISSUE_STATUS_OPEN":
+		return "open"
+	case "ISSUE_STATUS_IN_PROGRESS":
+		return "in_progress"
+	case "ISSUE_STATUS_BLOCKED":
+		return "blocked"
+	case "ISSUE_STATUS_DEFERRED":
+		return "deferred"
+	case "ISSUE_STATUS_CLOSED":
+		return "closed"
+	default:
+		if s != "" && !strings.HasPrefix(s, "ISSUE_STATUS_") {
+			return s
+		}
+		return "unknown"
+	}
+}

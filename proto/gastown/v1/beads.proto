@@ -1,0 +1,495 @@
+syntax = "proto3";
+
+package gastown.v1;
+
+option go_package = "github.com/steveyegge/gastown/gen/gastown/v1;gastownv1";
+
+import "google/protobuf/timestamp.proto";
+import "gastown/v1/common.proto";
+
+// BeadsService provides issue tracking operations via the bd/beads CLI
+service BeadsService {
+  // ListIssues returns issues matching filters
+  rpc ListIssues(ListIssuesRequest) returns (ListIssuesResponse);
+
+  // GetIssue returns a single issue by ID
+  rpc GetIssue(GetIssueRequest) returns (GetIssueResponse);
+
+  // CreateIssue creates a new issue
+  rpc CreateIssue(CreateIssueRequest) returns (CreateIssueResponse);
+
+  // UpdateIssue updates an existing issue
+  rpc UpdateIssue(UpdateIssueRequest) returns (UpdateIssueResponse);
+
+  // CloseIssues closes one or more issues
+  rpc CloseIssues(CloseIssuesRequest) returns (CloseIssuesResponse);
+
+  // ReopenIssues reopens one or more closed issues
+  rpc ReopenIssues(ReopenIssuesRequest) returns (ReopenIssuesResponse);
+
+  // SearchIssues searches issues by text query
+  rpc SearchIssues(SearchIssuesRequest) returns (SearchIssuesResponse);
+
+  // GetReadyIssues returns issues ready to work (not blocked)
+  rpc GetReadyIssues(GetReadyIssuesRequest) returns (GetReadyIssuesResponse);
+
+  // GetBlockedIssues returns issues blocked by dependencies
+  rpc GetBlockedIssues(GetBlockedIssuesRequest) returns (GetBlockedIssuesResponse);
+
+  // AddDependency adds a dependency between issues
+  rpc AddDependency(AddDependencyRequest) returns (AddDependencyResponse);
+
+  // RemoveDependency removes a dependency between issues
+  rpc RemoveDependency(RemoveDependencyRequest) returns (RemoveDependencyResponse);
+
+  // ListDependencies lists dependencies for an issue
+  rpc ListDependencies(ListDependenciesRequest) returns (ListDependenciesResponse);
+
+  // AddComment adds a comment to an issue
+  rpc AddComment(AddCommentRequest) returns (AddCommentResponse);
+
+  // ListComments lists comments on an issue
+  rpc ListComments(ListCommentsRequest) returns (ListCommentsResponse);
+
+  // ManageLabels adds or removes labels from an issue
+  rpc ManageLabels(ManageLabelsRequest) returns (ManageLabelsResponse);
+
+  // GetStats returns repository statistics
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+}
+
+// Issue status
+enum IssueStatus {
+  ISSUE_STATUS_UNSPECIFIED = 0;
+  ISSUE_STATUS_OPEN = 1;
+  ISSUE_STATUS_IN_PROGRESS = 2;
+  ISSUE_STATUS_BLOCKED = 3;
+  ISSUE_STATUS_DEFERRED = 4;
+  ISSUE_STATUS_CLOSED = 5;
+}
+
+// Issue type
+enum IssueType {
+  ISSUE_TYPE_UNSPECIFIED = 0;
+  ISSUE_TYPE_TASK = 1;
+  ISSUE_TYPE_BUG = 2;
+  ISSUE_TYPE_FEATURE = 3;
+  ISSUE_TYPE_EPIC = 4;
+  ISSUE_TYPE_CHORE = 5;
+  ISSUE_TYPE_MERGE_REQUEST = 6;
+  ISSUE_TYPE_MOLECULE = 7;
+  ISSUE_TYPE_GATE = 8;
+  ISSUE_TYPE_MESSAGE = 9;
+  ISSUE_TYPE_DECISION = 10;
+  ISSUE_TYPE_CONVOY = 11;
+}
+
+// Issue represents a beads issue
+message Issue {
+  // Issue ID (e.g., "gt-abc123")
+  string id = 1;
+
+  // Issue title
+  string title = 2;
+
+  // Full description
+  string description = 3;
+
+  // Current status
+  IssueStatus status = 4;
+
+  // Priority (0-4, lower = higher priority)
+  int32 priority = 5;
+
+  // Issue type
+  IssueType type = 6;
+
+  // Creation timestamp
+  google.protobuf.Timestamp created_at = 7;
+
+  // Last update timestamp
+  google.protobuf.Timestamp updated_at = 8;
+
+  // When closed (if closed)
+  google.protobuf.Timestamp closed_at = 9;
+
+  // Parent issue ID (for hierarchical issues)
+  string parent = 10;
+
+  // Assignee (e.g., "gastown/crew/mobile")
+  string assignee = 11;
+
+  // Who created this issue
+  string created_by = 12;
+
+  // Labels attached to this issue
+  repeated string labels = 13;
+
+  // Child issue IDs
+  repeated string children = 14;
+
+  // Issues this depends on
+  repeated string depends_on = 15;
+
+  // Issues blocked by this
+  repeated string blocks = 16;
+
+  // Issues blocking this
+  repeated string blocked_by = 17;
+
+  // Count of dependencies (for list views)
+  int32 dependency_count = 18;
+
+  // Count of dependents (for list views)
+  int32 dependent_count = 19;
+
+  // Count of blockers (for list views)
+  int32 blocked_by_count = 20;
+
+  // Hook bead (for agent issues)
+  string hook_bead = 21;
+
+  // Agent state (for agent issues)
+  string agent_state = 22;
+}
+
+// IssueSummary is a lighter issue representation for lists
+message IssueSummary {
+  string id = 1;
+  string title = 2;
+  IssueStatus status = 3;
+  int32 priority = 4;
+  IssueType type = 5;
+  string assignee = 6;
+  repeated string labels = 7;
+}
+
+// ListIssuesRequest filters for listing issues
+message ListIssuesRequest {
+  // Filter by status (open, closed, all)
+  string status = 1;
+
+  // Filter by type
+  IssueType type = 2;
+
+  // Filter by label
+  string label = 3;
+
+  // Filter by priority (0-4, -1 for no filter)
+  int32 priority = 4;
+
+  // Filter by parent ID
+  string parent = 5;
+
+  // Filter by assignee
+  string assignee = 6;
+
+  // Filter for unassigned issues only
+  bool no_assignee = 7;
+
+  // Limit results
+  int32 limit = 8;
+
+  // Offset for pagination
+  int32 offset = 9;
+}
+
+message ListIssuesResponse {
+  repeated Issue issues = 1;
+  int32 total = 2;
+}
+
+message GetIssueRequest {
+  // Issue ID
+  string id = 1;
+}
+
+message GetIssueResponse {
+  Issue issue = 1;
+}
+
+message CreateIssueRequest {
+  // Issue title (required)
+  string title = 1;
+
+  // Issue type
+  IssueType type = 2;
+
+  // Priority (0-4)
+  int32 priority = 3;
+
+  // Description
+  string description = 4;
+
+  // Parent issue ID
+  string parent = 5;
+
+  // Initial assignee
+  string assignee = 6;
+
+  // Initial labels
+  repeated string labels = 7;
+
+  // Actor (who is creating this)
+  string actor = 8;
+
+  // Specific ID (for deterministic beads like agent beads)
+  string id = 9;
+
+  // Create as ephemeral/wisp (not exported to JSONL)
+  bool ephemeral = 10;
+}
+
+message CreateIssueResponse {
+  Issue issue = 1;
+}
+
+message UpdateIssueRequest {
+  // Issue ID (required)
+  string id = 1;
+
+  // New title (if set)
+  optional string title = 2;
+
+  // New status (if set)
+  optional string status = 3;
+
+  // New priority (if set)
+  optional int32 priority = 4;
+
+  // New description (if set)
+  optional string description = 5;
+
+  // New assignee (if set, empty string to clear)
+  optional string assignee = 6;
+
+  // Labels to add
+  repeated string add_labels = 7;
+
+  // Labels to remove
+  repeated string remove_labels = 8;
+
+  // Labels to set (replaces all existing)
+  repeated string set_labels = 9;
+}
+
+message UpdateIssueResponse {
+  Issue issue = 1;
+}
+
+message CloseIssuesRequest {
+  // Issue IDs to close
+  repeated string ids = 1;
+
+  // Reason for closing
+  string reason = 2;
+}
+
+message CloseIssuesResponse {
+  // Number of issues closed
+  int32 closed_count = 1;
+
+  // IDs that failed to close
+  repeated string failed_ids = 2;
+}
+
+message ReopenIssuesRequest {
+  // Issue IDs to reopen
+  repeated string ids = 1;
+}
+
+message ReopenIssuesResponse {
+  // Number of issues reopened
+  int32 reopened_count = 1;
+
+  // IDs that failed to reopen
+  repeated string failed_ids = 2;
+}
+
+message SearchIssuesRequest {
+  // Search query
+  string query = 1;
+
+  // Filter by status
+  string status = 2;
+
+  // Filter by type
+  IssueType type = 3;
+
+  // Filter by label
+  string label = 4;
+
+  // Filter by assignee
+  string assignee = 5;
+
+  // Filter by priority min (inclusive)
+  int32 priority_min = 6;
+
+  // Filter by priority max (inclusive)
+  int32 priority_max = 7;
+
+  // Limit results
+  int32 limit = 8;
+}
+
+message SearchIssuesResponse {
+  repeated Issue issues = 1;
+  int32 total = 2;
+}
+
+message GetReadyIssuesRequest {
+  // Filter by type/label
+  string label = 1;
+
+  // Limit results
+  int32 limit = 2;
+}
+
+message GetReadyIssuesResponse {
+  repeated Issue issues = 1;
+  int32 total = 2;
+}
+
+message GetBlockedIssuesRequest {
+  // Limit results
+  int32 limit = 1;
+}
+
+message GetBlockedIssuesResponse {
+  repeated Issue issues = 1;
+  int32 total = 2;
+}
+
+// Dependency type
+enum DependencyType {
+  DEPENDENCY_TYPE_UNSPECIFIED = 0;
+  DEPENDENCY_TYPE_DEPENDS_ON = 1;  // Standard dependency
+  DEPENDENCY_TYPE_BLOCKS = 2;      // Blocking relationship
+  DEPENDENCY_TYPE_TRACKS = 3;      // Tracking relationship
+}
+
+message AddDependencyRequest {
+  // The issue that depends on another
+  string issue_id = 1;
+
+  // The issue it depends on
+  string depends_on_id = 2;
+
+  // Type of dependency
+  DependencyType type = 3;
+}
+
+message AddDependencyResponse {
+  bool success = 1;
+}
+
+message RemoveDependencyRequest {
+  // The issue that depends on another
+  string issue_id = 1;
+
+  // The dependency to remove
+  string depends_on_id = 2;
+}
+
+message RemoveDependencyResponse {
+  bool success = 1;
+}
+
+message ListDependenciesRequest {
+  // Issue ID
+  string issue_id = 1;
+
+  // Direction: "up" (what this depends on) or "down" (what depends on this)
+  string direction = 2;
+
+  // Filter by type
+  DependencyType type = 3;
+}
+
+message ListDependenciesResponse {
+  repeated Issue dependencies = 1;
+}
+
+message Comment {
+  // Comment ID
+  string id = 1;
+
+  // Issue ID this comment belongs to
+  string issue_id = 2;
+
+  // Comment text
+  string text = 3;
+
+  // Who wrote this comment
+  string author = 4;
+
+  // When it was created
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message AddCommentRequest {
+  // Issue ID
+  string issue_id = 1;
+
+  // Comment text
+  string text = 2;
+
+  // Author
+  string author = 3;
+}
+
+message AddCommentResponse {
+  Comment comment = 1;
+}
+
+message ListCommentsRequest {
+  // Issue ID
+  string issue_id = 1;
+
+  // Limit results
+  int32 limit = 2;
+}
+
+message ListCommentsResponse {
+  repeated Comment comments = 1;
+}
+
+message ManageLabelsRequest {
+  // Issue ID
+  string issue_id = 1;
+
+  // Labels to add
+  repeated string add = 2;
+
+  // Labels to remove
+  repeated string remove = 3;
+}
+
+message ManageLabelsResponse {
+  // Updated labels on the issue
+  repeated string labels = 1;
+}
+
+message GetStatsRequest {
+  // Empty for now
+}
+
+message GetStatsResponse {
+  // Total issues
+  int32 total_issues = 1;
+
+  // Open issues
+  int32 open_issues = 2;
+
+  // Closed issues
+  int32 closed_issues = 3;
+
+  // In progress issues
+  int32 in_progress_issues = 4;
+
+  // Blocked issues
+  int32 blocked_issues = 5;
+
+  // Raw stats text from bd
+  string raw_stats = 6;
+}

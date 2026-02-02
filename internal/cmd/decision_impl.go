@@ -1358,11 +1358,19 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "[turn-check] Soft mode: %v\n", decisionTurnCheckSoft)
 	}
 
-	// Check if agent created a decision with this session_id
+	// Check turn marker file first (fast, local) - created by gt decision request
+	if turnMarkerExists(input.SessionID) {
+		if decisionTurnCheckVerbose {
+			fmt.Fprintf(os.Stderr, "[turn-check] OK: Turn marker file exists\n")
+		}
+		return nil
+	}
+
+	// Fall back to checking decision records in beads database
 	hasDecisionThisSession := checkAgentHasDecisionForSession(input.SessionID)
 
 	if decisionTurnCheckVerbose {
-		fmt.Fprintf(os.Stderr, "[turn-check] Has decision this session: %v\n", hasDecisionThisSession)
+		fmt.Fprintf(os.Stderr, "[turn-check] Has decision this session (db check): %v\n", hasDecisionThisSession)
 	}
 
 	if hasDecisionThisSession || decisionTurnCheckSoft {
