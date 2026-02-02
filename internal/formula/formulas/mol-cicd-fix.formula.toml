@@ -1,3 +1,7 @@
+# Formula ownership and metadata
+owner = "gastown/crew/cicd_fixer"
+owner_bead = "gt-oca6xu"
+
 description = """
 CI/CD issue diagnosis and fix workflow for polecats.
 
