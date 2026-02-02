@@ -103,7 +103,7 @@ func (b *Bot) getAgentActivity(agent string, limit int) []ActivityEntry {
 func (b *Bot) getGitActivity(agent string, limit int) []ActivityEntry {
 	var activities []ActivityEntry
 
-	// Try to run git log - include author name to filter by agent
+	// Try to run git log - include author name to filter by agent (gt-5gfztk)
 	cmd := exec.Command("git", "log",
 		"--oneline",
 		"-n", fmt.Sprintf("%d", limit*5), // Get more to filter
@@ -125,10 +125,14 @@ func (b *Bot) getGitActivity(agent string, limit int) []ActivityEntry {
 			continue
 		}
 
-		// Check if commit author matches the agent name
+		// Match by author name OR commit message mentioning the agent (gt-5gfztk)
 		author := strings.ToLower(parts[2])
 		subject := parts[3]
-		if author != shortName && !strings.Contains(author, shortName) {
+		subjectLower := strings.ToLower(subject)
+		authorMatch := author == shortName || strings.Contains(author, shortName)
+		subjectMatch := strings.Contains(subjectLower, shortName)
+
+		if !authorMatch && !subjectMatch {
 			continue
 		}
 
