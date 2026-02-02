@@ -96,6 +96,11 @@ func runMoleculeBurn(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("detaching molecule: %w", err)
 	}
 
+	// Close the root molecule bead itself to prevent stale hooked wisps (gt-ydts08)
+	if err := b.Close(moleculeID); err != nil {
+		style.PrintWarning("could not close root molecule %s: %v", moleculeID, err)
+	}
+
 	if moleculeJSON {
 		result := map[string]interface{}{
 			"burned":          moleculeID,
@@ -251,6 +256,11 @@ squashed_at: %s
 	})
 	if err != nil {
 		return fmt.Errorf("detaching molecule: %w", err)
+	}
+
+	// Close the root molecule bead itself to prevent stale hooked wisps (gt-ydts08)
+	if err := b.Close(moleculeID); err != nil {
+		style.PrintWarning("could not close root molecule %s: %v", moleculeID, err)
 	}
 
 	if moleculeJSON {

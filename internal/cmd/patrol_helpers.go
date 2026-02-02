@@ -107,9 +107,73 @@ func findActivePatrol(cfg PatrolConfig) (patrolID, patrolLine string, found bool
 	return "", "", false
 }
 
+// cleanupStalePatrolWisps finds and closes hooked patrol wisps that have no open children.
+// These are wisps from completed patrol cycles that weren't properly closed.
+// Returns the count of wisps cleaned up.
+func cleanupStalePatrolWisps(cfg PatrolConfig) int {
+	// List all hooked wisps of this patrol type
+	cmdList := exec.Command("bd", "list", "--status=hooked", "--type=wisp")
+	cmdList.Dir = cfg.BeadsDir
+	var stdout, stderr bytes.Buffer
+	cmdList.Stdout = &stdout
+	cmdList.Stderr = &stderr
+
+	if err := cmdList.Run(); err != nil {
+		return 0
+	}
+
+	cleaned := 0
+	lines := strings.Split(stdout.String(), "\n")
+	for _, line := range lines {
+		if !strings.Contains(line, cfg.PatrolMolName) || strings.Contains(line, "[template]") {
+			continue
+		}
+
+		// Extract wisp ID (first field)
+		parts := strings.Fields(line)
+		if len(parts) == 0 {
+			continue
+		}
+		wispID := parts[0]
+
+		// Check if this wisp has open/in_progress children
+		cmdShow := exec.Command("bd", "show", wispID)
+		cmdShow.Dir = cfg.BeadsDir
+		var showOut, showErr bytes.Buffer
+		cmdShow.Stdout = &showOut
+		cmdShow.Stderr = &showErr
+
+		if err := cmdShow.Run(); err != nil {
+			continue
+		}
+
+		showOutput := showOut.String()
+		hasActiveChildren := strings.Contains(showOutput, "- open]") ||
+			strings.Contains(showOutput, "- in_progress]")
+
+		if hasActiveChildren {
+			// This wisp is still active, don't clean it up
+			continue
+		}
+
+		// Close the stale wisp (all children are done)
+		cmdClose := exec.Command("bd", "close", wispID)
+		cmdClose.Dir = cfg.BeadsDir
+		if err := cmdClose.Run(); err == nil {
+			cleaned++
+		}
+	}
+
+	return cleaned
+}
+
 // autoSpawnPatrol creates and pins a new patrol wisp.
 // Returns the patrol ID or an error.
 func autoSpawnPatrol(cfg PatrolConfig) (string, error) {
+	// Clean up any stale hooked patrol wisps before spawning a new one.
+	// This prevents accumulation of completed patrol wisps that weren't properly closed.
+	cleanupStalePatrolWisps(cfg)
+
 	// Find the proto ID for the patrol molecule
 	cmdCatalog := exec.Command("gt", "formula", "list")
 	cmdCatalog.Dir = cfg.BeadsDir
