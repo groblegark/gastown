@@ -548,14 +548,19 @@ func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 		}
 
 		// Populate resolution fields if the decision has been resolved
-		if bdDecision.DecisionPoint.SelectedOption != "" {
-			// Find the chosen index by matching the option ID
-			for i, opt := range bdDecision.Options {
-				if opt.ID == bdDecision.DecisionPoint.SelectedOption {
-					fields.ChosenIndex = i + 1 // 1-indexed
-					break
+		// Check RespondedAt (not SelectedOption) because "Other" responses use --accept-guidance
+		// which sets ResponseText but not SelectedOption (gt-3m8b2t)
+		if bdDecision.DecisionPoint.RespondedAt != "" {
+			// Find the chosen index by matching the option ID (if a predefined option was selected)
+			if bdDecision.DecisionPoint.SelectedOption != "" {
+				for i, opt := range bdDecision.Options {
+					if opt.ID == bdDecision.DecisionPoint.SelectedOption {
+						fields.ChosenIndex = i + 1 // 1-indexed
+						break
+					}
 				}
 			}
+			// ChosenIndex stays 0 for "Other" responses (custom text without predefined option)
 			fields.ResolvedBy = bdDecision.DecisionPoint.RespondedBy
 			fields.ResolvedAt = bdDecision.DecisionPoint.RespondedAt
 			fields.Rationale = bdDecision.DecisionPoint.ResponseText
