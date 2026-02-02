@@ -1184,10 +1184,11 @@ func isSelfMail(from, to string) bool {
 
 // GetMailbox returns a Mailbox for the given address.
 // Routes to the correct beads database based on the address.
+// Passes townRoot to enable prefix-based routing for cross-rig operations.
 func (r *Router) GetMailbox(address string) (*Mailbox, error) {
 	beadsDir := r.resolveBeadsDir(address)
 	workDir := filepath.Dir(beadsDir) // Parent of .beads
-	return NewMailboxFromAddress(address, workDir), nil
+	return NewMailboxWithTownRoot(address, workDir, beadsDir, r.townRoot), nil
 }
 
 // notifyRecipient sends a notification to a recipient's tmux session.

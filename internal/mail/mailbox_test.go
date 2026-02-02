@@ -434,6 +434,19 @@ func TestNewMailboxWithBeadsDir(t *testing.T) {
 	}
 }
 
+func TestNewMailboxWithTownRoot(t *testing.T) {
+	m := NewMailboxWithTownRoot("gastown/Toast", "/work/dir", "/custom/.beads", "/home/user/gt")
+	if m.identity != "gastown/Toast" {
+		t.Errorf("identity = %q, want 'gastown/Toast'", m.identity)
+	}
+	if filepath.ToSlash(m.beadsDir) != "/custom/.beads" {
+		t.Errorf("beadsDir = %q, want '/custom/.beads'", m.beadsDir)
+	}
+	if filepath.ToSlash(m.townRoot) != "/home/user/gt" {
+		t.Errorf("townRoot = %q, want '/home/user/gt'", m.townRoot)
+	}
+}
+
 func TestMailboxLegacyMultipleOperations(t *testing.T) {
 	tmpDir := t.TempDir()
 	m := NewMailbox(tmpDir)

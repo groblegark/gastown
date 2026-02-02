@@ -30,6 +30,7 @@ type Mailbox struct {
 	identity string // beads identity (e.g., "gastown/polecats/Toast")
 	workDir  string // directory to run bd commands in
 	beadsDir string // explicit .beads directory path (set via BEADS_DIR)
+	townRoot string // town root for prefix-based routing (e.g., ~/gt)
 	path     string // for legacy JSONL mode (crew workers)
 	legacy   bool   // true = use JSONL files, false = use beads
 }
@@ -70,6 +71,18 @@ func NewMailboxWithBeadsDir(address, workDir, beadsDir string) *Mailbox {
 		identity: AddressToIdentity(address),
 		workDir:  workDir,
 		beadsDir: beadsDir,
+		legacy:   false,
+	}
+}
+
+// NewMailboxWithTownRoot creates a mailbox with town root for cross-rig routing.
+// The townRoot enables prefix-based routing when deleting messages from other rigs.
+func NewMailboxWithTownRoot(address, workDir, beadsDir, townRoot string) *Mailbox {
+	return &Mailbox{
+		identity: AddressToIdentity(address),
+		workDir:  workDir,
+		beadsDir: beadsDir,
+		townRoot: townRoot,
 		legacy:   false,
 	}
 }
@@ -369,14 +382,35 @@ func (m *Mailbox) markReadBeads(id string) error {
 }
 
 // closeInDir closes a message in a specific beads directory.
+// If townRoot is set, resolves the beads directory based on the message ID prefix
+// to support cross-rig routing (e.g., deleting gu-* messages from gastown context).
 func (m *Mailbox) closeInDir(id, beadsDir string) error {
+	// Resolve correct beadsDir from message prefix if townRoot is available.
+	// This enables cross-rig routing: messages with different prefixes (e.g., gu-*)
+	// route to their owning rig's beads directory regardless of current context.
+	targetBeadsDir := beadsDir
+	if m.townRoot != "" {
+		prefix := beads.ExtractPrefix(id)
+		if prefix != "" {
+			if rigPath := beads.GetRigPathForPrefix(m.townRoot, prefix); rigPath != "" {
+				resolvedDir := filepath.Join(rigPath, ".beads")
+				// Only use resolved dir if it exists and differs from default
+				if resolvedDir != beadsDir {
+					if _, err := os.Stat(resolvedDir); err == nil {
+						targetBeadsDir = resolvedDir
+					}
+				}
+			}
+		}
+	}
+
 	args := []string{"close", id}
 	// Pass session ID for work attribution if available
 	if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
 		args = append(args, "--session="+sessionID)
 	}
 
-	_, err := runBdCommand(args, m.workDir, beadsDir)
+	_, err := runBdCommand(args, m.workDir, targetBeadsDir)
 	if err != nil {
 		if bdErr, ok := err.(*bdError); ok && bdErr.ContainsError("not found") {
 			return ErrMessageNotFound
