@@ -78,12 +78,14 @@ func (u *Updater) updateTownIdentities(cache *Cache) {
 	// Mayor identity - use "mayor/" canonical format for consistent cache keys
 	mayorData := &IdentityData{}
 	u.populateHookedWork(mayorData, "mayor/", u.townRoot)
+	u.populateCurrentWork(mayorData, "mayor/", u.townRoot)
 	u.populateMail(mayorData, "mayor/", u.townRoot)
 	cache.SetIdentity("mayor/", mayorData)
 
 	// Deacon identity - use "deacon/" canonical format for consistent cache keys
 	deaconData := &IdentityData{}
 	u.populateHookedWork(deaconData, "deacon/", u.townRoot)
+	u.populateCurrentWork(deaconData, "deacon/", u.townRoot)
 	u.populateMail(deaconData, "deacon/", u.townRoot)
 	cache.SetIdentity("deacon/", deaconData)
 }
@@ -97,6 +99,7 @@ func (u *Updater) updateRigIdentities(cache *Cache, rigName string) {
 	witnessIdentity := fmt.Sprintf("%s/witness", rigName)
 	witnessData := &IdentityData{}
 	u.populateHookedWork(witnessData, witnessIdentity, rigBeadsDir)
+	u.populateCurrentWork(witnessData, witnessIdentity, rigBeadsDir)
 	u.populateMail(witnessData, witnessIdentity, u.townRoot)
 	cache.SetIdentity(witnessIdentity, witnessData)
 
@@ -104,6 +107,7 @@ func (u *Updater) updateRigIdentities(cache *Cache, rigName string) {
 	refineryIdentity := fmt.Sprintf("%s/refinery", rigName)
 	refineryData := &IdentityData{}
 	u.populateHookedWork(refineryData, refineryIdentity, rigBeadsDir)
+	u.populateCurrentWork(refineryData, refineryIdentity, rigBeadsDir)
 	u.populateMail(refineryData, refineryIdentity, u.townRoot)
 	cache.SetIdentity(refineryIdentity, refineryData)
 
@@ -132,6 +136,7 @@ func (u *Updater) updatePolecatIdentities(cache *Cache, rigName, polecatsDir, ri
 
 		data := &IdentityData{}
 		u.populateHookedWork(data, identity, rigBeadsDir)
+		u.populateCurrentWork(data, identity, rigBeadsDir)
 		u.populateMail(data, identity, u.townRoot)
 		cache.SetIdentity(identity, data)
 	}
@@ -156,6 +161,7 @@ func (u *Updater) updateCrewIdentities(cache *Cache, rigName, rigBeadsDir string
 
 		data := &IdentityData{}
 		u.populateHookedWork(data, identity, rigBeadsDir)
+		u.populateCurrentWork(data, identity, rigBeadsDir)
 		u.populateMail(data, identity, u.townRoot)
 		cache.SetIdentity(identity, data)
 	}
@@ -195,6 +201,42 @@ func (u *Updater) populateHookedWork(data *IdentityData, identity string, beadsD
 		display = display[:maxLen-1] + "\u2026"
 	}
 	data.HookedWork = display
+}
+
+// populateCurrentWork fills in current work (in_progress) data for an identity (gt-avr97i.1).
+func (u *Updater) populateCurrentWork(data *IdentityData, identity string, beadsDir string) {
+	if beadsDir == "" {
+		beadsDir = u.townRoot
+	}
+
+	// Check if beads directory exists
+	if _, err := os.Stat(filepath.Join(beadsDir, ".beads")); os.IsNotExist(err) {
+		// Try the parent directory (for rig beads)
+		if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
+			return
+		}
+	}
+
+	b := beads.New(beadsDir)
+
+	// Query for in_progress beads assigned to this identity
+	inProgressBeads, err := b.List(beads.ListOptions{
+		Status:   "in_progress",
+		Assignee: identity,
+		Priority: -1,
+	})
+	if err != nil || len(inProgressBeads) == 0 {
+		return
+	}
+
+	// Format the first in_progress bead
+	bead := inProgressBeads[0]
+	const maxLen = 40
+	display := fmt.Sprintf("%s: %s", bead.ID, bead.Title)
+	if len(display) > maxLen {
+		display = display[:maxLen-1] + "\u2026"
+	}
+	data.CurrentWork = display
 }
 
 // populateMail fills in mail data for an identity.

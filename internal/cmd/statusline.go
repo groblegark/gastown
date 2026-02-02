@@ -779,6 +779,7 @@ func getHookedWork(identity string, maxLen int, beadsDir string) string {
 
 // getCurrentWork returns a truncated title of the first in_progress issue.
 // Uses the pane's working directory to find the beads.
+// Checks the status line cache first for performance (gt-avr97i.1).
 func getCurrentWork(t *tmux.Tmux, session string, maxLen int) string {
 	// Get the pane's working directory
 	workDir, err := t.GetPaneWorkDir(session)
@@ -786,6 +787,20 @@ func getCurrentWork(t *tmux.Tmux, session string, maxLen int) string {
 		return ""
 	}
 
+	// Try to find town root for cache lookup
+	townRoot := findTownRootFromDir(workDir)
+	if townRoot != "" {
+		// Derive identity from session name (e.g., "gt-gastown-crew-decisions" -> "gastown/crew/decisions")
+		identity := sessionToIdentity(session)
+		if identity != "" {
+			// Try cache first
+			if work, cacheHit := statusline.GetCachedCurrentWork(townRoot, identity, maxLen); cacheHit {
+				return work
+			}
+		}
+	}
+
+	// Cache miss or identity not found - fall back to direct query
 	// Check if there's a .beads directory
 	beadsDir := filepath.Join(workDir, ".beads")
 	if _, err := os.Stat(beadsDir); os.IsNotExist(err) {
@@ -820,4 +835,62 @@ func findTownRootFromDir(dir string) string {
 		return ""
 	}
 	return townRoot
+}
+
+// sessionToIdentity converts a tmux session name to an identity string (gt-avr97i.1).
+// Examples:
+//   - "hq-mayor" → "mayor/"
+//   - "hq-deacon" → "deacon/"
+//   - "gt-gastown-witness" → "gastown/witness"
+//   - "gt-gastown-refinery" → "gastown/refinery"
+//   - "gt-gastown-crew-decisions" → "gastown/crew/decisions"
+//   - "gt-gastown-nux" → "gastown/nux" (polecat)
+func sessionToIdentity(session string) string {
+	// Town-level agents use hq- prefix
+	if strings.HasPrefix(session, "hq-") {
+		suffix := strings.TrimPrefix(session, "hq-")
+		if suffix == "mayor" || suffix == "deacon" {
+			return suffix + "/" // Canonical format with trailing slash
+		}
+		return ""
+	}
+
+	// Rig-level agents use gt- prefix
+	if !strings.HasPrefix(session, "gt-") {
+		return ""
+	}
+
+	suffix := strings.TrimPrefix(session, "gt-")
+
+	// Legacy format: gt-witness-<rig>
+	if strings.HasPrefix(suffix, "witness-") {
+		rig := strings.TrimPrefix(suffix, "witness-")
+		return rig + "/witness"
+	}
+
+	// Standard format: gt-<rig>-<type> or gt-<rig>-crew-<name>
+	parts := strings.SplitN(suffix, "-", 2)
+	if len(parts) < 2 {
+		return ""
+	}
+
+	rig := parts[0]
+	remainder := parts[1]
+
+	// Crew: gt-<rig>-crew-<name>
+	if strings.HasPrefix(remainder, "crew-") {
+		name := strings.TrimPrefix(remainder, "crew-")
+		return rig + "/crew/" + name
+	}
+
+	// Other agent types
+	switch remainder {
+	case "witness":
+		return rig + "/witness"
+	case "refinery":
+		return rig + "/refinery"
+	default:
+		// Polecat
+		return rig + "/" + remainder
+	}
 }

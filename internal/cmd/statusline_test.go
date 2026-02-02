@@ -84,3 +84,47 @@ func TestCategorizeSessionType(t *testing.T) {
 		})
 	}
 }
+
+// TestSessionToIdentity tests conversion from tmux session names to identity strings (gt-avr97i.1).
+func TestSessionToIdentity(t *testing.T) {
+	tests := []struct {
+		session      string
+		wantIdentity string
+	}{
+		// Town-level agents
+		{"hq-mayor", "mayor/"},
+		{"hq-deacon", "deacon/"},
+
+		// Witness sessions
+		{"gt-gastown-witness", "gastown/witness"},
+		{"gt-myrig-witness", "myrig/witness"},
+		{"gt-witness-gastown", "gastown/witness"}, // legacy format
+
+		// Refinery sessions
+		{"gt-gastown-refinery", "gastown/refinery"},
+		{"gt-myrig-refinery", "myrig/refinery"},
+
+		// Crew sessions
+		{"gt-gastown-crew-decisions", "gastown/crew/decisions"},
+		{"gt-myrig-crew-max", "myrig/crew/max"},
+
+		// Polecat sessions
+		{"gt-gastown-slit", "gastown/slit"},
+		{"gt-myrig-worker", "myrig/worker"},
+
+		// Edge cases
+		{"gt-a-b", "a/b"},       // minimum valid
+		{"invalid-session", ""}, // no gt- or hq- prefix
+		{"gt-norig", ""},        // missing agent type
+		{"hq-unknown", ""},      // unknown hq- session
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.session, func(t *testing.T) {
+			got := sessionToIdentity(tt.session)
+			if got != tt.wantIdentity {
+				t.Errorf("sessionToIdentity(%q) = %q, want %q", tt.session, got, tt.wantIdentity)
+			}
+		})
+	}
+}
