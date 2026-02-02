@@ -1356,18 +1356,8 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "[turn-check] Soft mode: %v\n", decisionTurnCheckSoft)
 	}
 
-	// Check if there are already pending decisions from this agent
-	// If so, don't require a new one (fix for bd-bug-stop_hook_fires_even_when_decision)
-	if !markerExists && !decisionTurnCheckSoft {
-		hasPending := checkAgentHasPendingDecisions()
-		if hasPending {
-			if decisionTurnCheckVerbose {
-				fmt.Fprintf(os.Stderr, "[turn-check] OK: Agent has pending decisions awaiting resolution\n")
-			}
-			return nil
-		}
-	}
-
+	// Every turn requires a fresh decision - no bypass for pending decisions.
+	// Agent must create a new decision point each turn to pass the stop hook.
 	result := checkTurnMarker(input.SessionID, decisionTurnCheckSoft)
 
 	if result != nil {
