@@ -2088,6 +2088,7 @@ func RunServer(cfg ServerConfig) error {
 	convoyServer := NewConvoyServer(root)
 	activityServer := NewActivityServer(root)
 	terminalServer := NewTerminalServer()
+	slingServer := NewSlingServer(root)
 
 	// Set up interceptors
 	var opts []connect.HandlerOption
@@ -2118,6 +2119,9 @@ func RunServer(cfg ServerConfig) error {
 	terminalPath, terminalHandler := gastownv1connect.NewTerminalServiceHandler(terminalServer, opts...)
 	mux.Handle(terminalPath, terminalHandler)
 
+	slingPath, slingHandler := gastownv1connect.NewSlingServiceHandler(slingServer, opts...)
+	mux.Handle(slingPath, slingHandler)
+
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -2146,6 +2150,7 @@ func RunServer(cfg ServerConfig) error {
 	log.Printf("  %s", convoyPath)
 	log.Printf("  %s", activityPath)
 	log.Printf("  %s", terminalPath)
+	log.Printf("  %s", slingPath)
 	log.Printf("  /health")
 
 	// Start server (TLS or plain HTTP)

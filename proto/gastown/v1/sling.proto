@@ -1,0 +1,271 @@
+syntax = "proto3";
+
+package gastown.v1;
+
+option go_package = "github.com/steveyegge/gastown/mobile/gen/gastown/v1;gastownv1";
+
+import "gastown/v1/common.proto";
+
+// SlingService manages work dispatch - assigning beads to agents
+service SlingService {
+  // Sling assigns a bead to a target agent
+  rpc Sling(SlingRequest) returns (SlingResponse);
+
+  // SlingFormula instantiates and slings a formula
+  rpc SlingFormula(SlingFormulaRequest) returns (SlingFormulaResponse);
+
+  // SlingBatch slings multiple beads to polecats in parallel
+  rpc SlingBatch(SlingBatchRequest) returns (SlingBatchResponse);
+
+  // Unsling removes work from an agent's hook
+  rpc Unsling(UnslingRequest) returns (UnslingResponse);
+
+  // GetWorkload returns all hooked work for an agent
+  rpc GetWorkload(GetWorkloadRequest) returns (GetWorkloadResponse);
+}
+
+// Merge strategy for work completion
+enum MergeStrategy {
+  MERGE_STRATEGY_UNSPECIFIED = 0;
+  MERGE_STRATEGY_DIRECT = 1;  // Push directly to main
+  MERGE_STRATEGY_MR = 2;       // Go through refinery merge queue
+  MERGE_STRATEGY_LOCAL = 3;    // Merge locally, push to main
+}
+
+message SlingRequest {
+  // The bead ID to sling
+  string bead_id = 1;
+
+  // Target agent (e.g., "gastown", "mayor", "gastown/crew/mobile")
+  // If empty, slings to self
+  string target = 2;
+
+  // Natural language instructions for the executor
+  string args = 3;
+
+  // Context subject for the work
+  string subject = 4;
+
+  // Context message for the work
+  string message = 5;
+
+  // Create polecat if targeting a rig and polecat doesn't exist
+  bool create = 6;
+
+  // Force spawn even if polecat has unread mail
+  bool force = 7;
+
+  // Skip auto-convoy creation
+  bool no_convoy = 8;
+
+  // Add to existing convoy instead of creating new one
+  string convoy = 9;
+
+  // Skip merge queue on completion (keep on feature branch)
+  bool no_merge = 10;
+
+  // Merge strategy
+  MergeStrategy merge_strategy = 11;
+
+  // Create caller-owned convoy
+  bool owned = 12;
+
+  // Claude Code account handle to use
+  string account = 13;
+
+  // Override agent/runtime for this sling
+  string agent = 14;
+}
+
+message SlingResponse {
+  // The bead that was slung
+  string bead_id = 1;
+
+  // The target agent path (e.g., "gastown/polecats/furiosa")
+  string target_agent = 2;
+
+  // Convoy ID if one was created or used
+  string convoy_id = 3;
+
+  // True if a new polecat was spawned
+  bool polecat_spawned = 4;
+
+  // Name of spawned polecat (if any)
+  string polecat_name = 5;
+
+  // Bead title for display
+  string bead_title = 6;
+
+  // True if convoy was created (vs joined)
+  bool convoy_created = 7;
+}
+
+message SlingFormulaRequest {
+  // The formula name to instantiate
+  string formula = 1;
+
+  // Target agent
+  string target = 2;
+
+  // Target bead to apply formula to (--on mode)
+  string on_bead = 3;
+
+  // Formula variables (key=value pairs)
+  map<string, string> vars = 4;
+
+  // Natural language instructions
+  string args = 5;
+
+  // Context subject
+  string subject = 6;
+
+  // Context message
+  string message = 7;
+
+  // Create polecat if targeting a rig
+  bool create = 8;
+
+  // Force spawn
+  bool force = 9;
+
+  // Claude Code account
+  string account = 10;
+
+  // Agent override
+  string agent = 11;
+}
+
+message SlingFormulaResponse {
+  // The wisp root ID (formula instance)
+  string wisp_id = 1;
+
+  // The target agent path
+  string target_agent = 2;
+
+  // The target bead (if formula-on-bead mode)
+  string bead_id = 3;
+
+  // Convoy ID if created
+  string convoy_id = 4;
+
+  // True if polecat was spawned
+  bool polecat_spawned = 5;
+
+  // Spawned polecat name
+  string polecat_name = 6;
+}
+
+message SlingBatchRequest {
+  // Bead IDs to sling
+  repeated string bead_ids = 1;
+
+  // Target rig (each bead gets its own polecat)
+  string rig = 2;
+
+  // Natural language instructions (applied to all)
+  string args = 3;
+
+  // Context message (applied to all)
+  string message = 4;
+
+  // Force spawn
+  bool force = 5;
+
+  // Claude Code account
+  string account = 6;
+
+  // Agent override
+  string agent = 7;
+
+  // Create single convoy for all beads
+  bool create_convoy = 8;
+
+  // Convoy name (if create_convoy is true)
+  string convoy_name = 9;
+}
+
+message SlingBatchResponse {
+  // Results for each bead
+  repeated BatchSlingResult results = 1;
+
+  // Convoy ID if created
+  string convoy_id = 2;
+
+  // Number of successful slings
+  int32 success_count = 3;
+
+  // Number of failed slings
+  int32 failure_count = 4;
+}
+
+message BatchSlingResult {
+  // The bead ID
+  string bead_id = 1;
+
+  // True if sling succeeded
+  bool success = 2;
+
+  // Error message if failed
+  string error = 3;
+
+  // Target agent path
+  string target_agent = 4;
+
+  // Polecat name if spawned
+  string polecat_name = 5;
+}
+
+message UnslingRequest {
+  // The bead ID to unsling
+  string bead_id = 1;
+
+  // Force unsling even if work is incomplete
+  bool force = 2;
+}
+
+message UnslingResponse {
+  // The bead that was unslung
+  string bead_id = 1;
+
+  // The agent it was unhooked from
+  string previous_agent = 2;
+
+  // True if work was incomplete
+  bool was_incomplete = 3;
+}
+
+message GetWorkloadRequest {
+  // The agent to get workload for (e.g., "gastown/crew/mobile")
+  string agent = 1;
+}
+
+message GetWorkloadResponse {
+  // Hooked beads for this agent
+  repeated HookedBead beads = 1;
+
+  // Total count
+  int32 total = 2;
+}
+
+message HookedBead {
+  // Bead ID
+  string id = 1;
+
+  // Bead title
+  string title = 2;
+
+  // Bead type
+  string bead_type = 3;
+
+  // Priority
+  string priority = 4;
+
+  // When it was hooked
+  string hooked_at = 5;
+
+  // Attached formula/wisp ID (if any)
+  string attached_molecule = 6;
+
+  // Convoy tracking this bead (if any)
+  string convoy_id = 7;
+}
