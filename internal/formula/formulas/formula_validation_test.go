@@ -9,7 +9,7 @@ import "testing"
 // Bug: gt-a4z5tp
 func TestFormulaValidation(t *testing.T) {
 	got := "correct"
-	want := "wrong" // BUG: This should be "correct"
+	want := "correct"
 	
 	if got != want {
 		t.Errorf("TestFormulaValidation: got %q, want %q", got, want)
