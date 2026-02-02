@@ -186,6 +186,10 @@ func (m *Manager) Add(name string, createBranch bool) (*CrewWorker, error) {
 		// Non-fatal - crew can still work, warn but don't fail
 		fmt.Printf("Warning: could not set up shared beads: %v\n", err)
 	}
+	// Set beads.role=maintainer to prevent 'beads.role not configured' warning (gt-vhsnvd)
+	if err := crewGit.SetConfig("beads.role", "maintainer"); err != nil {
+		fmt.Printf("Warning: could not set beads.role config: %v\n", err)
+	}
 
 	// Set up .claude symlink so crew worker inherits shared hook configuration.
 	// Claude Code doesn't traverse parent directories for settings.json, so the symlink
