@@ -399,9 +399,36 @@ func (s *DecisionServer) CreateDecision(
 	}
 
 	// Create the decision using bd decision create (canonical storage, hq-946577.39)
-	issue, err := client.CreateBdDecision(fields)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("creating decision: %w", err))
+	// Retry with exponential backoff to handle transient errors (gt-d8jv14)
+	var issue *beads.Issue
+	var lastErr error
+	maxRetries := 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff: 100ms, 200ms, 400ms
+			backoff := time.Duration(100<<attempt) * time.Millisecond
+			log.Printf("CreateDecision retry %d/%d after %v (previous error: %v)",
+				attempt+1, maxRetries, backoff, lastErr)
+			select {
+			case <-ctx.Done():
+				return nil, connect.NewError(connect.CodeCanceled, ctx.Err())
+			case <-time.After(backoff):
+			}
+		}
+
+		issue, lastErr = client.CreateBdDecision(fields)
+		if lastErr == nil {
+			break
+		}
+
+		// Log the error for debugging intermittent failures
+		log.Printf("CreateDecision attempt %d/%d failed: %v (requestedBy: %s, question: %.50s...)",
+			attempt+1, maxRetries, lastErr, fields.RequestedBy, fields.Question)
+	}
+
+	if lastErr != nil {
+		log.Printf("CreateDecision failed after %d attempts: %v", maxRetries, lastErr)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("creating decision: %w", lastErr))
 	}
 
 	// Build response decision
