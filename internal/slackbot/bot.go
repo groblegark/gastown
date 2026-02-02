@@ -1870,14 +1870,17 @@ func (b *Bot) resolveChannel(agent string) string {
 }
 
 // resolveChannelForDecision determines the appropriate channel for a decision.
-// Priority order:
-// 1. Convoy-based channel (if parent issue is tracked by a convoy)
-// 2. Agent channel mode preference (general, agent, epic, dm)
-// 3. Epic-based channel (if decision has parent epic)
-// 4. Static router config (if available and matches)
-// 5. Dynamic channel creation (if enabled)
-// 6. Default channelID
+// Currently simplified to always use the default channel (gt-i319vr).
+// TODO: Re-enable multi-channel routing when monitoring is improved.
 func (b *Bot) resolveChannelForDecision(decision rpcclient.Decision) string {
+	// gt-i319vr: Route all decisions to default channel for now
+	if b.debug {
+		log.Printf("Slack: Routing decision %s to default channel %s (multi-channel disabled)",
+			decision.ID, b.channelID)
+	}
+	return b.channelID
+
+	/* Multi-channel routing disabled (gt-i319vr)
 	agent := decision.RequestedBy
 
 	// Priority 1: Convoy-based channel routing
@@ -1978,6 +1981,7 @@ func (b *Bot) resolveChannelForDecision(decision rpcclient.Decision) string {
 
 	// Fall back to agent-based routing (priorities 4-6)
 	return b.resolveChannel(agent)
+	End of commented-out multi-channel routing (gt-i319vr) */
 }
 
 // getEffectiveChannelMode returns the effective channel mode for an agent.
