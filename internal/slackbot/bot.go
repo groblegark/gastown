@@ -970,8 +970,19 @@ func (b *Bot) buildOtherModal(decisionID, question, channelID, messageTs string)
 	}
 }
 
-// handleShowContext opens a modal with the full decision context
+// handleShowContext posts the full decision context as a thread reply (gt-3sh5b8)
 func (b *Bot) handleShowContext(callback slack.InteractionCallback, decisionID string) {
+	// Get the message info from our tracked messages
+	b.decisionMessagesMu.RLock()
+	msgInfo, ok := b.decisionMessages[decisionID]
+	b.decisionMessagesMu.RUnlock()
+
+	if !ok {
+		b.postEphemeral(callback.Channel.ID, callback.User.ID,
+			"Could not find message info for this decision.")
+		return
+	}
+
 	ctx := context.Background()
 
 	// Fetch decision details
@@ -988,13 +999,49 @@ func (b *Bot) handleShowContext(callback slack.InteractionCallback, decisionID s
 		return
 	}
 
-	// Build and open the context modal
-	modalRequest := b.buildContextModal(decision)
-	_, err = b.client.OpenView(callback.TriggerID, modalRequest)
+	// Format the context
+	var contextDisplay string
+	if decision.Context == "" {
+		contextDisplay = "(no context provided)"
+	} else {
+		// Pretty-print JSON if possible
+		contextDisplay = decision.Context
+		var jsonObj interface{}
+		if err := json.Unmarshal([]byte(decision.Context), &jsonObj); err == nil {
+			if prettyJSON, err := json.MarshalIndent(jsonObj, "", "  "); err == nil {
+				contextDisplay = string(prettyJSON)
+			}
+		}
+	}
+
+	// Truncate if too long for Slack (max ~3000 chars in a block)
+	if len(contextDisplay) > 2900 {
+		contextDisplay = contextDisplay[:2900] + "\n...(truncated)"
+	}
+
+	// Format as code block and post to thread
+	blocks := []slack.Block{
+		slack.NewHeaderBlock(
+			slack.NewTextBlockObject("plain_text",
+				fmt.Sprintf("📋 Context: %s", decisionID),
+				false, false),
+		),
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn",
+				fmt.Sprintf("```%s```", contextDisplay),
+				false, false),
+			nil, nil),
+	}
+
+	// Post to thread
+	_, _, err = b.client.PostMessage(
+		msgInfo.channelID,
+		slack.MsgOptionBlocks(blocks...),
+		slack.MsgOptionTS(msgInfo.timestamp),
+	)
 	if err != nil {
-		log.Printf("Slack: Error opening context modal: %v", err)
 		b.postEphemeral(callback.Channel.ID, callback.User.ID,
-			fmt.Sprintf("Error opening context modal: %v", err))
+			fmt.Sprintf("Error posting context: %v", err))
 	}
 }
 
