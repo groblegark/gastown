@@ -135,77 +135,67 @@ func TestFormatContextForSlack(t *testing.T) {
 	tests := []struct {
 		name     string
 		context  string
-		maxLen   int
-		wantType string // "empty", "codeblock", "plain", "truncated"
+		wantType string // "empty", "codeblock", "plain"
 		contains []string
 	}{
 		{
 			name:     "empty context",
 			context:  "",
-			maxLen:   500,
 			wantType: "empty",
 		},
 		{
 			name:     "simple JSON object",
 			context:  `{"key": "value"}`,
-			maxLen:   500,
 			wantType: "codeblock",
 			contains: []string{"```", "key", "value"},
 		},
 		{
 			name:     "nested JSON",
 			context:  `{"outer": {"inner": "value"}, "number": 42}`,
-			maxLen:   500,
 			wantType: "codeblock",
 			contains: []string{"```", "outer", "inner"},
 		},
 		{
 			name:     "JSON array",
 			context:  `["item1", "item2", "item3"]`,
-			maxLen:   500,
 			wantType: "codeblock",
 			contains: []string{"```", "item1"},
 		},
 		{
 			name:     "plain text (not JSON)",
 			context:  "This is plain text context",
-			maxLen:   500,
 			wantType: "plain",
 			contains: []string{"This is plain text context"},
 		},
 		{
-			name:     "truncated plain text",
-			context:  "This is a very long plain text context that exceeds the maximum length",
-			maxLen:   30,
-			wantType: "truncated",
-			contains: []string{"..."},
-		},
-		{
 			name:     "JSON with successor_schemas",
 			context:  `{"diagnosis": "rate limiting", "successor_schemas": {"Fix upstream": {"required": ["approach"]}}}`,
-			maxLen:   500,
 			wantType: "codeblock",
 			contains: []string{"diagnosis", "rate limiting", "successor schemas"},
 		},
 		{
 			name:     "only successor_schemas",
 			context:  `{"successor_schemas": {"Option A": {"required": ["field1"]}}}`,
-			maxLen:   500,
 			wantType: "schema_only",
 			contains: []string{"successor schemas"},
 		},
 		{
 			name:     "complex nested JSON",
 			context:  `{"error_code": 500, "details": {"service": "api", "attempts": 3}, "timestamp": "2026-01-29T10:00:00Z"}`,
-			maxLen:   500,
 			wantType: "codeblock",
 			contains: []string{"```", "error_code", "500", "service"},
+		},
+		{
+			name:     "JSON with session_id filtered",
+			context:  `{"session_id": "secret-123", "key": "value"}`,
+			wantType: "codeblock",
+			contains: []string{"key", "value"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatContextForSlack(tt.context, tt.maxLen)
+			result := formatContextForSlack(tt.context)
 
 			switch tt.wantType {
 			case "empty":
@@ -220,10 +210,6 @@ func TestFormatContextForSlack(t *testing.T) {
 				if len(result) >= 3 && result[:3] == "```" {
 					t.Errorf("expected plain text, got code block: %q", result)
 				}
-			case "truncated":
-				if len(result) > tt.maxLen {
-					t.Errorf("result length %d exceeds maxLen %d", len(result), tt.maxLen)
-				}
 			case "schema_only":
 				// Should contain schema info indicator
 			}
@@ -233,18 +219,28 @@ func TestFormatContextForSlack(t *testing.T) {
 					t.Errorf("result should contain %q, got %q", s, result)
 				}
 			}
+
+			// Verify session_id is never in the output
+			if strings.Contains(result, "session_id") {
+				t.Errorf("session_id should be filtered out, got %q", result)
+			}
 		})
 	}
 }
 
-// TestFormatContextForSlack_Truncation tests length limits.
+// TestFormatContextForSlack_Truncation tests that content exceeding Slack limits is truncated.
 func TestFormatContextForSlack_Truncation(t *testing.T) {
-	// Long JSON that will need truncation
-	longJSON := `{"field1": "` + string(make([]byte, 1000)) + `"}`
-	result := formatContextForSlack(longJSON, 200)
+	// Long JSON that will need truncation (exceeds ~2900 char Slack limit)
+	longJSON := `{"field1": "` + string(make([]byte, 3000)) + `"}`
+	result := formatContextForSlack(longJSON)
 
-	if len(result) > 200 {
-		t.Errorf("result length %d exceeds maxLen 200", len(result))
+	// Should be truncated to around Slack's block limit (~2900 chars)
+	if len(result) > 2950 {
+		t.Errorf("result length %d exceeds Slack limit", len(result))
+	}
+	// Should still contain truncation indicator
+	if !strings.Contains(result, "...") {
+		t.Error("truncated content should contain '...'")
 	}
 }
 
@@ -262,12 +258,12 @@ func TestFormatContextForSlack_InvalidJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatContextForSlack(tt.context, 500)
+			result := formatContextForSlack(tt.context)
 			// Should return plain text, not code block
 			if len(result) >= 3 && result[:3] == "```" {
 				t.Errorf("invalid JSON should not produce code block: %q", result)
 			}
-			// Should contain the original content (possibly truncated)
+			// Should contain the original content
 			if result == "" {
 				t.Error("result should not be empty for non-empty input")
 			}
@@ -333,7 +329,7 @@ func containsIgnoreCase(s, substr string) bool {
 // TestFormatContextForSlack_EdgeCases tests edge cases.
 func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 	t.Run("just whitespace", func(t *testing.T) {
-		result := formatContextForSlack("   ", 500)
+		result := formatContextForSlack("   ")
 		// Whitespace is not valid JSON, should return as plain text
 		if result == "" {
 			t.Error("whitespace should be returned as-is (trimmed or not)")
@@ -341,7 +337,7 @@ func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("JSON boolean", func(t *testing.T) {
-		result := formatContextForSlack("true", 500)
+		result := formatContextForSlack("true")
 		// Valid JSON, should work
 		if result == "" {
 			t.Error("JSON boolean should produce output")
@@ -349,7 +345,7 @@ func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("JSON number", func(t *testing.T) {
-		result := formatContextForSlack("42", 500)
+		result := formatContextForSlack("42")
 		// Valid JSON, should work
 		if result == "" {
 			t.Error("JSON number should produce output")
@@ -357,25 +353,16 @@ func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("JSON null", func(t *testing.T) {
-		result := formatContextForSlack("null", 500)
+		result := formatContextForSlack("null")
 		// Valid JSON, should work
 		if result == "" {
 			t.Error("JSON null should produce output")
 		}
 	})
 
-	t.Run("small maxLen", func(t *testing.T) {
-		// Note: Very small maxLen values (< 10) can cause issues due to
-		// code block marker overhead. Use reasonable minimum values.
-		result := formatContextForSlack(`{"key": "value"}`, 50)
-		if len(result) > 55 { // Allow some buffer for code block markers
-			t.Errorf("result too long for maxLen=50: %d chars", len(result))
-		}
-	})
-
 	t.Run("context with _type field removed", func(t *testing.T) {
 		context := `{"_type": "tradeoff", "key": "value"}`
-		result := formatContextForSlack(context, 500)
+		result := formatContextForSlack(context)
 		// _type should be removed from display
 		if strings.Contains(result, "_type") {
 			t.Error("_type field should be removed from display")
@@ -387,10 +374,31 @@ func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 
 	t.Run("context with only _type field", func(t *testing.T) {
 		context := `{"_type": "tradeoff"}`
-		result := formatContextForSlack(context, 500)
+		result := formatContextForSlack(context)
 		// Should return empty since only internal field
 		if result != "" {
 			t.Errorf("context with only _type should be empty, got: %s", result)
+		}
+	})
+
+	t.Run("context with session_id filtered", func(t *testing.T) {
+		context := `{"session_id": "abc-123", "important": "data"}`
+		result := formatContextForSlack(context)
+		// session_id should be removed from display
+		if strings.Contains(result, "session_id") || strings.Contains(result, "abc-123") {
+			t.Error("session_id field should be removed from display")
+		}
+		if !strings.Contains(result, "important") {
+			t.Error("regular fields should be preserved")
+		}
+	})
+
+	t.Run("context with only session_id field", func(t *testing.T) {
+		context := `{"session_id": "abc-123"}`
+		result := formatContextForSlack(context)
+		// Should return empty since only internal field
+		if result != "" {
+			t.Errorf("context with only session_id should be empty, got: %s", result)
 		}
 	})
 }

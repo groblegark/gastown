@@ -544,10 +544,11 @@ func TestResilience_LargePayloads(t *testing.T) {
 			largeContext[i] = 'x'
 		}
 
-		result := formatContextForSlack(string(largeContext), 500)
+		result := formatContextForSlack(string(largeContext))
 
-		if len(result) > 550 { // Allow some buffer for truncation markers
-			t.Errorf("Result should be truncated to ~500 chars, got %d", len(result))
+		// Should be truncated to Slack's block limit (~2900 chars)
+		if len(result) > 2950 {
+			t.Errorf("Result should be truncated to ~2900 chars, got %d", len(result))
 		}
 
 		if result == "" {
