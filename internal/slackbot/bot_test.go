@@ -135,69 +135,53 @@ func TestFormatContextForSlack(t *testing.T) {
 	tests := []struct {
 		name     string
 		context  string
-		maxLen   int
-		wantType string // "empty", "codeblock", "plain", "truncated"
+		wantType string // "empty", "codeblock", "plain"
 		contains []string
 	}{
 		{
 			name:     "empty context",
 			context:  "",
-			maxLen:   500,
 			wantType: "empty",
 		},
 		{
 			name:     "simple JSON object",
 			context:  `{"key": "value"}`,
-			maxLen:   500,
 			wantType: "codeblock",
 			contains: []string{"```", "key", "value"},
 		},
 		{
 			name:     "nested JSON",
 			context:  `{"outer": {"inner": "value"}, "number": 42}`,
-			maxLen:   500,
 			wantType: "codeblock",
 			contains: []string{"```", "outer", "inner"},
 		},
 		{
 			name:     "JSON array",
 			context:  `["item1", "item2", "item3"]`,
-			maxLen:   500,
 			wantType: "codeblock",
 			contains: []string{"```", "item1"},
 		},
 		{
 			name:     "plain text (not JSON)",
 			context:  "This is plain text context",
-			maxLen:   500,
 			wantType: "plain",
 			contains: []string{"This is plain text context"},
 		},
 		{
-			name:     "truncated plain text",
-			context:  "This is a very long plain text context that exceeds the maximum length",
-			maxLen:   30,
-			wantType: "truncated",
-			contains: []string{"..."},
-		},
-		{
 			name:     "JSON with successor_schemas",
 			context:  `{"diagnosis": "rate limiting", "successor_schemas": {"Fix upstream": {"required": ["approach"]}}}`,
-			maxLen:   500,
 			wantType: "codeblock",
 			contains: []string{"diagnosis", "rate limiting", "successor schemas"},
 		},
 		{
 			name:     "only successor_schemas",
 			context:  `{"successor_schemas": {"Option A": {"required": ["field1"]}}}`,
-			maxLen:   500,
 			wantType: "schema_only",
 			contains: []string{"successor schemas"},
 		},
 		{
 			name:     "complex nested JSON",
 			context:  `{"error_code": 500, "details": {"service": "api", "attempts": 3}, "timestamp": "2026-01-29T10:00:00Z"}`,
-			maxLen:   500,
 			wantType: "codeblock",
 			contains: []string{"```", "error_code", "500", "service"},
 		},
@@ -205,7 +189,7 @@ func TestFormatContextForSlack(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatContextForSlack(tt.context, tt.maxLen)
+			result := formatContextForSlack(tt.context)
 
 			switch tt.wantType {
 			case "empty":
@@ -220,10 +204,6 @@ func TestFormatContextForSlack(t *testing.T) {
 				if len(result) >= 3 && result[:3] == "```" {
 					t.Errorf("expected plain text, got code block: %q", result)
 				}
-			case "truncated":
-				if len(result) > tt.maxLen {
-					t.Errorf("result length %d exceeds maxLen %d", len(result), tt.maxLen)
-				}
 			case "schema_only":
 				// Should contain schema info indicator
 			}
@@ -237,14 +217,15 @@ func TestFormatContextForSlack(t *testing.T) {
 	}
 }
 
-// TestFormatContextForSlack_Truncation tests length limits.
+// TestFormatContextForSlack_Truncation tests Slack block limit (2900 chars).
 func TestFormatContextForSlack_Truncation(t *testing.T) {
-	// Long JSON that will need truncation
-	longJSON := `{"field1": "` + string(make([]byte, 1000)) + `"}`
-	result := formatContextForSlack(longJSON, 200)
+	// Long JSON that will need truncation at Slack's block limit
+	longJSON := `{"field1": "` + string(make([]byte, 3000)) + `"}`
+	result := formatContextForSlack(longJSON)
 
-	if len(result) > 200 {
-		t.Errorf("result length %d exceeds maxLen 200", len(result))
+	// Should respect Slack block limit (2900)
+	if len(result) > 2900 {
+		t.Errorf("result length %d exceeds Slack block limit 2900", len(result))
 	}
 }
 
@@ -262,7 +243,7 @@ func TestFormatContextForSlack_InvalidJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatContextForSlack(tt.context, 500)
+			result := formatContextForSlack(tt.context)
 			// Should return plain text, not code block
 			if len(result) >= 3 && result[:3] == "```" {
 				t.Errorf("invalid JSON should not produce code block: %q", result)
@@ -333,7 +314,7 @@ func containsIgnoreCase(s, substr string) bool {
 // TestFormatContextForSlack_EdgeCases tests edge cases.
 func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 	t.Run("just whitespace", func(t *testing.T) {
-		result := formatContextForSlack("   ", 500)
+		result := formatContextForSlack("   ")
 		// Whitespace is not valid JSON, should return as plain text
 		if result == "" {
 			t.Error("whitespace should be returned as-is (trimmed or not)")
@@ -341,7 +322,7 @@ func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("JSON boolean", func(t *testing.T) {
-		result := formatContextForSlack("true", 500)
+		result := formatContextForSlack("true")
 		// Valid JSON, should work
 		if result == "" {
 			t.Error("JSON boolean should produce output")
@@ -349,7 +330,7 @@ func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("JSON number", func(t *testing.T) {
-		result := formatContextForSlack("42", 500)
+		result := formatContextForSlack("42")
 		// Valid JSON, should work
 		if result == "" {
 			t.Error("JSON number should produce output")
@@ -357,25 +338,24 @@ func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("JSON null", func(t *testing.T) {
-		result := formatContextForSlack("null", 500)
+		result := formatContextForSlack("null")
 		// Valid JSON, should work
 		if result == "" {
 			t.Error("JSON null should produce output")
 		}
 	})
 
-	t.Run("small maxLen", func(t *testing.T) {
-		// Note: Very small maxLen values (< 10) can cause issues due to
-		// code block marker overhead. Use reasonable minimum values.
-		result := formatContextForSlack(`{"key": "value"}`, 50)
-		if len(result) > 55 { // Allow some buffer for code block markers
-			t.Errorf("result too long for maxLen=50: %d chars", len(result))
+	t.Run("small JSON formats correctly", func(t *testing.T) {
+		result := formatContextForSlack(`{"key": "value"}`)
+		// Small JSON should produce a code block
+		if !strings.HasPrefix(result, "```") {
+			t.Errorf("expected code block, got: %s", result)
 		}
 	})
 
 	t.Run("context with _type field removed", func(t *testing.T) {
 		context := `{"_type": "tradeoff", "key": "value"}`
-		result := formatContextForSlack(context, 500)
+		result := formatContextForSlack(context)
 		// _type should be removed from display
 		if strings.Contains(result, "_type") {
 			t.Error("_type field should be removed from display")
@@ -387,7 +367,7 @@ func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 
 	t.Run("context with only _type field", func(t *testing.T) {
 		context := `{"_type": "tradeoff"}`
-		result := formatContextForSlack(context, 500)
+		result := formatContextForSlack(context)
 		// Should return empty since only internal field
 		if result != "" {
 			t.Errorf("context with only _type should be empty, got: %s", result)
@@ -401,7 +381,7 @@ func TestFormatContextForSlack_EdgeCases(t *testing.T) {
 func TestFormatContextForSlack_ValueExtraction(t *testing.T) {
 	t.Run("extracts string _value", func(t *testing.T) {
 		context := `{"_session_id":"abc-123","_value":"This is the actual context text"}`
-		result := formatContextForSlack(context, 500)
+		result := formatContextForSlack(context)
 
 		// Should extract _value content
 		if result != "This is the actual context text" {
@@ -419,7 +399,7 @@ func TestFormatContextForSlack_ValueExtraction(t *testing.T) {
 
 	t.Run("extracts object _value", func(t *testing.T) {
 		context := `{"_session_id":"xyz","_value":{"key":"value","nested":{"a":1}}}`
-		result := formatContextForSlack(context, 500)
+		result := formatContextForSlack(context)
 
 		// Should be formatted as JSON (the extracted object)
 		if !strings.Contains(result, "```") {
@@ -435,7 +415,7 @@ func TestFormatContextForSlack_ValueExtraction(t *testing.T) {
 
 	t.Run("extracts array _value", func(t *testing.T) {
 		context := `{"_session_id":"xyz","_value":["item1","item2"]}`
-		result := formatContextForSlack(context, 500)
+		result := formatContextForSlack(context)
 
 		// Should be formatted as JSON (the extracted array)
 		if !strings.Contains(result, "```") {
@@ -446,14 +426,14 @@ func TestFormatContextForSlack_ValueExtraction(t *testing.T) {
 		}
 	})
 
-	t.Run("truncates long string _value", func(t *testing.T) {
-		longText := strings.Repeat("a", 100)
+	t.Run("truncates long string _value at Slack limit", func(t *testing.T) {
+		longText := strings.Repeat("a", 3000) // Exceeds 2900 Slack limit
 		context := `{"_session_id":"abc","_value":"` + longText + `"}`
-		result := formatContextForSlack(context, 50)
+		result := formatContextForSlack(context)
 
-		// Should be truncated
-		if len(result) > 50 {
-			t.Errorf("expected result to be truncated to 50 chars, got %d", len(result))
+		// Should be truncated to Slack block limit (~2900)
+		if len(result) > 2900 {
+			t.Errorf("expected result to be truncated to ~2900 chars, got %d", len(result))
 		}
 		if !strings.Contains(result, "...") {
 			t.Error("expected truncation marker")
@@ -462,7 +442,7 @@ func TestFormatContextForSlack_ValueExtraction(t *testing.T) {
 
 	t.Run("context without _value uses normal processing", func(t *testing.T) {
 		context := `{"_session_id":"abc","regular_key":"regular_value"}`
-		result := formatContextForSlack(context, 500)
+		result := formatContextForSlack(context)
 
 		// Should show regular_key but not _session_id
 		if !strings.Contains(result, "regular_key") {
@@ -470,6 +450,20 @@ func TestFormatContextForSlack_ValueExtraction(t *testing.T) {
 		}
 		if strings.Contains(result, "_session_id") {
 			t.Error("result should not contain _session_id")
+		}
+	})
+
+	// gt-xeejgo: Also remove session_id without underscore
+	t.Run("removes session_id without underscore", func(t *testing.T) {
+		context := `{"session_id":"abc","regular_key":"regular_value"}`
+		result := formatContextForSlack(context)
+
+		// Should show regular_key but not session_id
+		if !strings.Contains(result, "regular_key") {
+			t.Error("expected regular_key to be present")
+		}
+		if strings.Contains(result, "session_id") {
+			t.Error("result should not contain session_id")
 		}
 	})
 }

@@ -534,7 +534,7 @@ func (b *Bot) showResolvedDecisionView(callback slack.InteractionCallback, decis
 
 	if decision.Context != "" {
 		// Format context nicely
-		contextText := formatContextForSlack(decision.Context, 500)
+		contextText := formatContextForSlack(decision.Context)
 		if contextText != "" {
 			blocks = append(blocks,
 				slack.NewSectionBlock(
@@ -2419,17 +2419,11 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 			urgencyEmoji, semanticSlug, agentInfo, decision.Question)
 	}
 
+	// gt-xeejgo: Removed "View Details" button - context shown inline
 	blocks := []slack.Block{
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn", headerText, false, false),
-			nil,
-			slack.NewAccessory(
-				slack.NewButtonBlockElement(
-					"view_decision",
-					decision.ID, // Keep original ID for button action
-					slack.NewTextBlockObject("plain_text", "View Details", false, false),
-				),
-			),
+			nil, nil,
 		),
 	}
 
@@ -2443,29 +2437,15 @@ func (b *Bot) NotifyNewDecision(decision rpcclient.Decision) error {
 		)
 	}
 
-	// Show context inline if available (with JSON formatting)
+	// Show full context inline (gt-xeejgo - no "Show Full Context" button needed)
 	if decision.Context != "" {
-		const contextPreviewThreshold = 500
-		contextText := formatContextForSlack(decision.Context, contextPreviewThreshold)
+		contextText := formatContextForSlack(decision.Context)
 		blocks = append(blocks,
 			slack.NewSectionBlock(
 				slack.NewTextBlockObject("mrkdwn", contextText, false, false),
 				nil, nil,
 			),
 		)
-
-		// Add "Show Full Context" button if context is long
-		if len(decision.Context) > contextPreviewThreshold {
-			blocks = append(blocks,
-				slack.NewActionBlock("",
-					slack.NewButtonBlockElement(
-						fmt.Sprintf("show_context_%s", decision.ID),
-						decision.ID,
-						slack.NewTextBlockObject("plain_text", "Show Full Context", false, false),
-					),
-				),
-			)
-		}
 	}
 
 	// Show options inline with resolve buttons (gt-1bc64)
@@ -2696,17 +2676,11 @@ func (b *Bot) notifyDecisionToChannel(decision rpcclient.Decision, channelID str
 			urgencyEmoji, semanticSlug, agentInfo, decision.Question)
 	}
 
+	// gt-xeejgo: Removed "View Details" button - context shown inline
 	blocks := []slack.Block{
 		slack.NewSectionBlock(
 			slack.NewTextBlockObject("mrkdwn", headerText, false, false),
-			nil,
-			slack.NewAccessory(
-				slack.NewButtonBlockElement(
-					"view_decision",
-					decision.ID,
-					slack.NewTextBlockObject("plain_text", "View Details", false, false),
-				),
-			),
+			nil, nil,
 		),
 	}
 
@@ -2720,29 +2694,15 @@ func (b *Bot) notifyDecisionToChannel(decision rpcclient.Decision, channelID str
 		)
 	}
 
-	// Show context inline with JSON formatting
+	// Show full context inline (gt-xeejgo - no "Show Full Context" button needed)
 	if decision.Context != "" {
-		const contextPreviewThreshold = 500
-		contextText := formatContextForSlack(decision.Context, contextPreviewThreshold)
+		contextText := formatContextForSlack(decision.Context)
 		blocks = append(blocks,
 			slack.NewSectionBlock(
 				slack.NewTextBlockObject("mrkdwn", contextText, false, false),
 				nil, nil,
 			),
 		)
-
-		// Add "Show Full Context" button if context is long
-		if len(decision.Context) > contextPreviewThreshold {
-			blocks = append(blocks,
-				slack.NewActionBlock("",
-					slack.NewButtonBlockElement(
-						fmt.Sprintf("show_context_%s", decision.ID),
-						decision.ID,
-						slack.NewTextBlockObject("plain_text", "Show Full Context", false, false),
-					),
-				),
-			)
-		}
 	}
 
 	if len(decision.Options) > 0 {
@@ -3168,19 +3128,23 @@ func extractTypeFromContext(context string) string {
 
 // formatContextForSlack formats JSON context for Slack display.
 // If context is valid JSON, it pretty-prints it in a code block.
-// Otherwise returns the context as-is (truncated if needed).
-// Extracts _value from wrapped contexts and removes internal fields like _type, _session_id.
-func formatContextForSlack(context string, maxLen int) string {
+// Otherwise returns the context as-is.
+// Extracts _value from wrapped contexts and removes internal fields like _type, session_id.
+// Shows full context inline (up to Slack's ~2900 char block limit). (gt-xeejgo)
+func formatContextForSlack(context string) string {
 	if context == "" {
 		return ""
 	}
 
+	// Slack block text limit (with some margin for safety)
+	const slackBlockLimit = 2900
+
 	// Try to parse as JSON
 	var parsed interface{}
 	if err := json.Unmarshal([]byte(context), &parsed); err != nil {
-		// Not valid JSON, return truncated plain text
-		if len(context) > maxLen {
-			return context[:maxLen-3] + "..."
+		// Not valid JSON, return as plain text (truncate only if exceeds Slack limit)
+		if len(context) > slackBlockLimit {
+			return context[:slackBlockLimit-3] + "..."
 		}
 		return context
 	}
@@ -3192,8 +3156,8 @@ func formatContextForSlack(context string, maxLen int) string {
 		if valueField, hasValue := obj["_value"]; hasValue {
 			// If _value is a string, use it directly
 			if strVal, isStr := valueField.(string); isStr {
-				if len(strVal) > maxLen {
-					return strVal[:maxLen-3] + "..."
+				if len(strVal) > slackBlockLimit {
+					return strVal[:slackBlockLimit-3] + "..."
 				}
 				return strVal
 			}
@@ -3207,6 +3171,7 @@ func formatContextForSlack(context string, maxLen int) string {
 			// No _value field - remove internal fields from display
 			delete(obj, "_type")
 			delete(obj, "_session_id")
+			delete(obj, "session_id") // Also remove without underscore (gt-xeejgo)
 
 			if _, hasSchemas := obj["successor_schemas"]; hasSchemas {
 				schemaInfo = "\n📋 _Has successor schemas defined_"
@@ -3227,19 +3192,19 @@ func formatContextForSlack(context string, maxLen int) string {
 	// Pretty-print JSON
 	prettyJSON, err := json.MarshalIndent(parsed, "", "  ")
 	if err != nil {
-		// Fallback to truncated original
-		if len(context) > maxLen {
-			return context[:maxLen-3] + "..."
+		// Fallback to original (truncate only if exceeds Slack limit)
+		if len(context) > slackBlockLimit {
+			return context[:slackBlockLimit-3] + "..."
 		}
 		return context
 	}
 
-	// Format as Slack code block
+	// Format as Slack code block (truncate only if exceeds Slack limit)
 	formatted := "```\n" + string(prettyJSON) + "\n```"
-	if len(formatted) > maxLen {
+	if len(formatted) > slackBlockLimit {
 		// Truncate while preserving code block format
 		truncated := string(prettyJSON)
-		maxContent := maxLen - 10 // Account for code block markers
+		maxContent := slackBlockLimit - 10 // Account for code block markers
 		if len(truncated) > maxContent {
 			truncated = truncated[:maxContent-3] + "..."
 		}
