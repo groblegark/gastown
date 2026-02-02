@@ -99,15 +99,15 @@ func (b *Bot) getAgentActivity(agent string, limit int) []ActivityEntry {
 	return activities
 }
 
-// getGitActivity gets recent git commits mentioning the agent.
+// getGitActivity gets recent git commits by the agent.
 func (b *Bot) getGitActivity(agent string, limit int) []ActivityEntry {
 	var activities []ActivityEntry
 
-	// Try to run git log
+	// Try to run git log - include author name to filter by agent
 	cmd := exec.Command("git", "log",
 		"--oneline",
-		"-n", fmt.Sprintf("%d", limit),
-		"--format=%H|%ai|%s",
+		"-n", fmt.Sprintf("%d", limit*5), // Get more to filter
+		"--format=%H|%ai|%an|%s",
 		"--all",
 	)
 	cmd.Dir = b.townRoot
@@ -117,16 +117,18 @@ func (b *Bot) getGitActivity(agent string, limit int) []ActivityEntry {
 		return activities
 	}
 
+	shortName := strings.ToLower(extractAgentShortName(agent))
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	for _, line := range lines {
-		parts := strings.SplitN(line, "|", 3)
-		if len(parts) != 3 {
+		parts := strings.SplitN(line, "|", 4)
+		if len(parts) != 4 {
 			continue
 		}
 
-		// Check if commit message mentions the agent (in parens like (gt-xxx))
-		subject := parts[2]
-		if !strings.Contains(strings.ToLower(subject), strings.ToLower(extractAgentShortName(agent))) {
+		// Check if commit author matches the agent name
+		author := strings.ToLower(parts[2])
+		subject := parts[3]
+		if author != shortName && !strings.Contains(author, shortName) {
 			continue
 		}
 
@@ -140,6 +142,10 @@ func (b *Bot) getGitActivity(agent string, limit int) []ActivityEntry {
 			Type:      "commit",
 			Message:   subject,
 		})
+
+		if len(activities) >= limit {
+			break
+		}
 	}
 
 	return activities
