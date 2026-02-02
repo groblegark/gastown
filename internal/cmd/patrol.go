@@ -20,6 +20,9 @@ var (
 	patrolDigestDate      string
 	patrolDigestDryRun    bool
 	patrolDigestVerbose   bool
+
+	// Patrol cleanup flags
+	patrolCleanupDryRun bool
 )
 
 var patrolCmd = &cobra.Command{
@@ -34,6 +37,21 @@ to avoid JSONL pollution. This command aggregates them into daily summaries.
 Examples:
   gt patrol digest --yesterday  # Aggregate yesterday's patrol digests
   gt patrol digest --dry-run    # Preview what would be aggregated`,
+}
+
+var patrolCleanupCmd = &cobra.Command{
+	Use:   "cleanup",
+	Short: "Clean up stale hooked patrol wisps",
+	Long: `Clean up patrol wisps that are stuck in hooked status.
+
+Patrol wisps should be closed after their cycles complete, but sometimes
+they remain hooked if the cleanup was interrupted. This command finds and
+closes wisps that have no open children (completed patrols).
+
+Examples:
+  gt patrol cleanup             # Clean up stale wisps
+  gt patrol cleanup --dry-run   # Preview what would be cleaned`,
+	RunE: runPatrolCleanup,
 }
 
 var patrolDigestCmd = &cobra.Command{
@@ -57,6 +75,7 @@ Examples:
 
 func init() {
 	patrolCmd.AddCommand(patrolDigestCmd)
+	patrolCmd.AddCommand(patrolCleanupCmd)
 	rootCmd.AddCommand(patrolCmd)
 
 	// Patrol digest flags
@@ -64,6 +83,9 @@ func init() {
 	patrolDigestCmd.Flags().StringVar(&patrolDigestDate, "date", "", "Digest patrol cycles for specific date (YYYY-MM-DD)")
 	patrolDigestCmd.Flags().BoolVar(&patrolDigestDryRun, "dry-run", false, "Preview what would be created without creating")
 	patrolDigestCmd.Flags().BoolVarP(&patrolDigestVerbose, "verbose", "v", false, "Verbose output")
+
+	// Patrol cleanup flags
+	patrolCleanupCmd.Flags().BoolVar(&patrolCleanupDryRun, "dry-run", false, "Preview what would be cleaned without cleaning")
 }
 
 // PatrolDigest represents the aggregated daily patrol report.
@@ -378,4 +400,110 @@ func deletePatrolDigests(targetDate time.Time) (int, error) {
 	}
 
 	return len(idsToDelete), nil
+}
+
+// runPatrolCleanup cleans up stale hooked patrol wisps.
+func runPatrolCleanup(cmd *cobra.Command, args []string) error {
+	// List all hooked wisps
+	listCmd := exec.Command("bd", "list", "--status=hooked", "--type=wisp", "--json")
+	listOutput, err := listCmd.Output()
+	if err != nil {
+		return fmt.Errorf("listing hooked wisps: %w", err)
+	}
+
+	var wisps []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+
+	if err := json.Unmarshal(listOutput, &wisps); err != nil {
+		return fmt.Errorf("parsing wisp list: %w", err)
+	}
+
+	// Filter to patrol wisps
+	patrolPatterns := []string{"mol-witness-patrol", "mol-refinery-patrol", "mol-deacon-patrol"}
+	var staleWisps []string
+
+	for _, wisp := range wisps {
+		isPatrol := false
+		for _, pattern := range patrolPatterns {
+			if strings.Contains(wisp.Title, pattern) {
+				isPatrol = true
+				break
+			}
+		}
+		if !isPatrol {
+			continue
+		}
+
+		// Check if wisp has open/in_progress children
+		showCmd := exec.Command("bd", "show", wisp.ID, "--json")
+		showOutput, err := showCmd.Output()
+		if err != nil {
+			// Can't check, skip
+			continue
+		}
+
+		var showData struct {
+			Children []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+			} `json:"children"`
+		}
+
+		if err := json.Unmarshal(showOutput, &showData); err != nil {
+			// Parse error, check via text
+			showTextCmd := exec.Command("bd", "show", wisp.ID)
+			showTextOutput, _ := showTextCmd.Output()
+			showText := string(showTextOutput)
+			hasActive := strings.Contains(showText, "- open]") ||
+				strings.Contains(showText, "- in_progress]")
+			if hasActive {
+				continue
+			}
+		} else {
+			hasActive := false
+			for _, child := range showData.Children {
+				if child.Status == "open" || child.Status == "in_progress" {
+					hasActive = true
+					break
+				}
+			}
+			if hasActive {
+				continue
+			}
+		}
+
+		// This wisp is stale (no active children)
+		staleWisps = append(staleWisps, wisp.ID)
+	}
+
+	if len(staleWisps) == 0 {
+		fmt.Printf("%s No stale patrol wisps found\n", style.Dim.Render("○"))
+		return nil
+	}
+
+	if patrolCleanupDryRun {
+		fmt.Printf("%s [DRY RUN] Would clean up %d stale patrol wisps:\n",
+			style.Bold.Render("🧹"), len(staleWisps))
+		for _, id := range staleWisps {
+			fmt.Printf("  - %s\n", id)
+		}
+		return nil
+	}
+
+	// Close stale wisps
+	closed := 0
+	for _, id := range staleWisps {
+		closeCmd := exec.Command("bd", "close", id)
+		if err := closeCmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close %s: %v\n", id, err)
+		} else {
+			closed++
+		}
+	}
+
+	fmt.Printf("%s Cleaned up %d stale patrol wisps\n", style.Success.Render("✓"), closed)
+
+	return nil
 }
