@@ -252,7 +252,7 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 
 		decision, rpcErr := rpcClient.CreateDecision(context.Background(), rpcclient.CreateDecisionRequest{
 			Question:      decisionPrompt,
-			Context:       decisionContext,
+			Context:       contextToStore,
 			Options:       rpcOptions,
 			RequestedBy:   agentID,
 			Urgency:       urgency,
