@@ -868,28 +868,115 @@ func (s *MailServer) ReadMessage(
 	ctx context.Context,
 	req *connect.Request[gastownv1.ReadMessageRequest],
 ) (*connect.Response[gastownv1.ReadMessageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("ReadMessage not yet implemented"))
+	if req.Msg.MessageId == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("message_id is required"))
+	}
+
+	// Use town-level beads to get the message
+	townBeadsPath := filepath.Join(s.townRoot, ".beads")
+	mailbox := mail.NewMailboxWithBeadsDir("", s.townRoot, townBeadsPath)
+
+	msg, err := mailbox.Get(req.Msg.MessageId)
+	if err != nil {
+		if err == mail.ErrMessageNotFound {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("message not found: %s", req.Msg.MessageId))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	// Convert to proto message
+	protoMsg := mailMessageToProto(msg)
+
+	return connect.NewResponse(&gastownv1.ReadMessageResponse{Message: protoMsg}), nil
 }
 
 func (s *MailServer) SendMessage(
 	ctx context.Context,
 	req *connect.Request[gastownv1.SendMessageRequest],
 ) (*connect.Response[gastownv1.SendMessageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("SendMessage not yet implemented"))
+	if req.Msg.To == nil || (req.Msg.To.Name == "" && req.Msg.To.Rig == "") {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("recipient address is required"))
+	}
+	if req.Msg.Subject == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("subject is required"))
+	}
+
+	// Get sender identity from request header or default
+	from := req.Header().Get("X-GT-From")
+	if from == "" {
+		from = "rpc-client"
+	}
+
+	// Convert CC addresses
+	var cc []string
+	for _, ccAddr := range req.Msg.Cc {
+		cc = append(cc, formatAgentAddress(ccAddr))
+	}
+
+	// Create the mail message
+	msg := &mail.Message{
+		From:     from,
+		To:       formatAgentAddress(req.Msg.To),
+		Subject:  req.Msg.Subject,
+		Body:     req.Msg.Body,
+		Priority: fromPriority(req.Msg.Priority),
+		ReplyTo:  req.Msg.ReplyTo,
+		CC:       cc,
+	}
+
+	// Send via mail router
+	mailRouter := mail.NewRouter(s.townRoot)
+	if err := mailRouter.Send(msg); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("sending message: %w", err))
+	}
+
+	// Note: The mail router doesn't return the created message ID directly,
+	// so we return an empty ID. Callers can query the inbox to find the message.
+	return connect.NewResponse(&gastownv1.SendMessageResponse{MessageId: ""}), nil
 }
 
 func (s *MailServer) MarkRead(
 	ctx context.Context,
 	req *connect.Request[gastownv1.MarkReadRequest],
 ) (*connect.Response[gastownv1.MarkReadResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("MarkRead not yet implemented"))
+	if req.Msg.MessageId == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("message_id is required"))
+	}
+
+	// Use town-level beads to mark the message as read
+	townBeadsPath := filepath.Join(s.townRoot, ".beads")
+	mailbox := mail.NewMailboxWithBeadsDir("", s.townRoot, townBeadsPath)
+
+	if err := mailbox.MarkReadOnly(req.Msg.MessageId); err != nil {
+		if err == mail.ErrMessageNotFound {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("message not found: %s", req.Msg.MessageId))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&gastownv1.MarkReadResponse{}), nil
 }
 
 func (s *MailServer) DeleteMessage(
 	ctx context.Context,
 	req *connect.Request[gastownv1.DeleteMessageRequest],
 ) (*connect.Response[gastownv1.DeleteMessageResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("DeleteMessage not yet implemented"))
+	if req.Msg.MessageId == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("message_id is required"))
+	}
+
+	// Use town-level beads to delete the message
+	townBeadsPath := filepath.Join(s.townRoot, ".beads")
+	mailbox := mail.NewMailboxWithBeadsDir("", s.townRoot, townBeadsPath)
+
+	if err := mailbox.Delete(req.Msg.MessageId); err != nil {
+		if err == mail.ErrMessageNotFound {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("message not found: %s", req.Msg.MessageId))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&gastownv1.DeleteMessageResponse{}), nil
 }
 
 func (s *MailServer) WatchInbox(
@@ -954,6 +1041,46 @@ func toPriority(s string) gastownv1.Priority {
 		return gastownv1.Priority_PRIORITY_LOW
 	default:
 		return gastownv1.Priority_PRIORITY_UNSPECIFIED
+	}
+}
+
+func fromPriority(p gastownv1.Priority) mail.Priority {
+	switch p {
+	case gastownv1.Priority_PRIORITY_URGENT:
+		return mail.PriorityUrgent
+	case gastownv1.Priority_PRIORITY_HIGH:
+		return mail.PriorityHigh
+	case gastownv1.Priority_PRIORITY_LOW:
+		return mail.PriorityLow
+	default:
+		return mail.PriorityNormal
+	}
+}
+
+// mailMessageToProto converts a mail.Message to a proto Message.
+func mailMessageToProto(m *mail.Message) *gastownv1.Message {
+	if m == nil {
+		return nil
+	}
+
+	// Convert CC addresses
+	var cc []*gastownv1.AgentAddress
+	for _, addr := range m.CC {
+		cc = append(cc, &gastownv1.AgentAddress{Name: addr})
+	}
+
+	return &gastownv1.Message{
+		Id:        m.ID,
+		From:      &gastownv1.AgentAddress{Name: m.From},
+		To:        &gastownv1.AgentAddress{Name: m.To},
+		Subject:   m.Subject,
+		Body:      m.Body,
+		Timestamp: timestamppb.New(m.Timestamp),
+		Read:      m.Read,
+		Priority:  toPriority(string(m.Priority)),
+		ThreadId:  m.ThreadID,
+		ReplyTo:   m.ReplyTo,
+		Cc:        cc,
 	}
 }
 
