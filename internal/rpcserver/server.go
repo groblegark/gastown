@@ -535,7 +535,19 @@ func (s *DecisionServer) Resolve(
 	// Get chosen label from fields, with fallback to request index and proto options
 	chosenLabel := ""
 	chosenIndex := int(req.Msg.ChosenIndex) // Use request index as ground truth
-	if chosenIndex > 0 && chosenIndex <= len(fields.Options) {
+	if chosenIndex == 0 {
+		// "Other" custom text response (gt-8je2rw fix)
+		// Use the custom text as the label, truncated if needed
+		chosenLabel = "Other"
+		if fields.Rationale != "" {
+			// Include first part of custom text for context
+			customText := fields.Rationale
+			if len(customText) > 50 {
+				customText = customText[:47] + "..."
+			}
+			chosenLabel = "Other: " + customText
+		}
+	} else if chosenIndex > 0 && chosenIndex <= len(fields.Options) {
 		chosenLabel = fields.Options[chosenIndex-1].Label
 	}
 	// Fallback: if fields.Options is empty but proto options exist, use those
