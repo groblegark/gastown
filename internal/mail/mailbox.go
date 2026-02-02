@@ -328,7 +328,11 @@ func (m *Mailbox) getFromDir(id, beadsDir string) (*Message, error) {
 	// bd show --json returns an array
 	var bms []BeadsMessage
 	if err := json.Unmarshal(stdout, &bms); err != nil {
-		return nil, err
+		// Handle empty response (message not found case)
+		if len(stdout) == 0 || string(stdout) == "null" {
+			return nil, ErrMessageNotFound
+		}
+		return nil, fmt.Errorf("parsing message %s: %w", id, err)
 	}
 	if len(bms) == 0 {
 		return nil, ErrMessageNotFound
