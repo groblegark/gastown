@@ -694,130 +694,9 @@ func TestBuildAgentID(t *testing.T) {
 	}
 }
 
-// TestMatchesAdvice tests the advice matching logic.
-func TestMatchesAdvice(t *testing.T) {
-	cases := []struct {
-		name     string
-		bead     AdviceBead
-		agentID  string
-		roleType string
-		rigName  string
-		want     bool
-	}{
-		{
-			name:     "global_advice_matches_all",
-			bead:     AdviceBead{ID: "test1", Title: "Global"},
-			agentID:  "gastown/polecats/alpha",
-			roleType: "polecat",
-			rigName:  "gastown",
-			want:     true,
-		},
-		{
-			name:     "rig_advice_matches_same_rig",
-			bead:     AdviceBead{ID: "test2", Title: "Rig", AdviceTargetRig: "gastown"},
-			agentID:  "gastown/polecats/alpha",
-			roleType: "polecat",
-			rigName:  "gastown",
-			want:     true,
-		},
-		{
-			name:     "rig_advice_rejects_different_rig",
-			bead:     AdviceBead{ID: "test3", Title: "Rig", AdviceTargetRig: "beads"},
-			agentID:  "gastown/polecats/alpha",
-			roleType: "polecat",
-			rigName:  "gastown",
-			want:     false,
-		},
-		{
-			name:     "role_advice_matches_same_role",
-			bead:     AdviceBead{ID: "test4", Title: "Role", AdviceTargetRole: "polecat"},
-			agentID:  "gastown/polecats/alpha",
-			roleType: "polecat",
-			rigName:  "gastown",
-			want:     true,
-		},
-		{
-			name:     "role_advice_rejects_different_role",
-			bead:     AdviceBead{ID: "test5", Title: "Role", AdviceTargetRole: "crew"},
-			agentID:  "gastown/polecats/alpha",
-			roleType: "polecat",
-			rigName:  "gastown",
-			want:     false,
-		},
-		{
-			name:     "agent_advice_matches_same_agent",
-			bead:     AdviceBead{ID: "test6", Title: "Agent", AdviceTargetAgent: "gastown/polecats/alpha"},
-			agentID:  "gastown/polecats/alpha",
-			roleType: "polecat",
-			rigName:  "gastown",
-			want:     true,
-		},
-		{
-			name:     "agent_advice_rejects_different_agent",
-			bead:     AdviceBead{ID: "test7", Title: "Agent", AdviceTargetAgent: "gastown/polecats/beta"},
-			agentID:  "gastown/polecats/alpha",
-			roleType: "polecat",
-			rigName:  "gastown",
-			want:     false,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := matchesAdvice(tc.bead, tc.agentID, tc.roleType, tc.rigName)
-			if got != tc.want {
-				t.Fatalf("matchesAdvice() = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
-// TestFilterApplicableAdvice tests filtering of advice beads.
-func TestFilterApplicableAdvice(t *testing.T) {
-	beads := []AdviceBead{
-		{ID: "global1", Title: "Global Advice 1"},
-		{ID: "global2", Title: "Global Advice 2"},
-		{ID: "rig1", Title: "Gastown Rig Advice", AdviceTargetRig: "gastown"},
-		{ID: "rig2", Title: "Beads Rig Advice", AdviceTargetRig: "beads"},
-		{ID: "role1", Title: "Polecat Role Advice", AdviceTargetRole: "polecat"},
-		{ID: "role2", Title: "Crew Role Advice", AdviceTargetRole: "crew"},
-		{ID: "agent1", Title: "Alpha Agent Advice", AdviceTargetAgent: "gastown/polecats/alpha"},
-		{ID: "agent2", Title: "Beta Agent Advice", AdviceTargetAgent: "gastown/polecats/beta"},
-	}
-
-	t.Run("gastown_polecat_alpha", func(t *testing.T) {
-		result := filterApplicableAdvice(beads, "gastown/polecats/alpha", "polecat", "gastown")
-
-		// Should get: global1, global2, rig1 (gastown), role1 (polecat), agent1 (alpha)
-		if len(result) != 5 {
-			t.Fatalf("expected 5 applicable beads, got %d", len(result))
-		}
-
-		// Check specific IDs are present
-		ids := make(map[string]bool)
-		for _, b := range result {
-			ids[b.ID] = true
-		}
-
-		expected := []string{"global1", "global2", "rig1", "role1", "agent1"}
-		for _, id := range expected {
-			if !ids[id] {
-				t.Errorf("expected %q to be in result", id)
-			}
-		}
-	})
-
-	t.Run("beads_crew_worker", func(t *testing.T) {
-		result := filterApplicableAdvice(beads, "beads/crew/worker", "crew", "beads")
-
-		// Should get: global1, global2, rig2 (beads), role2 (crew)
-		if len(result) != 4 {
-			t.Fatalf("expected 4 applicable beads, got %d", len(result))
-		}
-	})
-}
-
 // TestGetAdviceScope tests the scope label generation.
+// Note: matchesAdvice and filterApplicableAdvice were moved to beads CLI.
+// The beads CLI now handles subscription matching via `bd advice list --for=<agent-id>`.
 func TestGetAdviceScope(t *testing.T) {
 	cases := []struct {
 		name string
@@ -831,17 +710,17 @@ func TestGetAdviceScope(t *testing.T) {
 		},
 		{
 			name: "rig",
-			bead: AdviceBead{ID: "test", AdviceTargetRig: "gastown"},
+			bead: AdviceBead{ID: "test", Labels: []string{"rig:gastown"}},
 			want: "gastown",
 		},
 		{
 			name: "role",
-			bead: AdviceBead{ID: "test", AdviceTargetRole: "polecat"},
+			bead: AdviceBead{ID: "test", Labels: []string{"role:polecat"}},
 			want: "Polecat",
 		},
 		{
 			name: "agent",
-			bead: AdviceBead{ID: "test", AdviceTargetAgent: "gastown/polecats/alpha"},
+			bead: AdviceBead{ID: "test", Labels: []string{"agent:gastown/polecats/alpha"}},
 			want: "Agent",
 		},
 	}
