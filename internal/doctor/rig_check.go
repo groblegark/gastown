@@ -1383,5 +1383,6 @@ func RigChecks() []Check {
 		NewBeadsConfigValidCheck(),
 		NewBeadsRedirectCheck(),
 		NewBeadsCustomTypesCheck(),
+		NewBeadsRoleCheck(),
 	}
 }

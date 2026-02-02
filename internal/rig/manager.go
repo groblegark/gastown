@@ -389,6 +389,12 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	}
 	fmt.Printf("   ✓ Created mayor clone\n")
 
+	// Set beads.role=maintainer to prevent 'beads.role not configured' warning
+	// when bd commands run from this directory (gt-vhsnvd).
+	if err := mayorGit.SetConfig("beads.role", "maintainer"); err != nil {
+		fmt.Printf("  Warning: Could not set beads.role config: %v\n", err)
+	}
+
 	// Check if source repo has tracked .beads/ directory.
 	// If so, we need to initialize the database (beads.db is gitignored so it doesn't exist after clone).
 	sourceBeadsDir := filepath.Join(mayorRigPath, ".beads")
@@ -480,6 +486,11 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	// Set up beads redirect for refinery (points to rig-level .beads)
 	if err := beads.SetupRedirect(m.townRoot, refineryRigPath); err != nil {
 		fmt.Printf("  Warning: Could not set up refinery beads redirect: %v\n", err)
+	}
+	// Set beads.role=maintainer to prevent 'beads.role not configured' warning (gt-vhsnvd)
+	refineryGit := git.NewGitWithDir("", refineryRigPath)
+	if err := refineryGit.SetConfig("beads.role", "maintainer"); err != nil {
+		fmt.Printf("  Warning: Could not set refinery beads.role config: %v\n", err)
 	}
 	// Create refinery CLAUDE.md (overrides any from cloned repo)
 	if err := m.createRoleCLAUDEmd(refineryRigPath, "refinery", opts.Name, ""); err != nil {
