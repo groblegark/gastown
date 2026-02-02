@@ -998,15 +998,105 @@ func (b *Bot) handleShowContext(callback slack.InteractionCallback, decisionID s
 	}
 }
 
-// handleOpenPreferences opens the notification preferences modal for the user.
+// handleOpenPreferences handles the "DM Me" button click.
+// Immediately sends the current decision as a DM, then opens the preferences modal (gt-5uqg3k).
 func (b *Bot) handleOpenPreferences(callback slack.InteractionCallback) {
 	userID := callback.User.ID
+
+	// Get the decision ID from the button value and send it as a DM immediately (gt-5uqg3k)
+	if len(callback.ActionCallback.BlockActions) > 0 {
+		decisionID := callback.ActionCallback.BlockActions[0].Value
+		if decisionID != "" {
+			b.sendDecisionAsDM(decisionID, userID, callback.Channel.ID)
+		}
+	}
+
+	// Then open the preferences modal for future DM settings
 	modalRequest := b.buildPreferencesModal(userID)
 	_, err := b.client.OpenView(callback.TriggerID, modalRequest)
 	if err != nil {
 		log.Printf("Slack: Error opening preferences modal: %v", err)
 		b.postEphemeral(callback.Channel.ID, userID,
 			fmt.Sprintf("Error opening preferences: %v", err))
+	}
+}
+
+// sendDecisionAsDM sends a specific decision to a user via DM (gt-5uqg3k).
+func (b *Bot) sendDecisionAsDM(decisionID, userID, sourceChannelID string) {
+	ctx := context.Background()
+	decision, err := b.rpcClient.GetDecision(ctx, decisionID)
+	if err != nil || decision == nil {
+		b.postEphemeral(sourceChannelID, userID,
+			fmt.Sprintf("Could not fetch decision: %v", err))
+		return
+	}
+
+	// Open DM channel with user
+	channel, _, _, err := b.client.OpenConversation(&slack.OpenConversationParameters{
+		Users: []string{userID},
+	})
+	if err != nil {
+		b.postEphemeral(sourceChannelID, userID,
+			fmt.Sprintf("Could not open DM: %v", err))
+		return
+	}
+
+	// Build decision blocks for DM - simplified version showing key info
+	urgencyEmoji := ":white_circle:"
+	switch decision.Urgency {
+	case "high":
+		urgencyEmoji = ":red_circle:"
+	case "medium":
+		urgencyEmoji = ":large_yellow_circle:"
+	case "low":
+		urgencyEmoji = ":large_green_circle:"
+	}
+
+	agentInfo := ""
+	if decision.RequestedBy != "" {
+		agentInfo = fmt.Sprintf(" from *%s*", decision.RequestedBy)
+	}
+
+	semanticSlug := util.GenerateDecisionSlug(decision.ID, decision.Question)
+	headerText := fmt.Sprintf("%s *%s*%s\n%s", urgencyEmoji, semanticSlug, agentInfo, decision.Question)
+
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", headerText, false, false),
+			nil, nil,
+		),
+	}
+
+	// Add options as buttons if available
+	if len(decision.Options) > 0 {
+		var optionButtons []slack.BlockElement
+		for i, opt := range decision.Options {
+			if i >= 5 { // Slack limit on action buttons
+				break
+			}
+			btn := slack.NewButtonBlockElement(
+				fmt.Sprintf("resolve_%s_%d", decision.ID, i),
+				fmt.Sprintf("%d", i),
+				slack.NewTextBlockObject("plain_text", opt.Label, false, false),
+			)
+			optionButtons = append(optionButtons, btn)
+		}
+		if len(optionButtons) > 0 {
+			blocks = append(blocks, slack.NewActionBlock("", optionButtons...))
+		}
+	}
+
+	// Send decision to user's DM
+	_, _, err = b.client.PostMessage(channel.ID,
+		slack.MsgOptionBlocks(blocks...),
+		slack.MsgOptionText(fmt.Sprintf("Decision: %s", decision.Question), false),
+	)
+	if err != nil {
+		log.Printf("Slack: Failed to DM decision %s to user %s: %v", decisionID, userID, err)
+		b.postEphemeral(sourceChannelID, userID,
+			fmt.Sprintf("Failed to send DM: %v", err))
+	} else {
+		log.Printf("Slack: Sent decision %s to user %s via DM", decisionID, userID)
 	}
 }
 
