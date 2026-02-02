@@ -62,7 +62,7 @@ func createValidSettings(t *testing.T, path string) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "bd decision check --inject && gt decision turn-clear",
+							"command": "_stdin=$(cat) && bd decision check --inject && (echo \"$_stdin\" | gt decision turn-clear)",
 						},
 					},
 				},
@@ -417,6 +417,91 @@ func TestClaudeSettingsCheck_MissingStopHook(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected details to mention turn-check hook, got %v", result.Details)
+	}
+}
+
+// TestClaudeSettingsCheck_MissingStdinPiping tests detection of turn-clear without stdin piping (gt-te4okj).
+func TestClaudeSettingsCheck_MissingStdinPiping(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create settings with turn-clear but WITHOUT stdin piping
+	mayorSettings := filepath.Join(tmpDir, "mayor", ".claude", "settings.json")
+	settings := map[string]any{
+		"enabledPlugins": []string{"plugin1"},
+		"hooks": map[string]any{
+			"SessionStart": []any{
+				map[string]any{
+					"matcher": "**",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "gt prime --hook && gt mail check --inject && gt nudge deacon session-started",
+						},
+					},
+				},
+			},
+			"UserPromptSubmit": []any{
+				map[string]any{
+					"matcher": "**",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							// Missing stdin piping - this is the bug gt-te4okj
+							"command": "bd decision check --inject && gt decision turn-clear",
+						},
+					},
+				},
+			},
+			"PostToolUse": []any{
+				map[string]any{
+					"matcher": "",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "gt inject drain --quiet",
+						},
+					},
+				},
+			},
+			"Stop": []any{
+				map[string]any{
+					"matcher": "**",
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "gt decision turn-check",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := os.MkdirAll(filepath.Dir(mayorSettings), 0755); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.MarshalIndent(settings, "", "  ")
+	if err := os.WriteFile(mayorSettings, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	check := NewClaudeSettingsCheck()
+	ctx := &CheckContext{TownRoot: tmpDir}
+
+	result := check.Run(ctx)
+
+	if result.Status != StatusError {
+		t.Errorf("expected StatusError for missing stdin piping, got %v", result.Status)
+	}
+	found := false
+	for _, d := range result.Details {
+		if strings.Contains(d, "turn-clear stdin piping") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected details to mention turn-clear stdin piping, got %v", result.Details)
 	}
 }
 

@@ -397,9 +397,12 @@ func (c *ClaudeSettingsCheck) checkSettings(path, agentType string) []string {
 		missing = append(missing, "decision check hook")
 	}
 
-	// Check UserPromptSubmit hook has turn-clear (turn enforcement)
+	// Check UserPromptSubmit hook has turn-clear with stdin piping (turn enforcement)
+	// Must capture stdin and pipe it to turn-clear so it can read the session_id (gt-te4okj)
 	if !c.hookHasPattern(hooks, "UserPromptSubmit", "gt decision turn-clear") {
 		missing = append(missing, "turn-clear hook")
+	} else if !c.hookHasStdinPiping(hooks, "UserPromptSubmit", "turn-clear") {
+		missing = append(missing, "turn-clear stdin piping")
 	}
 
 	// Note: turn-mark hook is no longer required - marker is set directly in gt decision request
@@ -484,6 +487,43 @@ func (c *ClaudeSettingsCheck) hookHasPattern(hooks map[string]any, hookName, pat
 			}
 			cmd, ok := innerMap["command"].(string)
 			if ok && strings.Contains(cmd, pattern) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hookHasStdinPiping checks if a hook command properly pipes stdin to a specific command.
+// The pattern should be: _stdin=$(cat) ... && (echo "$_stdin" | gt decision <cmd> ...)
+// This is required for hooks that need to read session_id from stdin (gt-te4okj).
+func (c *ClaudeSettingsCheck) hookHasStdinPiping(hooks map[string]any, hookName, cmdName string) bool {
+	hookList, ok := hooks[hookName].([]any)
+	if !ok {
+		return false
+	}
+
+	for _, hook := range hookList {
+		hookMap, ok := hook.(map[string]any)
+		if !ok {
+			continue
+		}
+		innerHooks, ok := hookMap["hooks"].([]any)
+		if !ok {
+			continue
+		}
+		for _, inner := range innerHooks {
+			innerMap, ok := inner.(map[string]any)
+			if !ok {
+				continue
+			}
+			cmd, ok := innerMap["command"].(string)
+			if !ok {
+				continue
+			}
+			// Check for the stdin capture pattern AND the piping pattern for this specific command
+			if strings.Contains(cmd, "_stdin=$(cat)") &&
+				strings.Contains(cmd, fmt.Sprintf("echo \"$_stdin\" | gt decision %s", cmdName)) {
 				return true
 			}
 		}
