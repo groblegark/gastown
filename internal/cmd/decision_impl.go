@@ -1389,6 +1389,12 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		Decision: "block",
 		Reason: `You must offer a formal decision point using 'gt decision request' before ending this turn. This ensures humans stay informed about progress and can provide guidance.
 
+Example:
+  gt decision request \
+    --prompt "What should we do next?" \
+    --option "Continue: Keep working on current task" \
+    --option "Pause: Wait for further guidance"
+
 When the decision is created, it will be assigned a semantic slug (e.g., gt-dec-cache_strategyzfyl8) that makes it easy to identify in Slack and logs. Use clear, descriptive prompts so the generated slug is meaningful.`,
 	}
 	out, _ := json.Marshal(result)
