@@ -101,9 +101,9 @@ func buildAgentID(ctx RoleInfo) string {
 // Uses `bd advice list --for=<agent-id> --json` which:
 //   - Auto-subscribes to: global, agent:<id>, rig:<rig>, role:<role>
 //   - Handles rig-scoping (rig:X advice only matches agents subscribed to rig:X)
-//   - Returns labels in JSON output (fixed in beads commit 794e5326)
 //
-// Beads handles all filtering internally, so we trust the returned results.
+// Note: bd advice list --json doesn't include labels (beads bug), so we fetch
+// labels separately using bd show to get proper scope display.
 func queryAdviceForAgent(agentID string) ([]AdviceBead, error) {
 	cmd := exec.Command("bd", "advice", "list", "--for="+agentID, "--json")
 	output, err := cmd.Output()
@@ -121,7 +121,59 @@ func queryAdviceForAgent(agentID string) ([]AdviceBead, error) {
 		return nil, fmt.Errorf("parsing advice: %w", err)
 	}
 
+	// Fetch labels for all beads in a single batch call
+	// This works around bd advice list not including labels in JSON output
+	if len(beads) > 0 {
+		if err := fetchLabelsForBeads(beads); err != nil {
+			// Log but don't fail - labels are nice-to-have for display
+			explain(false, fmt.Sprintf("Advice: failed to fetch labels: %v", err))
+		}
+	}
+
 	return beads, nil
+}
+
+// fetchLabelsForBeads fetches labels for all beads using bd show --json.
+// Modifies beads in place to add their labels.
+func fetchLabelsForBeads(beads []AdviceBead) error {
+	if len(beads) == 0 {
+		return nil
+	}
+
+	// Build args for bd show: bd show <id1> <id2> ... --json
+	args := make([]string, 0, len(beads)+2)
+	args = append(args, "show")
+	for _, bead := range beads {
+		args = append(args, bead.ID)
+	}
+	args = append(args, "--json")
+
+	cmd := exec.Command("bd", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("bd show: %w", err)
+	}
+
+	// Parse response - bd show returns array of issues with labels
+	var fullBeads []AdviceBead
+	if err := json.Unmarshal(output, &fullBeads); err != nil {
+		return fmt.Errorf("parsing bd show response: %w", err)
+	}
+
+	// Build map of ID -> labels for quick lookup
+	labelsMap := make(map[string][]string)
+	for _, fb := range fullBeads {
+		labelsMap[fb.ID] = fb.Labels
+	}
+
+	// Update original beads with their labels
+	for i := range beads {
+		if labels, ok := labelsMap[beads[i].ID]; ok {
+			beads[i].Labels = labels
+		}
+	}
+
+	return nil
 }
 
 // getAdviceScope returns a human-readable scope indicator for the advice.
