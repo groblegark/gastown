@@ -20,6 +20,7 @@ var nudgeMessageFlag string
 var nudgeForceFlag bool
 var nudgeDirectFlag bool // deprecated: direct is now default
 var nudgeQueueFlag bool
+var nudgeDelayFlag int // milliseconds to wait before sending (gt-j7iaxs)
 var nudgeDrainQuiet bool
 
 func init() {
@@ -28,6 +29,7 @@ func init() {
 	nudgeCmd.Flags().BoolVarP(&nudgeForceFlag, "force", "f", false, "Send even if target has DND enabled")
 	nudgeCmd.Flags().BoolVar(&nudgeDirectFlag, "direct", false, "DEPRECATED: direct is now the default behavior")
 	nudgeCmd.Flags().BoolVar(&nudgeQueueFlag, "queue", false, "Queue the nudge for later delivery (use when target may be busy processing tools)")
+	nudgeCmd.Flags().IntVar(&nudgeDelayFlag, "delay", 0, "Milliseconds to wait before sending (useful after session restart)")
 
 	// Add drain subcommand
 	nudgeCmd.AddCommand(nudgeDrainCmd)
@@ -54,6 +56,10 @@ DELIVERY MODES:
                     PostToolUse hook. Use this when sending many nudges to a busy
                     agent to avoid API errors. WARNING: Queued nudges are NEVER
                     delivered to idle agents (no tools running = no hooks firing).
+
+  Delayed (--delay): Waits N milliseconds before sending. Use this when sending
+                     a nudge right after 'gt session restart' to give Claude Code
+                     time to initialize. Example: --delay=3000 waits 3 seconds.
 
 Uses a reliable delivery pattern:
 1. Sends text in literal mode (-l flag)
@@ -530,6 +536,7 @@ func addressToAgentBeadID(address string) string {
 // sendOrQueueNudge sends a nudge either directly via tmux (default) or queued for later delivery.
 // By default, nudges are sent directly to wake up idle agents immediately.
 // Use --queue flag to buffer nudges when the target may be busy processing tools.
+// Use --delay flag to wait before sending (useful after session restart) (gt-j7iaxs).
 func sendOrQueueNudge(t *tmux.Tmux, townRoot, sessionName, message string) error {
 	// If --queue flag is set and we're in a workspace, queue the nudge
 	if nudgeQueueFlag && townRoot != "" {
@@ -539,6 +546,12 @@ func sendOrQueueNudge(t *tmux.Tmux, townRoot, sessionName, message string) error
 			return t.NudgeSession(sessionName, message)
 		}
 		return nil
+	}
+
+	// If --delay flag is set, wait before sending (gt-j7iaxs)
+	// This helps when sending nudges right after session restart - gives Claude Code time to start
+	if nudgeDelayFlag > 0 {
+		time.Sleep(time.Duration(nudgeDelayFlag) * time.Millisecond)
 	}
 
 	// Default: send directly via tmux to wake up the target immediately
