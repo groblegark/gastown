@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,7 +10,7 @@ import (
 	"github.com/steveyegge/gastown/internal/constants"
 )
 
-func TestSessionHookCheck_UsesSessionStartScript(t *testing.T) {
+func TestSessionHookCheck_CheckHookTypeConfig(t *testing.T) {
 	check := NewSessionHookCheck()
 
 	tests := []struct {
@@ -88,9 +89,16 @@ func TestSessionHookCheck_UsesSessionStartScript(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := check.usesSessionStartScript(tt.content, tt.hookType)
+			// Parse JSON to get hooks map (using proper JSON parsing)
+			var settings map[string]interface{}
+			if err := json.Unmarshal([]byte(tt.content), &settings); err != nil {
+				t.Fatalf("failed to parse test JSON: %v", err)
+			}
+			hooks, _ := settings["hooks"].(map[string]interface{})
+
+			got := check.checkHookTypeConfig(hooks, tt.hookType)
 			if got != tt.want {
-				t.Errorf("usesSessionStartScript() = %v, want %v", got, tt.want)
+				t.Errorf("checkHookTypeConfig() = %v, want %v", got, tt.want)
 			}
 		})
 	}

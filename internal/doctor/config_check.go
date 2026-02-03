@@ -439,71 +439,79 @@ func (c *SessionHookCheck) checkSettingsFile(path string) []string {
 		return nil // Can't read file, skip
 	}
 
-	content := string(data)
-
-	// Check for SessionStart hooks
-	if strings.Contains(content, "SessionStart") {
-		if !c.usesSessionStartScript(content, "SessionStart") {
-			problems = append(problems, "SessionStart uses bare 'gt prime' - add --hook flag or use session-start.sh")
-		}
+	// Parse JSON properly instead of string manipulation
+	var settings map[string]interface{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return nil // Invalid JSON, skip
 	}
 
-	// Check for PreCompact hooks
-	if strings.Contains(content, "PreCompact") {
-		if !c.usesSessionStartScript(content, "PreCompact") {
-			problems = append(problems, "PreCompact uses bare 'gt prime' - add --hook flag or use session-start.sh")
+	// Get hooks section
+	hooks, ok := settings["hooks"].(map[string]interface{})
+	if !ok {
+		return nil // No hooks section
+	}
+
+	// Check SessionStart and PreCompact hooks
+	for _, hookType := range []string{"SessionStart", "PreCompact"} {
+		if !c.checkHookTypeConfig(hooks, hookType) {
+			problems = append(problems, fmt.Sprintf("%s uses bare 'gt prime' - add --hook flag or use session-start.sh", hookType))
 		}
 	}
 
 	return problems
 }
 
-// usesSessionStartScript checks if the hook configuration handles session_id properly.
+// checkHookTypeConfig checks if a hook type configuration handles session_id properly.
 // Valid: session-start.sh wrapper OR 'gt prime --hook'. Returns true if properly configured.
-func (c *SessionHookCheck) usesSessionStartScript(content, hookType string) bool {
-	// Find the hook section - look for the hook type followed by its configuration
-	// This is a simple heuristic - we look for "gt prime" without session-start.sh
-
-	// Split around the hook type to find its section
-	parts := strings.SplitN(content, `"`+hookType+`"`, 2)
-	if len(parts) < 2 {
-		return true // Hook type not found, nothing to check
+// Uses proper JSON parsing instead of fragile string manipulation.
+func (c *SessionHookCheck) checkHookTypeConfig(hooks map[string]interface{}, hookType string) bool {
+	// Get the hook list for this type
+	hookList, ok := hooks[hookType].([]interface{})
+	if !ok {
+		return true // Hook type not found or not a list, nothing to check
 	}
 
-	// Get the section after the hook type declaration (until next top-level key)
-	section := parts[1]
-
-	// Find the end of this hook section (next top-level key at same depth)
-	// Simple approach: look until we find another "Session" or "User" or end of hooks
-	endMarkers := []string{`"SessionStart"`, `"PreCompact"`, `"UserPromptSubmit"`, `"Stop"`, `"Notification"`}
-	sectionEnd := len(section)
-	for _, marker := range endMarkers {
-		if marker == `"`+hookType+`"` {
-			continue // Skip the one we're looking for
+	// Check each hook entry
+	for _, hookEntry := range hookList {
+		entry, ok := hookEntry.(map[string]interface{})
+		if !ok {
+			continue
 		}
-		if idx := strings.Index(section, marker); idx > 0 && idx < sectionEnd {
-			sectionEnd = idx
+
+		// Get the hooks array within the entry
+		hooksList, ok := entry["hooks"].([]interface{})
+		if !ok {
+			continue
+		}
+
+		// Check each individual hook command
+		for _, hook := range hooksList {
+			hookMap, ok := hook.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			command, ok := hookMap["command"].(string)
+			if !ok {
+				continue
+			}
+
+			// Check if this command uses session-start.sh (valid)
+			if strings.Contains(command, "session-start.sh") {
+				continue // This hook is properly configured
+			}
+
+			// Check if command has 'gt prime' without --hook (invalid)
+			if strings.Contains(command, "gt prime") {
+				if !containsFlag(command, "--hook") {
+					// Found bare 'gt prime' without --hook - this is invalid
+					return false
+				}
+			}
 		}
 	}
-	section = section[:sectionEnd]
 
-	// Check if this section contains session-start.sh
-	if strings.Contains(section, "session-start.sh") {
-		return true // Uses the wrapper script
-	}
-
-	// Check if it uses 'gt prime --hook' which handles session_id via stdin
-	if strings.Contains(section, "gt prime") {
-		// gt prime --hook is valid - it reads session_id from stdin JSON
-		// Must match --hook as complete flag, not substring (e.g., --hookup)
-		if containsFlag(section, "--hook") {
-			return true
-		}
-		// Bare 'gt prime' without --hook doesn't get session_id
-		return false
-	}
-
-	// No gt prime or session-start.sh found - might be a different hook configuration
+	// All hooks for this type are properly configured (or no gt prime found)
 	return true
 }
 
