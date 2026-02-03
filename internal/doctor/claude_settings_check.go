@@ -154,20 +154,22 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 		}
 	}
 
-	// Check for STALE CLAUDE.md at town root (~/gt/CLAUDE.md)
-	// This is WRONG - CLAUDE.md here is inherited by ALL agents via directory traversal,
-	// causing crew/polecat/etc to receive Mayor-specific instructions.
-	// Mayor's CLAUDE.md should be at ~/gt/mayor/CLAUDE.md instead.
-	staleTownRootCLAUDEmd := filepath.Join(townRoot, "CLAUDE.md")
-	if fileExists(staleTownRootCLAUDEmd) {
-		files = append(files, staleSettingsInfo{
-			path:          staleTownRootCLAUDEmd,
-			agentType:     "mayor",
-			sessionName:   "hq-mayor",
-			wrongLocation: true,
-			gitStatus:     c.getGitFileStatus(staleTownRootCLAUDEmd),
-			missing:       []string{"should be at mayor/CLAUDE.md, not town root"},
-		})
+	// Check for CLAUDE.md at town root (~/gt/CLAUDE.md)
+	// A NEUTRAL identity anchor is ALLOWED - it just tells agents to run gt prime.
+	// Role-specific (Mayor) content is NOT allowed - it pollutes all child workspaces.
+	// See priming_check.go for why the neutral anchor is needed.
+	townRootCLAUDEmd := filepath.Join(townRoot, "CLAUDE.md")
+	if fileExists(townRootCLAUDEmd) {
+		if !c.isNeutralIdentityAnchor(townRootCLAUDEmd) {
+			files = append(files, staleSettingsInfo{
+				path:          townRootCLAUDEmd,
+				agentType:     "mayor",
+				sessionName:   "hq-mayor",
+				wrongLocation: true,
+				gitStatus:     c.getGitFileStatus(townRootCLAUDEmd),
+				missing:       []string{"contains role-specific content; should be neutral anchor or moved to mayor/CLAUDE.md"},
+			})
+		}
 	}
 
 	// Town-level: mayor (~/gt/mayor/.claude/settings.json) - CORRECT location
@@ -662,6 +664,44 @@ func isSymlinkToSharedDir(claudeDir, sharedDir string) bool {
 		sharedResolved = sharedDir
 	}
 	return resolved == sharedResolved
+}
+
+// isNeutralIdentityAnchor checks if a CLAUDE.md file is a neutral identity anchor.
+// A neutral anchor tells agents to run gt prime without containing role-specific content.
+// This is ALLOWED at town root per priming_check.go rationale.
+func (c *ClaudeSettingsCheck) isNeutralIdentityAnchor(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	content := string(data)
+
+	// Must contain the gt prime instruction
+	if !strings.Contains(content, "gt prime") {
+		return false
+	}
+
+	// Must contain the identity delegation message
+	if !strings.Contains(content, "identity and role are determined by") &&
+		!strings.Contains(content, "Your identity and role are determined") {
+		return false
+	}
+
+	// Must NOT contain Mayor-specific instructions (role pollution)
+	mayorPatterns := []string{
+		"Mayor coordinates",
+		"mayor session",
+		"hq-mayor",
+		"As Mayor",
+		"Mayor role",
+	}
+	for _, pattern := range mayorPatterns {
+		if strings.Contains(content, pattern) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // isAutonomousAgentType returns true for agent types that use autonomous settings.
