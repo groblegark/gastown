@@ -300,7 +300,13 @@ func (c *PatrolNotStuckCheck) checkStuckWisps(issuesPath string, rigName string)
 			continue
 		}
 
-		// Check for in_progress issues older than threshold
+		// Only check wisps (identified by -wisp- in ID), not regular issues
+		// This prevents false positives from user's personal work (bugs, tasks, etc.)
+		if !strings.Contains(issue.ID, "-wisp-") {
+			continue
+		}
+
+		// Check for in_progress wisps older than threshold
 		if issue.Status == "in_progress" && !issue.UpdatedAt.IsZero() && issue.UpdatedAt.Before(cutoff) {
 			stuck = append(stuck, fmt.Sprintf("%s: %s (%s) - stale since %s",
 				rigName, issue.ID, issue.Title, issue.UpdatedAt.Format("2006-01-02 15:04")))
