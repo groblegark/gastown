@@ -217,6 +217,31 @@ Examples:
 
 var refineryBlockedJSON bool
 
+var refineryReworkCmd = &cobra.Command{
+	Use:   "rework <mr-id> [reason]",
+	Short: "Create a rework task for an MR that needs changes",
+	Long: `Create a rework task for a merge request that needs changes.
+
+Use this when an MR requires modifications (e.g., review feedback, test failures,
+or other issues that weren't caught by automated conflict detection).
+
+Creates a task bead that:
+- Blocks the MR until the task is resolved
+- Can be dispatched to a polecat via gt sling
+- Inherits boosted priority from the MR
+
+When the rework task is closed, the MR unblocks and returns to the queue.
+
+Examples:
+  gt refinery rework gt-abc123 "Review feedback: need better error handling"
+  gt refinery rework gt-abc123 "Tests failing in CI"
+  gt refinery rework gt-abc123  # Uses default reason`,
+	Args: cobra.RangeArgs(1, 2),
+	RunE: runRefineryRework,
+}
+
+var refineryReworkReason string
+
 func init() {
 	// Start flags
 	refineryStartCmd.Flags().BoolVar(&refineryForeground, "foreground", false, "Run in foreground (default: background)")
@@ -243,6 +268,9 @@ func init() {
 	// Blocked flags
 	refineryBlockedCmd.Flags().BoolVar(&refineryBlockedJSON, "json", false, "Output as JSON")
 
+	// Rework flags
+	refineryReworkCmd.Flags().StringVarP(&refineryReworkReason, "reason", "r", "", "Reason for rework (can also be positional arg)")
+
 	// Add subcommands
 	refineryCmd.AddCommand(refineryStartCmd)
 	refineryCmd.AddCommand(refineryStopCmd)
@@ -255,6 +283,7 @@ func init() {
 	refineryCmd.AddCommand(refineryUnclaimedCmd)
 	refineryCmd.AddCommand(refineryReadyCmd)
 	refineryCmd.AddCommand(refineryBlockedCmd)
+	refineryCmd.AddCommand(refineryReworkCmd)
 
 	rootCmd.AddCommand(refineryCmd)
 }
@@ -755,6 +784,107 @@ func runRefineryBlocked(cmd *cobra.Command, args []string) error {
 			fmt.Printf("     Blocked by: %s\n", mr.BlockedBy)
 		}
 	}
+
+	return nil
+}
+
+// runRefineryRework creates a rework task for an MR that needs changes (gt-n0jjx9).
+// This handles the workflow gap where review feedback goes unaddressed because
+// the original polecat is gone and the source issue is closed.
+func runRefineryRework(cmd *cobra.Command, args []string) error {
+	mrID := args[0]
+
+	// Get reason from positional arg or flag
+	reason := refineryReworkReason
+	if len(args) >= 2 {
+		reason = args[1]
+	}
+	if reason == "" {
+		reason = "Review feedback requires changes"
+	}
+
+	// Find workspace
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	// Initialize beads
+	bd := beads.New(beads.ResolveBeadsDir(townRoot))
+
+	// Get the MR info
+	mr, err := bd.Show(mrID)
+	if err != nil {
+		return fmt.Errorf("MR not found: %w", err)
+	}
+
+	// Verify it's a merge-request type
+	if mr.Type != "merge-request" {
+		return fmt.Errorf("bead %s is not a merge-request (type: %s)", mrID, mr.Type)
+	}
+
+	// Parse MR fields from description
+	mrFields := beads.ParseMRFields(mr)
+
+	// Get original issue title for the task
+	originalTitle := mrFields.SourceIssue
+	if mrFields.SourceIssue != "" {
+		if sourceIssue, err := bd.Show(mrFields.SourceIssue); err == nil && sourceIssue != nil {
+			originalTitle = sourceIssue.Title
+		}
+	}
+	if originalTitle == "" {
+		originalTitle = mr.Title
+	}
+
+	// Priority boost: decrease priority number (lower = higher priority)
+	boostedPriority := mr.Priority - 1
+	if boostedPriority < 0 {
+		boostedPriority = 0
+	}
+
+	// Build task description
+	description := fmt.Sprintf(`Rework required for MR %s
+
+## Reason
+%s
+
+## Metadata
+- Original MR: %s
+- Branch: %s
+- Target: %s
+- Original issue: %s
+
+## Instructions
+1. Check out the branch: git checkout %s
+2. Address the feedback described above
+3. Commit and push your changes
+4. Close this task when done (the MR will unblock automatically)
+
+The MR will retry automatically when this task is closed.
+`, mrID, reason, mrID, mrFields.Branch, mrFields.Target, mrFields.SourceIssue, mrFields.Branch)
+
+	// Create the rework task
+	taskTitle := fmt.Sprintf("Rework: %s", originalTitle)
+	task, err := bd.Create(beads.CreateOptions{
+		Title:       taskTitle,
+		Type:        "task",
+		Priority:    boostedPriority,
+		Description: description,
+		Parent:      mrID,
+	})
+	if err != nil {
+		return fmt.Errorf("creating rework task: %w", err)
+	}
+
+	// Block the MR on the rework task
+	if err := bd.AddDependency(mrID, task.ID); err != nil {
+		fmt.Printf("%s Warning: failed to block MR on task: %v\n", style.Bold.Render("⚠"), err)
+	}
+
+	fmt.Printf("%s Created rework task: %s (P%d)\n", style.Bold.Render("✓"), task.ID, task.Priority)
+	fmt.Printf("   MR %s is now blocked until task is resolved\n", mrID)
+	fmt.Printf("\nTo dispatch: gt sling %s <rig>\n", task.ID)
 
 	return nil
 }
