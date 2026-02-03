@@ -146,9 +146,9 @@ func TestCheckAgentHasPendingDecisions(t *testing.T) {
 	})
 }
 
-// TestTurnCheckSkipsWhenAgentHasPendingDecisions tests the full turn-check flow
-// with the pending decisions skip logic.
-func TestTurnCheckSkipsWhenAgentHasPendingDecisions(t *testing.T) {
+// TestTurnCheckPerTurnEnforcement tests the full turn-check flow,
+// verifying that pending decisions from prior turns don't bypass per-turn requirements.
+func TestTurnCheckPerTurnEnforcement(t *testing.T) {
 	// Skip if bd is not available
 	if _, err := exec.LookPath("bd"); err != nil {
 		t.Skip("bd not installed, skipping integration test")
@@ -203,42 +203,34 @@ func TestTurnCheckSkipsWhenAgentHasPendingDecisions(t *testing.T) {
 		}
 	})
 
-	t.Run("turn-check skips block when agent has pending decisions", func(t *testing.T) {
+	t.Run("turn-check blocks even when agent has pending decisions from prior turn", func(t *testing.T) {
 		os.Setenv("GT_ROLE", testAgentID)
 		defer os.Unsetenv("GT_ROLE")
 
-		// Create a pending decision from this agent
+		// Create a pending decision from this agent (simulates turn 1)
 		decisionID := createTestDecision(t, townRoot, "Should we proceed?", testAgentID)
 		t.Logf("Created pending decision: %s", decisionID)
 
-		// No marker exists
+		// Clear marker (simulates new turn - turn 2)
 		clearTurnMarker(testSessionID)
 
-		// Verify the agent has pending decisions
+		// Verify the agent has pending decisions from prior turn
 		hasPending := checkAgentHasPendingDecisions()
 		if !hasPending {
 			t.Fatal("expected checkAgentHasPendingDecisions to return true")
 		}
 
-		// Simulate the turn-check logic from runDecisionTurnCheck:
-		// If no marker and not soft mode, check for pending decisions first
-		markerExists := turnMarkerExists(testSessionID)
-		if markerExists {
-			t.Fatal("marker should not exist")
+		// Even though agent has pending decisions from turn 1,
+		// turn-check on turn 2 should block because no decision was offered THIS turn.
+		// This enforces per-turn decision requirements.
+		result := checkTurnMarker(testSessionID, false)
+		if result == nil {
+			t.Error("expected block: pending decisions from prior turn should NOT skip block")
 		}
-
-		// The fix: when agent has pending decisions, skip the block
-		// This is what runDecisionTurnCheck does
-		if hasPending {
-			// Turn-check should be skipped - agent has pending decisions
-			t.Log("Turn-check skipped: agent has pending decisions")
-		} else {
-			// Would block - but this shouldn't happen in this test
-			result := checkTurnMarker(testSessionID, false)
-			if result == nil {
-				t.Error("expected block when no pending decisions")
-			}
+		if result != nil && result.Decision != "block" {
+			t.Errorf("expected block decision, got %q", result.Decision)
 		}
+		t.Log("Correctly blocked: pending decisions from prior turn don't skip turn-check")
 	})
 }
 
@@ -376,8 +368,8 @@ func TestDecisionIntegrationWorkspaceDetection(t *testing.T) {
 	}
 }
 
-// TestDecisionTurnCheckIntegrationEndToEnd tests the complete flow from
-// decision creation to turn-check skip.
+// TestDecisionTurnCheckIntegrationEndToEnd tests the complete flow showing
+// that pending decisions from prior turns do NOT bypass per-turn enforcement.
 func TestDecisionTurnCheckIntegrationEndToEnd(t *testing.T) {
 	// Skip if bd is not available
 	if _, err := exec.LookPath("bd"); err != nil {
@@ -428,16 +420,20 @@ func TestDecisionTurnCheckIntegrationEndToEnd(t *testing.T) {
 		t.Fatal("should have pending decisions after creating one")
 	}
 
-	// Step 5: The turn-check skip logic (simulated)
-	// In runDecisionTurnCheck, before checking marker, we check for pending decisions
+	// Step 5: Per-turn enforcement - pending decisions from prior turn DON'T skip turn-check
+	// Even though agent has pending decisions, a new turn still requires a new decision
 	hasPending := checkAgentHasPendingDecisions()
 	if !hasPending {
 		t.Fatal("hasPending should be true")
 	}
 
-	// When hasPending is true, turn-check is skipped (returns early with nil)
-	// This prevents blocking agents that already have outstanding decisions
-	t.Log("Turn-check skip logic verified: agent has pending decisions")
+	// The new behavior: turn-check STILL BLOCKS even with pending decisions
+	// This enforces per-turn decision requirements
+	result = checkTurnMarker(testSessionID, false)
+	if result == nil || result.Decision != "block" {
+		t.Error("should STILL block: pending decisions from prior turn don't skip turn-check")
+	}
+	t.Log("Per-turn enforcement verified: pending decisions don't skip turn-check")
 
 	// Step 6: Verify the decision can be retrieved
 	bd := beads.New(beads.ResolveBeadsDir(townRoot))

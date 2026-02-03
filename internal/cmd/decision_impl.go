@@ -1366,21 +1366,15 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Fall back to checking decision records in beads database
-	hasDecisionThisSession := checkAgentHasDecisionForSession(input.SessionID)
-
-	if decisionTurnCheckVerbose {
-		fmt.Fprintf(os.Stderr, "[turn-check] Has decision this session (db check): %v\n", hasDecisionThisSession)
-	}
-
-	if hasDecisionThisSession || decisionTurnCheckSoft {
+	// Soft mode doesn't block
+	if decisionTurnCheckSoft {
 		if decisionTurnCheckVerbose {
-			fmt.Fprintf(os.Stderr, "[turn-check] OK: Decision was offered this session\n")
+			fmt.Fprintf(os.Stderr, "[turn-check] OK: Soft mode, not blocking\n")
 		}
 		return nil
 	}
 
-	// No decision offered this session - block
+	// No decision offered this turn - block
 	if decisionTurnCheckVerbose {
 		fmt.Fprintf(os.Stderr, "[turn-check] BLOCKING: No decision offered this turn\n")
 	}
@@ -1400,50 +1394,6 @@ When the decision is created, it will be assigned a semantic slug (e.g., gt-dec-
 	out, _ := json.Marshal(result)
 	fmt.Println(string(out))
 	return NewSilentExit(1)
-}
-
-// checkAgentHasDecisionForSession checks if the current agent created a decision
-// with the given session_id in its context. This is used for turn enforcement -
-// the decision record itself serves as the "marker" that a decision was offered.
-func checkAgentHasDecisionForSession(sessionID string) bool {
-	if sessionID == "" {
-		return false
-	}
-
-	agentID := detectSender()
-	if agentID == "" || agentID == "unknown" {
-		return false
-	}
-
-	townRoot, err := workspace.FindFromCwd()
-	if err != nil {
-		return false
-	}
-
-	bd := beads.New(beads.ResolveBeadsDir(townRoot))
-
-	// Get pending decisions from this agent
-	decisions, err := bd.ListPendingDecisionsForRequester(agentID)
-	if err != nil {
-		return false
-	}
-
-	// Check if any decision has matching session_id in context
-	for _, issue := range decisions {
-		// Get the full decision to access context
-		_, fields, err := bd.GetDecisionBead(issue.ID)
-		if err != nil || fields == nil {
-			continue
-		}
-
-		// Check session_id in context
-		decisionSessionID := extractSessionIDFromContext(fields.Context)
-		if decisionSessionID == sessionID {
-			return true
-		}
-	}
-
-	return false
 }
 
 // checkAgentHasPendingDecisions checks if the current agent has any pending decisions.
