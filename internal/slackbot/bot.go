@@ -1488,9 +1488,9 @@ func (b *Bot) handleOtherModalSubmission(callback slack.InteractionCallback) {
 		return
 	}
 
-	// Edit the original message to show resolved state
+	// Edit the original message to show resolved state with full context
 	if messageTs != "" {
-		b.updateMessageAsResolved(channelID, messageTs, resolved.ID, resolved.Question, resolved.Context, "Other: "+customText, fullText, callback.User.ID)
+		b.updateMessageAsResolved(channelID, messageTs, resolved, callback.User.ID)
 	} else {
 		b.postEphemeral(channelID, callback.User.ID,
 			fmt.Sprintf("✅ Decision resolved with custom response: %s", customText))
@@ -1621,9 +1621,9 @@ func (b *Bot) handleResolveModalSubmission(callback slack.InteractionCallback) {
 		return
 	}
 
-	// Edit the original message to show resolved state (collapsed view)
+	// Edit the original message to show resolved state with full context
 	if messageTs != "" {
-		b.updateMessageAsResolved(channelID, messageTs, resolved.ID, resolved.Question, resolved.Context, optionLabel, rationale, callback.User.ID)
+		b.updateMessageAsResolved(channelID, messageTs, resolved, callback.User.ID)
 	} else {
 		// Fallback: post new message if we don't have the original timestamp
 		b.postResolutionConfirmation(channelID, callback.User.ID, resolved.ID, optionLabel, rationale)
@@ -1676,13 +1676,14 @@ func (b *Bot) postErrorMessage(channelID, userID, decisionID string, err error) 
 	}
 }
 
-// updateMessageAsResolved edits the original decision notification to show a collapsed resolved view.
+// updateMessageAsResolved edits the original decision notification to show full context after resolution.
 // This keeps one message per decision instead of creating a new confirmation message.
+// Shows: options (all choices), referenced agent, context with beads, and resolution details.
 // The resolverID can be a Slack user ID (will be formatted as mention) or a plain string.
-func (b *Bot) updateMessageAsResolved(channelID, messageTs, decisionID, question, context, chosenOption, rationale, resolverID string) {
-	log.Printf("Slack: [DEBUG] updateMessageAsResolved called - channelID=%s messageTs=%q decisionID=%s", channelID, messageTs, decisionID)
+func (b *Bot) updateMessageAsResolved(channelID, messageTs string, decision *rpcclient.Decision, resolverID string) {
+	log.Printf("Slack: [DEBUG] updateMessageAsResolved called - channelID=%s messageTs=%q decisionID=%s", channelID, messageTs, decision.ID)
 	// Generate semantic slug for display
-	semanticSlug := util.GenerateDecisionSlug(decisionID, question)
+	semanticSlug := util.GenerateDecisionSlug(decision.ID, decision.Question)
 
 	// Format resolver - if it looks like a Slack user ID (no colons, alphanumeric), use mention
 	// Otherwise display as plain text
@@ -1692,30 +1693,102 @@ func (b *Bot) updateMessageAsResolved(channelID, messageTs, decisionID, question
 		resolverText = fmt.Sprintf("<@%s>", resolverID)
 	}
 
-	// Build resolved text with question and context preserved
-	resolvedText := fmt.Sprintf("✅ *%s* — Resolved\n\n", semanticSlug)
-	resolvedText += fmt.Sprintf("*Question:* %s\n", question)
-	if context != "" {
-		resolvedText += fmt.Sprintf("*Context:* %s\n", context)
-	}
-	resolvedText += fmt.Sprintf("\n*Choice:* %s\n", chosenOption)
-	if rationale != "" {
-		// Truncate long rationales for display
-		displayRationale := rationale
-		if len(displayRationale) > 300 {
-			displayRationale = displayRationale[:297] + "..."
-		}
-		resolvedText += fmt.Sprintf("*Rationale:* %s\n", displayRationale)
-	}
-	resolvedText += fmt.Sprintf("*By:* %s", resolverText)
+	// Build blocks for rich resolved view with full context
+	var blocks []slack.Block
 
-	// Build collapsed resolved view
-	blocks := []slack.Block{
-		slack.NewSectionBlock(
-			slack.NewTextBlockObject("mrkdwn", resolvedText, false, false),
-			nil, nil,
-		),
+	// Header with resolved status
+	headerText := fmt.Sprintf("✅ *%s* — Resolved", semanticSlug)
+	blocks = append(blocks, slack.NewSectionBlock(
+		slack.NewTextBlockObject("mrkdwn", headerText, false, false),
+		nil, nil,
+	))
+
+	// Question
+	blocks = append(blocks, slack.NewSectionBlock(
+		slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("*Question:* %s", decision.Question), false, false),
+		nil, nil,
+	))
+
+	// Referenced agent (who created the decision)
+	if decision.RequestedBy != "" {
+		blocks = append(blocks, slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("🤖 *Requested by:* %s", decision.RequestedBy), false, false),
+		))
 	}
+
+	// Divider before options
+	blocks = append(blocks, slack.NewDividerBlock())
+
+	// Options section - show all choices with chosen one marked
+	if len(decision.Options) > 0 {
+		optionsText := "*Options:*\n"
+		for i, opt := range decision.Options {
+			prefix := "○"
+			if i+1 == decision.ChosenIndex {
+				prefix = "✅"
+			}
+			label := opt.Label
+			if opt.Recommended {
+				label += " ⭐"
+			}
+			optionsText += fmt.Sprintf("%s %d. *%s*", prefix, i+1, label)
+			if opt.Description != "" {
+				// Truncate long descriptions
+				desc := opt.Description
+				if len(desc) > 100 {
+					desc = desc[:97] + "..."
+				}
+				optionsText += fmt.Sprintf(" — _%s_", desc)
+			}
+			optionsText += "\n"
+		}
+		blocks = append(blocks, slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", optionsText, false, false),
+			nil, nil,
+		))
+	}
+
+	// Context section with referenced beads (using existing formatter)
+	if decision.Context != "" || len(decision.Blockers) > 0 {
+		formattedContext := formatContextWithBlockersForSlack(decision.Context, decision.Blockers)
+		if formattedContext != "" {
+			// Split into sections if context is long
+			// Slack has a 3000 char limit per text block
+			const maxContextLen = 2900
+			if len(formattedContext) > maxContextLen {
+				formattedContext = formattedContext[:maxContextLen-3] + "..."
+			}
+			blocks = append(blocks, slack.NewDividerBlock())
+			blocks = append(blocks, slack.NewSectionBlock(
+				slack.NewTextBlockObject("mrkdwn", formattedContext, false, false),
+				nil, nil,
+			))
+		}
+	}
+
+	// Divider before resolution details
+	blocks = append(blocks, slack.NewDividerBlock())
+
+	// Resolution details
+	chosenLabel := "Unknown"
+	if decision.ChosenIndex > 0 && decision.ChosenIndex <= len(decision.Options) {
+		chosenLabel = decision.Options[decision.ChosenIndex-1].Label
+	}
+	resolutionText := fmt.Sprintf("*Choice:* %s\n", chosenLabel)
+	if decision.Rationale != "" {
+		// Truncate long rationales for display
+		displayRationale := decision.Rationale
+		if len(displayRationale) > 400 {
+			displayRationale = displayRationale[:397] + "..."
+		}
+		resolutionText += fmt.Sprintf("*Rationale:* %s\n", displayRationale)
+	}
+	resolutionText += fmt.Sprintf("*Resolved by:* %s", resolverText)
+
+	blocks = append(blocks, slack.NewSectionBlock(
+		slack.NewTextBlockObject("mrkdwn", resolutionText, false, false),
+		nil, nil,
+	))
 
 	_, _, _, err := b.client.UpdateMessage(channelID, messageTs,
 		slack.MsgOptionBlocks(blocks...),
@@ -1725,10 +1798,10 @@ func (b *Bot) updateMessageAsResolved(channelID, messageTs, decisionID, question
 		// Fallback: post ephemeral confirmation (only works if resolverID is a valid Slack user)
 		if resolverID != "" && !strings.Contains(resolverID, ":") && len(resolverID) > 3 {
 			b.postEphemeral(channelID, resolverID,
-				fmt.Sprintf("✅ Decision resolved: %s", chosenOption))
+				fmt.Sprintf("✅ Decision resolved: %s", chosenLabel))
 		}
 	} else {
-		log.Printf("Slack: Updated decision %s message to resolved state", decisionID)
+		log.Printf("Slack: Updated decision %s message to resolved state", decision.ID)
 	}
 }
 
@@ -2325,8 +2398,8 @@ func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
 	b.decisionMessagesMu.RUnlock()
 
 	if hasTrackedMessage {
-		// Update the existing message instead of posting a new one
-		b.updateMessageAsResolved(msgInfo.channelID, msgInfo.timestamp, decision.ID, decision.Question, decision.Context, optionLabel, decision.Rationale, resolvedBy)
+		// Update the existing message instead of posting a new one with full context
+		b.updateMessageAsResolved(msgInfo.channelID, msgInfo.timestamp, &decision, resolvedBy)
 		// Remove from tracking
 		b.decisionMessagesMu.Lock()
 		delete(b.decisionMessages, decision.ID)
@@ -2335,6 +2408,7 @@ func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
 	}
 
 	// Fallback: post a new message if we don't have the original tracked
+	// This message also shows full context for consistency
 	targetChannel := b.resolveChannelForDecision(decision)
 	if targetChannel == "" {
 		return nil
@@ -2350,25 +2424,105 @@ func (b *Bot) NotifyResolution(decision rpcclient.Decision) error {
 	// Generate semantic slug for human-friendly display
 	semanticSlug := util.GenerateDecisionSlug(decision.ID, decision.Question)
 
-	blocks := []slack.Block{
-		slack.NewSectionBlock(
+	// Build blocks with full context (gt-0wkw0d)
+	var blocks []slack.Block
+
+	// Header
+	blocks = append(blocks, slack.NewSectionBlock(
+		slack.NewTextBlockObject("mrkdwn",
+			fmt.Sprintf("📋 *Decision Resolved: %s*", semanticSlug),
+			false, false,
+		),
+		nil, nil,
+	))
+
+	// Question
+	blocks = append(blocks, slack.NewSectionBlock(
+		slack.NewTextBlockObject("mrkdwn",
+			fmt.Sprintf("*Question:* %s", decision.Question),
+			false, false,
+		),
+		nil, nil,
+	))
+
+	// Referenced agent
+	if decision.RequestedBy != "" {
+		blocks = append(blocks, slack.NewContextBlock("",
 			slack.NewTextBlockObject("mrkdwn",
-				fmt.Sprintf("📋 *Decision Resolved: %s*\n\n"+
-					"*Question:* %s\n"+
-					"*Choice:* %s\n"+
-					"*Resolved by:* %s",
-					semanticSlug, decision.Question, optionLabel, resolverText),
+				fmt.Sprintf("🤖 *Requested by:* %s", decision.RequestedBy),
 				false, false,
 			),
-			nil, nil,
-		),
-		slack.NewContextBlock("",
-			slack.NewTextBlockObject("mrkdwn",
-				"_The requesting agent has been notified via mail and nudge. Blocked work has been unblocked._",
-				false, false,
-			),
-		),
+		))
 	}
+
+	// Options section - show all choices with chosen one marked
+	if len(decision.Options) > 0 {
+		blocks = append(blocks, slack.NewDividerBlock())
+		optionsText := "*Options:*\n"
+		for i, opt := range decision.Options {
+			prefix := "○"
+			if i+1 == decision.ChosenIndex {
+				prefix = "✅"
+			}
+			label := opt.Label
+			if opt.Recommended {
+				label += " ⭐"
+			}
+			optionsText += fmt.Sprintf("%s %d. *%s*", prefix, i+1, label)
+			if opt.Description != "" {
+				desc := opt.Description
+				if len(desc) > 100 {
+					desc = desc[:97] + "..."
+				}
+				optionsText += fmt.Sprintf(" — _%s_", desc)
+			}
+			optionsText += "\n"
+		}
+		blocks = append(blocks, slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", optionsText, false, false),
+			nil, nil,
+		))
+	}
+
+	// Context with referenced beads
+	if decision.Context != "" || len(decision.Blockers) > 0 {
+		formattedContext := formatContextWithBlockersForSlack(decision.Context, decision.Blockers)
+		if formattedContext != "" {
+			const maxContextLen = 2900
+			if len(formattedContext) > maxContextLen {
+				formattedContext = formattedContext[:maxContextLen-3] + "..."
+			}
+			blocks = append(blocks, slack.NewDividerBlock())
+			blocks = append(blocks, slack.NewSectionBlock(
+				slack.NewTextBlockObject("mrkdwn", formattedContext, false, false),
+				nil, nil,
+			))
+		}
+	}
+
+	// Resolution details
+	blocks = append(blocks, slack.NewDividerBlock())
+	resolutionText := fmt.Sprintf("*Choice:* %s\n", optionLabel)
+	if decision.Rationale != "" {
+		displayRationale := decision.Rationale
+		if len(displayRationale) > 400 {
+			displayRationale = displayRationale[:397] + "..."
+		}
+		resolutionText += fmt.Sprintf("*Rationale:* %s\n", displayRationale)
+	}
+	resolutionText += fmt.Sprintf("*Resolved by:* %s", resolverText)
+	blocks = append(blocks, slack.NewSectionBlock(
+		slack.NewTextBlockObject("mrkdwn", resolutionText, false, false),
+		nil, nil,
+	))
+
+	// Footer note
+	blocks = append(blocks, slack.NewContextBlock("",
+		slack.NewTextBlockObject("mrkdwn",
+			"_The requesting agent has been notified via mail and nudge. Blocked work has been unblocked._",
+			false, false,
+		),
+	))
 
 	_, _, err := b.client.PostMessage(targetChannel,
 		slack.MsgOptionBlocks(blocks...),
