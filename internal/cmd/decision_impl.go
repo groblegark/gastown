@@ -57,8 +57,14 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 
 	// Auto-enrich context with bead descriptions if --auto-context is set
 	if decisionAutoContext {
-		// Include beads from --blocks and --parent flags
-		enriched, err := enrichContextWithBeads(decisionPrompt, decisionContext, decisionBlocks, decisionParent)
+		// Collect all additional bead IDs from flags and options
+		additionalIDs := []string{decisionBlocks, decisionParent}
+		// Also extract beads mentioned in option text
+		for _, opt := range decisionOptions {
+			optionBeads := beads.ExtractBeadIDs(opt)
+			additionalIDs = append(additionalIDs, optionBeads...)
+		}
+		enriched, err := enrichContextWithBeads(decisionPrompt, decisionContext, additionalIDs...)
 		if err != nil {
 			style.PrintWarning("Failed to auto-enrich context: %v", err)
 		} else {
