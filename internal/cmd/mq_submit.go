@@ -175,13 +175,12 @@ func runMqSubmit(cmd *cobra.Command, args []string) error {
 		mrIssue = existingMR
 		fmt.Printf("%s MR already exists (idempotent)\n", style.Bold.Render("✓"))
 	} else {
-		// Create MR bead (ephemeral wisp - will be cleaned up after merge)
+		// Create MR bead (persistent - coordination state that must survive daemon restarts)
 		mrIssue, err = bd.Create(beads.CreateOptions{
 			Title:       title,
 			Type:        "merge-request",
 			Priority:    priority,
 			Description: description,
-			Ephemeral:   true,
 		})
 		if err != nil {
 			return fmt.Errorf("creating merge request bead: %w", err)

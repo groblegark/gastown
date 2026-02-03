@@ -440,13 +440,12 @@ func runDone(cmd *cobra.Command, args []string) error {
 			description += "\nlast_conflict_sha: null"
 			description += "\nconflict_task_id: null"
 
-			// Create MR bead (ephemeral wisp - will be cleaned up after merge)
+			// Create MR bead (persistent - coordination state that must survive daemon restarts)
 			mrIssue, err := bd.Create(beads.CreateOptions{
 				Title:       title,
 				Type:        "merge-request",
 				Priority:    priority,
 				Description: description,
-				Ephemeral:   true,
 			})
 			if err != nil {
 				return fmt.Errorf("creating merge request bead: %w", err)
