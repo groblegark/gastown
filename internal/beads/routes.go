@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -22,9 +23,117 @@ type Route struct {
 // RoutesFileName is the name of the routes configuration file.
 const RoutesFileName = "routes.jsonl"
 
-// LoadRoutes loads routes from routes.jsonl in the given beads directory.
-// Returns an empty slice if the file doesn't exist.
+// LoadRoutes loads routes, trying beads daemon first (via bd route list), falling back to routes.jsonl.
+// Returns an empty slice if no routes are found.
 func LoadRoutes(beadsDir string) ([]Route, error) {
+	// Try loading from beads daemon first
+	routes, err := loadRoutesFromDaemon(beadsDir)
+	if err == nil && len(routes) > 0 {
+		if os.Getenv("GT_DEBUG_ROUTING") != "" {
+			fmt.Fprintf(os.Stderr, "[routing] Loaded %d routes from beads daemon\n", len(routes))
+		}
+		return routes, nil
+	}
+	if os.Getenv("GT_DEBUG_ROUTING") != "" && err != nil {
+		fmt.Fprintf(os.Stderr, "[routing] Daemon route query failed: %v, falling back to file\n", err)
+	}
+
+	// Fall back to routes.jsonl
+	return LoadRoutesFromFile(beadsDir)
+}
+
+// loadRoutesFromDaemon queries route beads via the bd daemon.
+// Returns routes parsed from beads, or error if unavailable.
+func loadRoutesFromDaemon(beadsDir string) ([]Route, error) {
+	// Run bd list --type=route --json from the beads directory
+	cmd := exec.Command("bd", "list", "--type=route", "--json")
+	cmd.Dir = filepath.Dir(beadsDir) // Run from parent of .beads (the rig dir)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("bd list failed: %w", err)
+	}
+
+	// Parse JSON output - bd list returns array of issues
+	var rawRoutes []struct {
+		ID     string   `json:"id"`
+		Title  string   `json:"title"`
+		Status string   `json:"status"`
+		Labels []string `json:"labels"`
+	}
+	if err := json.Unmarshal(output, &rawRoutes); err != nil {
+		return nil, fmt.Errorf("parsing route data: %w", err)
+	}
+
+	// Convert to Route structs, filtering to open routes only
+	var routes []Route
+	for _, raw := range rawRoutes {
+		if raw.Status == "closed" {
+			continue
+		}
+
+		// Try to extract from labels first (our bead_route.go format)
+		var prefix, path string
+		for _, label := range raw.Labels {
+			switch {
+			case strings.HasPrefix(label, "prefix:"):
+				prefix = strings.TrimPrefix(label, "prefix:") + "-"
+			case strings.HasPrefix(label, "path:"):
+				path = strings.TrimPrefix(label, "path:")
+			}
+		}
+
+		// Fall back to parsing title format "prefix → path"
+		if prefix == "" || path == "" {
+			r := parseRouteFromTitle(raw.Title)
+			if r.Prefix != "" {
+				prefix = r.Prefix
+			}
+			if r.Path != "" {
+				path = r.Path
+			}
+		}
+
+		if prefix != "" && path != "" {
+			routes = append(routes, Route{Prefix: prefix, Path: path})
+		}
+	}
+
+	return routes, nil
+}
+
+// parseRouteFromTitle extracts a Route from a route bead title.
+// Route beads use title format "prefix → path" (e.g., "gt- → gastown").
+func parseRouteFromTitle(title string) Route {
+	var parts []string
+	if strings.Contains(title, " → ") {
+		parts = strings.SplitN(title, " → ", 2)
+	} else if strings.Contains(title, " -> ") {
+		parts = strings.SplitN(title, " -> ", 2)
+	}
+
+	if len(parts) != 2 {
+		return Route{}
+	}
+
+	prefix := strings.TrimSpace(parts[0])
+	path := strings.TrimSpace(parts[1])
+
+	// Normalize prefix to include hyphen
+	if prefix != "" && !strings.HasSuffix(prefix, "-") {
+		prefix = prefix + "-"
+	}
+
+	// Normalize special path values
+	if path == "town root" || path == ".beads" {
+		path = "."
+	}
+
+	return Route{Prefix: prefix, Path: path}
+}
+
+// LoadRoutesFromFile loads routes from routes.jsonl in the given beads directory.
+// Returns an empty slice if the file doesn't exist.
+func LoadRoutesFromFile(beadsDir string) ([]Route, error) {
 	routesPath := filepath.Join(beadsDir, RoutesFileName)
 	file, err := os.Open(routesPath)
 	if err != nil {
