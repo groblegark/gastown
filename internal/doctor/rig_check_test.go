@@ -106,9 +106,13 @@ func TestBeadsRedirectCheck_TrackedBeadsCorrectRedirect(t *testing.T) {
 	rigName := "testrig"
 	rigDir := filepath.Join(tmpDir, rigName)
 
-	// Create tracked beads at mayor/rig/.beads
+	// Create tracked beads at mayor/rig/.beads with valid beads data
 	trackedBeads := filepath.Join(rigDir, "mayor", "rig", ".beads")
 	if err := os.MkdirAll(trackedBeads, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Add a config.yaml to make it a valid beads directory
+	if err := os.WriteFile(filepath.Join(trackedBeads, "config.yaml"), []byte("storage-backend: dolt\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -128,7 +132,7 @@ func TestBeadsRedirectCheck_TrackedBeadsCorrectRedirect(t *testing.T) {
 	result := check.Run(ctx)
 
 	if result.Status != StatusOK {
-		t.Errorf("expected StatusOK for correct redirect, got %v", result.Status)
+		t.Errorf("expected StatusOK for correct redirect, got %v: %s", result.Status, result.Message)
 	}
 	if !strings.Contains(result.Message, "correctly configured") {
 		t.Errorf("expected message about correct config, got %q", result.Message)
@@ -174,9 +178,13 @@ func TestBeadsRedirectCheck_FixWrongRedirect(t *testing.T) {
 	rigName := "testrig"
 	rigDir := filepath.Join(tmpDir, rigName)
 
-	// Create tracked beads at mayor/rig/.beads
+	// Create tracked beads at mayor/rig/.beads with valid beads data
 	trackedBeads := filepath.Join(rigDir, "mayor", "rig", ".beads")
 	if err := os.MkdirAll(trackedBeads, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Add a config.yaml to make it a valid beads directory
+	if err := os.WriteFile(filepath.Join(trackedBeads, "config.yaml"), []byte("storage-backend: dolt\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -216,7 +224,7 @@ func TestBeadsRedirectCheck_FixWrongRedirect(t *testing.T) {
 	// Verify check now passes
 	result = check.Run(ctx)
 	if result.Status != StatusOK {
-		t.Errorf("expected StatusOK after fix, got %v", result.Status)
+		t.Errorf("expected StatusOK after fix, got %v: %s", result.Status, result.Message)
 	}
 }
 
@@ -225,9 +233,13 @@ func TestBeadsRedirectCheck_Fix(t *testing.T) {
 	rigName := "testrig"
 	rigDir := filepath.Join(tmpDir, rigName)
 
-	// Create tracked beads at mayor/rig/.beads
+	// Create tracked beads at mayor/rig/.beads with valid beads data
 	trackedBeads := filepath.Join(rigDir, "mayor", "rig", ".beads")
 	if err := os.MkdirAll(trackedBeads, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Add a config.yaml to make it a valid beads directory
+	if err := os.WriteFile(filepath.Join(trackedBeads, "config.yaml"), []byte("storage-backend: dolt\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -260,7 +272,7 @@ func TestBeadsRedirectCheck_Fix(t *testing.T) {
 	// Verify check now passes
 	result = check.Run(ctx)
 	if result.Status != StatusOK {
-		t.Errorf("expected StatusOK after fix, got %v", result.Status)
+		t.Errorf("expected StatusOK after fix, got %v: %s", result.Status, result.Message)
 	}
 }
 
@@ -351,6 +363,83 @@ func TestBeadsRedirectCheck_FixInitBeads(t *testing.T) {
 	result = check.Run(ctx)
 	if result.Status != StatusOK {
 		t.Errorf("expected StatusOK after fix, got %v", result.Status)
+	}
+}
+
+func TestBeadsRedirectCheck_CircularRedirect(t *testing.T) {
+	tmpDir := t.TempDir()
+	rigName := "testrig"
+	rigDir := filepath.Join(tmpDir, rigName)
+
+	// Create tracked beads at mayor/rig/.beads with a circular redirect back to rig-level
+	// The path resolution goes: mayor/rig/.beads -> parent is mayor/rig -> ../../.beads = rigDir/.beads
+	trackedBeads := filepath.Join(rigDir, "mayor", "rig", ".beads")
+	if err := os.MkdirAll(trackedBeads, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Create circular redirect: mayor/rig/.beads/redirect -> ../../.beads (back to rig root)
+	// This creates a cycle: rigDir/.beads -> mayor/rig/.beads -> rigDir/.beads
+	if err := os.WriteFile(filepath.Join(trackedBeads, "redirect"), []byte("../../.beads\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create rig-level .beads with redirect to mayor/rig/.beads
+	rigBeads := filepath.Join(rigDir, ".beads")
+	if err := os.MkdirAll(rigBeads, 0755); err != nil {
+		t.Fatal(err)
+	}
+	redirectPath := filepath.Join(rigBeads, "redirect")
+	if err := os.WriteFile(redirectPath, []byte("mayor/rig/.beads\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	check := NewBeadsRedirectCheck()
+	ctx := &CheckContext{TownRoot: tmpDir, RigName: rigName}
+
+	result := check.Run(ctx)
+
+	// Should detect circular redirect
+	if result.Status != StatusError {
+		t.Errorf("expected StatusError for circular redirect, got %v", result.Status)
+	}
+	if !strings.Contains(result.Message, "ircular") {
+		t.Errorf("expected message about circular redirect, got %q", result.Message)
+	}
+}
+
+func TestBeadsRedirectCheck_InvalidTarget(t *testing.T) {
+	tmpDir := t.TempDir()
+	rigName := "testrig"
+	rigDir := filepath.Join(tmpDir, rigName)
+
+	// Create tracked beads at mayor/rig/.beads but without any data files
+	trackedBeads := filepath.Join(rigDir, "mayor", "rig", ".beads")
+	if err := os.MkdirAll(trackedBeads, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// No config.yaml or other beads data files - invalid target
+
+	// Create rig-level .beads with correct redirect
+	rigBeads := filepath.Join(rigDir, ".beads")
+	if err := os.MkdirAll(rigBeads, 0755); err != nil {
+		t.Fatal(err)
+	}
+	redirectPath := filepath.Join(rigBeads, "redirect")
+	if err := os.WriteFile(redirectPath, []byte("mayor/rig/.beads\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	check := NewBeadsRedirectCheck()
+	ctx := &CheckContext{TownRoot: tmpDir, RigName: rigName}
+
+	result := check.Run(ctx)
+
+	// Should detect invalid target (no beads data)
+	if result.Status != StatusError {
+		t.Errorf("expected StatusError for invalid beads target, got %v", result.Status)
+	}
+	if !strings.Contains(result.Message, "not a valid beads directory") {
+		t.Errorf("expected message about invalid beads directory, got %q", result.Message)
 	}
 }
 

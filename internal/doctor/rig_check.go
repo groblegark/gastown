@@ -976,6 +976,47 @@ func (c *BeadsRedirectCheck) Run(ctx *CheckContext) *CheckResult {
 		}
 	}
 
+	// Follow the redirect chain to detect circular redirects and validate final target
+	targetPath := filepath.Join(rigPath, target)
+	finalTarget, chain, err := followRedirectChain(targetPath, 10)
+	if err != nil {
+		// Format the chain for display
+		chainStr := strings.Join(chain, " -> ")
+		if strings.Contains(err.Error(), "circular") {
+			return &CheckResult{
+				Name:    c.Name(),
+				Status:  StatusError,
+				Message: "Circular redirect chain detected in beads configuration",
+				Details: []string{
+					fmt.Sprintf("Redirect chain: %s", chainStr),
+					"This causes bd commands to fail with schema or database errors",
+				},
+				FixHint: "Remove the circular redirect and ensure mayor/rig/.beads contains actual beads data",
+			}
+		}
+		return &CheckResult{
+			Name:    c.Name(),
+			Status:  StatusError,
+			Message: fmt.Sprintf("Error following redirect chain: %v", err),
+			Details: []string{fmt.Sprintf("Chain so far: %s", chainStr)},
+		}
+	}
+
+	// Validate the final target is a valid beads directory
+	if !isValidBeadsTarget(finalTarget) {
+		return &CheckResult{
+			Name:    c.Name(),
+			Status:  StatusError,
+			Message: "Redirect target is not a valid beads directory",
+			Details: []string{
+				fmt.Sprintf("Final target: %s", finalTarget),
+				"Expected: directory with beads data files (issues.jsonl, issues.db, or config.yaml)",
+				"This may indicate the beads database was never initialized",
+			},
+			FixHint: "Initialize beads at the target location or fix the redirect chain",
+		}
+	}
+
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusOK,
@@ -1081,6 +1122,75 @@ func hasBeadsData(beadsDir string) bool {
 		}
 	}
 	return false
+}
+
+// followRedirectChain follows beads redirect files and detects circular chains.
+// It returns the final target path (resolved to absolute), the chain of paths visited,
+// and an error if a circular redirect or other problem is detected.
+// maxHops limits the chain length to prevent infinite loops from malformed redirects.
+func followRedirectChain(startPath string, maxHops int) (string, []string, error) {
+	visited := make(map[string]bool)
+	chain := []string{}
+	currentPath := startPath
+
+	for i := 0; i < maxHops; i++ {
+		// Resolve to absolute path for consistent cycle detection
+		absPath, err := filepath.Abs(currentPath)
+		if err != nil {
+			return "", chain, fmt.Errorf("cannot resolve path %s: %w", currentPath, err)
+		}
+
+		// Check for cycle
+		if visited[absPath] {
+			chain = append(chain, absPath)
+			return "", chain, fmt.Errorf("circular redirect detected")
+		}
+		visited[absPath] = true
+		chain = append(chain, absPath)
+
+		// Check if this directory has a redirect file
+		redirectPath := filepath.Join(absPath, "redirect")
+		content, err := os.ReadFile(redirectPath)
+		if os.IsNotExist(err) {
+			// No redirect file - this is the final target
+			return absPath, chain, nil
+		}
+		if err != nil {
+			return "", chain, fmt.Errorf("cannot read redirect at %s: %w", redirectPath, err)
+		}
+
+		// Follow the redirect (resolve relative to PARENT of beads directory, per beads convention)
+		// This matches how beads.ResolveBeadsDir resolves redirect paths.
+		target := strings.TrimSpace(string(content))
+		if filepath.IsAbs(target) {
+			currentPath = target
+		} else {
+			// Resolve relative to the parent directory (workDir), not the beads directory
+			parentDir := filepath.Dir(absPath)
+			currentPath = filepath.Clean(filepath.Join(parentDir, target))
+		}
+	}
+
+	return "", chain, fmt.Errorf("redirect chain exceeded maximum hops (%d)", maxHops)
+}
+
+// isValidBeadsTarget checks if a path is a valid final beads directory.
+// A valid beads directory has data files and is not itself a redirect.
+func isValidBeadsTarget(path string) bool {
+	// Check it's a directory
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+
+	// Check it doesn't have a redirect file (would make it not a final target)
+	redirectPath := filepath.Join(path, "redirect")
+	if _, err := os.Stat(redirectPath); err == nil {
+		return false
+	}
+
+	// Check for valid beads data files
+	return hasBeadsData(path)
 }
 
 // BareRepoRefspecCheck verifies that the shared bare repo has the correct refspec configured.
