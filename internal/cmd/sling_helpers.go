@@ -282,6 +282,98 @@ func storeNoMergeInBead(beadID string, noMerge bool) error {
 	return nil
 }
 
+// storeMergeStrategyInBead sets the merge_strategy field in a bead's description.
+// Valid strategies: direct (push to main), mr (refinery), local (merge locally).
+func storeMergeStrategyInBead(beadID, strategy string) error {
+	if strategy == "" {
+		return nil
+	}
+
+	// Get the bead to preserve existing description content
+	showCmd := exec.Command("bd", "show", beadID, "--json")
+	out, err := showCmd.Output()
+	if err != nil {
+		return fmt.Errorf("fetching bead: %w", err)
+	}
+
+	// Parse the bead
+	var issues []beads.Issue
+	if err := json.Unmarshal(out, &issues); err != nil {
+		return fmt.Errorf("parsing bead: %w", err)
+	}
+	if len(issues) == 0 {
+		return fmt.Errorf("bead not found")
+	}
+	issue := &issues[0]
+
+	// Get or create attachment fields
+	fields := beads.ParseAttachmentFields(issue)
+	if fields == nil {
+		fields = &beads.AttachmentFields{}
+	}
+
+	// Set the merge strategy
+	fields.MergeStrategy = strategy
+
+	// Update the description
+	newDesc := beads.SetAttachmentFields(issue, fields)
+
+	// Update the bead
+	updateCmd := exec.Command("bd", "update", beadID, "--description="+newDesc)
+	updateCmd.Stderr = os.Stderr
+	if err := updateCmd.Run(); err != nil {
+		return fmt.Errorf("updating bead description: %w", err)
+	}
+
+	return nil
+}
+
+// storeConvoyOwnedInBead sets the convoy_owned field in a bead's description.
+// When set, the convoy is caller-managed and won't be auto-processed by witness/refinery.
+func storeConvoyOwnedInBead(beadID string, owned bool) error {
+	if !owned {
+		return nil
+	}
+
+	// Get the bead to preserve existing description content
+	showCmd := exec.Command("bd", "show", beadID, "--json")
+	out, err := showCmd.Output()
+	if err != nil {
+		return fmt.Errorf("fetching bead: %w", err)
+	}
+
+	// Parse the bead
+	var issues []beads.Issue
+	if err := json.Unmarshal(out, &issues); err != nil {
+		return fmt.Errorf("parsing bead: %w", err)
+	}
+	if len(issues) == 0 {
+		return fmt.Errorf("bead not found")
+	}
+	issue := &issues[0]
+
+	// Get or create attachment fields
+	fields := beads.ParseAttachmentFields(issue)
+	if fields == nil {
+		fields = &beads.AttachmentFields{}
+	}
+
+	// Set the convoy_owned flag
+	fields.ConvoyOwned = true
+
+	// Update the description
+	newDesc := beads.SetAttachmentFields(issue, fields)
+
+	// Update the bead
+	updateCmd := exec.Command("bd", "update", beadID, "--description="+newDesc)
+	updateCmd.Stderr = os.Stderr
+	if err := updateCmd.Run(); err != nil {
+		return fmt.Errorf("updating bead description: %w", err)
+	}
+
+	return nil
+}
+
 // injectStartPrompt sends a prompt to the target pane to start working.
 // Uses the reliable nudge pattern: literal mode + 500ms debounce + separate Enter.
 func injectStartPrompt(pane, beadID, subject, args string) error {
@@ -532,6 +624,18 @@ func nudgeRefinery(rigName, message string) {
 func isPolecatTarget(target string) bool {
 	parts := strings.Split(target, "/")
 	return len(parts) >= 3 && parts[1] == "polecats"
+}
+
+// parseCrewTarget parses a crew target string and returns the rig name and crew name.
+// Returns (rigName, crewName, true) if the target is a valid crew target format "rig/crew/name".
+// Returns ("", "", false) otherwise.
+// This is used to detect and auto-start stopped crew sessions when slinging work.
+func parseCrewTarget(target string) (rigName, crewName string, ok bool) {
+	parts := strings.Split(target, "/")
+	if len(parts) == 3 && parts[1] == "crew" {
+		return parts[0], parts[2], true
+	}
+	return "", "", false
 }
 
 // FormulaOnBeadResult contains the result of instantiating a formula on a bead.
