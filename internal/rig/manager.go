@@ -393,6 +393,12 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 	sourceBeadsDir := filepath.Join(mayorRigPath, ".beads")
 	sourceBeadsDB := filepath.Join(sourceBeadsDir, "beads.db")
 	if _, err := os.Stat(sourceBeadsDir); err == nil {
+		// Remove any redirect file that might have been accidentally tracked.
+		// Redirect files are runtime/local config and should not be in git.
+		// If not removed, they can cause circular redirect warnings during rig setup.
+		sourceRedirectFile := filepath.Join(sourceBeadsDir, "redirect")
+		_ = os.Remove(sourceRedirectFile) // Ignore error if doesn't exist
+
 		// Tracked beads exist - try to detect prefix from existing issues
 		sourceBeadsConfig := filepath.Join(sourceBeadsDir, "config.yaml")
 		if sourcePrefix := detectBeadsPrefixFromConfig(sourceBeadsConfig); sourcePrefix != "" {
@@ -548,13 +554,6 @@ Use crew for your own workspace. Polecats are for batch work dispatch.
 		}
 	}
 	fmt.Printf("   ✓ Installed runtime settings\n")
-
-	// Initialize beads at rig level
-	fmt.Printf("  Initializing beads database...\n")
-	if err := m.initBeads(rigPath, opts.BeadsPrefix); err != nil {
-		return nil, fmt.Errorf("initializing beads: %w", err)
-	}
-	fmt.Printf("   ✓ Initialized beads (prefix: %s)\n", opts.BeadsPrefix)
 
 	// Create rig-level agent beads (witness, refinery) in rig beads.
 	// Town-level agents (mayor, deacon) are created by gt install in town beads.
