@@ -57,7 +57,8 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 
 	// Auto-enrich context with bead descriptions if --auto-context is set
 	if decisionAutoContext {
-		enriched, err := enrichContextWithBeads(decisionPrompt, decisionContext)
+		// Include beads from --blocks and --parent flags
+		enriched, err := enrichContextWithBeads(decisionPrompt, decisionContext, decisionBlocks, decisionParent)
 		if err != nil {
 			style.PrintWarning("Failed to auto-enrich context: %v", err)
 		} else {
@@ -2190,9 +2191,28 @@ func validateReferencedBeads(prompt, contextJSON string, contextMap map[string]i
 // enrichContextWithBeads extracts bead IDs from prompt and context, fetches their
 // info via `bd show --json`, and adds them to the context's referenced_beads field.
 // This is called when --auto-context is specified.
-func enrichContextWithBeads(prompt, contextJSON string) (string, error) {
+// additionalBeadIDs allows passing explicit bead IDs (e.g., from --blocks, --parent flags).
+func enrichContextWithBeads(prompt, contextJSON string, additionalBeadIDs ...string) (string, error) {
 	// Extract all bead IDs from prompt and context
 	beadIDs := beads.ExtractBeadIDsFromAll(prompt, contextJSON)
+
+	// Add explicit bead IDs from flags (--blocks, --parent, etc.)
+	for _, id := range additionalBeadIDs {
+		if id != "" {
+			// Add if not already in the list
+			found := false
+			for _, existing := range beadIDs {
+				if existing == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				beadIDs = append(beadIDs, id)
+			}
+		}
+	}
+
 	if len(beadIDs) == 0 {
 		return contextJSON, nil // No beads to enrich
 	}
