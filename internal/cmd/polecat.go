@@ -1239,6 +1239,9 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 		// Step 6: Close agent bead (if exists)
 		agentBeadID := polecatBeadIDForRig(p.r, p.rigName, p.polecatName)
 		closeArgs := []string{"close", agentBeadID, "--reason=nuked"}
+		if polecatNukeForce {
+			closeArgs = append(closeArgs, "--force")
+		}
 		if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
 			closeArgs = append(closeArgs, "--session="+sessionID)
 		}
