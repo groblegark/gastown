@@ -657,7 +657,7 @@ func InstantiateFormulaOnBead(formulaName, beadID, title, hookWorkDir, townRoot 
 
 	// Step 1: Cook the formula (ensures proto exists)
 	if !skipCook {
-		cookCmd := exec.Command("bd", "--no-daemon", "cook", formulaName)
+		cookCmd := exec.Command("bd", "cook", formulaName)
 		cookCmd.Dir = formulaWorkDir
 		cookCmd.Stderr = os.Stderr
 		if err := cookCmd.Run(); err != nil {
@@ -668,7 +668,7 @@ func InstantiateFormulaOnBead(formulaName, beadID, title, hookWorkDir, townRoot 
 	// Step 2: Create wisp with feature and issue variables from bead
 	featureVar := fmt.Sprintf("feature=%s", title)
 	issueVar := fmt.Sprintf("issue=%s", beadID)
-	wispArgs := []string{"--no-daemon", "mol", "wisp", formulaName, "--var", featureVar, "--var", issueVar}
+	wispArgs := []string{"mol", "wisp", formulaName, "--var", featureVar, "--var", issueVar}
 	for _, variable := range extraVars {
 		wispArgs = append(wispArgs, "--var", variable)
 	}
@@ -689,7 +689,7 @@ func InstantiateFormulaOnBead(formulaName, beadID, title, hookWorkDir, townRoot 
 	}
 
 	// Step 3: Bond wisp to original bead (creates compound)
-	bondArgs := []string{"--no-daemon", "mol", "bond", wispRootID, beadID, "--json"}
+	bondArgs := []string{"mol", "bond", wispRootID, beadID, "--json"}
 	bondCmd := exec.Command("bd", bondArgs...)
 	bondCmd.Dir = formulaWorkDir
 	bondCmd.Stderr = os.Stderr
@@ -715,7 +715,7 @@ func InstantiateFormulaOnBead(formulaName, beadID, title, hookWorkDir, townRoot 
 // CookFormula cooks a formula to ensure its proto exists.
 // This is useful for batch mode where we cook once before processing multiple beads.
 func CookFormula(formulaName, workDir string) error {
-	cookCmd := exec.Command("bd", "--no-daemon", "cook", formulaName)
+	cookCmd := exec.Command("bd", "cook", formulaName)
 	cookCmd.Dir = workDir
 	cookCmd.Stderr = os.Stderr
 	return cookCmd.Run()
