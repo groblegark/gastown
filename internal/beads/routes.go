@@ -149,6 +149,32 @@ func GetTownBeadsPath(townRoot string) string {
 	return filepath.Join(townRoot, ".beads")
 }
 
+// GetRoutePathForRigName returns the route path for a given rig name.
+// The rig name is matched against the first component of each route's path.
+// Returns the full route path (e.g., "gastown/mayor/rig") or empty string if not found.
+// This is the inverse of extracting the rig name from a route path.
+func GetRoutePathForRigName(townRoot, rigName string) string {
+	beadsDir := filepath.Join(townRoot, ".beads")
+	routes, err := LoadRoutes(beadsDir)
+	if err != nil || routes == nil {
+		return ""
+	}
+
+	for _, r := range routes {
+		// Skip town-level routes
+		if r.Path == "." || r.Path == "" {
+			continue
+		}
+		// Extract rig name from first path component
+		parts := strings.SplitN(r.Path, "/", 2)
+		if len(parts) > 0 && parts[0] == rigName {
+			return r.Path
+		}
+	}
+
+	return ""
+}
+
 // GetPrefixForRig returns the beads prefix for a given rig name.
 // The prefix is returned without the trailing hyphen (e.g., "bd" not "bd-").
 // If the rig is not found in routes, returns "gt" as the default.

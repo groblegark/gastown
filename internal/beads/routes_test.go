@@ -154,6 +154,54 @@ func TestGetRigPathForPrefix_NoRoutesFile(t *testing.T) {
 	}
 }
 
+func TestGetRoutePathForRigName(t *testing.T) {
+	// Create a temporary directory with routes.jsonl
+	tmpDir := t.TempDir()
+	beadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	routesContent := `{"prefix": "ap-", "path": "ai_platform/mayor/rig"}
+{"prefix": "gt-", "path": "gastown/mayor/rig"}
+{"prefix": "hq-", "path": "."}
+{"prefix": "ms-", "path": "my-saas"}
+`
+	if err := os.WriteFile(filepath.Join(beadsDir, "routes.jsonl"), []byte(routesContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		rigName  string
+		expected string
+	}{
+		{"ai_platform", "ai_platform/mayor/rig"},
+		{"gastown", "gastown/mayor/rig"},
+		{"my-saas", "my-saas"}, // Non-standard path structure
+		{"unknown", ""},        // Unknown rig returns empty
+		{"", ""},               // Empty rig name returns empty
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.rigName, func(t *testing.T) {
+			result := GetRoutePathForRigName(tmpDir, tc.rigName)
+			if result != tc.expected {
+				t.Errorf("GetRoutePathForRigName(%q, %q) = %q, want %q", tmpDir, tc.rigName, result, tc.expected)
+			}
+		})
+	}
+}
+
+func TestGetRoutePathForRigName_NoRoutesFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	// No routes.jsonl file
+
+	result := GetRoutePathForRigName(tmpDir, "gastown")
+	if result != "" {
+		t.Errorf("Expected empty string when no routes file, got %q", result)
+	}
+}
+
 func TestResolveHookDir(t *testing.T) {
 	// Create a temporary directory with routes.jsonl
 	tmpDir := t.TempDir()

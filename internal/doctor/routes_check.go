@@ -111,12 +111,16 @@ func (c *RoutesCheck) Run(ctx *CheckContext) *CheckResult {
 
 	// Check each rig has a route (by path, not just prefix from rigs.json)
 	for rigName, rigEntry := range rigsConfig.Rigs {
-		expectedPath := rigName + "/mayor/rig"
+		// Look up the actual route path from routes.jsonl instead of hardcoding
+		// This handles cases where the path might not be rigName/mayor/rig
+		routePath := beads.GetRoutePathForRigName(ctx.TownRoot, rigName)
 
 		// Check if there's already a route for this rig (by path)
-		if _, hasRoute := routeByPath[expectedPath]; hasRoute {
-			// Rig already has a route, even if prefix differs from rigs.json
-			continue
+		if routePath != "" {
+			if _, hasRoute := routeByPath[routePath]; hasRoute {
+				// Rig already has a route, even if prefix differs from rigs.json
+				continue
+			}
 		}
 
 		// No route by path - check by prefix from rigs.json
@@ -286,12 +290,26 @@ func (c *RoutesCheck) Fix(ctx *CheckContext) error {
 		}
 
 		if prefix != "" && !routeMap[prefix] {
-			// Verify the rig path exists before adding
-			rigPath := filepath.Join(ctx.TownRoot, rigName, "mayor", "rig")
-			if _, err := os.Stat(rigPath); err == nil {
+			// Find the actual beads directory for this rig
+			// Check standard location first: rigName/mayor/rig
+			rigPath := ""
+			standardPath := filepath.Join(ctx.TownRoot, rigName, "mayor", "rig")
+			if _, err := os.Stat(standardPath); err == nil {
+				rigPath = rigName + "/mayor/rig"
+			} else {
+				// Check alternate location: rigName (rig root with .beads or redirect)
+				altPath := filepath.Join(ctx.TownRoot, rigName)
+				beadsDir := beads.ResolveBeadsDir(altPath)
+				if _, err := os.Stat(beadsDir); err == nil {
+					rigPath = rigName
+				}
+			}
+
+			// Only add route if we found a valid path
+			if rigPath != "" {
 				route := beads.Route{
 					Prefix: prefix,
-					Path:   rigName + "/mayor/rig",
+					Path:   rigPath,
 				}
 				routes = append(routes, route)
 				routeMap[prefix] = true
