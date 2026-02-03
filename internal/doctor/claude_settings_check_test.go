@@ -62,7 +62,7 @@ func createValidSettings(t *testing.T, path string) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "_stdin=$(cat) && bd decision check --inject && (echo \"$_stdin\" | gt decision turn-clear)",
+							"command": "_stdin=$(cat) && (echo \"$_stdin\" | bd decision check --inject) && (echo \"$_stdin\" | gt decision turn-clear)",
 						},
 					},
 				},
@@ -84,7 +84,7 @@ func createValidSettings(t *testing.T, path string) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "gt decision turn-check",
+							"command": "_stdin=$(cat) && echo \"$_stdin\" | gt decision turn-check",
 						},
 					},
 				},
@@ -134,7 +134,7 @@ func createStaleSettings(t *testing.T, path string, missingElements ...string) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "gt decision turn-check",
+							"command": "_stdin=$(cat) && echo \"$_stdin\" | gt decision turn-check",
 						},
 					},
 				},
@@ -469,7 +469,7 @@ func TestClaudeSettingsCheck_MissingStdinPiping(t *testing.T) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "gt decision turn-check",
+							"command": "_stdin=$(cat) && echo \"$_stdin\" | gt decision turn-check",
 						},
 					},
 				},
