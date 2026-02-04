@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -104,6 +105,7 @@ var (
 	slackTownRoot        string
 	slackAutoInvite      string
 	slackDebug           bool
+	slackHealthPort      int
 )
 
 const slackLockFile = "/tmp/gtslack.lock"
@@ -122,10 +124,16 @@ Environment variables can also be used:
   GTMOBILE_RPC      - RPC endpoint URL
   SLACK_CHANNEL     - Channel ID for decision notifications
   SLACK_AUTO_INVITE - Comma-separated Slack user IDs to auto-invite
+  HEALTH_PORT       - HTTP health endpoint port (default: 8080)
+
+Health endpoints for Kubernetes probes:
+  /healthz - Liveness probe (checks Slack connection)
+  /readyz  - Readiness probe (always ready once started)
 
 Examples:
   gt slack start -bot-token=xoxb-... -app-token=xapp-...
-  gt slack start --channel=C12345 --dynamic-channels`,
+  gt slack start --channel=C12345 --dynamic-channels
+  gt slack start --health-port=8080`,
 	RunE: runSlackStart,
 }
 
@@ -244,6 +252,7 @@ func init() {
 	slackStartCmd.Flags().StringVar(&slackTownRoot, "town-root", "", "Town root directory (auto-discovered if empty)")
 	slackStartCmd.Flags().StringVar(&slackAutoInvite, "auto-invite", "", "Comma-separated Slack user IDs to auto-invite")
 	slackStartCmd.Flags().BoolVar(&slackDebug, "debug", false, "Enable debug logging")
+	slackStartCmd.Flags().IntVar(&slackHealthPort, "health-port", 8080, "HTTP health endpoint port for K8s probes")
 }
 
 func runSlackStatus(cmd *cobra.Command, args []string) error {
@@ -585,6 +594,13 @@ func runSlackStart(cmd *cobra.Command, args []string) error {
 		slackAutoInvite = os.Getenv("SLACK_AUTO_INVITE")
 	}
 
+	// Allow HEALTH_PORT env var to override flag default
+	if envPort := os.Getenv("HEALTH_PORT"); envPort != "" && slackHealthPort == 8080 {
+		if port, err := strconv.Atoi(envPort); err == nil {
+			slackHealthPort = port
+		}
+	}
+
 	if slackBotToken == "" || slackAppToken == "" {
 		return fmt.Errorf("both --bot-token and --app-token are required (or set SLACK_BOT_TOKEN and SLACK_APP_TOKEN)")
 	}
@@ -645,6 +661,16 @@ func runSlackStart(cmd *cobra.Command, args []string) error {
 	}
 	if len(autoInviteUsers) > 0 {
 		log.Printf("Auto-invite users: %v", autoInviteUsers)
+	}
+
+	// Start health server for Kubernetes probes
+	if slackHealthPort > 0 {
+		healthServer := slackbot.NewHealthServer(bot, slackHealthPort)
+		go func() {
+			if err := healthServer.Start(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("Health server error: %v", err)
+			}
+		}()
 	}
 
 	// Start SSE listener for real-time decision notifications

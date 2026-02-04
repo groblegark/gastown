@@ -206,9 +206,11 @@ func (b *Bot) handleEvent(evt socketmode.Event) {
 
 	case socketmode.EventTypeConnected:
 		log.Println("Slack: Connected to Socket Mode")
+		SetConnected(true)
 
 	case socketmode.EventTypeConnectionError:
 		log.Printf("Slack: Connection error: %v", evt.Data)
+		SetConnected(false)
 
 	case socketmode.EventTypeEventsAPI:
 		// Handle Events API callbacks (channel_created, etc.) (gt-baeko)

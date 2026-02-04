@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-**Key Finding:** The current gtslack implementation ALREADY has full modal support via Socket Mode. The proposed upgrade is about ENHANCING context display within existing modals, not implementing modals from scratch.
+**Key Finding:** The current gt slack implementation ALREADY has full modal support via Socket Mode. The proposed upgrade is about ENHANCING context display within existing modals, not implementing modals from scratch.
 
 The current implementation uses:
 - Socket Mode (WebSocket-based, no public URL required)
@@ -39,7 +39,7 @@ Modal functionality (`views.open`, `views.push`, `views.update`) does **not** re
 
 ### Current Setup (Single Workspace)
 
-The current gtslack uses the **simple installation flow**:
+The current gt slack uses the **simple installation flow**:
 1. "Install to Workspace" button in Slack App dashboard
 2. Generates bot token (`xoxb-*`) instantly
 3. No OAuth redirect implementation needed
@@ -93,7 +93,7 @@ Would require public HTTPS endpoints:
 
 ### Can They Coexist?
 
-**Yes, but gtslack doesn't use traditional webhooks.**
+**Yes, but gt slack doesn't use traditional webhooks.**
 
 The current architecture uses:
 - **Socket Mode** for Slack communication (not webhooks)
@@ -145,7 +145,7 @@ Event Subscriptions:
 | Bot Token | `xoxb-...` | API calls (post messages, open modals) |
 | App Token | `xapp-...` | Socket Mode WebSocket connection |
 
-## 6. Required gtslack Changes for Enhanced Context Display
+## 6. Required gt slack Changes for Enhanced Context Display
 
 ### What Exists (bot.go)
 
@@ -199,7 +199,7 @@ For very long context, consider:
 
 | Component | Requirement |
 |-----------|-------------|
-| gtslack | Go binary, any Linux host |
+| gt slack | Go binary, any Linux host |
 | Network | Outbound HTTPS to Slack API |
 | gtmobile | Local or accessible RPC endpoint |
 | Public URL | **NOT REQUIRED** (Socket Mode) |
@@ -219,7 +219,7 @@ Socket Mode eliminates the need for:
 | 1. Scopes for modals? | No additional scopes needed. Current scopes (`chat:write`, `commands`) are sufficient. |
 | 2. OAuth flow? | Current simple install is sufficient. OAuth 2.0 only needed for multi-workspace distribution. |
 | 3. Interactivity endpoint? | None needed - Socket Mode handles everything via WebSocket. |
-| 4. Keep webhooks? | N/A - gtslack uses Socket Mode, not webhooks. They could coexist if needed. |
+| 4. Keep webhooks? | N/A - gt slack uses Socket Mode, not webhooks. They could coexist if needed. |
 | 5. Minimal config? | Current config is already minimal and sufficient. |
 
 ## 9. Recommendations

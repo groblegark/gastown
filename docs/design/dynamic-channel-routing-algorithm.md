@@ -708,7 +708,7 @@ gt slack test-preference "gastown/crew/*" --mode=dm --overseer=U123
 - **gt-epc-dynamic_agent_controlled_channel_routing.2**: Research channel lifecycle (for auto-create/unarchive)
 - **gt-epc-dynamic_agent_controlled_channel_routing.4**: Implement agent preference storage
 - **gt-epc-dynamic_agent_controlled_channel_routing.5**: Implement channel auto-creation
-- **gt-epc-dynamic_agent_controlled_channel_routing.6**: Integrate into gtslack
+- **gt-epc-dynamic_agent_controlled_channel_routing.6**: Integrate into gt slack
 
 ---
 

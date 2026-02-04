@@ -2,13 +2,13 @@
 
 ## Overview
 
-The Gas Town Slack bot (`gtslack`) allows team members to view and resolve pending decisions directly from Slack without SSH access to the town.
+The Gas Town Slack bot (`gt slack start`) allows team members to view and resolve pending decisions directly from Slack without SSH access to the town.
 
 ## Prerequisites
 
 1. **gtmobile server running** on accessible endpoint (default: `http://localhost:8443`)
 2. **Slack workspace** with admin access to create apps
-3. **Go 1.21+** for building the bot
+3. **Go 1.21+** for building the gt binary
 
 ## Slack App Configuration
 
@@ -40,7 +40,7 @@ The Gas Town Slack bot (`gtslack`) allows team members to view and resolve pendi
    - `channels:read` - List channels
    - `channels:join` - Join channels
 
-**For dynamic channel creation** (optional, enables `-dynamic-channels` flag):
+**For dynamic channel creation** (optional, enables `--dynamic-channels` flag):
    - `channels:manage` - Create new public channels
 
 ### Step 4: Create Slash Command
@@ -79,17 +79,17 @@ The Gas Town Slack bot (`gtslack`) allows team members to view and resolve pendi
 
 ```bash
 cd /path/to/gastown
-go build -o gtslack ./cmd/gtslack
+make install  # Installs gt binary to ~/.local/bin/
 ```
 
 ### Run with Flags
 
 ```bash
-./gtslack \
-  -bot-token=xoxb-your-token \
-  -app-token=xapp-your-token \
-  -channel=C0123456789 \
-  -rpc=http://localhost:8443
+gt slack start \
+  --bot-token=xoxb-your-token \
+  --app-token=xapp-your-token \
+  --channel=C0123456789 \
+  --rpc=http://localhost:8443
 ```
 
 ### Run with Environment Variables
@@ -100,7 +100,7 @@ export SLACK_APP_TOKEN=xapp-your-token
 export SLACK_CHANNEL=C0123456789
 export GTMOBILE_RPC=http://localhost:8443
 
-./gtslack
+gt slack start
 ```
 
 ### Verify Connection
@@ -120,7 +120,7 @@ SSE: Connected to decision events stream
 
 ```
 ┌─────────────┐     Socket Mode      ┌─────────────┐
-│   Slack     │◄────────────────────►│  gtslack    │
+│   Slack     │◄────────────────────►│ gt slack    │
 │  Workspace  │     (WebSocket)      │    bot      │
 └─────────────┘                      └──────┬──────┘
                                             │
@@ -132,6 +132,20 @@ SSE: Connected to decision events stream
                      │  RPC API    │   /events   │  Listener   │
                      └─────────────┘             └─────────────┘
 ```
+
+## Health Endpoints (for Kubernetes)
+
+The Slack bot provides HTTP health endpoints for Kubernetes probes:
+
+```bash
+gt slack start --health-port=8080  # default port
+```
+
+Endpoints:
+- `/healthz` - Liveness probe (returns 503 if disconnected from Slack)
+- `/readyz` - Readiness probe (always returns 200 once started)
+
+Environment variable: `HEALTH_PORT=8080`
 
 ## Features
 
@@ -246,8 +260,20 @@ Overrides created by Break Out are saved to `slack.json` in the `overrides` fiel
 
 ## Debug Mode
 
-Run with `-debug` for verbose logging:
+Run with `--debug` for verbose logging:
 
 ```bash
-./gtslack -debug -bot-token=... -app-token=...
+gt slack start --debug --bot-token=... --app-token=...
 ```
+
+## Systemd Service
+
+For production deployments, use the systemd service:
+
+```bash
+systemctl --user enable gt-slack
+systemctl --user start gt-slack
+journalctl --user -u gt-slack -f  # View logs
+```
+
+See `docs/systemd/gt-slack.service` for the service configuration.

@@ -3,7 +3,7 @@
 ## Prerequisites Checklist
 
 - [ ] gtmobile running on `http://localhost:8443`
-- [ ] gtslack built: `go build -o gtslack ./cmd/gtslack`
+- [ ] gt binary built: `make install` (installs gt to ~/.local/bin/)
 - [ ] Slack app configured per setup guide
 - [ ] Bot token (`xoxb-...`) obtained
 - [ ] App token (`xapp-...`) obtained
@@ -16,7 +16,7 @@
 
 **Steps:**
 1. Start gtmobile: `./gtmobile --town /path/to/town --port 8443`
-2. Start gtslack with tokens
+2. Start gt slack start with tokens
 3. Observe startup logs
 
 **Expected:**
@@ -128,7 +128,7 @@ bd show <decision-id>
 
 ### T7: Real-time SSE Notification
 
-**Precondition:** gtslack running with notification channel configured
+**Precondition:** gt slack start running with notification channel configured
 
 **Steps:**
 1. Create decision via CLI:
@@ -151,13 +151,13 @@ bd show <decision-id>
 ### T8: SSE Reconnection
 
 **Steps:**
-1. With gtslack running, stop gtmobile: `pkill gtmobile`
-2. Observe gtslack logs
+1. With gt slack start running, stop gtmobile: `pkill gtmobile`
+2. Observe gt slack start logs
 3. After 5 seconds, restart gtmobile
 4. Create a new decision
 
 **Expected:**
-- gtslack logs show: "Connection error... reconnecting in Xs"
+- gt slack start logs show: "Connection error... reconnecting in Xs"
 - After gtmobile restarts, logs show: "Connected to decision events stream"
 - New decisions still trigger notifications
 

@@ -4,7 +4,7 @@ This document describes the policies for dynamic Slack channel creation, managem
 
 ## Overview
 
-Gas Town's Slack bot (`gtslack`) supports dynamic channel routing to organize decision notifications by agent or epic. This document establishes policies for channel lifecycle management.
+Gas Town's Slack bot (`gt slack start`) supports dynamic channel routing to organize decision notifications by agent or epic. This document establishes policies for channel lifecycle management.
 
 ## Current Implementation Status
 
@@ -109,7 +109,7 @@ When a channel is created (or first accessed), auto-invite these users:
 
 Via `-auto-invite` flag (comma-separated Slack user IDs):
 ```bash
-gtslack -auto-invite U123,U456,U789
+gt slack start --auto-invite U123,U456,U789
 ```
 
 Or via environment variable:
@@ -171,7 +171,7 @@ Agent channels (`gt-decisions-gastown-polecats`) are shared by role:
 
 ### Implementation Recommendations
 
-Add to `gtslack`:
+Add to `gt slack start`:
 - New flag: `-archive-after-days=30` (default: disabled/0)
 - Background goroutine to check channel activity
 - Respect Slack API rate limits (Tier 2: 20+/minute)

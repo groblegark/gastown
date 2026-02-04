@@ -460,9 +460,9 @@ Provide helpful error when posting to channel bot isn't in.
    - Use wildcards for groups: `"gastown/polecats/*": "C456"`
    - Set a default for unmatched agents: `"default_channel": "C789"`
 
-3. **Restart gtslack** to load the new config:
+3. **Restart gt slack** to load the new config:
    ```bash
-   systemctl restart gtslack  # or kill and restart manually
+   systemctl restart gt slack  # or kill and restart manually
    ```
 
 ### Verification

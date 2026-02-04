@@ -1,6 +1,6 @@
 # Slackbot Channel Routing - Architecture Documentation
 
-This document describes the existing channel routing implementation in gtslack,
+This document describes the existing channel routing implementation in gt slack,
 prepared for integration with the dynamic agent-controlled channel routing epic
 (gt-epc-dynamic_agent_controlled_channel_routing).
 
@@ -481,7 +481,7 @@ For the dynamic routing epic, consider:
 | `internal/slackbot/bot.go` | Main routing logic, channel helpers |
 | `internal/slack/router.go` | Static pattern-based routing |
 | `internal/util/slug.go` | Channel slug derivation |
-| `cmd/gtslack/main.go` | Config loading, flag parsing |
+| `cmd/gt slack/main.go` | Config loading, flag parsing |
 
 ## Related Work
 
