@@ -4,6 +4,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -382,7 +383,7 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("saving rigs config: %w", err)
 	}
 
-	// Add route to town-level routes.jsonl for prefix-based routing.
+	// Add route bead for prefix-based routing.
 	// Route points to the canonical beads location:
 	// - If source repo has .beads/ tracked in git, route to mayor/rig
 	// - Otherwise route to rig root (where initBeads creates the database)
@@ -399,13 +400,29 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 		} else {
 			beadsWorkDir = filepath.Join(townRoot, name)
 		}
-		route := beads.Route{
-			Prefix: newRig.Config.Prefix + "-",
-			Path:   routePath,
+
+		// Create a route bead instead of writing to routes.jsonl
+		prefix := newRig.Config.Prefix + "-"
+		title := fmt.Sprintf("%s -> %s", prefix, routePath)
+		description := fmt.Sprintf("Route for prefix %s to path %s", prefix, routePath)
+
+		createArgs := []string{
+			"create",
+			"--type", "route",
+			"--title", title,
+			"--description", description,
+			"--label", fmt.Sprintf("prefix:%s", strings.TrimSuffix(prefix, "-")),
+			"--label", fmt.Sprintf("path:%s", routePath),
+			"--label", "scope:town",
+			"--prefix", "hq-",
+			"--silent",
 		}
-		if err := beads.AppendRoute(townRoot, route); err != nil {
+
+		createCmd := exec.Command("bd", createArgs...)
+		createCmd.Stderr = os.Stderr
+		if _, err := createCmd.Output(); err != nil {
 			// Non-fatal: routing will still work, just not from town root
-			fmt.Printf("  %s Could not update routes.jsonl: %v\n", style.Warning.Render("!"), err)
+			fmt.Printf("  %s Could not create route bead: %v\n", style.Warning.Render("!"), err)
 		}
 	}
 
@@ -602,19 +619,35 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("saving rigs config: %w", err)
 	}
 
-	// Add route to town-level routes.jsonl for prefix-based routing
+	// Add route bead for prefix-based routing
 	if result.BeadsPrefix != "" {
 		routePath := name
 		mayorRigBeads := filepath.Join(townRoot, name, "mayor", "rig", ".beads")
 		if _, err := os.Stat(mayorRigBeads); err == nil {
 			routePath = name + "/mayor/rig"
 		}
-		route := beads.Route{
-			Prefix: result.BeadsPrefix + "-",
-			Path:   routePath,
+
+		// Create a route bead instead of writing to routes.jsonl
+		prefix := result.BeadsPrefix + "-"
+		title := fmt.Sprintf("%s -> %s", prefix, routePath)
+		description := fmt.Sprintf("Route for prefix %s to path %s", prefix, routePath)
+
+		createArgs := []string{
+			"create",
+			"--type", "route",
+			"--title", title,
+			"--description", description,
+			"--label", fmt.Sprintf("prefix:%s", strings.TrimSuffix(prefix, "-")),
+			"--label", fmt.Sprintf("path:%s", routePath),
+			"--label", "scope:town",
+			"--prefix", "hq-",
+			"--silent",
 		}
-		if err := beads.AppendRoute(townRoot, route); err != nil {
-			fmt.Printf("  %s Could not update routes.jsonl: %v\n", style.Warning.Render("!"), err)
+
+		createCmd := exec.Command("bd", createArgs...)
+		createCmd.Stderr = os.Stderr
+		if _, err := createCmd.Output(); err != nil {
+			fmt.Printf("  %s Could not create route bead: %v\n", style.Warning.Render("!"), err)
 		}
 	}
 
