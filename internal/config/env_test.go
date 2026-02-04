@@ -425,6 +425,74 @@ func TestEnvToSlice(t *testing.T) {
 	}
 }
 
+func TestAgentEnv_WithBDDaemonHost(t *testing.T) {
+	t.Parallel()
+	env := AgentEnv(AgentEnvConfig{
+		Role:         "polecat",
+		Rig:          "myrig",
+		AgentName:    "Toast",
+		TownRoot:     "/town",
+		BDDaemonHost: "192.168.1.100:7233",
+	})
+
+	assertEnv(t, env, "BD_DAEMON_HOST", "192.168.1.100:7233")
+}
+
+func TestAgentEnv_WithoutBDDaemonHost(t *testing.T) {
+	t.Parallel()
+	env := AgentEnv(AgentEnvConfig{
+		Role:      "polecat",
+		Rig:       "myrig",
+		AgentName: "Toast",
+		TownRoot:  "/town",
+		// BDDaemonHost not set
+	})
+
+	assertNotSet(t, env, "BD_DAEMON_HOST")
+}
+
+func TestAgentEnv_BDDaemonHostEmptyString(t *testing.T) {
+	t.Parallel()
+	env := AgentEnv(AgentEnvConfig{
+		Role:         "polecat",
+		Rig:          "myrig",
+		AgentName:    "Toast",
+		TownRoot:     "/town",
+		BDDaemonHost: "", // explicitly empty
+	})
+
+	// Empty string should NOT create a key in the map
+	assertNotSet(t, env, "BD_DAEMON_HOST")
+}
+
+func TestAgentEnv_BDDaemonHostValuePassthrough(t *testing.T) {
+	t.Parallel()
+	// Test various value formats to ensure passthrough without modification
+	testCases := []struct {
+		name  string
+		value string
+	}{
+		{"localhost with port", "localhost:7233"},
+		{"IP with port", "10.0.0.1:8080"},
+		{"hostname only", "beads-daemon.local"},
+		{"full URL format", "http://daemon.example.com:7233"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := AgentEnv(AgentEnvConfig{
+				Role:         "witness",
+				Rig:          "testrig",
+				TownRoot:     "/town",
+				BDDaemonHost: tc.value,
+			})
+
+			// Value should be passed through unchanged
+			assertEnv(t, env, "BD_DAEMON_HOST", tc.value)
+		})
+	}
+}
+
 // Helper functions
 
 func assertEnv(t *testing.T, env map[string]string, key, expected string) {
