@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -685,12 +686,24 @@ func (s *DecisionServer) Cancel(
 	return connect.NewResponse(&gastownv1.CancelResponse{}), nil
 }
 
+// maxSeenMapSize is the maximum number of entries in the seen map before cleanup.
+// This prevents unbounded memory growth in long-running streams.
+const maxSeenMapSize = 10000
+
 func (s *DecisionServer) WatchDecisions(
 	ctx context.Context,
 	req *connect.Request[gastownv1.WatchDecisionsRequest],
 	stream *connect.ServerStream[gastownv1.Decision],
 ) error {
 	seen := make(map[string]bool)
+	// Helper to add to seen map with size limit
+	markSeen := func(id string) {
+		if len(seen) >= maxSeenMapSize {
+			// Clear map to prevent unbounded growth
+			seen = make(map[string]bool)
+		}
+		seen[id] = true
+	}
 
 	// First, send all existing pending decisions
 	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
@@ -698,7 +711,7 @@ func (s *DecisionServer) WatchDecisions(
 	issues, err := client.ListDecisions()
 	if err == nil {
 		for _, issue := range issues {
-			seen[issue.ID] = true
+			markSeen(issue.ID)
 			fields := beads.ParseDecisionFields(issue.Description)
 			if fields == nil {
 				continue
@@ -751,7 +764,7 @@ func (s *DecisionServer) WatchDecisions(
 				if seen[event.DecisionID] {
 					continue
 				}
-				seen[event.DecisionID] = true
+				markSeen(event.DecisionID)
 
 				// Extract decision from event data
 				if decision, ok := event.Data.(*gastownv1.Decision); ok {
@@ -771,7 +784,7 @@ func (s *DecisionServer) WatchDecisions(
 					if seen[issue.ID] {
 						continue
 					}
-					seen[issue.ID] = true
+					markSeen(issue.ID)
 
 					fields := beads.ParseDecisionFields(issue.Description)
 					if fields == nil {
@@ -820,7 +833,7 @@ func (s *DecisionServer) WatchDecisions(
 				if seen[issue.ID] {
 					continue
 				}
-				seen[issue.ID] = true
+				markSeen(issue.ID)
 
 				fields := beads.ParseDecisionFields(issue.Description)
 				if fields == nil {
@@ -1223,6 +1236,20 @@ func LoadTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 	}, nil
 }
 
+// RecoveryMiddleware wraps an HTTP handler with panic recovery to prevent
+// single request panics from crashing the entire server.
+func RecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("PANIC recovered in HTTP handler: %v\n%s", err, debug.Stack())
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 // NewSSEHandler creates an HTTP handler for Server-Sent Events streaming of decision events.
 // This provides a browser-friendly alternative to Connect-RPC streaming.
 func NewSSEHandler(bus *eventbus.Bus, townRoot string) http.HandlerFunc {
@@ -1330,24 +1357,25 @@ func NewSSEHandler(bus *eventbus.Bus, townRoot string) http.HandlerFunc {
 
 // escapeJSON escapes a string for JSON output.
 func escapeJSON(s string) string {
-	result := ""
+	var b strings.Builder
+	b.Grow(len(s))
 	for _, c := range s {
 		switch c {
 		case '"':
-			result += `\"`
+			b.WriteString(`\"`)
 		case '\\':
-			result += `\\`
+			b.WriteString(`\\`)
 		case '\n':
-			result += `\n`
+			b.WriteString(`\n`)
 		case '\r':
-			result += `\r`
+			b.WriteString(`\r`)
 		case '\t':
-			result += `\t`
+			b.WriteString(`\t`)
 		default:
-			result += string(c)
+			b.WriteRune(c)
 		}
 	}
-	return result
+	return b.String()
 }
 
 // ConvoyServer implements the ConvoyService.

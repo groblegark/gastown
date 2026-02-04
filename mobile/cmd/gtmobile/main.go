@@ -158,6 +158,9 @@ func main() {
 	log.Printf("  %s", terminalPath)
 	log.Printf("  /health")
 
+	// Wrap mux with panic recovery middleware
+	handler := RecoveryMiddleware(mux)
+
 	// Start server (TLS or plain HTTP)
 	if *certFile != "" && *keyFile != "" {
 		tlsConfig, err := LoadTLSConfig(*certFile, *keyFile)
@@ -165,16 +168,28 @@ func main() {
 			log.Fatalf("Failed to load TLS config: %v", err)
 		}
 		server := &http.Server{
-			Addr:      addr,
-			Handler:   mux,
-			TLSConfig: tlsConfig,
+			Addr:           addr,
+			Handler:        handler,
+			TLSConfig:      tlsConfig,
+			ReadTimeout:    30 * time.Second,
+			WriteTimeout:   30 * time.Second,
+			IdleTimeout:    120 * time.Second,
+			MaxHeaderBytes: 1 << 20, // 1MB
 		}
 		log.Printf("TLS enabled")
 		if err := server.ListenAndServeTLS("", ""); err != nil {
 			log.Fatalf("Server failed: %v", err)
 		}
 	} else {
-		if err := http.ListenAndServe(addr, mux); err != nil {
+		server := &http.Server{
+			Addr:           addr,
+			Handler:        handler,
+			ReadTimeout:    30 * time.Second,
+			WriteTimeout:   30 * time.Second,
+			IdleTimeout:    120 * time.Second,
+			MaxHeaderBytes: 1 << 20, // 1MB
+		}
+		if err := server.ListenAndServe(); err != nil {
 			log.Fatalf("Server failed: %v", err)
 		}
 	}
