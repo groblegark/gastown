@@ -635,7 +635,21 @@ func TestExplain(t *testing.T) {
 }
 
 // TestDryRunSkipsSideEffects tests that --dry-run skips various side effects via CLI.
+
 // TestBuildAgentID tests the agent ID construction for advice matching.
+// This tests how buildAgentID handles various RoleInfo inputs including:
+// - Valid roles (polecat, crew, witness, refinery, mayor, deacon)
+// - Missing required fields (no rig, no name)
+// - Empty string fields (equivalent to missing)
+// - RoleUnknown (returned by detectRole when environment/directory is malformed)
+// - Zero-value RoleInfo (completely empty struct)
+// - Invalid role strings and case sensitivity
+// - Whitespace-only values (treated as valid non-empty strings)
+//
+// Note: Tests for empty GT_ROLE_HOME and malformed directory structures are
+// covered by role detection tests (TestRoleDetectInvalidPaths, TestRoleHomeInvalidPaths).
+// When those conditions occur, detectRole returns RoleInfo with RoleUnknown,
+// which buildAgentID then handles by returning "".
 func TestBuildAgentID(t *testing.T) {
 	cases := []struct {
 		name string
@@ -762,6 +776,51 @@ func TestBuildAgentID(t *testing.T) {
 			name: "empty_role",
 			ctx:  RoleInfo{Role: "", Rig: "gastown"},
 			want: "",
+		},
+		// Edge cases: using RoleUnknown constant explicitly
+		{
+			name: "role_unknown_constant",
+			ctx:  RoleInfo{Role: RoleUnknown, Rig: "gastown", Polecat: "alpha"},
+			want: "",
+		},
+		{
+			name: "role_unknown_with_all_fields",
+			ctx:  RoleInfo{Role: RoleUnknown, Rig: "gastown", Polecat: "alpha", Home: "/home/test", TownRoot: "/town"},
+			want: "",
+		},
+		// Edge cases: crew with empty rig
+		{
+			name: "crew_empty_rig",
+			ctx:  RoleInfo{Role: RoleCrew, Rig: "", Polecat: "analyst"},
+			want: "",
+		},
+		// Edge cases: whitespace-only values
+		{
+			name: "polecat_whitespace_rig",
+			ctx:  RoleInfo{Role: RolePolecat, Rig: "   ", Polecat: "alpha"},
+			want: "   /polecats/alpha", // Note: whitespace IS treated as a valid string
+		},
+		{
+			name: "polecat_whitespace_name",
+			ctx:  RoleInfo{Role: RolePolecat, Rig: "gastown", Polecat: "   "},
+			want: "gastown/polecats/   ", // Note: whitespace IS treated as a valid string
+		},
+		// Edge cases: zero-value RoleInfo (completely empty struct)
+		{
+			name: "zero_value_roleinfo",
+			ctx:  RoleInfo{},
+			want: "",
+		},
+		// Edge cases: arbitrary/invalid role strings
+		{
+			name: "invalid_role_string",
+			ctx:  RoleInfo{Role: "not_a_role", Rig: "gastown", Polecat: "alpha"},
+			want: "",
+		},
+		{
+			name: "role_with_mixed_case",
+			ctx:  RoleInfo{Role: "Polecat", Rig: "gastown", Polecat: "alpha"}, // Role is case-sensitive
+			want: "", // "Polecat" != "polecat"
 		},
 	}
 
