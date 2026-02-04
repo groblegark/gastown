@@ -780,138 +780,200 @@ func TestBuildAgentID(t *testing.T) {
 // The beads CLI now handles subscription matching via `bd advice list --for=<agent-id>`.
 func TestGetAdviceScope(t *testing.T) {
 	cases := []struct {
-		name string
-		bead AdviceBead
-		want string
+		name        string
+		bead        AdviceBead
+		currentRole Role
+		want        string
 	}{
-		// Basic cases
+		// Basic cases (using RoleUnknown to test default behavior)
 		{
-			name: "global",
-			bead: AdviceBead{ID: "test"},
-			want: "Global",
+			name:        "global",
+			bead:        AdviceBead{ID: "test"},
+			currentRole: RoleUnknown,
+			want:        "Global",
 		},
 		{
-			name: "rig",
-			bead: AdviceBead{ID: "test", Labels: []string{"rig:gastown"}},
-			want: "gastown",
+			name:        "rig",
+			bead:        AdviceBead{ID: "test", Labels: []string{"rig:gastown"}},
+			currentRole: RoleUnknown,
+			want:        "gastown",
 		},
 		{
-			name: "role",
-			bead: AdviceBead{ID: "test", Labels: []string{"role:polecat"}},
-			want: "Polecat",
+			name:        "role",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:polecat"}},
+			currentRole: RoleUnknown,
+			want:        "Polecat",
 		},
 		{
-			name: "agent",
-			bead: AdviceBead{ID: "test", Labels: []string{"agent:gastown/polecats/alpha"}},
-			want: "Agent",
+			name:        "agent",
+			bead:        AdviceBead{ID: "test", Labels: []string{"agent:gastown/polecats/alpha"}},
+			currentRole: RoleUnknown,
+			want:        "Agent",
 		},
 		// Edge cases: empty scope values
 		{
-			name: "empty_role_value",
-			bead: AdviceBead{ID: "test", Labels: []string{"role:"}},
-			want: "", // Empty role returns empty string
+			name:        "empty_role_value",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:"}},
+			currentRole: RoleUnknown,
+			want:        "", // Empty role returns empty string
 		},
 		{
-			name: "empty_rig_value",
-			bead: AdviceBead{ID: "test", Labels: []string{"rig:"}},
-			want: "", // Empty rig returns empty string
+			name:        "empty_rig_value",
+			bead:        AdviceBead{ID: "test", Labels: []string{"rig:"}},
+			currentRole: RoleUnknown,
+			want:        "", // Empty rig returns empty string
 		},
 		{
-			name: "empty_agent_value",
-			bead: AdviceBead{ID: "test", Labels: []string{"agent:"}},
-			want: "Agent", // Agent label always returns "Agent" regardless of value
+			name:        "empty_agent_value",
+			bead:        AdviceBead{ID: "test", Labels: []string{"agent:"}},
+			currentRole: RoleUnknown,
+			want:        "Agent", // Agent label always returns "Agent" regardless of value
 		},
-		// Edge cases: multiple scope labels (first match wins)
+		// Edge cases: agent label always wins (highest priority)
 		{
-			name: "multiple_labels_agent_first",
-			bead: AdviceBead{ID: "test", Labels: []string{"agent:foo", "role:polecat", "rig:gastown"}},
-			want: "Agent",
-		},
-		{
-			name: "multiple_labels_role_first",
-			bead: AdviceBead{ID: "test", Labels: []string{"role:witness", "rig:gastown", "agent:bar"}},
-			want: "Witness",
+			name:        "multiple_labels_agent_first",
+			bead:        AdviceBead{ID: "test", Labels: []string{"agent:foo", "role:polecat", "rig:gastown"}},
+			currentRole: RolePolecat,
+			want:        "Agent",
 		},
 		{
-			name: "multiple_labels_rig_first",
-			bead: AdviceBead{ID: "test", Labels: []string{"rig:beads", "agent:foo", "role:polecat"}},
-			want: "beads",
+			name:        "agent_wins_over_matching_role",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:polecat", "agent:bar"}},
+			currentRole: RolePolecat,
+			want:        "Agent", // Agent always wins
+		},
+		// Current role preference: when advice has multiple role labels
+		{
+			name:        "prefer_current_role_polecat",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:crew", "role:polecat"}},
+			currentRole: RolePolecat,
+			want:        "Polecat", // Matches current role, not first
+		},
+		{
+			name:        "prefer_current_role_crew",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:crew", "role:polecat"}},
+			currentRole: RoleCrew,
+			want:        "Crew", // Matches current role
+		},
+		{
+			name:        "prefer_current_role_witness",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:polecat", "role:witness", "role:crew"}},
+			currentRole: RoleWitness,
+			want:        "Witness", // Matches current role
+		},
+		{
+			name:        "fallback_to_first_when_no_match",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:crew", "role:polecat"}},
+			currentRole: RoleWitness, // Not crew or polecat
+			want:        "Crew",      // Falls back to first role label
+		},
+		{
+			name:        "case_insensitive_role_match",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:Crew", "role:POLECAT"}},
+			currentRole: RolePolecat, // lowercase
+			want:        "POLECAT",   // Case-insensitive match, preserves original case
+		},
+		// Role before rig (when no matching role)
+		{
+			name:        "multiple_labels_role_before_rig",
+			bead:        AdviceBead{ID: "test", Labels: []string{"rig:gastown", "role:witness"}},
+			currentRole: RolePolecat,
+			want:        "Witness", // Role wins over rig
+		},
+		{
+			name:        "multiple_labels_rig_when_no_role",
+			bead:        AdviceBead{ID: "test", Labels: []string{"rig:beads", "type:advice"}},
+			currentRole: RolePolecat,
+			want:        "beads",
 		},
 		// Edge cases: non-scope labels
 		{
-			name: "non_scope_labels_only",
-			bead: AdviceBead{ID: "test", Labels: []string{"type:advice", "priority:high", "area:auth"}},
-			want: "Global",
+			name:        "non_scope_labels_only",
+			bead:        AdviceBead{ID: "test", Labels: []string{"type:advice", "priority:high", "area:auth"}},
+			currentRole: RoleUnknown,
+			want:        "Global",
 		},
 		{
-			name: "non_scope_before_scope",
-			bead: AdviceBead{ID: "test", Labels: []string{"type:advice", "priority:high", "rig:gastown"}},
-			want: "gastown",
+			name:        "non_scope_before_scope",
+			bead:        AdviceBead{ID: "test", Labels: []string{"type:advice", "priority:high", "rig:gastown"}},
+			currentRole: RoleUnknown,
+			want:        "gastown",
 		},
 		// Edge cases: role capitalization
 		{
-			name: "role_uppercase_preserved",
-			bead: AdviceBead{ID: "test", Labels: []string{"role:Polecat"}},
-			want: "Polecat", // Already capitalized
+			name:        "role_uppercase_preserved",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:Polecat"}},
+			currentRole: RoleUnknown,
+			want:        "Polecat", // Already capitalized
 		},
 		{
-			name: "role_mixed_case",
-			bead: AdviceBead{ID: "test", Labels: []string{"role:poLECAT"}},
-			want: "PoLECAT", // Only first char uppercased
+			name:        "role_mixed_case",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:poLECAT"}},
+			currentRole: RoleUnknown,
+			want:        "PoLECAT", // Only first char uppercased
 		},
 		{
-			name: "role_all_caps",
-			bead: AdviceBead{ID: "test", Labels: []string{"role:POLECAT"}},
-			want: "POLECAT", // Already starts with uppercase
+			name:        "role_all_caps",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:POLECAT"}},
+			currentRole: RoleUnknown,
+			want:        "POLECAT", // Already starts with uppercase
 		},
 		// Edge cases: empty and nil labels
 		{
-			name: "nil_labels",
-			bead: AdviceBead{ID: "test", Labels: nil},
-			want: "Global",
+			name:        "nil_labels",
+			bead:        AdviceBead{ID: "test", Labels: nil},
+			currentRole: RoleUnknown,
+			want:        "Global",
 		},
 		{
-			name: "empty_labels_slice",
-			bead: AdviceBead{ID: "test", Labels: []string{}},
-			want: "Global",
+			name:        "empty_labels_slice",
+			bead:        AdviceBead{ID: "test", Labels: []string{}},
+			currentRole: RoleUnknown,
+			want:        "Global",
 		},
 		// Edge cases: partial prefix matches (should not match)
 		{
-			name: "partial_agent_prefix",
-			bead: AdviceBead{ID: "test", Labels: []string{"agentfoo"}},
-			want: "Global", // "agentfoo" doesn't start with "agent:"
+			name:        "partial_agent_prefix",
+			bead:        AdviceBead{ID: "test", Labels: []string{"agentfoo"}},
+			currentRole: RoleUnknown,
+			want:        "Global", // "agentfoo" doesn't start with "agent:"
 		},
 		{
-			name: "partial_role_prefix",
-			bead: AdviceBead{ID: "test", Labels: []string{"roleplay"}},
-			want: "Global", // "roleplay" doesn't start with "role:"
+			name:        "partial_role_prefix",
+			bead:        AdviceBead{ID: "test", Labels: []string{"roleplay"}},
+			currentRole: RoleUnknown,
+			want:        "Global", // "roleplay" doesn't start with "role:"
 		},
 		{
-			name: "partial_rig_prefix",
-			bead: AdviceBead{ID: "test", Labels: []string{"rigging"}},
-			want: "Global", // "rigging" doesn't start with "rig:"
+			name:        "partial_rig_prefix",
+			bead:        AdviceBead{ID: "test", Labels: []string{"rigging"}},
+			currentRole: RoleUnknown,
+			want:        "Global", // "rigging" doesn't start with "rig:"
 		},
 		// Edge cases: special characters in values
 		{
-			name: "rig_with_hyphens",
-			bead: AdviceBead{ID: "test", Labels: []string{"rig:gas-town-v2"}},
-			want: "gas-town-v2",
+			name:        "rig_with_hyphens",
+			bead:        AdviceBead{ID: "test", Labels: []string{"rig:gas-town-v2"}},
+			currentRole: RoleUnknown,
+			want:        "gas-town-v2",
 		},
 		{
-			name: "agent_with_slashes",
-			bead: AdviceBead{ID: "test", Labels: []string{"agent:gastown/polecats/alpha-1"}},
-			want: "Agent",
+			name:        "agent_with_slashes",
+			bead:        AdviceBead{ID: "test", Labels: []string{"agent:gastown/polecats/alpha-1"}},
+			currentRole: RoleUnknown,
+			want:        "Agent",
 		},
 		{
-			name: "role_with_underscore",
-			bead: AdviceBead{ID: "test", Labels: []string{"role:crew_worker"}},
-			want: "Crew_worker",
+			name:        "role_with_underscore",
+			bead:        AdviceBead{ID: "test", Labels: []string{"role:crew_worker"}},
+			currentRole: RoleUnknown,
+			want:        "Crew_worker",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := getAdviceScope(tc.bead)
+			got := getAdviceScope(tc.bead, tc.currentRole)
 			if got != tc.want {
 				t.Fatalf("getAdviceScope() = %q, want %q", got, tc.want)
 			}

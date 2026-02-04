@@ -52,8 +52,8 @@ func outputAdviceContext(ctx RoleInfo) {
 	fmt.Println("## 📝 Agent Advice")
 	fmt.Println()
 	for _, advice := range adviceBeads {
-		// Show scope indicator
-		scope := getAdviceScope(advice)
+		// Show scope indicator (pass current role to prefer matching role label)
+		scope := getAdviceScope(advice, ctx.Role)
 		fmt.Printf("**[%s]** %s\n", scope, advice.Title)
 		if advice.Description != "" {
 			// Indent description for readability
@@ -177,21 +177,52 @@ func fetchLabelsForBeads(beads []AdviceBead) error {
 }
 
 // getAdviceScope returns a human-readable scope indicator for the advice.
-func getAdviceScope(bead AdviceBead) string {
+// When advice has multiple role labels (e.g., role:crew AND role:polecat),
+// prefer showing the role that matches the current agent's role.
+func getAdviceScope(bead AdviceBead, currentRole Role) string {
+	// First pass: check for agent-specific label (highest priority)
 	for _, label := range bead.Labels {
-		switch {
-		case strings.HasPrefix(label, "agent:"):
+		if strings.HasPrefix(label, "agent:") {
 			return "Agent"
-		case strings.HasPrefix(label, "role:"):
+		}
+	}
+
+	// Second pass: look for role labels
+	// If one matches the current agent's role, prefer it
+	var firstRoleLabel *string // Use pointer to distinguish "not found" from "empty string"
+	currentRoleStr := string(currentRole)
+	for _, label := range bead.Labels {
+		if strings.HasPrefix(label, "role:") {
 			role := strings.TrimPrefix(label, "role:")
-			// Capitalize first letter
-			if len(role) > 0 {
-				return strings.ToUpper(role[:1]) + role[1:]
+			// If this role matches the current agent's role, use it immediately
+			if strings.EqualFold(role, currentRoleStr) {
+				if len(role) > 0 {
+					return strings.ToUpper(role[:1]) + role[1:]
+				}
+				return role
 			}
-			return role
-		case strings.HasPrefix(label, "rig:"):
+			// Track first role label as fallback
+			if firstRoleLabel == nil {
+				firstRoleLabel = &role
+			}
+		}
+	}
+
+	// Use first role label if found (none matched current role)
+	if firstRoleLabel != nil {
+		role := *firstRoleLabel
+		if len(role) > 0 {
+			return strings.ToUpper(role[:1]) + role[1:]
+		}
+		return role
+	}
+
+	// Third pass: check for rig labels
+	for _, label := range bead.Labels {
+		if strings.HasPrefix(label, "rig:") {
 			return strings.TrimPrefix(label, "rig:")
 		}
 	}
+
 	return "Global"
 }
