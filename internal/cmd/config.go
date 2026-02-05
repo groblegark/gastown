@@ -25,14 +25,24 @@ var configCmd = &cobra.Command{
 	Long: `Manage Gas Town configuration settings.
 
 This command allows you to view and modify configuration settings
-for your Gas Town workspace, including agent aliases and defaults.
+for your Gas Town workspace, including agent aliases, defaults,
+and config beads (the "Everything Is Beads" configuration system).
 
 Commands:
   gt config agent list              List all agents (built-in and custom)
   gt config agent get <name>         Show agent configuration
   gt config agent set <name> <cmd>   Set custom agent command
   gt config agent remove <name>      Remove custom agent
-  gt config default-agent [name]     Get or set default agent`,
+  gt config default-agent [name]     Get or set default agent
+  gt config bead list                List all config beads
+  gt config bead show <slug>         Show a config bead
+  gt config bead create <slug>       Create a config bead
+  gt config bead update <slug>       Update a config bead
+  gt config bead delete <slug>       Delete a config bead
+  gt config seed                     Seed config beads from templates
+  gt config resolve <category>       Show effective merged config
+  gt config verify                   Verify config beads
+  gt config materialize              Write config beads to filesystem`,
 }
 
 // Agent subcommands
