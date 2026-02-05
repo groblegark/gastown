@@ -19,25 +19,25 @@ var defaultRolesFS embed.FS
 // This replaces the role bead system with config files.
 type RoleDefinition struct {
 	// Role is the role identifier (mayor, deacon, witness, refinery, polecat, crew, dog).
-	Role string `toml:"role"`
+	Role string `toml:"role" json:"role"`
 
 	// Scope is "town" or "rig" - determines where the agent runs.
-	Scope string `toml:"scope"`
+	Scope string `toml:"scope" json:"scope"`
 
 	// Session contains tmux session configuration.
-	Session RoleSessionConfig `toml:"session"`
+	Session RoleSessionConfig `toml:"session" json:"session"`
 
 	// Env contains environment variables to set in the session.
-	Env map[string]string `toml:"env,omitempty"`
+	Env map[string]string `toml:"env,omitempty" json:"env,omitempty"`
 
 	// Health contains health check configuration.
-	Health RoleHealthConfig `toml:"health"`
+	Health RoleHealthConfig `toml:"health" json:"health"`
 
 	// Nudge is the initial prompt sent when starting the agent.
-	Nudge string `toml:"nudge,omitempty"`
+	Nudge string `toml:"nudge,omitempty" json:"nudge,omitempty"`
 
 	// PromptTemplate is the name of the role's prompt template file.
-	PromptTemplate string `toml:"prompt_template,omitempty"`
+	PromptTemplate string `toml:"prompt_template,omitempty" json:"prompt_template,omitempty"`
 }
 
 // RoleSessionConfig contains session-related configuration.
@@ -45,34 +45,34 @@ type RoleSessionConfig struct {
 	// Pattern is the tmux session name pattern.
 	// Supports placeholders: {rig}, {name}, {role}
 	// Examples: "hq-mayor", "gt-{rig}-witness", "gt-{rig}-{name}"
-	Pattern string `toml:"pattern"`
+	Pattern string `toml:"pattern" json:"pattern"`
 
 	// WorkDir is the working directory pattern.
 	// Supports placeholders: {town}, {rig}, {name}, {role}
 	// Examples: "{town}", "{town}/{rig}/witness"
-	WorkDir string `toml:"work_dir"`
+	WorkDir string `toml:"work_dir" json:"work_dir"`
 
 	// NeedsPreSync indicates if workspace needs git sync before starting.
-	NeedsPreSync bool `toml:"needs_pre_sync"`
+	NeedsPreSync bool `toml:"needs_pre_sync" json:"needs_pre_sync"`
 
 	// StartCommand is the command to run after creating the session.
 	// Default: "exec claude --dangerously-skip-permissions"
-	StartCommand string `toml:"start_command,omitempty"`
+	StartCommand string `toml:"start_command,omitempty" json:"start_command,omitempty"`
 }
 
 // RoleHealthConfig contains health check thresholds.
 type RoleHealthConfig struct {
 	// PingTimeout is how long to wait for a health check response.
-	PingTimeout Duration `toml:"ping_timeout"`
+	PingTimeout Duration `toml:"ping_timeout" json:"ping_timeout"`
 
 	// ConsecutiveFailures is how many failed health checks before force-kill.
-	ConsecutiveFailures int `toml:"consecutive_failures"`
+	ConsecutiveFailures int `toml:"consecutive_failures" json:"consecutive_failures"`
 
 	// KillCooldown is the minimum time between force-kills.
-	KillCooldown Duration `toml:"kill_cooldown"`
+	KillCooldown Duration `toml:"kill_cooldown" json:"kill_cooldown"`
 
 	// StuckThreshold is how long a wisp can be in_progress before considered stuck.
-	StuckThreshold Duration `toml:"stuck_threshold"`
+	StuckThreshold Duration `toml:"stuck_threshold" json:"stuck_threshold"`
 }
 
 // Duration is a wrapper for time.Duration that supports TOML marshaling.
@@ -115,8 +115,8 @@ func RigRoles() []string {
 	return []string{"witness", "refinery", "polecat", "crew"}
 }
 
-// isValidRoleName checks if the given name is a known role.
-func isValidRoleName(name string) bool {
+// IsValidRoleName checks if the given name is a known role.
+func IsValidRoleName(name string) bool {
 	for _, r := range AllRoles() {
 		if r == name {
 			return true
@@ -135,26 +135,26 @@ func isValidRoleName(name string) bool {
 // fields they want to change.
 func LoadRoleDefinition(townRoot, rigPath, roleName string) (*RoleDefinition, error) {
 	// Validate role name
-	if !isValidRoleName(roleName) {
+	if !IsValidRoleName(roleName) {
 		return nil, fmt.Errorf("unknown role %q - valid roles: %v", roleName, AllRoles())
 	}
 
 	// 1. Load built-in defaults
-	def, err := loadBuiltinRoleDefinition(roleName)
+	def, err := LoadBuiltinRoleDefinition(roleName)
 	if err != nil {
 		return nil, fmt.Errorf("loading built-in role %s: %w", roleName, err)
 	}
 
 	// 2. Apply town-level overrides if present
 	townOverridePath := filepath.Join(townRoot, "roles", roleName+".toml")
-	if override, err := loadRoleOverride(townOverridePath); err == nil {
+	if override, err := LoadRoleOverride(townOverridePath); err == nil {
 		mergeRoleDefinition(def, override)
 	}
 
 	// 3. Apply rig-level overrides if present (only for rig-scoped roles)
 	if rigPath != "" {
 		rigOverridePath := filepath.Join(rigPath, "roles", roleName+".toml")
-		if override, err := loadRoleOverride(rigOverridePath); err == nil {
+		if override, err := LoadRoleOverride(rigOverridePath); err == nil {
 			mergeRoleDefinition(def, override)
 		}
 	}
@@ -162,8 +162,8 @@ func LoadRoleDefinition(townRoot, rigPath, roleName string) (*RoleDefinition, er
 	return def, nil
 }
 
-// loadBuiltinRoleDefinition loads a role definition from embedded defaults.
-func loadBuiltinRoleDefinition(roleName string) (*RoleDefinition, error) {
+// LoadBuiltinRoleDefinition loads a role definition from embedded defaults.
+func LoadBuiltinRoleDefinition(roleName string) (*RoleDefinition, error) {
 	data, err := defaultRolesFS.ReadFile("roles/" + roleName + ".toml")
 	if err != nil {
 		return nil, fmt.Errorf("role %s not found in defaults: %w", roleName, err)
@@ -177,9 +177,9 @@ func loadBuiltinRoleDefinition(roleName string) (*RoleDefinition, error) {
 	return &def, nil
 }
 
-// loadRoleOverride loads a role override from a file path.
+// LoadRoleOverride loads a role override from a file path.
 // Returns nil, nil if file doesn't exist.
-func loadRoleOverride(path string) (*RoleDefinition, error) {
+func LoadRoleOverride(path string) (*RoleDefinition, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

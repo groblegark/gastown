@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
@@ -27,6 +28,7 @@ var (
 	seedAccounts   bool
 	seedDaemon     bool
 	seedRigs       bool
+	seedRoles      bool
 	seedAgents     bool
 	seedSlack      bool
 	seedMessaging  bool
@@ -51,6 +53,7 @@ By default, seeds all config types. Use flags to seed specific types:
   gt config seed --accounts   # Only account config
   gt config seed --daemon     # Only daemon patrol config
   gt config seed --rigs       # Only rig registry
+  gt config seed --roles      # Only role definitions
   gt config seed --agents     # Only agent preset config
   gt config seed --slack      # Only Slack routing config
   gt config seed --messaging  # Only messaging config
@@ -68,6 +71,7 @@ func init() {
 	configSeedCmd.Flags().BoolVar(&seedAccounts, "accounts", false, "Only seed account config beads")
 	configSeedCmd.Flags().BoolVar(&seedDaemon, "daemon", false, "Only seed daemon patrol config beads")
 	configSeedCmd.Flags().BoolVar(&seedRigs, "rigs", false, "Only seed rig registry config beads")
+	configSeedCmd.Flags().BoolVar(&seedRoles, "roles", false, "Only seed role definition config beads")
 	configSeedCmd.Flags().BoolVar(&seedAgents, "agents", false, "Only seed agent preset config beads")
 	configSeedCmd.Flags().BoolVar(&seedSlack, "slack", false, "Only seed Slack routing config beads")
 	configSeedCmd.Flags().BoolVar(&seedMessaging, "messaging", false, "Only seed messaging config beads")
@@ -87,7 +91,7 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 
 	// If no specific flags, seed everything
 	seedAll := !seedHooks && !seedMCP && !seedIdentity && !seedAccounts && !seedDaemon &&
-		!seedRigs && !seedAgents && !seedSlack && !seedMessaging && !seedEscalation
+		!seedRigs && !seedRoles && !seedAgents && !seedSlack && !seedMessaging && !seedEscalation
 
 	var created, skipped, updated int
 
@@ -145,6 +149,16 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 		c, s, u, err := seedRigRegistryBeads(bd, townRoot)
 		if err != nil {
 			return fmt.Errorf("seeding rig registry beads: %w", err)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	if seedAll || seedRoles {
+		c, s, u, err := seedRoleBeads(bd, townRoot)
+		if err != nil {
+			return fmt.Errorf("seeding role beads: %w", err)
 		}
 		created += c
 		skipped += s
@@ -745,3 +759,151 @@ func seedEscalationBeads(bd *beads.Beads, townRoot string) (created, skipped, up
 		"*", "", "", escMap, "Global escalation configuration")
 }
 
+// seedRoleBeads creates config beads for role definitions.
+// It seeds:
+//   - One global config bead per role from built-in defaults (7 total)
+//   - Town-level override beads from {townRoot}/roles/*.toml (if present)
+//   - Rig-level override beads from {rig}/roles/*.toml (if present)
+func seedRoleBeads(bd *beads.Beads, townRoot string) (created, skipped, updated int, err error) {
+	// 1. Seed built-in role definitions as global config beads
+	for _, roleName := range config.AllRoles() {
+		def, loadErr := config.LoadBuiltinRoleDefinition(roleName)
+		if loadErr != nil {
+			return created, skipped, updated, fmt.Errorf("loading builtin role %s: %w", roleName, loadErr)
+		}
+
+		metadata, marshalErr := roleDefToMetadata(def)
+		if marshalErr != nil {
+			return created, skipped, updated, fmt.Errorf("marshaling role %s: %w", roleName, marshalErr)
+		}
+
+		slug := "role-" + roleName
+		desc := fmt.Sprintf("Role definition: %s (scope: %s)", roleName, def.Scope)
+		c, s, u, seedErr := createOrSkipConfigBead(bd, slug, beads.ConfigCategoryRoleDefinition,
+			"*", "", "", metadata, desc)
+		if seedErr != nil {
+			return created, skipped, updated, fmt.Errorf("seeding role %s: %w", roleName, seedErr)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	// 2. Seed town-level role overrides (if any exist at {townRoot}/roles/*.toml)
+	townName := extractTownName(townRoot)
+	if townName != "" {
+		tc, tu, ts, townErr := seedRoleOverridesForPath(bd, filepath.Join(townRoot, "roles"), townName, "")
+		if townErr != nil {
+			return created, skipped, updated, fmt.Errorf("seeding town role overrides: %w", townErr)
+		}
+		created += tc
+		skipped += ts
+		updated += tu
+	}
+
+	// 3. Seed rig-level role overrides (from rigs in the registry)
+	if townName != "" {
+		rigsPath := filepath.Join(townRoot, "mayor", "rigs.json")
+		rigsCfg, rigsErr := config.LoadRigsConfig(rigsPath)
+		if rigsErr == nil && rigsCfg != nil {
+			for rigName := range rigsCfg.Rigs {
+				rigRolesDir := filepath.Join(townRoot, rigName, "roles")
+				rc, ru, rs, rigErr := seedRoleOverridesForPath(bd, rigRolesDir, townName, rigName)
+				if rigErr != nil {
+					return created, skipped, updated, fmt.Errorf("seeding rig %s role overrides: %w", rigName, rigErr)
+				}
+				created += rc
+				skipped += rs
+				updated += ru
+			}
+		}
+	}
+
+	return created, skipped, updated, nil
+}
+
+// seedRoleOverridesForPath scans a roles directory for TOML override files and seeds them.
+// If rigName is empty, creates town-level overrides; otherwise creates rig-level overrides.
+func seedRoleOverridesForPath(bd *beads.Beads, rolesDir, townName, rigName string) (created, skipped, updated int, err error) {
+	entries, readErr := os.ReadDir(rolesDir)
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return 0, 0, 0, nil // No overrides directory, that's fine
+		}
+		return 0, 0, 0, fmt.Errorf("reading roles dir %s: %w", rolesDir, readErr)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".toml") {
+			continue
+		}
+
+		roleName := strings.TrimSuffix(entry.Name(), ".toml")
+		if !config.IsValidRoleName(roleName) {
+			continue
+		}
+
+		overridePath := filepath.Join(rolesDir, entry.Name())
+		override, loadErr := config.LoadRoleOverride(overridePath)
+		if loadErr != nil {
+			continue // Skip unreadable files
+		}
+		if override == nil {
+			continue
+		}
+
+		metadata, marshalErr := roleDefToMetadata(override)
+		if marshalErr != nil {
+			continue
+		}
+
+		var slug, rig, desc string
+		if rigName != "" {
+			// Rig-level override
+			slug = "role-" + roleName + "-" + townName + "-" + rigName
+			rig = townName + "/" + rigName
+			desc = fmt.Sprintf("Role override: %s (rig: %s/%s)", roleName, townName, rigName)
+		} else {
+			// Town-level override
+			slug = "role-" + roleName + "-" + townName
+			rig = townName
+			desc = fmt.Sprintf("Role override: %s (town: %s)", roleName, townName)
+		}
+
+		c, s, u, seedErr := createOrSkipConfigBead(bd, slug, beads.ConfigCategoryRoleDefinition,
+			rig, "", "", metadata, desc)
+		if seedErr != nil {
+			return created, skipped, updated, fmt.Errorf("seeding override for %s: %w", roleName, seedErr)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	return created, skipped, updated, nil
+}
+
+// roleDefToMetadata converts a RoleDefinition to a generic map for bead metadata storage.
+func roleDefToMetadata(def *config.RoleDefinition) (map[string]interface{}, error) {
+	defJSON, err := json.Marshal(def)
+	if err != nil {
+		return nil, err
+	}
+
+	var metadata map[string]interface{}
+	if err := json.Unmarshal(defJSON, &metadata); err != nil {
+		return nil, err
+	}
+
+	return metadata, nil
+}
+
+// extractTownName attempts to read the town name from the town config.
+func extractTownName(townRoot string) string {
+	tcPath := filepath.Join(townRoot, workspace.PrimaryMarker)
+	tc, err := config.LoadTownConfig(tcPath)
+	if err != nil {
+		return ""
+	}
+	return tc.Name
+}

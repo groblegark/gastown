@@ -67,9 +67,9 @@ func TestLoadBuiltinRoleDefinition(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			def, err := loadBuiltinRoleDefinition(tt.role)
+			def, err := LoadBuiltinRoleDefinition(tt.role)
 			if err != nil {
-				t.Fatalf("loadBuiltinRoleDefinition(%s) error: %v", tt.role, err)
+				t.Fatalf("LoadBuiltinRoleDefinition(%s) error: %v", tt.role, err)
 			}
 
 			if def.Role != tt.role {
@@ -97,7 +97,7 @@ func TestLoadBuiltinRoleDefinition(t *testing.T) {
 }
 
 func TestLoadBuiltinRoleDefinition_UnknownRole(t *testing.T) {
-	_, err := loadBuiltinRoleDefinition("nonexistent")
+	_, err := LoadBuiltinRoleDefinition("nonexistent")
 	if err == nil {
 		t.Error("expected error for unknown role, got nil")
 	}
@@ -144,9 +144,9 @@ func TestTownRoles(t *testing.T) {
 	}
 
 	for _, r := range roles {
-		def, err := loadBuiltinRoleDefinition(r)
+		def, err := LoadBuiltinRoleDefinition(r)
 		if err != nil {
-			t.Fatalf("loadBuiltinRoleDefinition(%s) error: %v", r, err)
+			t.Fatalf("LoadBuiltinRoleDefinition(%s) error: %v", r, err)
 		}
 		if def.Scope != "town" {
 			t.Errorf("role %s has scope %q, expected 'town'", r, def.Scope)
@@ -161,9 +161,9 @@ func TestRigRoles(t *testing.T) {
 	}
 
 	for _, r := range roles {
-		def, err := loadBuiltinRoleDefinition(r)
+		def, err := LoadBuiltinRoleDefinition(r)
 		if err != nil {
-			t.Fatalf("loadBuiltinRoleDefinition(%s) error: %v", r, err)
+			t.Fatalf("LoadBuiltinRoleDefinition(%s) error: %v", r, err)
 		}
 		if def.Scope != "rig" {
 			t.Errorf("role %s has scope %q, expected 'rig'", r, def.Scope)
