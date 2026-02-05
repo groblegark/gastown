@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/claude"
+	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -18,6 +20,7 @@ var (
 	seedDryRun   bool
 	seedHooks    bool
 	seedMCP      bool
+	seedAccounts bool
 	seedForce    bool
 )
 
@@ -35,6 +38,7 @@ By default, seeds all config types. Use flags to seed specific types:
   gt config seed              # Seed all config types
   gt config seed --hooks      # Only Claude hooks
   gt config seed --mcp        # Only MCP config
+  gt config seed --accounts   # Only account config
   gt config seed --dry-run    # Show what would be created
   gt config seed --force      # Overwrite existing beads`,
 	RunE: runConfigSeed,
@@ -44,6 +48,7 @@ func init() {
 	configSeedCmd.Flags().BoolVar(&seedDryRun, "dry-run", false, "Show what would be created without creating")
 	configSeedCmd.Flags().BoolVar(&seedHooks, "hooks", false, "Only seed Claude hook config beads")
 	configSeedCmd.Flags().BoolVar(&seedMCP, "mcp", false, "Only seed MCP config beads")
+	configSeedCmd.Flags().BoolVar(&seedAccounts, "accounts", false, "Only seed account config beads")
 	configSeedCmd.Flags().BoolVar(&seedForce, "force", false, "Overwrite existing config beads")
 
 	configCmd.AddCommand(configSeedCmd)
@@ -58,7 +63,7 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 	bd := beads.New(townRoot)
 
 	// If no specific flags, seed everything
-	seedAll := !seedHooks && !seedMCP
+	seedAll := !seedHooks && !seedMCP && !seedAccounts
 
 	var created, skipped, updated int
 
@@ -76,6 +81,16 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 		c, s, u, err := seedMCPBeads(bd)
 		if err != nil {
 			return fmt.Errorf("seeding MCP beads: %w", err)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	if seedAll || seedAccounts {
+		c, s, u, err := seedAccountBeads(bd, townRoot)
+		if err != nil {
+			return fmt.Errorf("seeding account beads: %w", err)
 		}
 		created += c
 		skipped += s
@@ -287,6 +302,64 @@ func createOrSkipConfigBead(bd *beads.Beads, slug, category, rig, role, agent st
 
 	fmt.Printf("  %s %s %s (%s)\n", style.Success.Render("✓"), action, id, description)
 	return 1, 0, 0, nil
+}
+
+// seedAccountBeads creates config beads for account configuration.
+// It reads mayor/accounts.json and creates:
+//   - hq-cfg-account-<handle>: per-account config (excluding auth_token)
+//   - hq-cfg-accounts-default: default account selection
+func seedAccountBeads(bd *beads.Beads, townRoot string) (created, skipped, updated int, err error) {
+	accountsPath := constants.MayorAccountsPath(townRoot)
+	cfg, err := config.LoadAccountsConfig(accountsPath)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("loading accounts config: %w", err)
+	}
+
+	// Create a bead for each account (excluding auth_token - it's a SECRET)
+	for handle, acct := range cfg.Accounts {
+		metadata := map[string]interface{}{
+			"handle":     handle,
+			"config_dir": acct.ConfigDir,
+		}
+		if acct.Email != "" {
+			metadata["email"] = acct.Email
+		}
+		if acct.Description != "" {
+			metadata["description"] = acct.Description
+		}
+		if acct.BaseURL != "" {
+			metadata["base_url"] = acct.BaseURL
+		}
+		// NOTE: auth_token is intentionally excluded - secrets never go in beads
+
+		slug := "account-" + handle
+		desc := fmt.Sprintf("Account config: %s", handle)
+		c, s, u, err := createOrSkipConfigBead(bd, slug, beads.ConfigCategoryAccounts,
+			"*", "", "", metadata, desc)
+		if err != nil {
+			return created, skipped, updated, fmt.Errorf("creating account bead for %s: %w", handle, err)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	// Create the default-account bead
+	if cfg.Default != "" {
+		defaultMeta := map[string]interface{}{
+			"default": cfg.Default,
+		}
+		c, s, u, err := createOrSkipConfigBead(bd, "accounts-default", beads.ConfigCategoryAccounts,
+			"*", "", "", defaultMeta, "Default account selection")
+		if err != nil {
+			return created, skipped, updated, fmt.Errorf("creating default account bead: %w", err)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	return created, skipped, updated, nil
 }
 
 // extractHooksMap extracts the "hooks" key from a settings map.

@@ -3742,3 +3742,222 @@ func TestBuildStartupCommandWithAgentOverride_NoGTAgentWhenNoOverride(t *testing
 		t.Errorf("expected no GT_AGENT in command when no override, got: %q", cmd)
 	}
 }
+
+func TestLoadAccountsFromBeads_BasicAccounts(t *testing.T) {
+	t.Parallel()
+
+	layers := []string{
+		`{"handle":"work","email":"steve@company.com","config_dir":"/home/user/.claude-accounts/work","description":"Work account"}`,
+		`{"handle":"personal","email":"steve@gmail.com","config_dir":"/home/user/.claude-accounts/personal","base_url":"http://localhost:4000"}`,
+		`{"default":"work"}`,
+	}
+
+	cfg, err := LoadAccountsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("LoadAccountsFromBeads: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+
+	if len(cfg.Accounts) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(cfg.Accounts))
+	}
+	if cfg.Default != "work" {
+		t.Errorf("expected default 'work', got %q", cfg.Default)
+	}
+
+	work := cfg.Accounts["work"]
+	if work.Email != "steve@company.com" {
+		t.Errorf("expected email 'steve@company.com', got %q", work.Email)
+	}
+	if work.ConfigDir != "/home/user/.claude-accounts/work" {
+		t.Errorf("expected config_dir, got %q", work.ConfigDir)
+	}
+	if work.Description != "Work account" {
+		t.Errorf("expected description 'Work account', got %q", work.Description)
+	}
+	if work.AuthToken != "" {
+		t.Errorf("auth_token should be empty in beads config, got %q", work.AuthToken)
+	}
+
+	personal := cfg.Accounts["personal"]
+	if personal.BaseURL != "http://localhost:4000" {
+		t.Errorf("expected base_url, got %q", personal.BaseURL)
+	}
+}
+
+func TestLoadAccountsFromBeads_NoAuthToken(t *testing.T) {
+	t.Parallel()
+
+	// Even if auth_token somehow appears in metadata JSON, it should not be loaded
+	layers := []string{
+		`{"handle":"test","config_dir":"/tmp/test","auth_token":"sk-secret-123"}`,
+	}
+
+	cfg, err := LoadAccountsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("LoadAccountsFromBeads: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+
+	acct := cfg.Accounts["test"]
+	if acct.AuthToken != "" {
+		t.Errorf("auth_token should never be loaded from beads, got %q", acct.AuthToken)
+	}
+}
+
+func TestLoadAccountsFromBeads_EmptyLayers(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := LoadAccountsFromBeads(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg != nil {
+		t.Errorf("expected nil config for empty layers, got %+v", cfg)
+	}
+
+	cfg, err = LoadAccountsFromBeads([]string{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg != nil {
+		t.Errorf("expected nil config for empty layers, got %+v", cfg)
+	}
+}
+
+func TestLoadAccountsFromBeads_InvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	layers := []string{
+		`not-valid-json`,
+		`{"handle":"valid","config_dir":"/tmp/test"}`,
+	}
+
+	cfg, err := LoadAccountsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("LoadAccountsFromBeads: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config (should skip invalid JSON)")
+	}
+	if len(cfg.Accounts) != 1 {
+		t.Errorf("expected 1 account (skip invalid JSON), got %d", len(cfg.Accounts))
+	}
+}
+
+func TestLoadAccountsFromBeads_DefaultOnly(t *testing.T) {
+	t.Parallel()
+
+	layers := []string{
+		`{"default":"myaccount"}`,
+	}
+
+	cfg, err := LoadAccountsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("LoadAccountsFromBeads: %v", err)
+	}
+	// default-only with no accounts should still return nil
+	// because there are no actual accounts to use
+	if cfg != nil {
+		// Default is set but no accounts - still returns config with default
+		if cfg.Default != "myaccount" {
+			t.Errorf("expected default 'myaccount', got %q", cfg.Default)
+		}
+	}
+}
+
+func TestMergeAccountsWithSecrets(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	accountsPath := filepath.Join(dir, "accounts.json")
+
+	// Write filesystem config with auth_token
+	fsCfg := &AccountsConfig{
+		Version: 1,
+		Accounts: map[string]Account{
+			"work": {
+				Email:     "steve@company.com",
+				ConfigDir: "/home/user/.claude-accounts/work",
+				AuthToken: "sk-secret-token",
+			},
+			"personal": {
+				Email:     "steve@gmail.com",
+				ConfigDir: "/home/user/.claude-accounts/personal",
+			},
+		},
+		Default: "work",
+	}
+	if err := SaveAccountsConfig(accountsPath, fsCfg); err != nil {
+		t.Fatalf("SaveAccountsConfig: %v", err)
+	}
+
+	// Simulate beads config without auth_token
+	beadsCfg := &AccountsConfig{
+		Version: 1,
+		Accounts: map[string]Account{
+			"work": {
+				Email:     "steve@company.com",
+				ConfigDir: "/home/user/.claude-accounts/work",
+				// no auth_token
+			},
+			"personal": {
+				Email:     "steve@gmail.com",
+				ConfigDir: "/home/user/.claude-accounts/personal",
+			},
+		},
+		Default: "work",
+	}
+
+	merged := MergeAccountsWithSecrets(beadsCfg, accountsPath)
+	if merged == nil {
+		t.Fatal("expected non-nil merged config")
+	}
+
+	work := merged.Accounts["work"]
+	if work.AuthToken != "sk-secret-token" {
+		t.Errorf("expected auth_token to be merged from filesystem, got %q", work.AuthToken)
+	}
+
+	personal := merged.Accounts["personal"]
+	if personal.AuthToken != "" {
+		t.Errorf("expected no auth_token for personal, got %q", personal.AuthToken)
+	}
+}
+
+func TestMergeAccountsWithSecrets_NoFilesystem(t *testing.T) {
+	t.Parallel()
+
+	beadsCfg := &AccountsConfig{
+		Version: 1,
+		Accounts: map[string]Account{
+			"work": {
+				Email:     "steve@company.com",
+				ConfigDir: "/home/user/.claude-accounts/work",
+			},
+		},
+		Default: "work",
+	}
+
+	// Non-existent path should return beads config unchanged
+	merged := MergeAccountsWithSecrets(beadsCfg, "/nonexistent/accounts.json")
+	if merged == nil {
+		t.Fatal("expected non-nil merged config")
+	}
+	if len(merged.Accounts) != 1 {
+		t.Errorf("expected 1 account, got %d", len(merged.Accounts))
+	}
+}
+
+func TestMergeAccountsWithSecrets_NilBeads(t *testing.T) {
+	t.Parallel()
+
+	merged := MergeAccountsWithSecrets(nil, "/nonexistent/accounts.json")
+	if merged != nil {
+		t.Errorf("expected nil for nil beads config, got %+v", merged)
+	}
+}

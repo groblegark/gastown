@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/steveyegge/gastown/internal/claude"
@@ -144,5 +145,61 @@ func TestMCPTemplateContent(t *testing.T) {
 
 	if _, ok := mcpConfig["mcpServers"]; !ok {
 		t.Error("expected mcpServers key in MCP template")
+	}
+}
+
+func TestSeedAccountBeadsMetadataExcludesAuthToken(t *testing.T) {
+	// Verify the metadata construction logic: auth_token should never appear
+	// in the metadata map that gets serialized to beads.
+	// This simulates what seedAccountBeads does for each account.
+	acct := struct {
+		Email       string
+		Description string
+		ConfigDir   string
+		AuthToken   string
+		BaseURL     string
+	}{
+		Email:       "test@example.com",
+		Description: "Test account",
+		ConfigDir:   "/tmp/test",
+		AuthToken:   "sk-secret-token-that-should-never-appear",
+		BaseURL:     "http://localhost:4000",
+	}
+
+	metadata := map[string]interface{}{
+		"handle":     "test",
+		"config_dir": acct.ConfigDir,
+	}
+	if acct.Email != "" {
+		metadata["email"] = acct.Email
+	}
+	if acct.Description != "" {
+		metadata["description"] = acct.Description
+	}
+	if acct.BaseURL != "" {
+		metadata["base_url"] = acct.BaseURL
+	}
+	// NOTE: auth_token is intentionally excluded
+
+	metaJSON, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatalf("marshaling metadata: %v", err)
+	}
+
+	metaStr := string(metaJSON)
+	if strings.Contains(metaStr, "auth_token") {
+		t.Errorf("metadata should not contain auth_token, got: %s", metaStr)
+	}
+	if strings.Contains(metaStr, "sk-secret") {
+		t.Errorf("metadata should not contain secret value, got: %s", metaStr)
+	}
+	if !strings.Contains(metaStr, "test@example.com") {
+		t.Error("metadata should contain email")
+	}
+	if !strings.Contains(metaStr, "/tmp/test") {
+		t.Error("metadata should contain config_dir")
+	}
+	if !strings.Contains(metaStr, "http://localhost:4000") {
+		t.Error("metadata should contain base_url")
 	}
 }

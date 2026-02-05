@@ -478,6 +478,101 @@ func LoadAccountsConfig(path string) (*AccountsConfig, error) {
 	return &config, nil
 }
 
+// LoadAccountsFromBeads constructs an AccountsConfig from account config bead
+// metadata JSON strings. The metadataLayers parameter is a slice of JSON strings
+// as returned by beads.ResolveConfigMetadata("accounts", ...).
+//
+// Auth tokens are NOT stored in beads and must be merged at runtime from
+// environment variables or the filesystem (mayor/accounts.json).
+//
+// Each metadata layer is either:
+//   - An account bead: {"handle":"work","email":"...","config_dir":"..."}
+//   - The default bead: {"default":"work"}
+//
+// Returns nil, nil if no account beads are found.
+func LoadAccountsFromBeads(metadataLayers []string) (*AccountsConfig, error) {
+	if len(metadataLayers) == 0 {
+		return nil, nil
+	}
+
+	cfg := &AccountsConfig{
+		Version:  CurrentAccountsVersion,
+		Accounts: make(map[string]Account),
+	}
+
+	for _, raw := range metadataLayers {
+		var meta map[string]interface{}
+		if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+			continue
+		}
+
+		// Check if this is the default-account bead
+		if defaultHandle, ok := meta["default"]; ok {
+			if s, ok := defaultHandle.(string); ok {
+				cfg.Default = s
+			}
+			continue
+		}
+
+		// Parse as account bead
+		handle, _ := meta["handle"].(string)
+		if handle == "" {
+			continue
+		}
+
+		acct := Account{}
+		if v, ok := meta["email"].(string); ok {
+			acct.Email = v
+		}
+		if v, ok := meta["description"].(string); ok {
+			acct.Description = v
+		}
+		if v, ok := meta["config_dir"].(string); ok {
+			acct.ConfigDir = v
+		}
+		if v, ok := meta["base_url"].(string); ok {
+			acct.BaseURL = v
+		}
+		// auth_token intentionally left empty - filled from env/filesystem at runtime
+
+		cfg.Accounts[handle] = acct
+	}
+
+	if len(cfg.Accounts) == 0 && cfg.Default == "" {
+		return nil, nil
+	}
+
+	return cfg, nil
+}
+
+// MergeAccountsWithSecrets merges non-secret account data from beads with
+// auth tokens from the filesystem (mayor/accounts.json).
+// This is the runtime merge step: beads provide config, filesystem provides secrets.
+func MergeAccountsWithSecrets(beadsCfg *AccountsConfig, filesystemPath string) *AccountsConfig {
+	if beadsCfg == nil {
+		return nil
+	}
+
+	// Try to load filesystem config for auth tokens
+	fsCfg, err := LoadAccountsConfig(filesystemPath)
+	if err != nil {
+		// No filesystem config available - return beads config as-is
+		return beadsCfg
+	}
+
+	// Merge auth tokens from filesystem into beads config
+	for handle, acct := range beadsCfg.Accounts {
+		if fsAcct, ok := fsCfg.Accounts[handle]; ok {
+			if fsAcct.AuthToken != "" {
+				acct.AuthToken = fsAcct.AuthToken
+				beadsCfg.Accounts[handle] = acct
+			}
+		}
+	}
+
+	return beadsCfg
+}
+
 // SaveAccountsConfig saves an accounts configuration to a file.
 func SaveAccountsConfig(path string, config *AccountsConfig) error {
 	if err := validateAccountsConfig(config); err != nil {
