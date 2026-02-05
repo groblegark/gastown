@@ -8,6 +8,13 @@ import (
 	"github.com/steveyegge/gastown/internal/ui"
 )
 
+// DefaultCheckTimeout is the maximum time a single check is allowed to run.
+// If a check exceeds this, it is abandoned and returns a timeout error.
+// This prevents individual checks from hanging the entire gt doctor run,
+// which was causing deacon dogs to get stuck for hours on infrastructure
+// molecules (session-gc, orphan-scan) that call gt doctor.
+const DefaultCheckTimeout = 30 * time.Second
+
 // Doctor manages and executes health checks.
 type Doctor struct {
 	checks []Check
@@ -52,6 +59,46 @@ type categoryGetter interface {
 	Category() string
 }
 
+// runCheckWithTimeout executes a check's Run method with a timeout.
+// If the check takes longer than DefaultCheckTimeout, it returns a timeout error result.
+// This prevents individual checks from hanging the entire gt doctor invocation.
+func runCheckWithTimeout(check Check, ctx *CheckContext) *CheckResult {
+	type checkResult struct {
+		result *CheckResult
+	}
+	ch := make(chan checkResult, 1)
+	go func() {
+		ch <- checkResult{result: check.Run(ctx)}
+	}()
+
+	select {
+	case cr := <-ch:
+		return cr.result
+	case <-time.After(DefaultCheckTimeout):
+		return &CheckResult{
+			Name:    check.Name(),
+			Status:  StatusError,
+			Message: fmt.Sprintf("Check timed out after %v", DefaultCheckTimeout),
+			Details: []string{"The check was abandoned because it exceeded the timeout. This usually indicates a hanging subprocess (tmux, ps, bd) or a slow database query."},
+		}
+	}
+}
+
+// fixCheckWithTimeout executes a check's Fix method with a timeout.
+func fixCheckWithTimeout(check Check, ctx *CheckContext) error {
+	ch := make(chan error, 1)
+	go func() {
+		ch <- check.Fix(ctx)
+	}()
+
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(DefaultCheckTimeout):
+		return fmt.Errorf("fix timed out after %v", DefaultCheckTimeout)
+	}
+}
+
 // Run executes all registered checks and returns a report.
 func (d *Doctor) Run(ctx *CheckContext) *Report {
 	return d.RunStreaming(ctx, nil, 0)
@@ -60,6 +107,7 @@ func (d *Doctor) Run(ctx *CheckContext) *Report {
 // RunStreaming executes all registered checks with optional real-time output.
 // If w is non-nil, prints each check name as it starts and result when done.
 // If slowThreshold > 0, shows hourglass icon for slow checks.
+// Each check is subject to DefaultCheckTimeout to prevent hangs.
 func (d *Doctor) RunStreaming(ctx *CheckContext, w io.Writer, slowThreshold time.Duration) *Report {
 	report := NewReport()
 
@@ -70,7 +118,7 @@ func (d *Doctor) RunStreaming(ctx *CheckContext, w io.Writer, slowThreshold time
 		}
 
 		start := time.Now()
-		result := check.Run(ctx)
+		result := runCheckWithTimeout(check, ctx)
 		result.Elapsed = time.Since(start)
 
 		// Ensure check name is populated
@@ -125,6 +173,7 @@ func (d *Doctor) Fix(ctx *CheckContext) *Report {
 // FixStreaming runs all checks with auto-fix and optional real-time output.
 // If w is non-nil, prints each check name as it starts and result when done.
 // If slowThreshold > 0, shows hourglass icon for slow checks.
+// Each check and fix is subject to DefaultCheckTimeout to prevent hangs.
 func (d *Doctor) FixStreaming(ctx *CheckContext, w io.Writer, slowThreshold time.Duration) *Report {
 	report := NewReport()
 
@@ -135,7 +184,7 @@ func (d *Doctor) FixStreaming(ctx *CheckContext, w io.Writer, slowThreshold time
 		}
 
 		start := time.Now()
-		result := check.Run(ctx)
+		result := runCheckWithTimeout(check, ctx)
 		if result.Name == "" {
 			result.Name = check.Name()
 		}
@@ -162,10 +211,10 @@ func (d *Doctor) FixStreaming(ctx *CheckContext, w io.Writer, slowThreshold time
 				fmt.Fprintf(w, "%s", ui.RenderMuted(" (fixing)..."))
 			}
 
-			err := check.Fix(ctx)
+			err := fixCheckWithTimeout(check, ctx)
 			if err == nil {
 				// Re-run check to verify fix worked
-				result = check.Run(ctx)
+				result = runCheckWithTimeout(check, ctx)
 				if result.Name == "" {
 					result.Name = check.Name()
 				}

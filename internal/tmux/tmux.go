@@ -389,13 +389,28 @@ func (t *Tmux) KillSessionWithProcessesExcluding(name string, excludePIDs []stri
 	return err
 }
 
+// maxDescendantDepth limits how deep we recurse into the process tree.
+// This prevents runaway recursion on pathological process hierarchies.
+const maxDescendantDepth = 32
+
 // getAllDescendants recursively finds all descendant PIDs of a process.
 // Returns PIDs in deepest-first order so killing them doesn't orphan grandchildren.
 func getAllDescendants(pid string) []string {
+	return getAllDescendantsWithDepth(pid, 0)
+}
+
+// getAllDescendantsWithDepth recursively finds descendant PIDs with a depth limit.
+func getAllDescendantsWithDepth(pid string, depth int) []string {
 	var result []string
 
-	// Get direct children using pgrep
-	out, err := exec.Command("pgrep", "-P", pid).Output()
+	if depth >= maxDescendantDepth {
+		return result
+	}
+
+	// Get direct children using pgrep (with timeout to prevent hangs)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "pgrep", "-P", pid).Output()
 	if err != nil {
 		return result
 	}
@@ -403,7 +418,7 @@ func getAllDescendants(pid string) []string {
 	children := strings.Fields(strings.TrimSpace(string(out)))
 	for _, child := range children {
 		// First add grandchildren (recursively) - deepest first
-		result = append(result, getAllDescendants(child)...)
+		result = append(result, getAllDescendantsWithDepth(child, depth+1)...)
 		// Then add this child
 		result = append(result, child)
 	}
@@ -1061,10 +1076,12 @@ func hasChildWithNames(pid string, names []string) bool {
 		return false
 	}
 
-	// Check each descendant's command name
+	// Check each descendant's command name (with timeout on each ps call)
 	for _, dpid := range descendants {
 		// Get the command name for this PID
-		out, err := exec.Command("ps", "-o", "comm=", "-p", dpid).Output()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		out, err := exec.CommandContext(ctx, "ps", "-o", "comm=", "-p", dpid).Output()
+		cancel()
 		if err != nil {
 			continue
 		}

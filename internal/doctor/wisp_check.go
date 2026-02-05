@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,10 @@ import (
 
 	"github.com/steveyegge/gastown/internal/beads"
 )
+
+// wispGCTimeout is the maximum time for the bd mol wisp gc command.
+// This prevents the wisp GC check from hanging when Dolt is slow or CPU-saturated.
+const wispGCTimeout = 15 * time.Second
 
 // WispGCCheck detects and cleans orphaned wisps that are older than a threshold.
 // Wisps are ephemeral issues (Wisp: true flag) used for patrol cycles and
@@ -129,17 +134,25 @@ func (c *WispGCCheck) countAbandonedWisps(rigPath string) int {
 }
 
 // Fix runs bd mol wisp gc in each rig with abandoned wisps.
-func (c *WispGCCheck) Fix(ctx *CheckContext) error {
+func (c *WispGCCheck) Fix(checkCtx *CheckContext) error {
 	var lastErr error
 
 	for rigName := range c.abandonedRigs {
-		rigPath := filepath.Join(ctx.TownRoot, rigName)
+		rigPath := filepath.Join(checkCtx.TownRoot, rigName)
 
-		// Run bd mol wisp gc (daemon handles connection pooling)
-		cmd := exec.Command("bd", "mol", "wisp", "gc")
+		// Run bd mol wisp gc with timeout to prevent hanging when Dolt is slow.
+		// This was a major cause of deacon dogs getting stuck for hours.
+		ctx, cancel := context.WithTimeout(context.Background(), wispGCTimeout)
+		cmd := exec.CommandContext(ctx, "bd", "mol", "wisp", "gc")
 		cmd.Dir = rigPath
-		if output, err := cmd.CombinedOutput(); err != nil {
-			lastErr = fmt.Errorf("%s: %v (%s)", rigName, err, string(output))
+		output, err := cmd.CombinedOutput()
+		cancel()
+		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				lastErr = fmt.Errorf("%s: bd mol wisp gc timed out after %v", rigName, wispGCTimeout)
+			} else {
+				lastErr = fmt.Errorf("%s: %v (%s)", rigName, err, string(output))
+			}
 		}
 	}
 

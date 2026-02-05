@@ -1,16 +1,22 @@
 package doctor
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
+
+// cmdTimeout is the maximum time for individual subprocess calls in doctor checks.
+// Prevents hangs from dead tmux sessions, slow ps queries, or unresponsive daemons.
+const cmdTimeout = 10 * time.Second
 
 // OrphanSessionCheck detects orphaned tmux sessions that don't match
 // the expected Gas Town session naming patterns.
@@ -340,9 +346,11 @@ func (c *OrphanProcessCheck) getTmuxSessionPIDs() (map[int]bool, error) { //noli
 	// pgrep -x tmux is unreliable on macOS - it often misses the actual server.
 	// We use ps with awk to find processes where comm is exactly "tmux" or starts with "tmux:".
 	// On Linux, tmux servers show as "tmux: server" in the comm field.
-	out, err := exec.Command("sh", "-c", `ps ax -o pid,comm | awk '$2 == "tmux" || $2 ~ /\/tmux$/ || $2 ~ /^tmux:/ { print $1 }'`).Output()
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "sh", "-c", `ps ax -o pid,comm | awk '$2 == "tmux" || $2 ~ /\/tmux$/ || $2 ~ /^tmux:/ { print $1 }'`).Output()
 	if err != nil {
-		// No tmux server running
+		// No tmux server running or timeout
 		return pids, nil
 	}
 
@@ -356,9 +364,11 @@ func (c *OrphanProcessCheck) getTmuxSessionPIDs() (map[int]bool, error) { //noli
 	// Also get shell PIDs inside tmux panes
 	t := tmux.NewTmux()
 	sessions, _ := t.ListSessions()
-	for _, session := range sessions {
-		// Get pane PIDs for this session
-		out, err := exec.Command("tmux", "list-panes", "-t", session, "-F", "#{pane_pid}").Output()
+	for _, sess := range sessions {
+		// Get pane PIDs for this session (with timeout to avoid hanging on dead sessions)
+		paneCtx, paneCancel := context.WithTimeout(context.Background(), cmdTimeout)
+		out, err := exec.CommandContext(paneCtx, "tmux", "list-panes", "-t", sess, "-F", "#{pane_pid}").Output()
+		paneCancel()
 		if err != nil {
 			continue
 		}
@@ -379,7 +389,9 @@ func (c *OrphanProcessCheck) findRuntimeProcesses() ([]processInfo, error) {
 	var procs []processInfo
 
 	// Use ps with args to get full command line (needed to check for Gas Town signature)
-	out, err := exec.Command("ps", "-eo", "pid,ppid,args").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-eo", "pid,ppid,args").Output()
 	if err != nil {
 		return nil, err
 	}
@@ -432,11 +444,13 @@ func (c *OrphanProcessCheck) findRuntimeProcesses() ([]processInfo, error) {
 // isOrphanProcess checks if a runtime process is orphaned.
 // A process is orphaned if its parent (or ancestor) is not a tmux session.
 func (c *OrphanProcessCheck) isOrphanProcess(proc processInfo, tmuxPIDs map[int]bool) bool {
-	// Walk up the process tree looking for a tmux parent
+	// Walk up the process tree looking for a tmux parent.
+	// Limited to 64 iterations to prevent infinite loops on circular process trees.
 	currentPPID := proc.ppid
 	visited := make(map[int]bool)
 
-	for currentPPID > 1 && !visited[currentPPID] {
+	const maxDepth = 64
+	for i := 0; currentPPID > 1 && !visited[currentPPID] && i < maxDepth; i++ {
 		visited[currentPPID] = true
 
 		// Check if this is a tmux process
@@ -444,8 +458,10 @@ func (c *OrphanProcessCheck) isOrphanProcess(proc processInfo, tmuxPIDs map[int]
 			return false // Has tmux ancestor, not orphaned
 		}
 
-		// Get parent's parent
-		out, err := exec.Command("ps", "-p", fmt.Sprintf("%d", currentPPID), "-o", "ppid=").Output() //nolint:gosec // G204: PID is numeric from internal state
+		// Get parent's parent (with timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		out, err := exec.CommandContext(ctx, "ps", "-p", fmt.Sprintf("%d", currentPPID), "-o", "ppid=").Output() //nolint:gosec // G204: PID is numeric from internal state
+		cancel()
 		if err != nil {
 			break
 		}
