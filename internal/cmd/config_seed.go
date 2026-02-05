@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
@@ -18,28 +19,29 @@ import (
 )
 
 var (
-	seedDryRun   bool
-	seedHooks    bool
-	seedMCP      bool
-	seedAccounts bool
-	seedDaemon   bool
-	seedForce    bool
+	seedDryRun    bool
+	seedHooks     bool
+	seedMCP       bool
+	seedIdentity  bool
+	seedAccounts  bool
+	seedDaemon    bool
+	seedForce     bool
 )
 
 var configSeedCmd = &cobra.Command{
 	Use:   "seed",
 	Short: "Seed config beads from embedded templates",
-	Long: `Create config beads from the embedded Claude settings and MCP templates.
+	Long: `Create config beads from existing configuration files and templates.
 
-This is a one-time migration command that reads the existing embedded config
-templates (settings-autonomous.json, settings-interactive.json, mcp.json)
-and creates corresponding config beads in the beads database.
+This is a one-time migration command that reads existing config files and
+embedded templates and creates corresponding config beads in the beads database.
 
 By default, seeds all config types. Use flags to seed specific types:
 
   gt config seed              # Seed all config types
   gt config seed --hooks      # Only Claude hooks
   gt config seed --mcp        # Only MCP config
+  gt config seed --identity   # Only town identity
   gt config seed --accounts   # Only account config
   gt config seed --daemon     # Only daemon patrol config
   gt config seed --dry-run    # Show what would be created
@@ -51,6 +53,7 @@ func init() {
 	configSeedCmd.Flags().BoolVar(&seedDryRun, "dry-run", false, "Show what would be created without creating")
 	configSeedCmd.Flags().BoolVar(&seedHooks, "hooks", false, "Only seed Claude hook config beads")
 	configSeedCmd.Flags().BoolVar(&seedMCP, "mcp", false, "Only seed MCP config beads")
+	configSeedCmd.Flags().BoolVar(&seedIdentity, "identity", false, "Only seed town identity config beads")
 	configSeedCmd.Flags().BoolVar(&seedAccounts, "accounts", false, "Only seed account config beads")
 	configSeedCmd.Flags().BoolVar(&seedDaemon, "daemon", false, "Only seed daemon patrol config beads")
 	configSeedCmd.Flags().BoolVar(&seedForce, "force", false, "Overwrite existing config beads")
@@ -67,7 +70,7 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 	bd := beads.New(townRoot)
 
 	// If no specific flags, seed everything
-	seedAll := !seedHooks && !seedMCP && !seedAccounts && !seedDaemon
+	seedAll := !seedHooks && !seedMCP && !seedIdentity && !seedAccounts && !seedDaemon
 
 	var created, skipped, updated int
 
@@ -85,6 +88,16 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 		c, s, u, err := seedMCPBeads(bd)
 		if err != nil {
 			return fmt.Errorf("seeding MCP beads: %w", err)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	if seedAll || seedIdentity {
+		c, s, u, err := seedIdentityBeads(bd, townRoot)
+		if err != nil {
+			return fmt.Errorf("seeding identity beads: %w", err)
 		}
 		created += c
 		skipped += s
@@ -318,6 +331,46 @@ func createOrSkipConfigBead(bd *beads.Beads, slug, category, rig, role, agent st
 	return 1, 0, 0, nil
 }
 
+// seedIdentityBeads creates a config bead for town identity from mayor/town.json.
+func seedIdentityBeads(bd *beads.Beads, townRoot string) (created, skipped, updated int, err error) {
+	townConfigPath := filepath.Join(townRoot, workspace.PrimaryMarker)
+	tc, err := config.LoadTownConfig(townConfigPath)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("loading town config: %w", err)
+	}
+
+	// Build metadata from TownConfig fields
+	metadata := map[string]interface{}{
+		"type":       tc.Type,
+		"version":    tc.Version,
+		"name":       tc.Name,
+		"created_at": tc.CreatedAt,
+	}
+	if tc.Owner != "" {
+		metadata["owner"] = tc.Owner
+	}
+	if tc.PublicName != "" {
+		metadata["public_name"] = tc.PublicName
+	}
+
+	slug := "town-" + tc.Name
+	return createOrSkipConfigBead(bd, slug, beads.ConfigCategoryIdentity,
+		tc.Name, "", "", metadata, "Town identity: "+tc.Name)
+}
+
+// extractHooksMap extracts the "hooks" key from a settings map.
+func extractHooksMap(settings map[string]interface{}) map[string]interface{} {
+	hooks, ok := settings["hooks"]
+	if !ok {
+		return nil
+	}
+	hooksMap, ok := hooks.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return hooksMap
+}
+
 // seedAccountBeads creates config beads for account configuration.
 // It reads mayor/accounts.json and creates:
 //   - hq-cfg-account-<handle>: per-account config (excluding auth_token)
@@ -405,18 +458,5 @@ func seedDaemonBeads(bd *beads.Beads, townRoot string) (created, skipped, update
 
 	return createOrSkipConfigBead(bd, "daemon-patrol", beads.ConfigCategoryDaemon,
 		"*", "", "", daemonMap, "Global daemon patrol configuration")
-}
-
-// extractHooksMap extracts the "hooks" key from a settings map.
-func extractHooksMap(settings map[string]interface{}) map[string]interface{} {
-	hooks, ok := settings["hooks"]
-	if !ok {
-		return nil
-	}
-	hooksMap, ok := hooks.(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	return hooksMap
 }
 
