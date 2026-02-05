@@ -6,10 +6,13 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/claude"
+	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -18,6 +21,7 @@ var (
 	seedDryRun   bool
 	seedHooks    bool
 	seedMCP      bool
+	seedRigs     bool
 	seedForce    bool
 )
 
@@ -35,6 +39,7 @@ By default, seeds all config types. Use flags to seed specific types:
   gt config seed              # Seed all config types
   gt config seed --hooks      # Only Claude hooks
   gt config seed --mcp        # Only MCP config
+  gt config seed --rigs       # Only rig registry
   gt config seed --dry-run    # Show what would be created
   gt config seed --force      # Overwrite existing beads`,
 	RunE: runConfigSeed,
@@ -44,6 +49,7 @@ func init() {
 	configSeedCmd.Flags().BoolVar(&seedDryRun, "dry-run", false, "Show what would be created without creating")
 	configSeedCmd.Flags().BoolVar(&seedHooks, "hooks", false, "Only seed Claude hook config beads")
 	configSeedCmd.Flags().BoolVar(&seedMCP, "mcp", false, "Only seed MCP config beads")
+	configSeedCmd.Flags().BoolVar(&seedRigs, "rigs", false, "Only seed rig registry config beads")
 	configSeedCmd.Flags().BoolVar(&seedForce, "force", false, "Overwrite existing config beads")
 
 	configCmd.AddCommand(configSeedCmd)
@@ -58,7 +64,7 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 	bd := beads.New(townRoot)
 
 	// If no specific flags, seed everything
-	seedAll := !seedHooks && !seedMCP
+	seedAll := !seedHooks && !seedMCP && !seedRigs
 
 	var created, skipped, updated int
 
@@ -76,6 +82,16 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 		c, s, u, err := seedMCPBeads(bd)
 		if err != nil {
 			return fmt.Errorf("seeding MCP beads: %w", err)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	if seedAll || seedRigs {
+		c, s, u, err := seedRigRegistryBeads(bd, townRoot)
+		if err != nil {
+			return fmt.Errorf("seeding rig registry beads: %w", err)
 		}
 		created += c
 		skipped += s
@@ -287,6 +303,91 @@ func createOrSkipConfigBead(bd *beads.Beads, slug, category, rig, role, agent st
 
 	fmt.Printf("  %s %s %s (%s)\n", style.Success.Render("✓"), action, id, description)
 	return 1, 0, 0, nil
+}
+
+// seedRigRegistryBeads creates config beads for each rig in the registry.
+// For each rig, it creates:
+//   - hq-cfg-rig-<town>-<rigName>: from rigs.json entry (registry metadata)
+//   - hq-cfg-rigcfg-<town>-<rigName>: from rig/config.json (rig identity)
+func seedRigRegistryBeads(bd *beads.Beads, townRoot string) (created, skipped, updated int, err error) {
+	// Load town config to get town name
+	townCfg, err := config.LoadTownConfig(filepath.Join(townRoot, "mayor", "town.json"))
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("loading town config: %w", err)
+	}
+	townName := townCfg.Name
+
+	// Load rigs registry
+	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
+	rigsCfg, err := config.LoadRigsConfig(rigsConfigPath)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("loading rigs config: %w", err)
+	}
+
+	for rigName, entry := range rigsCfg.Rigs {
+		rigScope := townName + "/" + rigName
+
+		// 1. Create rig registry bead from rigs.json entry
+		slug := "rig-" + townName + "-" + rigName
+		metadata := map[string]interface{}{
+			"git_url":   entry.GitURL,
+			"local_repo": entry.LocalRepo,
+			"added_at":  entry.AddedAt,
+		}
+		if entry.BeadsConfig != nil {
+			metadata["beads"] = map[string]interface{}{
+				"repo":   entry.BeadsConfig.Repo,
+				"prefix": entry.BeadsConfig.Prefix,
+			}
+		}
+
+		desc := fmt.Sprintf("Rig registry entry for %s", rigName)
+		c, s, u, seedErr := createOrSkipConfigBead(bd, slug, beads.ConfigCategoryRigRegistry,
+			rigScope, "", "", metadata, desc)
+		if seedErr != nil {
+			return created, skipped, updated, fmt.Errorf("seeding rig %s: %w", rigName, seedErr)
+		}
+		created += c
+		skipped += s
+		updated += u
+
+		// 2. Create per-rig config bead from rig/config.json (if it exists)
+		rigConfigPath := filepath.Join(townRoot, rigName, "config.json")
+		if _, statErr := os.Stat(rigConfigPath); statErr == nil {
+			rigCfg, loadErr := config.LoadRigConfig(rigConfigPath)
+			if loadErr != nil {
+				fmt.Printf("  %s Skipping rigcfg for %s: %v\n", style.Warning.Render("!"), rigName, loadErr)
+				continue
+			}
+
+			rigcfgSlug := "rigcfg-" + townName + "-" + rigName
+			rigcfgMetadata := map[string]interface{}{
+				"type":    rigCfg.Type,
+				"name":    rigCfg.Name,
+				"git_url": rigCfg.GitURL,
+			}
+			if rigCfg.LocalRepo != "" {
+				rigcfgMetadata["local_repo"] = rigCfg.LocalRepo
+			}
+			if rigCfg.Beads != nil {
+				rigcfgMetadata["beads"] = map[string]interface{}{
+					"prefix": rigCfg.Beads.Prefix,
+				}
+			}
+
+			rigcfgDesc := fmt.Sprintf("Rig config for %s", rigName)
+			c, s, u, seedErr = createOrSkipConfigBead(bd, rigcfgSlug, beads.ConfigCategoryRigRegistry,
+				rigScope, "", "", rigcfgMetadata, rigcfgDesc)
+			if seedErr != nil {
+				return created, skipped, updated, fmt.Errorf("seeding rigcfg %s: %w", rigName, seedErr)
+			}
+			created += c
+			skipped += s
+			updated += u
+		}
+	}
+
+	return created, skipped, updated, nil
 }
 
 // extractHooksMap extracts the "hooks" key from a settings map.

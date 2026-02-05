@@ -3742,3 +3742,203 @@ func TestBuildStartupCommandWithAgentOverride_NoGTAgentWhenNoOverride(t *testing
 		t.Errorf("expected no GT_AGENT in command when no override, got: %q", cmd)
 	}
 }
+
+func TestLoadRigsConfigFromBeads(t *testing.T) {
+	t.Parallel()
+
+	entries := []RigBeadEntry{
+		{
+			BeadID:   "hq-cfg-rig-testtown-gastown",
+			Metadata: `{"git_url":"https://github.com/example/gastown.git","local_repo":"","added_at":"2026-01-22T01:45:00Z","beads":{"repo":"local","prefix":"gt"}}`,
+		},
+		{
+			BeadID:   "hq-cfg-rig-testtown-beads",
+			Metadata: `{"git_url":"https://github.com/example/beads.git","local_repo":"","added_at":"2026-01-22T07:30:00Z","beads":{"repo":"","prefix":"bd"}}`,
+		},
+	}
+
+	cfg, err := LoadRigsConfigFromBeads(entries, "testtown")
+	if err != nil {
+		t.Fatalf("LoadRigsConfigFromBeads: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+
+	if len(cfg.Rigs) != 2 {
+		t.Errorf("expected 2 rigs, got %d", len(cfg.Rigs))
+	}
+
+	gastown, ok := cfg.Rigs["gastown"]
+	if !ok {
+		t.Fatal("expected gastown rig")
+	}
+	if gastown.GitURL != "https://github.com/example/gastown.git" {
+		t.Errorf("gastown GitURL = %q", gastown.GitURL)
+	}
+	if gastown.BeadsConfig == nil || gastown.BeadsConfig.Prefix != "gt" {
+		t.Errorf("gastown beads prefix mismatch")
+	}
+
+	beadsRig, ok := cfg.Rigs["beads"]
+	if !ok {
+		t.Fatal("expected beads rig")
+	}
+	if beadsRig.GitURL != "https://github.com/example/beads.git" {
+		t.Errorf("beads GitURL = %q", beadsRig.GitURL)
+	}
+}
+
+func TestLoadRigsConfigFromBeads_SkipsRigcfg(t *testing.T) {
+	t.Parallel()
+
+	entries := []RigBeadEntry{
+		{
+			BeadID:   "hq-cfg-rig-testtown-gastown",
+			Metadata: `{"git_url":"https://github.com/example/gastown.git","added_at":"2026-01-22T01:45:00Z"}`,
+		},
+		{
+			BeadID:   "hq-cfg-rigcfg-testtown-gastown",
+			Metadata: `{"type":"rig","name":"gastown","git_url":"https://github.com/example/gastown.git"}`,
+		},
+	}
+
+	cfg, err := LoadRigsConfigFromBeads(entries, "testtown")
+	if err != nil {
+		t.Fatalf("LoadRigsConfigFromBeads: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+	if len(cfg.Rigs) != 1 {
+		t.Errorf("expected 1 rig (rigcfg should be skipped), got %d", len(cfg.Rigs))
+	}
+}
+
+func TestLoadRigsConfigFromBeads_Empty(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := LoadRigsConfigFromBeads(nil, "testtown")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg != nil {
+		t.Errorf("expected nil config for empty entries, got %+v", cfg)
+	}
+}
+
+func TestLoadRigsConfigFromBeads_MalformedMetadata(t *testing.T) {
+	t.Parallel()
+
+	entries := []RigBeadEntry{
+		{
+			BeadID:   "hq-cfg-rig-testtown-broken",
+			Metadata: `{invalid json`,
+		},
+		{
+			BeadID:   "hq-cfg-rig-testtown-good",
+			Metadata: `{"git_url":"https://github.com/example/good.git","added_at":"2026-01-22T01:45:00Z"}`,
+		},
+	}
+
+	cfg, err := LoadRigsConfigFromBeads(entries, "testtown")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
+	}
+	if len(cfg.Rigs) != 1 {
+		t.Errorf("expected 1 rig (malformed should be skipped), got %d", len(cfg.Rigs))
+	}
+	if _, ok := cfg.Rigs["good"]; !ok {
+		t.Error("expected 'good' rig to be present")
+	}
+}
+
+func TestExtractRigNameFromBeadID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		beadID   string
+		townName string
+		want     string
+	}{
+		{"hq-cfg-rig-gt11-gastown", "gt11", "gastown"},
+		{"hq-cfg-rig-gt11-beads", "gt11", "beads"},
+		{"hq-cfg-rig-gt11-fics_helm_chart", "gt11", "fics_helm_chart"},
+		{"hq-cfg-rigcfg-gt11-gastown", "gt11", ""}, // not a rig- bead
+		{"hq-cfg-rig-other-gastown", "gt11", ""},    // wrong town
+		{"random-id", "gt11", ""},                     // not a rig bead at all
+	}
+
+	for _, tt := range tests {
+		got := extractRigNameFromBeadID(tt.beadID, tt.townName)
+		if got != tt.want {
+			t.Errorf("extractRigNameFromBeadID(%q, %q) = %q, want %q", tt.beadID, tt.townName, got, tt.want)
+		}
+	}
+}
+
+func TestLoadRigsConfigWithFallback_BeadsFirst(t *testing.T) {
+	t.Parallel()
+
+	entries := []RigBeadEntry{
+		{
+			BeadID:   "hq-cfg-rig-testtown-frombeads",
+			Metadata: `{"git_url":"https://beads.example.com/frombeads.git","added_at":"2026-01-22T01:45:00Z"}`,
+		},
+	}
+
+	// Create a filesystem fallback that should NOT be used
+	dir := t.TempDir()
+	rigsPath := filepath.Join(dir, "mayor", "rigs.json")
+	fsCfg := &RigsConfig{
+		Version: 1,
+		Rigs: map[string]RigEntry{
+			"fromfs": {GitURL: "https://fs.example.com/fromfs.git"},
+		},
+	}
+	if err := SaveRigsConfig(rigsPath, fsCfg); err != nil {
+		t.Fatalf("SaveRigsConfig: %v", err)
+	}
+
+	cfg, err := LoadRigsConfigWithFallback(entries, "testtown", dir)
+	if err != nil {
+		t.Fatalf("LoadRigsConfigWithFallback: %v", err)
+	}
+
+	// Should use beads, not filesystem
+	if _, ok := cfg.Rigs["frombeads"]; !ok {
+		t.Error("expected 'frombeads' rig from beads source")
+	}
+	if _, ok := cfg.Rigs["fromfs"]; ok {
+		t.Error("unexpected 'fromfs' rig - should have used beads source")
+	}
+}
+
+func TestLoadRigsConfigWithFallback_FallsBackToFilesystem(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	rigsPath := filepath.Join(dir, "mayor", "rigs.json")
+	fsCfg := &RigsConfig{
+		Version: 1,
+		Rigs: map[string]RigEntry{
+			"fromfs": {GitURL: "https://fs.example.com/fromfs.git"},
+		},
+	}
+	if err := SaveRigsConfig(rigsPath, fsCfg); err != nil {
+		t.Fatalf("SaveRigsConfig: %v", err)
+	}
+
+	// Pass empty entries to trigger fallback
+	cfg, err := LoadRigsConfigWithFallback(nil, "testtown", dir)
+	if err != nil {
+		t.Fatalf("LoadRigsConfigWithFallback: %v", err)
+	}
+
+	if _, ok := cfg.Rigs["fromfs"]; !ok {
+		t.Error("expected 'fromfs' rig from filesystem fallback")
+	}
+}
