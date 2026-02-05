@@ -779,6 +779,65 @@ func TestOpenCodeRuntimeConfigFromPreset(t *testing.T) {
 	}
 }
 
+func TestMergeAgentPresets(t *testing.T) {
+	t.Parallel()
+
+	// Reset registry for isolation
+	ResetRegistryForTesting()
+	defer ResetRegistryForTesting()
+
+	// Verify claude exists as builtin
+	claude := GetAgentPreset(AgentClaude)
+	if claude == nil {
+		t.Fatal("expected claude builtin preset")
+	}
+
+	// Merge a custom preset
+	custom := map[string]*AgentPresetInfo{
+		"my-custom": {
+			Name:    "my-custom",
+			Command: "custom-cli",
+			Args:    []string{"--auto"},
+		},
+	}
+	MergeAgentPresets(custom)
+
+	// Verify custom was added
+	info := GetAgentPresetByName("my-custom")
+	if info == nil {
+		t.Fatal("expected my-custom preset after MergeAgentPresets")
+	}
+	if info.Command != "custom-cli" {
+		t.Errorf("command = %q, want custom-cli", info.Command)
+	}
+	if len(info.Args) != 1 || info.Args[0] != "--auto" {
+		t.Errorf("args = %v, want [--auto]", info.Args)
+	}
+
+	// Verify builtin still exists
+	claude = GetAgentPreset(AgentClaude)
+	if claude == nil {
+		t.Fatal("expected claude builtin to survive MergeAgentPresets")
+	}
+
+	// Merge an override for claude
+	override := map[string]*AgentPresetInfo{
+		"claude": {
+			Command: "claude-custom",
+			Args:    []string{"--custom-flag"},
+		},
+	}
+	MergeAgentPresets(override)
+
+	claude = GetAgentPreset(AgentClaude)
+	if claude == nil {
+		t.Fatal("expected claude preset after override")
+	}
+	if claude.Command != "claude-custom" {
+		t.Errorf("command = %q, want claude-custom", claude.Command)
+	}
+}
+
 func TestLoadAgentPresetsFromBeads_EmptyLayers(t *testing.T) {
 	t.Parallel()
 	presets, roleAgents, err := LoadAgentPresetsFromBeads(nil)

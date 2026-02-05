@@ -565,6 +565,19 @@ func LoadAgentPresetsFromBeads(metadataLayers []string) (map[string]*AgentPreset
 	return presets, roleAgents, nil
 }
 
+// MergeAgentPresets merges the given presets into the global agent registry.
+// User-defined presets override built-in presets with the same name.
+// This is used by configbeads to inject beads-loaded presets.
+func MergeAgentPresets(presets map[string]*AgentPresetInfo) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	initRegistryLocked()
+	for name, preset := range presets {
+		preset.Name = AgentPreset(name)
+		globalRegistry.Agents[name] = preset
+	}
+}
+
 // ResetRegistryForTesting clears all registry state.
 // This is intended for use in tests only to ensure test isolation.
 func ResetRegistryForTesting() {
