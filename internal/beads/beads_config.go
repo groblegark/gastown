@@ -496,6 +496,28 @@ func configScopeScore(issue *Issue, town, rig, role, agent string) int {
 	return -1 // Does not match this scope
 }
 
+// ResolveConfigMetadata queries config beads for a category and scope, returning
+// the raw metadata JSON strings in merge order (least-specific to most-specific).
+// This is designed for callers that need to pass metadata to materialization
+// functions without importing both beads and the target package.
+//
+// Returns nil (not error) if no config beads are found.
+func (b *Beads) ResolveConfigMetadata(category, town, rig, role, agent string) ([]string, error) {
+	_, fields, err := b.ListConfigBeadsForScope(category, town, rig, role, agent)
+	if err != nil {
+		return nil, err
+	}
+
+	var layers []string
+	for _, f := range fields {
+		if f.Metadata != "" {
+			layers = append(layers, f.Metadata)
+		}
+	}
+
+	return layers, nil
+}
+
 // hasLabelPrefix checks if an issue has any label starting with the given prefix.
 func hasLabelPrefix(issue *Issue, prefix string) bool {
 	for _, l := range issue.Labels {

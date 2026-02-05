@@ -7,316 +7,510 @@ import (
 	"testing"
 )
 
-func TestMergeHooksConfig_Empty(t *testing.T) {
-	result, err := MergeHooksConfig(nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result) != 0 {
-		t.Fatalf("expected empty map, got %v", result)
-	}
-}
-
-func TestMergeHooksConfig_SinglePayload(t *testing.T) {
-	payloads := []string{
-		`{"editorMode":"normal","hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"gt prime"}]}]}}`,
-	}
-
-	result, err := MergeHooksConfig(payloads)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if result["editorMode"] != "normal" {
-		t.Errorf("expected editorMode=normal, got %v", result["editorMode"])
-	}
-
-	hooks, ok := result["hooks"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected hooks to be map, got %T", result["hooks"])
-	}
-
-	sessionStart, ok := hooks["SessionStart"].([]interface{})
-	if !ok {
-		t.Fatalf("expected SessionStart to be array, got %T", hooks["SessionStart"])
-	}
-	if len(sessionStart) != 1 {
-		t.Errorf("expected 1 SessionStart hook, got %d", len(sessionStart))
-	}
-}
-
-func TestMergeHooksConfig_TopLevelOverride(t *testing.T) {
-	payloads := []string{
-		`{"editorMode":"normal"}`,
-		`{"editorMode":"vim"}`,
-	}
-
-	result, err := MergeHooksConfig(payloads)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if result["editorMode"] != "vim" {
-		t.Errorf("expected editorMode=vim (more specific wins), got %v", result["editorMode"])
-	}
-}
-
-func TestMergeHooksConfig_HookArrayAppend(t *testing.T) {
-	payloads := []string{
-		`{"hooks":{"PreCompact":[{"matcher":"","hooks":[{"type":"command","command":"A"}]}]}}`,
-		`{"hooks":{"PreCompact":[{"matcher":"","hooks":[{"type":"command","command":"B"}]}]}}`,
-	}
-
-	result, err := MergeHooksConfig(payloads)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	hooks := result["hooks"].(map[string]interface{})
-	preCompact := hooks["PreCompact"].([]interface{})
-	if len(preCompact) != 2 {
-		t.Errorf("expected 2 PreCompact hooks (append), got %d", len(preCompact))
-	}
-}
-
-func TestMergeHooksConfig_NullSuppressesTopLevel(t *testing.T) {
-	payloads := []string{
-		`{"editorMode":"normal","enabledPlugins":{"foo":true}}`,
-		`{"enabledPlugins":null}`,
-	}
-
-	result, err := MergeHooksConfig(payloads)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if result["editorMode"] != "normal" {
-		t.Errorf("expected editorMode=normal, got %v", result["editorMode"])
-	}
-	if _, exists := result["enabledPlugins"]; exists {
-		t.Error("expected enabledPlugins to be suppressed by null")
-	}
-}
-
-func TestMergeHooksConfig_NullSuppressesHookType(t *testing.T) {
-	payloads := []string{
-		`{"hooks":{"PostToolUse":[{"matcher":"","hooks":[{"type":"command","command":"A"}]}],"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"B"}]}]}}`,
-		`{"hooks":{"PostToolUse":null}}`,
-	}
-
-	result, err := MergeHooksConfig(payloads)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	hooks := result["hooks"].(map[string]interface{})
-
-	if _, exists := hooks["PostToolUse"]; exists {
-		t.Error("expected PostToolUse to be suppressed by null")
-	}
-
-	// SessionStart should survive
-	if _, exists := hooks["SessionStart"]; !exists {
-		t.Error("expected SessionStart to survive null suppression of PostToolUse")
-	}
-}
-
-func TestMergeHooksConfig_MultipleHookTypes(t *testing.T) {
-	payloads := []string{
-		`{"hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"A"}]}]}}`,
-		`{"hooks":{"PreCompact":[{"matcher":"","hooks":[{"type":"command","command":"B"}]}]}}`,
-	}
-
-	result, err := MergeHooksConfig(payloads)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	hooks := result["hooks"].(map[string]interface{})
-	if _, exists := hooks["SessionStart"]; !exists {
-		t.Error("expected SessionStart from first payload")
-	}
-	if _, exists := hooks["PreCompact"]; !exists {
-		t.Error("expected PreCompact from second payload")
-	}
-}
-
-func TestMergeHooksConfig_InvalidJSON(t *testing.T) {
-	payloads := []string{`not valid json`}
-
-	_, err := MergeHooksConfig(payloads)
-	if err == nil {
-		t.Fatal("expected error for invalid JSON")
-	}
-}
-
-func TestMergeHooksConfig_EmptyPayloadsSkipped(t *testing.T) {
-	payloads := []string{
-		"",
-		`{"editorMode":"normal"}`,
-		"",
-	}
-
-	result, err := MergeHooksConfig(payloads)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if result["editorMode"] != "normal" {
-		t.Errorf("expected editorMode=normal, got %v", result["editorMode"])
-	}
-}
-
-func TestMergeHooksConfig_FullScenario(t *testing.T) {
-	// Simulates: global base → rig override → role append
-	payloads := []string{
-		// Global base
-		`{"editorMode":"normal","hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"gt prime"}]}],"PostToolUse":[{"matcher":"","hooks":[{"type":"command","command":"gt drain"}]}]}}`,
-		// Rig override: change editorMode, add PreCompact
-		`{"editorMode":"vim","hooks":{"PreCompact":[{"matcher":"","hooks":[{"type":"command","command":"gt prime --hook"}]}]}}`,
-		// Role: suppress PostToolUse, append to SessionStart
-		`{"hooks":{"PostToolUse":null,"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"gt mail check"}]}]}}`,
-	}
-
-	result, err := MergeHooksConfig(payloads)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// editorMode should be "vim" (rig override)
-	if result["editorMode"] != "vim" {
-		t.Errorf("expected editorMode=vim, got %v", result["editorMode"])
-	}
-
-	hooks := result["hooks"].(map[string]interface{})
-
-	// SessionStart should have 2 entries (global + role append)
-	sessionStart := hooks["SessionStart"].([]interface{})
-	if len(sessionStart) != 2 {
-		t.Errorf("expected 2 SessionStart hooks, got %d", len(sessionStart))
-	}
-
-	// PostToolUse should be suppressed (role null)
-	if _, exists := hooks["PostToolUse"]; exists {
-		t.Error("expected PostToolUse to be suppressed")
-	}
-
-	// PreCompact should exist (rig addition)
-	if _, exists := hooks["PreCompact"]; !exists {
-		t.Error("expected PreCompact from rig layer")
-	}
-}
-
-func TestMaterializeSettings_FallbackWhenEmpty(t *testing.T) {
-	dir := t.TempDir()
-
-	err := MaterializeSettings(dir, "polecat", nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Should have created settings from embedded template
-	settingsPath := filepath.Join(dir, ".claude", "settings.json")
-	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-		t.Fatal("expected settings.json to be created via fallback")
-	}
-}
-
-func TestMaterializeSettings_WritesFromPayloads(t *testing.T) {
-	dir := t.TempDir()
-
-	payloads := []string{
-		`{"editorMode":"normal","hooks":{"SessionStart":[{"matcher":"","hooks":[{"type":"command","command":"test"}]}]}}`,
-	}
-
-	err := MaterializeSettings(dir, "polecat", payloads)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	settingsPath := filepath.Join(dir, ".claude", "settings.json")
-	data, err := os.ReadFile(settingsPath)
-	if err != nil {
-		t.Fatalf("reading settings.json: %v", err)
-	}
-
-	var settings map[string]interface{}
-	if err := json.Unmarshal(data, &settings); err != nil {
-		t.Fatalf("parsing settings.json: %v", err)
-	}
-
-	if settings["editorMode"] != "normal" {
-		t.Errorf("expected editorMode=normal, got %v", settings["editorMode"])
-	}
-}
-
-func TestMaterializeSettings_OverwritesExisting(t *testing.T) {
-	dir := t.TempDir()
-
-	// Write initial settings
-	claudeDir := filepath.Join(dir, ".claude")
-	os.MkdirAll(claudeDir, 0755)
-	os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(`{"old":"value"}`), 0600)
-
-	// Materialize should overwrite when payloads provided
-	payloads := []string{`{"editorMode":"new"}`}
-	err := MaterializeSettings(dir, "polecat", payloads)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	data, err := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
-	if err != nil {
-		t.Fatalf("reading settings.json: %v", err)
-	}
-
-	var settings map[string]interface{}
-	json.Unmarshal(data, &settings)
-
-	if settings["editorMode"] != "new" {
-		t.Errorf("expected editorMode=new, got %v", settings["editorMode"])
-	}
-	if _, exists := settings["old"]; exists {
-		t.Error("expected old settings to be replaced")
-	}
-}
-
-func TestWriteSettings(t *testing.T) {
-	dir := t.TempDir()
-
-	settings := map[string]interface{}{
-		"editorMode": "normal",
-		"hooks": map[string]interface{}{
-			"SessionStart": []interface{}{
-				map[string]interface{}{
-					"matcher": "",
-					"hooks": []interface{}{
-						map[string]interface{}{
-							"type":    "command",
-							"command": "gt prime",
-						},
-					},
-				},
+func TestMergeMCPConfig_GlobalOnly(t *testing.T) {
+	base := make(map[string]interface{})
+	layer := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"playwright": map[string]interface{}{
+				"command": "npx",
+				"args":    []interface{}{"-y", "@playwright/mcp@latest"},
 			},
 		},
 	}
 
-	err := WriteSettings(dir, settings)
+	MergeMCPConfig(base, layer)
+
+	servers, ok := base["mcpServers"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected mcpServers map")
+	}
+	if _, ok := servers["playwright"]; !ok {
+		t.Error("expected playwright server")
+	}
+}
+
+func TestMergeMCPConfig_AddServer(t *testing.T) {
+	base := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"playwright": map[string]interface{}{
+				"command": "npx",
+				"args":    []interface{}{"-y", "@playwright/mcp@latest"},
+			},
+		},
+	}
+	layer := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"custom-server": map[string]interface{}{
+				"command": "/usr/local/bin/custom",
+				"args":    []interface{}{"--flag"},
+			},
+		},
+	}
+
+	MergeMCPConfig(base, layer)
+
+	servers := base["mcpServers"].(map[string]interface{})
+	if len(servers) != 2 {
+		t.Errorf("expected 2 servers, got %d", len(servers))
+	}
+	if _, ok := servers["playwright"]; !ok {
+		t.Error("expected playwright server to be preserved")
+	}
+	if _, ok := servers["custom-server"]; !ok {
+		t.Error("expected custom-server to be added")
+	}
+}
+
+func TestMergeMCPConfig_OverrideServer(t *testing.T) {
+	base := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"playwright": map[string]interface{}{
+				"command": "npx",
+				"args":    []interface{}{"-y", "@playwright/mcp@latest"},
+			},
+		},
+	}
+	layer := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"playwright": map[string]interface{}{
+				"command": "/custom/playwright",
+				"args":    []interface{}{"--custom-flag"},
+			},
+		},
+	}
+
+	MergeMCPConfig(base, layer)
+
+	servers := base["mcpServers"].(map[string]interface{})
+	pw := servers["playwright"].(map[string]interface{})
+	if pw["command"] != "/custom/playwright" {
+		t.Errorf("expected overridden command, got %v", pw["command"])
+	}
+}
+
+func TestMergeMCPConfig_RemoveServer(t *testing.T) {
+	base := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"playwright": map[string]interface{}{
+				"command": "npx",
+			},
+			"other": map[string]interface{}{
+				"command": "other",
+			},
+		},
+	}
+	layer := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"playwright": nil, // Remove playwright
+		},
+	}
+
+	MergeMCPConfig(base, layer)
+
+	servers := base["mcpServers"].(map[string]interface{})
+	if _, ok := servers["playwright"]; ok {
+		t.Error("expected playwright to be removed")
+	}
+	if _, ok := servers["other"]; !ok {
+		t.Error("expected other server to be preserved")
+	}
+}
+
+func TestMergeMCPConfig_RemoveViaJSONNull(t *testing.T) {
+	// Simulate what happens when JSON null is unmarshaled
+	base := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"playwright": map[string]interface{}{
+				"command": "npx",
+			},
+		},
+	}
+
+	// Unmarshal JSON with null value like config beads would produce
+	layerJSON := `{"mcpServers":{"playwright":null}}`
+	var layer map[string]interface{}
+	if err := json.Unmarshal([]byte(layerJSON), &layer); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	MergeMCPConfig(base, layer)
+
+	servers := base["mcpServers"].(map[string]interface{})
+	if _, ok := servers["playwright"]; ok {
+		t.Error("expected playwright to be removed via JSON null")
+	}
+}
+
+func TestMergeMCPConfig_NonServerKeys(t *testing.T) {
+	base := map[string]interface{}{
+		"version": "1.0",
+	}
+	layer := map[string]interface{}{
+		"version": "2.0",
+		"newKey":  "value",
+	}
+
+	MergeMCPConfig(base, layer)
+
+	if base["version"] != "2.0" {
+		t.Errorf("expected version override, got %v", base["version"])
+	}
+	if base["newKey"] != "value" {
+		t.Error("expected newKey to be added")
+	}
+}
+
+func TestMergeMCPConfig_RemoveNonServerKey(t *testing.T) {
+	base := map[string]interface{}{
+		"version": "1.0",
+		"extra":   "data",
+	}
+	layer := map[string]interface{}{
+		"extra": nil,
+	}
+
+	MergeMCPConfig(base, layer)
+
+	if _, ok := base["extra"]; ok {
+		t.Error("expected extra key to be removed")
+	}
+	if base["version"] != "1.0" {
+		t.Error("expected version to be preserved")
+	}
+}
+
+func TestMergeMCPConfig_EmptyBase(t *testing.T) {
+	base := make(map[string]interface{})
+	layer := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"playwright": map[string]interface{}{
+				"command": "npx",
+			},
+		},
+	}
+
+	MergeMCPConfig(base, layer)
+
+	servers, ok := base["mcpServers"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected mcpServers to be created")
+	}
+	if _, ok := servers["playwright"]; !ok {
+		t.Error("expected playwright server")
+	}
+}
+
+func TestMergeMCPConfig_MultipleLayersMerge(t *testing.T) {
+	// Simulate the full merge: global -> rig-specific
+	base := make(map[string]interface{})
+
+	// Layer 1: Global config
+	global := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"playwright": map[string]interface{}{
+				"command": "npx",
+				"args":    []interface{}{"-y", "@playwright/mcp@latest"},
+			},
+		},
+	}
+	MergeMCPConfig(base, global)
+
+	// Layer 2: Rig-specific adds a server and overrides playwright
+	rigLayer := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"playwright": map[string]interface{}{
+				"command": "/opt/playwright",
+			},
+			"custom-tool": map[string]interface{}{
+				"command": "/opt/custom",
+			},
+		},
+	}
+	MergeMCPConfig(base, rigLayer)
+
+	servers := base["mcpServers"].(map[string]interface{})
+	if len(servers) != 2 {
+		t.Errorf("expected 2 servers, got %d", len(servers))
+	}
+
+	pw := servers["playwright"].(map[string]interface{})
+	if pw["command"] != "/opt/playwright" {
+		t.Errorf("expected rig-override command, got %v", pw["command"])
+	}
+
+	custom := servers["custom-tool"].(map[string]interface{})
+	if custom["command"] != "/opt/custom" {
+		t.Errorf("expected custom-tool command, got %v", custom["command"])
+	}
+}
+
+func TestScopeFromEnv(t *testing.T) {
+	// Save and restore environment
+	envVars := []string{"GT_TOWN_ROOT", "GT_RIG", "GT_ROLE", "GT_POLECAT", "GT_CREW"}
+	saved := make(map[string]string)
+	for _, v := range envVars {
+		saved[v] = os.Getenv(v)
+	}
+	t.Cleanup(func() {
+		for k, v := range saved {
+			if v == "" {
+				os.Unsetenv(k)
+			} else {
+				os.Setenv(k, v)
+			}
+		}
+	})
+
+	tests := []struct {
+		name   string
+		env    map[string]string
+		want   ConfigScope
+	}{
+		{
+			name: "polecat scope",
+			env: map[string]string{
+				"GT_TOWN_ROOT": "/home/user/gt11",
+				"GT_RIG":       "gastown",
+				"GT_ROLE":      "polecat",
+				"GT_POLECAT":   "slit",
+			},
+			want: ConfigScope{
+				Town:  "gt11",
+				Rig:   "gastown",
+				Role:  "polecat",
+				Agent: "slit",
+			},
+		},
+		{
+			name: "crew scope",
+			env: map[string]string{
+				"GT_TOWN_ROOT": "/home/user/gt11",
+				"GT_RIG":       "gastown",
+				"GT_ROLE":      "crew",
+				"GT_CREW":      "slack",
+			},
+			want: ConfigScope{
+				Town:  "gt11",
+				Rig:   "gastown",
+				Role:  "crew",
+				Agent: "slack",
+			},
+		},
+		{
+			name: "empty environment",
+			env:  map[string]string{},
+			want: ConfigScope{},
+		},
+		{
+			name: "role without agent",
+			env: map[string]string{
+				"GT_TOWN_ROOT": "/home/user/mytown",
+				"GT_RIG":       "beads",
+				"GT_ROLE":      "witness",
+			},
+			want: ConfigScope{
+				Town: "mytown",
+				Rig:  "beads",
+				Role: "witness",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear all env vars
+			for _, v := range envVars {
+				os.Unsetenv(v)
+			}
+			// Set test env vars
+			for k, v := range tt.env {
+				os.Setenv(k, v)
+			}
+
+			got := ScopeFromEnv()
+			if got != tt.want {
+				t.Errorf("ScopeFromEnv() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMaterializeMCPConfig_FallbackToTemplate(t *testing.T) {
+	// When no metadata layers are provided, should fall back to embedded template
+	workDir := t.TempDir()
+
+	err := MaterializeMCPConfig(workDir, nil)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("MaterializeMCPConfig() error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.json"))
+	mcpPath := filepath.Join(workDir, ".mcp.json")
+	data, err := os.ReadFile(mcpPath)
 	if err != nil {
-		t.Fatalf("reading settings.json: %v", err)
+		t.Fatalf("reading .mcp.json: %v", err)
 	}
 
-	var written map[string]interface{}
-	if err := json.Unmarshal(data, &written); err != nil {
-		t.Fatalf("parsing written settings: %v", err)
+	// Should contain the embedded template content
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("parsing .mcp.json: %v", err)
 	}
 
-	if written["editorMode"] != "normal" {
-		t.Errorf("expected editorMode=normal, got %v", written["editorMode"])
+	servers, ok := config["mcpServers"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected mcpServers in fallback config")
+	}
+	if _, ok := servers["playwright"]; !ok {
+		t.Error("expected playwright server in fallback config")
+	}
+}
+
+func TestMaterializeMCPConfig_WithLayers(t *testing.T) {
+	workDir := t.TempDir()
+
+	layers := []string{
+		// Global layer
+		`{"mcpServers":{"playwright":{"command":"npx","args":["-y","@playwright/mcp@latest"]}}}`,
+		// Rig-specific layer: adds custom server, overrides playwright
+		`{"mcpServers":{"playwright":{"command":"/opt/pw"},"custom":{"command":"custom-cmd"}}}`,
+	}
+
+	err := MaterializeMCPConfig(workDir, layers)
+	if err != nil {
+		t.Fatalf("MaterializeMCPConfig() error: %v", err)
+	}
+
+	mcpPath := filepath.Join(workDir, ".mcp.json")
+	data, err := os.ReadFile(mcpPath)
+	if err != nil {
+		t.Fatalf("reading .mcp.json: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("parsing .mcp.json: %v", err)
+	}
+
+	servers, ok := config["mcpServers"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected mcpServers")
+	}
+	if len(servers) != 2 {
+		t.Errorf("expected 2 servers, got %d", len(servers))
+	}
+	pw := servers["playwright"].(map[string]interface{})
+	if pw["command"] != "/opt/pw" {
+		t.Errorf("expected overridden playwright command, got %v", pw["command"])
+	}
+	if _, ok := servers["custom"]; !ok {
+		t.Error("expected custom server to be added")
+	}
+}
+
+func TestMaterializeMCPConfig_WithRemoval(t *testing.T) {
+	workDir := t.TempDir()
+
+	layers := []string{
+		// Global layer with two servers
+		`{"mcpServers":{"playwright":{"command":"npx"},"other":{"command":"other"}}}`,
+		// Rig layer removes playwright
+		`{"mcpServers":{"playwright":null}}`,
+	}
+
+	err := MaterializeMCPConfig(workDir, layers)
+	if err != nil {
+		t.Fatalf("MaterializeMCPConfig() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(workDir, ".mcp.json"))
+	if err != nil {
+		t.Fatalf("reading .mcp.json: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("parsing .mcp.json: %v", err)
+	}
+
+	servers := config["mcpServers"].(map[string]interface{})
+	if _, ok := servers["playwright"]; ok {
+		t.Error("expected playwright to be removed")
+	}
+	if _, ok := servers["other"]; !ok {
+		t.Error("expected other server to be preserved")
+	}
+}
+
+func TestMaterializeMCPConfig_EmptyMetadata(t *testing.T) {
+	workDir := t.TempDir()
+
+	// Empty strings should be skipped, resulting in fallback
+	layers := []string{"", ""}
+
+	err := MaterializeMCPConfig(workDir, layers)
+	if err != nil {
+		t.Fatalf("MaterializeMCPConfig() error: %v", err)
+	}
+
+	// Should have written the embedded template as fallback
+	data, err := os.ReadFile(filepath.Join(workDir, ".mcp.json"))
+	if err != nil {
+		t.Fatalf("reading .mcp.json: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("parsing .mcp.json: %v", err)
+	}
+
+	if _, ok := config["mcpServers"]; !ok {
+		t.Error("expected mcpServers from embedded template")
+	}
+}
+
+func TestMaterializeMCPConfig_InvalidJSON(t *testing.T) {
+	workDir := t.TempDir()
+
+	// Invalid JSON should be skipped
+	layers := []string{
+		"not json at all",
+		`{"mcpServers":{"valid":{"command":"test"}}}`,
+	}
+
+	err := MaterializeMCPConfig(workDir, layers)
+	if err != nil {
+		t.Fatalf("MaterializeMCPConfig() error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(workDir, ".mcp.json"))
+	if err != nil {
+		t.Fatalf("reading .mcp.json: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("parsing .mcp.json: %v", err)
+	}
+
+	servers := config["mcpServers"].(map[string]interface{})
+	if _, ok := servers["valid"]; !ok {
+		t.Error("expected valid server from second layer")
+	}
+}
+
+func TestMergeServers_NonMapLayer(t *testing.T) {
+	// mergeServers should handle non-map layerServers gracefully
+	base := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"existing": map[string]interface{}{"command": "test"},
+		},
+	}
+
+	// Pass a non-map value - should be a no-op
+	mergeServers(base, "not a map")
+
+	servers := base["mcpServers"].(map[string]interface{})
+	if _, ok := servers["existing"]; !ok {
+		t.Error("existing server should be preserved when layer is not a map")
 	}
 }

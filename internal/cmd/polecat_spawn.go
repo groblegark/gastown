@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/claude"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/events"
@@ -203,6 +204,20 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 
 	if accountHandle != "" {
 		fmt.Printf("Using account: %s\n", accountHandle)
+	}
+
+	// Materialize MCP config from config beads before session start.
+	// This writes .mcp.json to the polecat home dir; the session manager
+	// will skip writing the embedded template since the file already exists.
+	polecatHomeDir := filepath.Dir(polecatObj.ClonePath)
+	townBeadsDir := beads.ResolveBeadsDir(townRoot)
+	beadsForMCP := beads.NewWithBeadsDir(polecatHomeDir, townBeadsDir)
+	townName := filepath.Base(townRoot)
+	mcpLayers, _ := beadsForMCP.ResolveConfigMetadata(beads.ConfigCategoryMCP, townName, rigName, "polecat", polecatName)
+	if len(mcpLayers) > 0 {
+		if err := claude.MaterializeMCPConfig(polecatHomeDir, mcpLayers); err != nil {
+			fmt.Printf("Warning: could not materialize MCP config from beads: %v\n", err)
+		}
 	}
 
 	// Get session manager for session name (session start is deferred)

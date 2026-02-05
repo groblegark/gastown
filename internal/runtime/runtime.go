@@ -36,8 +36,10 @@ func EnsureSettingsForRoleWithAccount(workDir, role, accountConfigDir string, rc
 		if err := claude.EnsureSettingsForAccount(workDir, role, accountConfigDir); err != nil {
 			return err
 		}
-		// Also ensure .mcp.json exists for MCP server configuration (e.g., Playwright)
-		return claude.EnsureMCPConfig(workDir)
+		// Materialize .mcp.json (nil layers = fallback to embedded template).
+		// Callers with beads access can query config beads and call
+		// MaterializeMCPConfig directly with resolved metadata layers.
+		return claude.MaterializeMCPConfig(workDir, nil)
 	case "opencode":
 		return opencode.EnsurePluginAt(workDir, rc.Hooks.Dir, rc.Hooks.SettingsFile)
 	default:

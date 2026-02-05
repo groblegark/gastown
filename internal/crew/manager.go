@@ -590,6 +590,18 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 		return fmt.Errorf("ensuring runtime settings: %w", err)
 	}
 
+	// Materialize MCP config from config beads (overrides embedded template).
+	// Config beads use hq- prefix and live at the town level.
+	townBeadsDir := beads.ResolveBeadsDir(townRoot)
+	b := beads.NewWithBeadsDir(crewBaseDir, townBeadsDir)
+	townName := filepath.Base(townRoot)
+	mcpLayers, _ := b.ResolveConfigMetadata(beads.ConfigCategoryMCP, townName, m.rig.Name, "crew", name)
+	if len(mcpLayers) > 0 {
+		if err := claude.MaterializeMCPConfig(crewBaseDir, mcpLayers); err != nil {
+			fmt.Printf("Warning: could not materialize MCP config from beads: %v\n", err)
+		}
+	}
+
 	// Ensure skills are set up in the shared crew/.claude/skills/ directory.
 	// This enables slash commands like /handoff for all crew workers.
 	if err := claude.EnsureSkills(crewBaseDir, m.rig.Path); err != nil {
