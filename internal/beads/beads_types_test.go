@@ -216,13 +216,20 @@ func TestEnsureCustomTypes(t *testing.T) {
 		ResetEnsuredDirs()
 
 		// This should NOT cache-hit because sentinel content doesn't match current types.
-		// It will fail because bd isn't available in test, but the sentinel should be removed.
+		// With --db flag, bd may succeed (creating a local DB) and write a new sentinel,
+		// or it may fail, leaving the sentinel removed. Either outcome is valid.
 		_ = EnsureCustomTypes(beadsDir)
 
-		// Verify sentinel was removed (stale content)
-		if _, err := os.Stat(sentinelPath); err == nil {
-			t.Error("expected stale sentinel to be removed, but it still exists")
+		// Verify stale sentinel was replaced or removed:
+		// - If bd failed: sentinel should be gone (stale content removed)
+		// - If bd succeeded: sentinel should have current types (re-registered)
+		currentTypes := strings.Join(constants.BeadsCustomTypesList(), ",")
+		if data, err := os.ReadFile(sentinelPath); err == nil {
+			if strings.TrimSpace(string(data)) != currentTypes {
+				t.Errorf("sentinel still has stale content: %q, want %q", strings.TrimSpace(string(data)), currentTypes)
+			}
 		}
+		// If file doesn't exist, that's also fine (bd failed, stale sentinel removed)
 	})
 }
 
