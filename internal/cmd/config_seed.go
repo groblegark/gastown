@@ -20,14 +20,17 @@ import (
 )
 
 var (
-	seedDryRun    bool
-	seedHooks     bool
-	seedMCP       bool
-	seedIdentity  bool
-	seedAccounts  bool
-	seedDaemon    bool
-	seedRigs      bool
-	seedForce     bool
+	seedDryRun      bool
+	seedHooks       bool
+	seedMCP         bool
+	seedIdentity    bool
+	seedAccounts    bool
+	seedDaemon      bool
+	seedRigs        bool
+	seedSlack       bool
+	seedMessaging   bool
+	seedEscalation  bool
+	seedForce       bool
 )
 
 var configSeedCmd = &cobra.Command{
@@ -47,6 +50,9 @@ By default, seeds all config types. Use flags to seed specific types:
   gt config seed --accounts   # Only account config
   gt config seed --daemon     # Only daemon patrol config
   gt config seed --rigs       # Only rig registry
+  gt config seed --slack      # Only Slack routing config
+  gt config seed --messaging  # Only messaging config
+  gt config seed --escalation # Only escalation config
   gt config seed --dry-run    # Show what would be created
   gt config seed --force      # Overwrite existing beads`,
 	RunE: runConfigSeed,
@@ -60,6 +66,9 @@ func init() {
 	configSeedCmd.Flags().BoolVar(&seedAccounts, "accounts", false, "Only seed account config beads")
 	configSeedCmd.Flags().BoolVar(&seedDaemon, "daemon", false, "Only seed daemon patrol config beads")
 	configSeedCmd.Flags().BoolVar(&seedRigs, "rigs", false, "Only seed rig registry config beads")
+	configSeedCmd.Flags().BoolVar(&seedSlack, "slack", false, "Only seed Slack routing config beads")
+	configSeedCmd.Flags().BoolVar(&seedMessaging, "messaging", false, "Only seed messaging config beads")
+	configSeedCmd.Flags().BoolVar(&seedEscalation, "escalation", false, "Only seed escalation config beads")
 	configSeedCmd.Flags().BoolVar(&seedForce, "force", false, "Overwrite existing config beads")
 
 	configCmd.AddCommand(configSeedCmd)
@@ -74,7 +83,8 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 	bd := beads.New(townRoot)
 
 	// If no specific flags, seed everything
-	seedAll := !seedHooks && !seedMCP && !seedIdentity && !seedAccounts && !seedDaemon && !seedRigs
+	seedAll := !seedHooks && !seedMCP && !seedIdentity && !seedAccounts && !seedDaemon &&
+		!seedRigs && !seedSlack && !seedMessaging && !seedEscalation
 
 	var created, skipped, updated int
 
@@ -132,6 +142,36 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 		c, s, u, err := seedRigRegistryBeads(bd, townRoot)
 		if err != nil {
 			return fmt.Errorf("seeding rig registry beads: %w", err)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	if seedAll || seedSlack {
+		c, s, u, err := seedSlackBeads(bd, townRoot)
+		if err != nil {
+			return fmt.Errorf("seeding slack beads: %w", err)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	if seedAll || seedMessaging {
+		c, s, u, err := seedMessagingBeads(bd, townRoot)
+		if err != nil {
+			return fmt.Errorf("seeding messaging beads: %w", err)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	if seedAll || seedEscalation {
+		c, s, u, err := seedEscalationBeads(bd, townRoot)
+		if err != nil {
+			return fmt.Errorf("seeding escalation beads: %w", err)
 		}
 		created += c
 		skipped += s
@@ -557,5 +597,81 @@ func seedDaemonBeads(bd *beads.Beads, townRoot string) (created, skipped, update
 
 	return createOrSkipConfigBead(bd, "daemon-patrol", beads.ConfigCategoryDaemon,
 		"*", "", "", daemonMap, "Global daemon patrol configuration")
+}
+
+// seedSlackBeads creates a config bead for Slack routing from settings/slack.json.
+// Secrets (bot_token, app_token) are intentionally excluded from the bead metadata.
+// They stay in environment variables (SLACK_BOT_TOKEN, SLACK_APP_TOKEN).
+func seedSlackBeads(bd *beads.Beads, townRoot string) (created, skipped, updated int, err error) {
+	slackPath := filepath.Join(townRoot, "settings", "slack.json")
+	data, readErr := os.ReadFile(slackPath) //nolint:gosec // G304: path is constructed internally
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			// No slack.json exists - skip silently
+			fmt.Printf("  - Skipped slack-routing (no settings/slack.json found)\n")
+			return 0, 1, 0, nil
+		}
+		return 0, 0, 0, fmt.Errorf("reading slack config: %w", readErr)
+	}
+
+	var slackMap map[string]interface{}
+	if err := json.Unmarshal(data, &slackMap); err != nil {
+		return 0, 0, 0, fmt.Errorf("parsing slack config: %w", err)
+	}
+
+	// Remove secrets: bot_token and app_token must never go in beads
+	delete(slackMap, "bot_token")
+	delete(slackMap, "app_token")
+
+	return createOrSkipConfigBead(bd, "slack-routing", beads.ConfigCategorySlackRouting,
+		"*", "", "", slackMap, "Global Slack routing configuration")
+}
+
+// seedMessagingBeads creates a config bead for messaging configuration.
+// Reads from config/messaging.json, or uses defaults if the file doesn't exist.
+func seedMessagingBeads(bd *beads.Beads, townRoot string) (created, skipped, updated int, err error) {
+	configPath := config.MessagingConfigPath(townRoot)
+	msgConfig, loadErr := config.LoadOrCreateMessagingConfig(configPath)
+	if loadErr != nil {
+		return 0, 0, 0, fmt.Errorf("loading messaging config: %w", loadErr)
+	}
+
+	// Marshal to generic map for bead metadata storage
+	msgJSON, err := json.Marshal(msgConfig)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("marshaling messaging config: %w", err)
+	}
+
+	var msgMap map[string]interface{}
+	if err := json.Unmarshal(msgJSON, &msgMap); err != nil {
+		return 0, 0, 0, fmt.Errorf("parsing messaging config: %w", err)
+	}
+
+	return createOrSkipConfigBead(bd, "messaging", beads.ConfigCategoryMessaging,
+		"*", "", "", msgMap, "Global messaging configuration")
+}
+
+// seedEscalationBeads creates a config bead for escalation configuration.
+// Reads from settings/escalation.json, or uses defaults if the file doesn't exist.
+func seedEscalationBeads(bd *beads.Beads, townRoot string) (created, skipped, updated int, err error) {
+	configPath := config.EscalationConfigPath(townRoot)
+	escConfig, loadErr := config.LoadOrCreateEscalationConfig(configPath)
+	if loadErr != nil {
+		return 0, 0, 0, fmt.Errorf("loading escalation config: %w", loadErr)
+	}
+
+	// Marshal to generic map for bead metadata storage
+	escJSON, err := json.Marshal(escConfig)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("marshaling escalation config: %w", err)
+	}
+
+	var escMap map[string]interface{}
+	if err := json.Unmarshal(escJSON, &escMap); err != nil {
+		return 0, 0, 0, fmt.Errorf("parsing escalation config: %w", err)
+	}
+
+	return createOrSkipConfigBead(bd, "escalation", beads.ConfigCategoryEscalation,
+		"*", "", "", escMap, "Global escalation configuration")
 }
 
