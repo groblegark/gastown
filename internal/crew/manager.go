@@ -583,7 +583,10 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 	crewBaseDir := filepath.Join(m.rig.Path, "crew")
 	townRoot := filepath.Dir(m.rig.Path)
 	runtimeConfig := config.ResolveRoleAgentConfig("crew", townRoot, m.rig.Path)
-	if err := runtime.EnsureSettingsForRole(crewBaseDir, "crew", runtimeConfig); err != nil {
+
+	// Try to materialize Claude hooks from config beads first.
+	// Falls back to embedded templates if beads unavailable.
+	if err := materializeOrEnsureSettings(crewBaseDir, "crew", townRoot, m.rig.Name, name, runtimeConfig); err != nil {
 		return fmt.Errorf("ensuring runtime settings: %w", err)
 	}
 
@@ -754,5 +757,59 @@ func (m *Manager) IsRunning(name string) (bool, error) {
 	t := tmux.NewTmux()
 	sessionID := m.SessionName(name)
 	return t.HasSession(sessionID)
+}
+
+// materializeOrEnsureSettings tries to materialize Claude hooks from config beads.
+// If config beads are available, it merges them and writes settings.json.
+// If beads are unavailable or no config beads exist, falls back to the
+// existing embedded template flow via runtime.EnsureSettingsForRole.
+func materializeOrEnsureSettings(workDir, role, townRoot, rigName, agent string, rc *config.RuntimeConfig) error {
+	payloads, err := queryClaudeHooksPayloads(townRoot, rigName, role, agent)
+	if err != nil {
+		fmt.Printf("Warning: Config beads unavailable (%v), using embedded templates\n", err)
+		return runtime.EnsureSettingsForRole(workDir, role, rc)
+	}
+
+	if len(payloads) > 0 {
+		if err := claude.MaterializeSettings(workDir, role, payloads); err != nil {
+			return err
+		}
+		// Also ensure MCP config (not stored in config beads yet)
+		return claude.EnsureMCPConfig(workDir)
+	}
+
+	// No config beads found - fall back to embedded templates
+	return runtime.EnsureSettingsForRole(workDir, role, rc)
+}
+
+// queryClaudeHooksPayloads queries config beads for claude-hooks metadata payloads.
+// Returns payloads in specificity order (least specific first) for merge.
+func queryClaudeHooksPayloads(townRoot, rigName, role, agent string) ([]string, error) {
+	townCfgPath := filepath.Join(townRoot, "mayor", "town.json")
+	townCfg, err := config.LoadTownConfig(townCfgPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading town config: %w", err)
+	}
+
+	b := beads.New(townRoot)
+	_, fields, err := b.ListConfigBeadsForScope(
+		beads.ConfigCategoryClaudeHooks,
+		townCfg.Name,
+		rigName,
+		role,
+		agent,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying config beads: %w", err)
+	}
+
+	var payloads []string
+	for _, f := range fields {
+		if f.Metadata != "" {
+			payloads = append(payloads, f.Metadata)
+		}
+	}
+
+	return payloads, nil
 }
 

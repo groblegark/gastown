@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/claude"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/ratelimit"
@@ -196,8 +198,9 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	// This keeps settings out of the git worktree while allowing runtime to find them
 	// when walking up the tree from workDir (polecats/<name>/<rigname>/).
 	// Each polecat gets isolated settings rather than sharing a single settings file.
+	// Try to materialize Claude hooks from config beads first; fall back to templates.
 	polecatHomeDir := m.polecatDir(polecat)
-	if err := runtime.EnsureSettingsForRole(polecatHomeDir, "polecat", runtimeConfig); err != nil {
+	if err := polecatMaterializeOrEnsureSettings(polecatHomeDir, "polecat", m.rig.Path, m.rig.Name, polecat, runtimeConfig); err != nil {
 		return fmt.Errorf("ensuring runtime settings: %w", err)
 	}
 
@@ -584,4 +587,59 @@ func (m *SessionManager) hookIssue(issueID, agentID, workDir string) error {
 	}
 	fmt.Printf("✓ Hooked issue %s to %s\n", issueID, agentID)
 	return nil
+}
+
+// polecatMaterializeOrEnsureSettings tries to materialize Claude hooks from config beads.
+// If config beads are available, it merges them and writes settings.json.
+// If beads are unavailable or no config beads exist, falls back to the
+// existing embedded template flow via runtime.EnsureSettingsForRole.
+func polecatMaterializeOrEnsureSettings(workDir, role, rigPath, rigName, agent string, rc *config.RuntimeConfig) error {
+	townRoot := filepath.Dir(rigPath)
+	payloads, err := polecatQueryClaudeHooksPayloads(townRoot, rigName, role, agent)
+	if err != nil {
+		fmt.Printf("Warning: Config beads unavailable (%v), using embedded templates\n", err)
+		return runtime.EnsureSettingsForRole(workDir, role, rc)
+	}
+
+	if len(payloads) > 0 {
+		if err := claude.MaterializeSettings(workDir, role, payloads); err != nil {
+			return err
+		}
+		// Also ensure MCP config (not stored in config beads yet)
+		return claude.EnsureMCPConfig(workDir)
+	}
+
+	// No config beads found - fall back to embedded templates
+	return runtime.EnsureSettingsForRole(workDir, role, rc)
+}
+
+// polecatQueryClaudeHooksPayloads queries config beads for claude-hooks metadata payloads.
+// Returns payloads in specificity order (least specific first) for merge.
+func polecatQueryClaudeHooksPayloads(townRoot, rigName, role, agent string) ([]string, error) {
+	townCfgPath := filepath.Join(townRoot, "mayor", "town.json")
+	townCfg, err := config.LoadTownConfig(townCfgPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading town config: %w", err)
+	}
+
+	b := beads.New(townRoot)
+	_, fields, err := b.ListConfigBeadsForScope(
+		beads.ConfigCategoryClaudeHooks,
+		townCfg.Name,
+		rigName,
+		role,
+		agent,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying config beads: %w", err)
+	}
+
+	var payloads []string
+	for _, f := range fields {
+		if f.Metadata != "" {
+			payloads = append(payloads, f.Metadata)
+		}
+	}
+
+	return payloads, nil
 }
