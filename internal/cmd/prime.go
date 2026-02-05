@@ -699,9 +699,9 @@ func buildAgentBeadIDFromContext(ctx RoleContext, townRoot string) string {
 		return ""
 	case RolePolecat:
 		if ctx.Rig != "" && ctx.Polecat != "" {
-			// Polecat agent beads use hq- prefix for town beads (fix for gt-3d5ok.1, gt-myc)
-			townName, _ := workspace.GetTownName(townRoot)
-			return beads.PolecatBeadIDTown(townName, ctx.Rig, ctx.Polecat)
+			// Polecat agent beads use rig prefix.
+			prefix := beads.GetPrefixForRig(townRoot, ctx.Rig)
+			return beads.PolecatBeadIDWithPrefix(prefix, ctx.Rig, ctx.Polecat)
 		}
 		return ""
 	case RoleCrew:
@@ -791,9 +791,9 @@ func getAgentBeadID(ctx RoleContext) string {
 		return ""
 	case RolePolecat:
 		if ctx.Rig != "" && ctx.Polecat != "" {
-			// Polecat agent beads use hq- prefix for town beads (fix for gt-myc)
-			townName, _ := workspace.GetTownName(ctx.TownRoot)
-			return beads.PolecatBeadIDTown(townName, ctx.Rig, ctx.Polecat)
+			// Polecat agent beads use rig prefix.
+			prefix := beads.GetPrefixForRig(ctx.TownRoot, ctx.Rig)
+			return beads.PolecatBeadIDWithPrefix(prefix, ctx.Rig, ctx.Polecat)
 		}
 		return ""
 	case RoleCrew:

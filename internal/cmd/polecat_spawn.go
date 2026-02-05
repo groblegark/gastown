@@ -215,10 +215,10 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 	// Polecats are single-task workers - we must not queue work behind existing work.
 	// If busy, kill the existing session and start fresh.
 	if running {
-		townName, _ := workspace.GetTownName(townRoot)
-		agentBeadID := beads.PolecatBeadIDTown(townName, rigName, polecatName)
-		townBeadsClient := beads.New(townRoot)
-		if agentBead, showErr := townBeadsClient.Show(agentBeadID); showErr == nil {
+		prefix := beads.GetPrefixForRig(townRoot, rigName)
+		agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
+		beadsClient := beads.New(townRoot)
+		if agentBead, showErr := beadsClient.Show(agentBeadID); showErr == nil {
 			if agentBead.HookBead != "" && agentBead.HookBead != opts.HookBead {
 				// Polecat has different hooked work - it's busy
 				fmt.Printf("  Polecat %s has hooked work (%s), killing stale session...\n",
@@ -515,13 +515,13 @@ func verifySpawnedPolecat(clonePath, sessionName string, t *tmux.Tmux) error {
 // verifyAndSetHookBead verifies the agent bead has hook_bead set, and retries if not.
 // This fixes bd-3q6.8-1 where the slot set in CreateOrReopenAgentBead may fail silently.
 func verifyAndSetHookBead(townRoot, rigName, polecatName, hookBead string) error {
-	// Agent bead uses hq- prefix and is stored in town beads
-	townName, _ := workspace.GetTownName(townRoot)
-	agentBeadID := beads.PolecatBeadIDTown(townName, rigName, polecatName)
+	// Agent bead uses rig prefix and is stored in rig beads
+	prefix := beads.GetPrefixForRig(townRoot, rigName)
+	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
 
-	// Read the agent bead from town beads
-	townBeadsClient := beads.New(townRoot)
-	agentIssue, err := townBeadsClient.Show(agentBeadID)
+	// Read the agent bead
+	beadsClient := beads.New(townRoot)
+	agentIssue, err := beadsClient.Show(agentBeadID)
 	if err != nil {
 		return fmt.Errorf("reading agent bead %s: %w", agentBeadID, err)
 	}
@@ -533,7 +533,7 @@ func verifyAndSetHookBead(townRoot, rigName, polecatName, hookBead string) error
 
 	// Hook not set or set to wrong value - retry setting it
 	fmt.Printf("  Retrying hook_bead set for %s...\n", agentBeadID)
-	if err := townBeadsClient.SetHookBead(agentBeadID, hookBead); err != nil {
+	if err := beadsClient.SetHookBead(agentBeadID, hookBead); err != nil {
 		return fmt.Errorf("retrying hook_bead set: %w", err)
 	}
 

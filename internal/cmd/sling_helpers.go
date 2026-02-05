@@ -512,7 +512,7 @@ func agentIDToBeadID(agentID, townRoot string) string {
 	case len(parts) == 3 && parts[1] == "crew":
 		return beads.CrewBeadIDTown(townName, rig, parts[2])
 	case len(parts) == 3 && parts[1] == "polecats":
-		return beads.PolecatBeadIDTown(townName, rig, parts[2])
+		return beads.PolecatBeadIDWithPrefix(prefix, rig, parts[2])
 	case len(parts) == 3 && parts[0] == "deacon" && parts[1] == "dogs":
 		// Dogs are town-level agents with hq- prefix
 		return beads.DogBeadIDTown(parts[2])

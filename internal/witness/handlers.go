@@ -99,9 +99,8 @@ func HandlePolecatDone(workDir, rigName string, msg *mail.Message) *HandlerResul
 		// This fixes bd-bug-gt_polecat_nuke_blocks_clean_polecats.
 		townRoot, _ := workspace.Find(workDir)
 		if townRoot != "" {
-			townName, _ := workspace.GetTownName(townRoot)
-			agentBeadID := beads.PolecatBeadIDTown(townName, rigName, payload.PolecatName)
-			// Use town root for beads client since agent beads use hq- prefix (town-level storage)
+			prefix := beads.GetPrefixForRig(townRoot, rigName)
+			agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, payload.PolecatName)
 			bd := beads.New(townRoot)
 			if err := bd.ClearHookBead(agentBeadID); err != nil {
 				// Log but don't fail - clearing hook is non-fatal
@@ -512,11 +511,10 @@ type agentBeadResponse struct {
 // ZFC #10: This enables the Witness to verify it's safe to nuke before proceeding.
 // The polecat self-reports its git state when running `gt done`, and we trust that report.
 func getCleanupStatus(workDir, rigName, polecatName string) string {
-	// Construct agent bead ID using hq- prefix for town-level storage (fix for gt-myc).
-	// All polecat agent beads are stored in town beads with hq- prefix to match manager.go.
+	// Construct agent bead ID using rig prefix for rig-level storage.
 	townRoot, _ := workspace.Find(workDir)
-	townName, _ := workspace.GetTownName(townRoot)
-	agentBeadID := beads.PolecatBeadIDTown(townName, rigName, polecatName)
+	prefix := beads.GetPrefixForRig(townRoot, rigName)
+	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
 
 	output, err := util.ExecWithOutput(workDir, "bd", "show", agentBeadID, "--json")
 	if err != nil {
@@ -951,9 +949,8 @@ func RespawnPolecatWithHookedWork(workDir, rigName, polecatName string) error {
 	mgr := polecat.NewManager(r, g, t)
 
 	// Get the hook_bead from the agent bead.
-	// All polecat agent beads use hq- prefix and are stored in town beads (fix for gt-myc).
-	townName, _ := workspace.GetTownName(townRoot)
-	agentBeadID := beads.PolecatBeadIDTown(townName, rigName, polecatName)
+	prefix := beads.GetPrefixForRig(townRoot, rigName)
+	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
 	bd := beads.New(rigPath)
 	_, fields, err := bd.GetAgentBead(agentBeadID)
 	if err != nil || fields == nil {

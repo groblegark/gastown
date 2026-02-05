@@ -135,7 +135,11 @@ func CrewBeadIDTown(town, rig, name string) string {
 // PolecatBeadIDTown returns a Polecat agent bead ID for town-level storage.
 // Uses hq- prefix with town name for multi-town support.
 // If town is empty, omits the town component to avoid double hyphens.
-// This is the recommended function for creating polecat agent beads.
+//
+// Deprecated: Use PolecatBeadIDWithPrefix() for rig-level beads.
+// Town-level polecat beads were an over-engineering from loc-1augh.
+// Polecats should use their rig's configured prefix for consistency with
+// witness, refinery, and crew agents.
 func PolecatBeadIDTown(town, rig, name string) string {
 	if town == "" {
 		return fmt.Sprintf("%s-%s-polecat-%s", TownBeadsPrefix, rig, name)
@@ -143,9 +147,9 @@ func PolecatBeadIDTown(town, rig, name string) string {
 	return fmt.Sprintf("%s-%s-%s-polecat-%s", TownBeadsPrefix, town, rig, name)
 }
 
-// ===== Legacy rig-level agent bead ID helpers (gt- prefix) =====
-// NOTE: These functions generate IDs with rig prefixes and are kept for backward compatibility.
-// New code should use the *Town() variants above which store agent beads in town beads.
+// ===== Rig-level agent bead ID helpers (with configurable prefix) =====
+// These are the recommended functions for rig-scoped agents (witness, refinery, crew, polecat).
+// They use the rig's configured prefix (e.g., "gt" for gastown, "bd" for beads).
 
 // Agent bead ID naming convention:
 //   prefix-rig-role-name

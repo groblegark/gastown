@@ -129,7 +129,7 @@ func TestHandlePolecatDone_ClearsHookBead(t *testing.T) {
 	polecatName := "testnux"
 
 	// Create agent bead ID using town-level format
-	agentBeadID := beads.PolecatBeadIDTown("testtown", rigName, polecatName)
+	agentBeadID := beads.PolecatBeadIDWithPrefix("gt", rigName, polecatName)
 	t.Logf("Agent bead ID: %s", agentBeadID)
 
 	// Create a task bead to hook
@@ -218,7 +218,7 @@ func TestHandlePolecatDone_SetsMergeRequestedState(t *testing.T) {
 	polecatName := "testnux"
 
 	// Create agent bead
-	agentBeadID := beads.PolecatBeadIDTown("testtown", rigName, polecatName)
+	agentBeadID := beads.PolecatBeadIDWithPrefix("gt", rigName, polecatName)
 	_, err := bdTown.CreateAgentBead(agentBeadID, "Test polecat agent", &beads.AgentFields{
 		RoleType:   "polecat",
 		Rig:        rigName,
@@ -314,7 +314,7 @@ func TestHandlePolecatDone_NoMR_ChecksCleanupStatus(t *testing.T) {
 	polecatName := "testnux"
 
 	// Create agent bead with cleanup_status=has_uncommitted (not safe to nuke)
-	agentBeadID := beads.PolecatBeadIDTown("testtown", rigName, polecatName)
+	agentBeadID := beads.PolecatBeadIDWithPrefix("gt", rigName, polecatName)
 	_, err := bdTown.CreateAgentBead(agentBeadID, "Test polecat agent", &beads.AgentFields{
 		RoleType:      "polecat",
 		Rig:           rigName,
@@ -378,7 +378,7 @@ func TestHandlePolecatDone_PhaseComplete_NoHookClear(t *testing.T) {
 	}
 
 	// Create agent bead with hook_bead set
-	agentBeadID := beads.PolecatBeadIDTown("testtown", rigName, polecatName)
+	agentBeadID := beads.PolecatBeadIDWithPrefix("gt", rigName, polecatName)
 	_, err = bdTown.CreateAgentBead(agentBeadID, "Test polecat agent", &beads.AgentFields{
 		RoleType:   "polecat",
 		Rig:        rigName,
@@ -437,7 +437,7 @@ func TestAutoNukeIfClean_CleanStatus(t *testing.T) {
 	polecatName := "testnux"
 
 	// Create agent bead with cleanup_status=clean
-	agentBeadID := beads.PolecatBeadIDTown("testtown", rigName, polecatName)
+	agentBeadID := beads.PolecatBeadIDWithPrefix("gt", rigName, polecatName)
 	_, err := bdTown.CreateAgentBead(agentBeadID, "Test polecat agent", &beads.AgentFields{
 		RoleType:      "polecat",
 		Rig:           rigName,
@@ -488,7 +488,7 @@ func TestAutoNukeIfClean_DirtyStatus(t *testing.T) {
 			pcName := "testnux_" + tc.name
 
 			// Create agent bead with dirty cleanup_status
-			agentBeadID := beads.PolecatBeadIDTown("testtown", rigName, pcName)
+			agentBeadID := beads.PolecatBeadIDWithPrefix("gt", rigName, pcName)
 			_, err := bdTown.CreateAgentBead(agentBeadID, "Test polecat agent", &beads.AgentFields{
 				RoleType:      "polecat",
 				Rig:           rigName,
