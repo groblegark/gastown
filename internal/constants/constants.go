@@ -97,12 +97,13 @@ const (
 	//   gate          - Async coordination (bd gate wait, park/resume)
 	//   merge-request - Refinery MR processing (gt done, refinery)
 	//   config        - Configuration beads (Everything Is Beads)
-	BeadsCustomTypes = "agent,role,rig,convoy,slot,queue,event,message,molecule,gate,merge-request,config"
+	//   route         - Prefix-to-path routing (gt rig add, bd route)
+	BeadsCustomTypes = "agent,role,rig,convoy,slot,queue,event,message,molecule,gate,merge-request,config,route"
 )
 
 // BeadsCustomTypesList returns the custom types as a slice.
 func BeadsCustomTypesList() []string {
-	return []string{"agent", "role", "rig", "convoy", "slot", "queue", "event", "message", "molecule", "gate", "merge-request", "config"}
+	return []string{"agent", "role", "rig", "convoy", "slot", "queue", "event", "message", "molecule", "gate", "merge-request", "config", "route"}
 }
 
 // Git branch names.

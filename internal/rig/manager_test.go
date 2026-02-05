@@ -363,10 +363,34 @@ func TestInitBeads_TrackedBeads_CreatesRedirect(t *testing.T) {
 		t.Errorf("redirect content = %q, want %q", string(content), expected)
 	}
 
-	// Verify no local database was created (no config.yaml at rig level)
+	// Verify config.yaml with issue-prefix was created alongside redirect
 	rigConfigPath := filepath.Join(rigPath, ".beads", "config.yaml")
-	if _, err := os.Stat(rigConfigPath); !os.IsNotExist(err) {
-		t.Errorf("expected no config.yaml at rig level when using redirect, but it exists")
+	configData, err := os.ReadFile(rigConfigPath)
+	if err != nil {
+		t.Fatalf("expected config.yaml at rig level alongside redirect, but got error: %v", err)
+	}
+	if !strings.Contains(string(configData), `issue-prefix: "gt"`) {
+		t.Errorf("config.yaml should contain issue-prefix, got: %s", configData)
+	}
+
+	// Verify metadata.json with prefix was created alongside redirect
+	rigMetadataPath := filepath.Join(rigPath, ".beads", "metadata.json")
+	metaData, err := os.ReadFile(rigMetadataPath)
+	if err != nil {
+		t.Fatalf("expected metadata.json at rig level, but got error: %v", err)
+	}
+	if !strings.Contains(string(metaData), `"prefix": "gt-"`) {
+		t.Errorf("metadata.json should contain prefix, got: %s", metaData)
+	}
+
+	// Verify prefix was also written to the canonical beads location
+	mayorMetadataPath := filepath.Join(rigPath, "mayor", "rig", ".beads", "metadata.json")
+	mayorMetaData, err := os.ReadFile(mayorMetadataPath)
+	if err != nil {
+		t.Fatalf("expected metadata.json at mayor/rig level, but got error: %v", err)
+	}
+	if !strings.Contains(string(mayorMetaData), `"prefix": "gt-"`) {
+		t.Errorf("mayor metadata.json should contain prefix, got: %s", mayorMetaData)
 	}
 }
 
@@ -728,6 +752,26 @@ func TestInitBeads_DoltServerMode_CreatesRedirect(t *testing.T) {
 	got := strings.TrimSpace(string(content))
 	if !strings.HasSuffix(got, ".beads") {
 		t.Errorf("redirect should point to .beads; got: %s", got)
+	}
+
+	// Verify config.yaml with issue-prefix was created alongside redirect
+	rigConfigPath := filepath.Join(rigPath, ".beads", "config.yaml")
+	configData, err := os.ReadFile(rigConfigPath)
+	if err != nil {
+		t.Fatalf("expected config.yaml at rig level alongside redirect, but got error: %v", err)
+	}
+	if !strings.Contains(string(configData), `issue-prefix: "nr"`) {
+		t.Errorf("config.yaml should contain issue-prefix, got: %s", configData)
+	}
+
+	// Verify metadata.json with prefix was created alongside redirect
+	rigMetadataPath := filepath.Join(rigPath, ".beads", "metadata.json")
+	metaData, err := os.ReadFile(rigMetadataPath)
+	if err != nil {
+		t.Fatalf("expected metadata.json at rig level, but got error: %v", err)
+	}
+	if !strings.Contains(string(metaData), `"prefix": "nr-"`) {
+		t.Errorf("metadata.json should contain prefix, got: %s", metaData)
 	}
 }
 

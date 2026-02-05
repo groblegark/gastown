@@ -677,6 +677,15 @@ func (m *Manager) initBeads(rigPath, prefix string) error {
 		if err := os.WriteFile(redirectPath, []byte("mayor/rig/.beads\n"), 0644); err != nil {
 			return fmt.Errorf("creating redirect file: %w", err)
 		}
+
+		// Write prefix to rig-level config.yaml and metadata.json alongside redirect.
+		// This allows bd to discover the prefix before following the redirect chain.
+		writeBeadsPrefixFiles(beadsDir, prefix)
+
+		// Also write prefix to the canonical beads location (mayor/rig/.beads/metadata.json)
+		// so tools reading from the redirect target can also find the prefix.
+		writeBeadsMetadataPrefix(mayorRigBeads, prefix)
+
 		return nil
 	}
 
@@ -697,6 +706,11 @@ func (m *Manager) initBeads(rigPath, prefix string) error {
 		if err := os.WriteFile(redirectPath, []byte(relPath+"\n"), 0644); err != nil {
 			return fmt.Errorf("creating redirect file: %w", err)
 		}
+
+		// Write prefix to rig-level config.yaml and metadata.json alongside redirect.
+		// This allows bd to discover the prefix before following the redirect chain.
+		writeBeadsPrefixFiles(beadsDir, prefix)
+
 		return nil
 	}
 
@@ -1463,4 +1477,63 @@ See docs/deacon-plugins.md for full documentation.
 		return err
 	}
 	return m.ensureGitignoreEntry(gitignorePath, ".repo.git/")
+}
+
+// writeBeadsPrefixFiles writes the prefix to both config.yaml and metadata.json
+// in the given beads directory. This is used when creating redirect-based beads
+// so that bd can discover the rig's prefix before following the redirect chain.
+func writeBeadsPrefixFiles(beadsDir, prefix string) {
+	// Write config.yaml with issue-prefix (only if not already present)
+	configPath := filepath.Join(beadsDir, "config.yaml")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		content := fmt.Sprintf("issue-prefix: \"%s\"\n", prefix)
+		if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+			fmt.Printf("   Warning: Could not write %s: %v\n", configPath, err)
+		}
+	} else {
+		// Config exists but may not have issue-prefix - check and update if needed
+		existingPrefix := detectBeadsPrefixFromConfig(configPath)
+		if existingPrefix == "" {
+			// Append issue-prefix to existing config
+			data, err := os.ReadFile(configPath) //nolint:gosec // G304: path is constructed internally
+			if err == nil {
+				content := string(data)
+				if !strings.Contains(content, "issue-prefix:") {
+					content = fmt.Sprintf("issue-prefix: \"%s\"\n%s", prefix, content)
+					if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+						fmt.Printf("   Warning: Could not update %s: %v\n", configPath, err)
+					}
+				}
+			}
+		}
+	}
+
+	// Write prefix to metadata.json
+	writeBeadsMetadataPrefix(beadsDir, prefix)
+}
+
+// writeBeadsMetadataPrefix adds or updates the prefix field in metadata.json.
+// The prefix is stored with a trailing dash (e.g., "gt-") to match the convention
+// used by gastown's metadata.json.
+func writeBeadsMetadataPrefix(beadsDir, prefix string) {
+	metadataPath := filepath.Join(beadsDir, "metadata.json")
+
+	// Read existing metadata as a generic map to preserve all fields
+	metadata := make(map[string]interface{})
+	if data, err := os.ReadFile(metadataPath); err == nil { //nolint:gosec // G304: path is constructed internally
+		_ = json.Unmarshal(data, &metadata)
+	}
+
+	// Set the prefix with trailing dash (convention: "gt-", "od-", "bd-")
+	metadata["prefix"] = prefix + "-"
+
+	// Write back
+	data, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		fmt.Printf("   Warning: Could not marshal metadata.json: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(metadataPath, append(data, '\n'), 0644); err != nil {
+		fmt.Printf("   Warning: Could not write %s: %v\n", metadataPath, err)
+	}
 }
