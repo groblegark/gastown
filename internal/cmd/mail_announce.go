@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/configbeads"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -25,9 +26,9 @@ func runMailAnnounces(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a Gas Town workspace: %w", err)
 	}
 
-	// Load messaging config
-	configPath := config.MessagingConfigPath(townRoot)
-	cfg, err := config.LoadMessagingConfig(configPath)
+	// Load messaging config (beads-first with filesystem fallback)
+	townName := filepath.Base(townRoot)
+	cfg, err := configbeads.LoadMessagingConfig(townRoot, townName)
 	if err != nil {
 		return fmt.Errorf("loading messaging config: %w", err)
 	}

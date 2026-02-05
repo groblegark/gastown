@@ -9,6 +9,7 @@ import (
 
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/configbeads"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -105,8 +106,8 @@ func expandFromConfig[T any](r *Router, name string, getter func(*config.Messagi
 		return zero, fmt.Errorf("%w: %s (no town root)", errType, name)
 	}
 
-	configPath := config.MessagingConfigPath(r.townRoot)
-	cfg, err := config.LoadMessagingConfig(configPath)
+	townName := filepath.Base(r.townRoot)
+	cfg, err := configbeads.LoadMessagingConfig(r.townRoot, townName)
 	if err != nil {
 		return zero, fmt.Errorf("loading messaging config: %w", err)
 	}

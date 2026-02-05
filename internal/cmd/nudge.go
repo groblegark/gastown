@@ -2,12 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
-	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/configbeads"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/inject"
 	"github.com/steveyegge/gastown/internal/session"
@@ -280,9 +281,9 @@ func runNudgeChannel(channelName, message string) error {
 		return fmt.Errorf("cannot find town root: %w", err)
 	}
 
-	// Load messaging config
-	msgConfigPath := config.MessagingConfigPath(townRoot)
-	msgConfig, err := config.LoadMessagingConfig(msgConfigPath)
+	// Load messaging config (beads-first with filesystem fallback)
+	townName := filepath.Base(townRoot)
+	msgConfig, err := configbeads.LoadMessagingConfig(townRoot, townName)
 	if err != nil {
 		return fmt.Errorf("loading messaging config: %w", err)
 	}
