@@ -1828,6 +1828,79 @@ func GetRigPrefix(townRoot, rigName string) string {
 	return strings.TrimSuffix(prefix, "-")
 }
 
+// LoadRigsConfigFromBeads reconstructs a RigsConfig from rig registry config bead entries.
+// Accepts a slice of RigBeadEntry (bead ID + metadata JSON) and the town name.
+// Returns nil, nil if no valid entries are found.
+func LoadRigsConfigFromBeads(entries []RigBeadEntry, townName string) (*RigsConfig, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	rigsConfig := &RigsConfig{Version: 1, Rigs: make(map[string]RigEntry)}
+	for _, entry := range entries {
+		// Only process rig- beads (not rigcfg- beads)
+		if strings.Contains(entry.BeadID, "-rigcfg-") {
+			continue
+		}
+
+		var metadata struct {
+			GitURL    string       `json:"git_url"`
+			LocalRepo string       `json:"local_repo"`
+			AddedAt   time.Time    `json:"added_at"`
+			Beads     *BeadsConfig `json:"beads"`
+		}
+		if err := json.Unmarshal([]byte(entry.Metadata), &metadata); err != nil {
+			continue // skip malformed entries
+		}
+
+		// Extract rig name from the bead ID: hq-cfg-rig-<town>-<rigName>
+		rigName := extractRigNameFromBeadID(entry.BeadID, townName)
+		if rigName == "" {
+			continue
+		}
+
+		rigsConfig.Rigs[rigName] = RigEntry{
+			GitURL:      metadata.GitURL,
+			LocalRepo:   metadata.LocalRepo,
+			AddedAt:     metadata.AddedAt,
+			BeadsConfig: metadata.Beads,
+		}
+	}
+
+	if len(rigsConfig.Rigs) == 0 {
+		return nil, nil
+	}
+
+	return rigsConfig, nil
+}
+
+// extractRigNameFromBeadID extracts the rig name from a config bead ID.
+// Expected format: hq-cfg-rig-<town>-<rigName>
+func extractRigNameFromBeadID(beadID, townName string) string {
+	prefix := "hq-cfg-rig-" + townName + "-"
+	if !strings.HasPrefix(beadID, prefix) {
+		return ""
+	}
+	return strings.TrimPrefix(beadID, prefix)
+}
+
+// LoadRigsConfigWithFallback loads the rig registry from bead entries first,
+// falling back to the filesystem rigs.json if entries are empty.
+func LoadRigsConfigWithFallback(entries []RigBeadEntry, townName, townRoot string) (*RigsConfig, error) {
+	// Try beads first
+	if len(entries) > 0 {
+		cfg, err := LoadRigsConfigFromBeads(entries, townName)
+		if err == nil && cfg != nil {
+			return cfg, nil
+		}
+		// Fall through to filesystem on error or empty result
+	}
+
+	// Fallback to filesystem
+	rigsPath := filepath.Join(townRoot, "mayor", "rigs.json")
+	return LoadRigsConfig(rigsPath)
+}
+
 // EscalationConfigPath returns the standard path for escalation config in a town.
 func EscalationConfigPath(townRoot string) string {
 	return filepath.Join(townRoot, "settings", "escalation.json")

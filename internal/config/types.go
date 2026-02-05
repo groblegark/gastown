@@ -175,6 +175,13 @@ type BeadsConfig struct {
 	Prefix string `json:"prefix"` // issue prefix
 }
 
+// RigBeadEntry represents a rig registry config bead for loading from beads.
+// Used by LoadRigsConfigFromBeads to reconstruct a RigsConfig.
+type RigBeadEntry struct {
+	BeadID   string // e.g., "hq-cfg-rig-gt11-gastown"
+	Metadata string // raw JSON metadata from the config bead
+}
+
 // CurrentTownVersion is the current schema version for TownConfig.
 // Version 2: Added Owner and PublicName fields for federation identity.
 const CurrentTownVersion = 2
