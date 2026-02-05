@@ -778,3 +778,256 @@ func TestOpenCodeRuntimeConfigFromPreset(t *testing.T) {
 		t.Error("Mutation of RuntimeConfig.Env affected original preset")
 	}
 }
+
+func TestLoadAgentPresetsFromBeads_EmptyLayers(t *testing.T) {
+	t.Parallel()
+	presets, roleAgents, err := LoadAgentPresetsFromBeads(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if presets != nil || roleAgents != nil {
+		t.Error("expected nil for empty layers")
+	}
+
+	presets, roleAgents, err = LoadAgentPresetsFromBeads([]string{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if presets != nil || roleAgents != nil {
+		t.Error("expected nil for empty slice")
+	}
+}
+
+func TestLoadAgentPresetsFromBeads_SinglePreset(t *testing.T) {
+	t.Parallel()
+	layers := []string{
+		`{"name":"claude","command":"claude","args":["--dangerously-skip-permissions"],"process_names":["node","claude"],"session_id_env":"CLAUDE_SESSION_ID","resume_flag":"--resume","resume_style":"flag","supports_hooks":true,"supports_fork_session":true}`,
+	}
+	presets, roleAgents, err := LoadAgentPresetsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if roleAgents != nil {
+		t.Error("expected nil roleAgents for preset-only layers")
+	}
+	if presets == nil {
+		t.Fatal("expected presets")
+	}
+
+	claude := presets["claude"]
+	if claude == nil {
+		t.Fatal("expected claude preset")
+	}
+	if claude.Command != "claude" {
+		t.Errorf("command = %q, want %q", claude.Command, "claude")
+	}
+	if len(claude.Args) != 1 || claude.Args[0] != "--dangerously-skip-permissions" {
+		t.Errorf("args = %v, want [--dangerously-skip-permissions]", claude.Args)
+	}
+	if !claude.SupportsHooks {
+		t.Error("expected supports_hooks = true")
+	}
+	if !claude.SupportsForkSession {
+		t.Error("expected supports_fork_session = true")
+	}
+	if claude.SessionIDEnv != "CLAUDE_SESSION_ID" {
+		t.Errorf("session_id_env = %q, want CLAUDE_SESSION_ID", claude.SessionIDEnv)
+	}
+}
+
+func TestLoadAgentPresetsFromBeads_RoleAgents(t *testing.T) {
+	t.Parallel()
+	layers := []string{
+		`{"role_agents":{"mayor":"claude-opus","deacon":"claude-haiku","witness":"claude-haiku","refinery":"claude-sonnet","polecat":"claude-sonnet","crew":"claude-sonnet"}}`,
+	}
+	presets, roleAgents, err := LoadAgentPresetsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(presets) != 0 {
+		t.Errorf("expected empty presets for role-agents-only layer, got %d", len(presets))
+	}
+	if roleAgents == nil {
+		t.Fatal("expected roleAgents")
+	}
+	if len(roleAgents) != 6 {
+		t.Errorf("roleAgents count = %d, want 6", len(roleAgents))
+	}
+	if roleAgents["mayor"] != "claude-opus" {
+		t.Errorf("roleAgents[mayor] = %q, want claude-opus", roleAgents["mayor"])
+	}
+	if roleAgents["polecat"] != "claude-sonnet" {
+		t.Errorf("roleAgents[polecat] = %q, want claude-sonnet", roleAgents["polecat"])
+	}
+}
+
+func TestLoadAgentPresetsFromBeads_MixedLayers(t *testing.T) {
+	t.Parallel()
+	layers := []string{
+		`{"name":"claude","command":"claude","args":["--dangerously-skip-permissions"]}`,
+		`{"name":"gemini","command":"gemini","args":["--approval-mode","yolo"]}`,
+		`{"role_agents":{"mayor":"claude-opus","polecat":"gemini"}}`,
+	}
+	presets, roleAgents, err := LoadAgentPresetsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(presets) != 2 {
+		t.Errorf("presets count = %d, want 2", len(presets))
+	}
+	if presets["claude"] == nil {
+		t.Error("missing claude preset")
+	}
+	if presets["gemini"] == nil {
+		t.Error("missing gemini preset")
+	}
+	if roleAgents == nil {
+		t.Fatal("expected roleAgents")
+	}
+	if roleAgents["mayor"] != "claude-opus" {
+		t.Errorf("roleAgents[mayor] = %q, want claude-opus", roleAgents["mayor"])
+	}
+}
+
+func TestLoadAgentPresetsFromBeads_InvalidJSON(t *testing.T) {
+	t.Parallel()
+	layers := []string{
+		`{invalid json}`,
+		`{"name":"claude","command":"claude"}`,
+	}
+	presets, _, err := LoadAgentPresetsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Invalid JSON should be skipped, valid one should be parsed
+	if len(presets) != 1 {
+		t.Errorf("presets count = %d, want 1 (invalid JSON should be skipped)", len(presets))
+	}
+	if presets["claude"] == nil {
+		t.Error("missing claude preset")
+	}
+}
+
+func TestLoadAgentPresetsFromBeads_EmptyName(t *testing.T) {
+	t.Parallel()
+	layers := []string{
+		`{"command":"some-agent","args":["--flag"]}`,
+	}
+	presets, roleAgents, err := LoadAgentPresetsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Bead with no name should be skipped, resulting in nil return
+	if presets != nil || roleAgents != nil {
+		t.Error("expected nil for beads with no name")
+	}
+}
+
+func TestLoadAgentPresetsFromBeads_NonInteractive(t *testing.T) {
+	t.Parallel()
+	layers := []string{
+		`{"name":"codex","command":"codex","args":["--yolo"],"resume_flag":"resume","resume_style":"subcommand","non_interactive":{"subcommand":"exec","output_flag":"--json"}}`,
+	}
+	presets, _, err := LoadAgentPresetsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	codex := presets["codex"]
+	if codex == nil {
+		t.Fatal("missing codex preset")
+	}
+	if codex.NonInteractive == nil {
+		t.Fatal("expected non_interactive config")
+	}
+	if codex.NonInteractive.Subcommand != "exec" {
+		t.Errorf("non_interactive.subcommand = %q, want exec", codex.NonInteractive.Subcommand)
+	}
+	if codex.NonInteractive.OutputFlag != "--json" {
+		t.Errorf("non_interactive.output_flag = %q, want --json", codex.NonInteractive.OutputFlag)
+	}
+}
+
+func TestLoadAgentPresetsFromBeads_AllBuiltinsRoundTrip(t *testing.T) {
+	t.Parallel()
+	// Serialize each built-in preset to JSON (simulating what seed does)
+	// Then load them back and verify fields match
+	var layers []string
+	for _, name := range ListAgentPresets() {
+		preset := GetAgentPresetByName(name)
+		if preset == nil {
+			continue
+		}
+		data, err := json.Marshal(preset)
+		if err != nil {
+			t.Fatalf("marshal %s: %v", name, err)
+		}
+		layers = append(layers, string(data))
+	}
+
+	presets, _, err := LoadAgentPresetsFromBeads(layers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify each preset was loaded correctly
+	for _, name := range ListAgentPresets() {
+		original := GetAgentPresetByName(name)
+		loaded := presets[name]
+		if loaded == nil {
+			t.Errorf("preset %s not loaded from beads", name)
+			continue
+		}
+		if loaded.Command != original.Command {
+			t.Errorf("%s: command = %q, want %q", name, loaded.Command, original.Command)
+		}
+		if string(loaded.Name) != string(original.Name) {
+			t.Errorf("%s: name = %q, want %q", name, loaded.Name, original.Name)
+		}
+		if len(loaded.Args) != len(original.Args) {
+			t.Errorf("%s: args count = %d, want %d", name, len(loaded.Args), len(original.Args))
+		}
+		if loaded.ResumeFlag != original.ResumeFlag {
+			t.Errorf("%s: resume_flag = %q, want %q", name, loaded.ResumeFlag, original.ResumeFlag)
+		}
+		if loaded.ResumeStyle != original.ResumeStyle {
+			t.Errorf("%s: resume_style = %q, want %q", name, loaded.ResumeStyle, original.ResumeStyle)
+		}
+		if loaded.SupportsHooks != original.SupportsHooks {
+			t.Errorf("%s: supports_hooks = %v, want %v", name, loaded.SupportsHooks, original.SupportsHooks)
+		}
+		if loaded.SupportsForkSession != original.SupportsForkSession {
+			t.Errorf("%s: supports_fork_session = %v, want %v", name, loaded.SupportsForkSession, original.SupportsForkSession)
+		}
+		if loaded.SessionIDEnv != original.SessionIDEnv {
+			t.Errorf("%s: session_id_env = %q, want %q", name, loaded.SessionIDEnv, original.SessionIDEnv)
+		}
+		// Verify NonInteractive roundtrip
+		if (loaded.NonInteractive == nil) != (original.NonInteractive == nil) {
+			t.Errorf("%s: non_interactive nil mismatch: loaded=%v, original=%v",
+				name, loaded.NonInteractive == nil, original.NonInteractive == nil)
+		}
+		if loaded.NonInteractive != nil && original.NonInteractive != nil {
+			if loaded.NonInteractive.Subcommand != original.NonInteractive.Subcommand {
+				t.Errorf("%s: non_interactive.subcommand = %q, want %q",
+					name, loaded.NonInteractive.Subcommand, original.NonInteractive.Subcommand)
+			}
+			if loaded.NonInteractive.PromptFlag != original.NonInteractive.PromptFlag {
+				t.Errorf("%s: non_interactive.prompt_flag = %q, want %q",
+					name, loaded.NonInteractive.PromptFlag, original.NonInteractive.PromptFlag)
+			}
+			if loaded.NonInteractive.OutputFlag != original.NonInteractive.OutputFlag {
+				t.Errorf("%s: non_interactive.output_flag = %q, want %q",
+					name, loaded.NonInteractive.OutputFlag, original.NonInteractive.OutputFlag)
+			}
+		}
+		// Verify Env roundtrip
+		if len(loaded.Env) != len(original.Env) {
+			t.Errorf("%s: env count = %d, want %d", name, len(loaded.Env), len(original.Env))
+		}
+		for k, v := range original.Env {
+			if loaded.Env[k] != v {
+				t.Errorf("%s: env[%s] = %q, want %q", name, k, loaded.Env[k], v)
+			}
+		}
+	}
+}

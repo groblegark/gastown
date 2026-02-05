@@ -27,6 +27,7 @@ var (
 	seedAccounts  bool
 	seedDaemon    bool
 	seedRigs      bool
+	seedAgents    bool
 	seedForce     bool
 )
 
@@ -47,6 +48,7 @@ By default, seeds all config types. Use flags to seed specific types:
   gt config seed --accounts   # Only account config
   gt config seed --daemon     # Only daemon patrol config
   gt config seed --rigs       # Only rig registry
+  gt config seed --agents     # Only agent preset config
   gt config seed --dry-run    # Show what would be created
   gt config seed --force      # Overwrite existing beads`,
 	RunE: runConfigSeed,
@@ -60,6 +62,7 @@ func init() {
 	configSeedCmd.Flags().BoolVar(&seedAccounts, "accounts", false, "Only seed account config beads")
 	configSeedCmd.Flags().BoolVar(&seedDaemon, "daemon", false, "Only seed daemon patrol config beads")
 	configSeedCmd.Flags().BoolVar(&seedRigs, "rigs", false, "Only seed rig registry config beads")
+	configSeedCmd.Flags().BoolVar(&seedAgents, "agents", false, "Only seed agent preset config beads")
 	configSeedCmd.Flags().BoolVar(&seedForce, "force", false, "Overwrite existing config beads")
 
 	configCmd.AddCommand(configSeedCmd)
@@ -74,7 +77,7 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 	bd := beads.New(townRoot)
 
 	// If no specific flags, seed everything
-	seedAll := !seedHooks && !seedMCP && !seedIdentity && !seedAccounts && !seedDaemon && !seedRigs
+	seedAll := !seedHooks && !seedMCP && !seedIdentity && !seedAccounts && !seedDaemon && !seedRigs && !seedAgents
 
 	var created, skipped, updated int
 
@@ -132,6 +135,16 @@ func runConfigSeed(cmd *cobra.Command, args []string) error {
 		c, s, u, err := seedRigRegistryBeads(bd, townRoot)
 		if err != nil {
 			return fmt.Errorf("seeding rig registry beads: %w", err)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	if seedAll || seedAgents {
+		c, s, u, err := seedAgentPresetBeads(bd)
+		if err != nil {
+			return fmt.Errorf("seeding agent preset beads: %w", err)
 		}
 		created += c
 		skipped += s
@@ -557,5 +570,62 @@ func seedDaemonBeads(bd *beads.Beads, townRoot string) (created, skipped, update
 
 	return createOrSkipConfigBead(bd, "daemon-patrol", beads.ConfigCategoryDaemon,
 		"*", "", "", daemonMap, "Global daemon patrol configuration")
+}
+
+// seedAgentPresetBeads creates config beads for agent presets.
+// For each built-in preset, creates a bead with the preset's configuration.
+// Also creates a role-agents mapping bead with default role-to-agent assignments.
+func seedAgentPresetBeads(bd *beads.Beads) (created, skipped, updated int, err error) {
+	// Seed each built-in agent preset
+	for _, name := range config.ListAgentPresets() {
+		preset := config.GetAgentPresetByName(name)
+		if preset == nil {
+			continue
+		}
+
+		// Marshal preset to generic map for metadata storage
+		presetJSON, marshalErr := json.Marshal(preset)
+		if marshalErr != nil {
+			return created, skipped, updated, fmt.Errorf("marshaling preset %s: %w", name, marshalErr)
+		}
+
+		var metadata map[string]interface{}
+		if unmarshalErr := json.Unmarshal(presetJSON, &metadata); unmarshalErr != nil {
+			return created, skipped, updated, fmt.Errorf("parsing preset %s: %w", name, unmarshalErr)
+		}
+
+		slug := "agent-" + name
+		desc := fmt.Sprintf("Agent preset: %s", name)
+		c, s, u, seedErr := createOrSkipConfigBead(bd, slug, beads.ConfigCategoryAgentPreset,
+			"*", "", "", metadata, desc)
+		if seedErr != nil {
+			return created, skipped, updated, fmt.Errorf("creating agent preset bead for %s: %w", name, seedErr)
+		}
+		created += c
+		skipped += s
+		updated += u
+	}
+
+	// Create default role-agents mapping bead
+	roleAgents := map[string]interface{}{
+		"role_agents": map[string]string{
+			"mayor":    "claude-opus",
+			"deacon":   "claude-haiku",
+			"witness":  "claude-haiku",
+			"refinery": "claude-sonnet",
+			"polecat":  "claude-sonnet",
+			"crew":     "claude-sonnet",
+		},
+	}
+	c, s, u, seedErr := createOrSkipConfigBead(bd, "role-agents-global", beads.ConfigCategoryAgentPreset,
+		"*", "", "", roleAgents, "Default role-agent mappings")
+	if seedErr != nil {
+		return created, skipped, updated, fmt.Errorf("creating role-agents bead: %w", seedErr)
+	}
+	created += c
+	skipped += s
+	updated += u
+
+	return created, skipped, updated, nil
 }
 

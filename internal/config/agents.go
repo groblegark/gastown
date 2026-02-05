@@ -510,6 +510,61 @@ func NewExampleAgentRegistry() *AgentRegistry {
 	}
 }
 
+// LoadAgentPresetsFromBeads constructs agent preset configurations from config
+// bead metadata JSON strings. The metadataLayers parameter is a slice of JSON
+// strings as returned by beads.ResolveConfigMetadata("agent-preset", ...).
+//
+// Each metadata layer is either:
+//   - An agent preset bead: {"name":"claude","command":"claude","args":[...],...}
+//   - A role-agents bead: {"role_agents":{"mayor":"claude-opus",...}}
+//
+// Returns the preset map, role-agent mappings, and any error.
+// Returns nil, nil, nil if no agent preset beads are found.
+func LoadAgentPresetsFromBeads(metadataLayers []string) (map[string]*AgentPresetInfo, map[string]string, error) {
+	if len(metadataLayers) == 0 {
+		return nil, nil, nil
+	}
+
+	presets := make(map[string]*AgentPresetInfo)
+	var roleAgents map[string]string
+
+	for _, raw := range metadataLayers {
+		var meta map[string]interface{}
+		if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+			continue
+		}
+
+		// Check if this is a role-agents bead
+		if ra, ok := meta["role_agents"]; ok {
+			if raMap, ok := ra.(map[string]interface{}); ok {
+				roleAgents = make(map[string]string, len(raMap))
+				for role, agent := range raMap {
+					if s, ok := agent.(string); ok {
+						roleAgents[role] = s
+					}
+				}
+			}
+			continue
+		}
+
+		// Parse as agent preset bead
+		var preset AgentPresetInfo
+		if err := json.Unmarshal([]byte(raw), &preset); err != nil {
+			continue
+		}
+		if preset.Name == "" {
+			continue
+		}
+		presets[string(preset.Name)] = &preset
+	}
+
+	if len(presets) == 0 && roleAgents == nil {
+		return nil, nil, nil
+	}
+
+	return presets, roleAgents, nil
+}
+
 // ResetRegistryForTesting clears all registry state.
 // This is intended for use in tests only to ensure test isolation.
 func ResetRegistryForTesting() {
