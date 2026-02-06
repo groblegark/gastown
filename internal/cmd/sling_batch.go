@@ -9,6 +9,7 @@ import (
 
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/events"
+	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/style"
 )
 
@@ -45,6 +46,13 @@ func runBatchSling(beadIDs []string, rigName string, townBeadsDir string) error 
 	// Issue #288: Auto-apply mol-polecat-work for batch sling
 	// Cook once before the loop for efficiency
 	townRoot := filepath.Dir(townBeadsDir)
+
+	// Ensure beads.role=maintainer is set in the town root's git config.
+	// Without this, bd commands run from townRoot emit a confusing warning:
+	// "beads.role not configured. Run 'bd init' to set."
+	// This is safe and idempotent. See: gt-vhsnvd
+	townGit := git.NewGit(townRoot)
+	_ = townGit.SetConfig("beads.role", "maintainer")
 	formulaName := "mol-polecat-work"
 	formulaCooked := false
 

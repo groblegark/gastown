@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1490,5 +1491,95 @@ exit /b 0
 
 	if !foundNoMerge {
 		t.Errorf("--no-merge flag not stored in bead description\nLog:\n%s", string(logBytes))
+	}
+}
+
+// TestSlingEnsuresBeadsRoleInTownRoot verifies that gt sling sets beads.role=maintainer
+// in the town root's git config to prevent the confusing "beads.role not configured"
+// warning from bd commands. See: gt-vhsnvd
+func TestSlingEnsuresBeadsRoleInTownRoot(t *testing.T) {
+	townRoot := t.TempDir()
+
+	// Initialize a git repo in the town root (required for git config)
+	initCmd := exec.Command("git", "init", townRoot)
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+
+	// Create minimal workspace structure
+	if err := os.MkdirAll(filepath.Join(townRoot, "mayor", "rig"), 0755); err != nil {
+		t.Fatalf("mkdir mayor/rig: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(townRoot, ".beads"), 0755); err != nil {
+		t.Fatalf("mkdir .beads: %v", err)
+	}
+
+	// Verify beads.role is NOT set initially
+	checkCmd := exec.Command("git", "-C", townRoot, "config", "--get", "beads.role")
+	if err := checkCmd.Run(); err == nil {
+		t.Fatal("beads.role unexpectedly already set in fresh git repo")
+	}
+
+	// Create stub bd
+	binDir := filepath.Join(townRoot, "bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("mkdir binDir: %v", err)
+	}
+	bdScript := `#!/bin/sh
+cmd="$1"
+shift || true
+case "$cmd" in
+  show)
+    echo '[{"title":"Test bead","status":"open","assignee":""}]'
+    ;;
+  update)
+    exit 0
+    ;;
+  cook|mol)
+    exit 0
+    ;;
+esac
+exit 0
+`
+	_ = writeBDStub(t, binDir, bdScript, "")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv(EnvGTRole, "mayor")
+	t.Setenv("GT_POLECAT", "")
+	t.Setenv("TMUX_PANE", "")
+	t.Setenv("GT_TEST_NO_NUDGE", "1")
+	t.Setenv("GT_TEST_SKIP_HOOK_VERIFY", "1")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(townRoot); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// Save and restore global flags
+	prevDryRun := slingDryRun
+	prevNoConvoy := slingNoConvoy
+	t.Cleanup(func() {
+		slingDryRun = prevDryRun
+		slingNoConvoy = prevNoConvoy
+	})
+
+	slingDryRun = true
+	slingNoConvoy = true
+
+	// Run sling (dry-run mode, self-target)
+	_ = runSling(nil, []string{"gt-test123"})
+
+	// Verify beads.role=maintainer is now set in town root's git config
+	verifyCmd := exec.Command("git", "-C", townRoot, "config", "--get", "beads.role")
+	out, err := verifyCmd.Output()
+	if err != nil {
+		t.Fatalf("beads.role not set in town root after sling: %v", err)
+	}
+	role := strings.TrimSpace(string(out))
+	if role != "maintainer" {
+		t.Errorf("beads.role = %q, want %q", role, "maintainer")
 	}
 }

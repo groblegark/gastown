@@ -162,6 +162,13 @@ func runSling(cmd *cobra.Command, args []string) error {
 	}
 	townBeadsDir := filepath.Join(townRoot, ".beads")
 
+	// Ensure beads.role=maintainer is set in the town root's git config.
+	// Without this, bd commands run from townRoot emit a confusing warning:
+	// "beads.role not configured. Run 'bd init' to set."
+	// This is safe and idempotent. See: gt-vhsnvd
+	townGit := git.NewGit(townRoot)
+	_ = townGit.SetConfig("beads.role", "maintainer")
+
 	// --var is only for standalone formula mode, not formula-on-bead mode
 	if slingOnTarget != "" && len(slingVars) > 0 {
 		return fmt.Errorf("--var cannot be used with --on (formula-on-bead mode doesn't support variables)")
