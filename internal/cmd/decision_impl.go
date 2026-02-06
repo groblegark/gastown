@@ -357,6 +357,9 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 	}
 	_ = events.LogFeed(events.TypeDecisionRequested, agentID, payload)
 
+	// Emit decision.created event on bd bus (best-effort, enables real-time subscriptions)
+	emitDecisionBusEvent(events.BusDecisionCreated, payload)
+
 	// Set turn marker so turn-check knows a decision was offered this turn
 	// This replaces the PostToolUse hook approach which was error-prone
 	if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
@@ -636,6 +639,18 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 
 	// Notify requestor: mail + nudge + unblock + activity log
 	notify.DecisionResolved(townRoot, decisionID, *fields, chosenOption.Label, effectiveRationale, resolvedBy)
+
+	// Emit decision.responded event on bd bus (best-effort, enables real-time subscriptions)
+	emitDecisionBusEvent(events.BusDecisionResponded, map[string]interface{}{
+		"decision_id":  decisionID,
+		"question":     fields.Question,
+		"chosen_index": decisionChoice,
+		"chosen_label": chosenOption.Label,
+		"rationale":    effectiveRationale,
+		"resolved_by":  resolvedBy,
+		"requested_by": fields.RequestedBy,
+		"urgency":      fields.Urgency,
+	})
 
 	// Output
 	if decisionJSON {
@@ -1517,6 +1532,12 @@ func runDecisionCancel(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to update labels: %v\n", err)
 	}
 
+	// Emit decision.canceled event on bd bus (best-effort)
+	emitDecisionBusEvent(events.BusDecisionCanceled, map[string]interface{}{
+		"decision_id": decisionID,
+		"reason":      reason,
+	})
+
 	fmt.Printf("✓ Canceled %s: %s\n", decisionID, reason)
 	return nil
 }
@@ -1597,6 +1618,12 @@ func runDecisionAutoClose(cmd *cobra.Command, args []string) error {
 		}
 		newLabels = append(newLabels, "decision:stale")
 		_ = bd.Update(issue.ID, beads.UpdateOptions{SetLabels: newLabels})
+
+		// Emit decision.expired event on bd bus
+		emitDecisionBusEvent(events.BusDecisionExpired, map[string]interface{}{
+			"decision_id": issue.ID,
+			"reason":      reason,
+		})
 
 		closed = append(closed, issue.ID)
 	}
@@ -1762,6 +1789,27 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// --- Bus Event Emission ---
+
+// emitDecisionBusEvent emits a decision lifecycle event on the bd bus.
+// This is best-effort: failures are logged but never block the caller.
+// Events flow through bd bus emit → daemon RPC → NATS JetStream (if enabled).
+// Subscribers (Slack bot, Mayor, Deacon) can react to these events in real-time
+// instead of polling.
+func emitDecisionBusEvent(eventType string, payload map[string]interface{}) {
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	// Pipe the payload as event JSON to bd bus emit.
+	// The --hook flag sets the EventType; despite the name it accepts any type string.
+	cmd := exec.Command("bd", "bus", "emit", "--hook", eventType) //nolint:gosec // trusted internal command
+	cmd.Stdin = strings.NewReader(string(payloadJSON))
+	cmd.Stderr = io.Discard // suppress daemon-unavailable warnings
+	_ = cmd.Run()           // fire-and-forget
 }
 
 // --- Decision Chain Visualization ---

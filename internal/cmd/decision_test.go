@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/events"
 )
 
 // TestFormatOptionsSummary tests the options summary formatter.
@@ -1636,5 +1637,104 @@ func TestFetchBeadInfo(t *testing.T) {
 		t.Error("fetchBeadInfo should return error for non-existent bead")
 	} else if errVal != "not found" {
 		t.Errorf("fetchBeadInfo error = %q, want %q", errVal, "not found")
+	}
+}
+
+// --- Bus Event Emission Tests ---
+
+// TestBusDecisionEventConstants verifies the bus event type constants are defined correctly.
+func TestBusDecisionEventConstants(t *testing.T) {
+	tests := []struct {
+		name     string
+		constant string
+		want     string
+	}{
+		{"created", events.BusDecisionCreated, "DecisionCreated"},
+		{"responded", events.BusDecisionResponded, "DecisionResponded"},
+		{"escalated", events.BusDecisionEscalated, "DecisionEscalated"},
+		{"expired", events.BusDecisionExpired, "DecisionExpired"},
+		{"canceled", events.BusDecisionCanceled, "DecisionCanceled"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.constant != tt.want {
+				t.Errorf("Bus event constant %s = %q, want %q", tt.name, tt.constant, tt.want)
+			}
+		})
+	}
+}
+
+// TestEmitDecisionBusEventNoError verifies emitDecisionBusEvent does not panic
+// or error when bd binary is unavailable (best-effort).
+func TestEmitDecisionBusEventNoError(t *testing.T) {
+	// emitDecisionBusEvent is fire-and-forget. It should never panic even if
+	// bd is not available. This test verifies it handles gracefully.
+	// In a test environment, bd bus emit will likely fail (no daemon), which is fine.
+	emitDecisionBusEvent(events.BusDecisionCreated, map[string]interface{}{
+		"decision_id": "test-123",
+		"question":    "Test question?",
+	})
+	// If we get here without panic, the test passes.
+}
+
+// TestEmitDecisionBusEventPayloadFormat verifies the payload can be marshaled.
+func TestEmitDecisionBusEventPayloadFormat(t *testing.T) {
+	payload := map[string]interface{}{
+		"decision_id":  "hq-abc123",
+		"question":     "Which approach?",
+		"urgency":      "high",
+		"option_count": 3,
+		"requested_by": "gastown/crew/decisions",
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Failed to marshal decision bus event payload: %v", err)
+	}
+
+	// Verify round-trip
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal payload: %v", err)
+	}
+
+	if parsed["decision_id"] != "hq-abc123" {
+		t.Errorf("decision_id = %v, want hq-abc123", parsed["decision_id"])
+	}
+	if parsed["urgency"] != "high" {
+		t.Errorf("urgency = %v, want high", parsed["urgency"])
+	}
+}
+
+// TestEmitDecisionBusEventRespondedPayload verifies the responded event payload format.
+func TestEmitDecisionBusEventRespondedPayload(t *testing.T) {
+	payload := map[string]interface{}{
+		"decision_id":  "hq-abc123",
+		"question":     "Which approach?",
+		"chosen_index": 2,
+		"chosen_label": "Option B",
+		"rationale":    "Better performance",
+		"resolved_by":  "human",
+		"requested_by": "gastown/crew/decisions",
+		"urgency":      "medium",
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Failed to marshal responded payload: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal: %v", err)
+	}
+
+	// Verify responded-specific fields
+	if parsed["chosen_label"] != "Option B" {
+		t.Errorf("chosen_label = %v, want Option B", parsed["chosen_label"])
+	}
+	if parsed["resolved_by"] != "human" {
+		t.Errorf("resolved_by = %v, want human", parsed["resolved_by"])
 	}
 }

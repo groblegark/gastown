@@ -69,9 +69,17 @@ const (
 	TypeMergeFailed  = "merge_failed"
 	TypeMergeSkipped = "merge_skipped"
 
-	// Decision events
+	// Decision events (activity feed)
 	TypeDecisionRequested = "decision_requested"
 	TypeDecisionResolved  = "decision_resolved"
+
+	// Decision bus event types (bd bus emit --hook=<type>)
+	// These flow through the bd bus event system for real-time subscriptions.
+	BusDecisionCreated   = "DecisionCreated"
+	BusDecisionResponded = "DecisionResponded"
+	BusDecisionEscalated = "DecisionEscalated"
+	BusDecisionExpired   = "DecisionExpired"
+	BusDecisionCanceled  = "DecisionCanceled"
 
 	// Hook error events
 	TypeHookError = "hook_error"
