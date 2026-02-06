@@ -21,7 +21,9 @@ var nudgeMessageFlag string
 var nudgeForceFlag bool
 var nudgeDirectFlag bool // deprecated: direct is now default
 var nudgeQueueFlag bool
-var nudgeDelayFlag int // milliseconds to wait before sending (gt-j7iaxs)
+var nudgeDelayFlag int    // milliseconds to wait before sending (gt-j7iaxs)
+var nudgeWaitReady bool   // wait for agent to be alive before sending (gt-kk330e)
+var nudgeWaitTimeout int  // seconds to wait for agent readiness (gt-kk330e)
 var nudgeDrainQuiet bool
 
 func init() {
@@ -31,6 +33,8 @@ func init() {
 	nudgeCmd.Flags().BoolVar(&nudgeDirectFlag, "direct", false, "DEPRECATED: direct is now the default behavior")
 	nudgeCmd.Flags().BoolVar(&nudgeQueueFlag, "queue", false, "Queue the nudge for later delivery (use when target may be busy processing tools)")
 	nudgeCmd.Flags().IntVar(&nudgeDelayFlag, "delay", 0, "Milliseconds to wait before sending (useful after session restart)")
+	nudgeCmd.Flags().BoolVar(&nudgeWaitReady, "wait-ready", false, "Wait for agent to be alive before sending (prevents race with gt crew start)")
+	nudgeCmd.Flags().IntVar(&nudgeWaitTimeout, "wait-timeout", 60, "Seconds to wait for agent readiness when --wait-ready is set (default 60)")
 
 	// Add drain subcommand
 	nudgeCmd.AddCommand(nudgeDrainCmd)
@@ -61,6 +65,11 @@ DELIVERY MODES:
   Delayed (--delay): Waits N milliseconds before sending. Use this when sending
                      a nudge right after 'gt session restart' to give Claude Code
                      time to initialize. Example: --delay=3000 waits 3 seconds.
+
+  Wait-ready (--wait-ready): Polls until the agent process is alive before
+                     sending. Use this when nudging right after 'gt crew start'
+                     to avoid the race condition where the nudge lands before
+                     Claude has started. Default timeout: 60s (--wait-timeout).
 
 Uses a reliable delivery pattern:
 1. Sends text in literal mode (-l flag)
@@ -538,6 +547,7 @@ func addressToAgentBeadID(address string) string {
 // By default, nudges are sent directly to wake up idle agents immediately.
 // Use --queue flag to buffer nudges when the target may be busy processing tools.
 // Use --delay flag to wait before sending (useful after session restart) (gt-j7iaxs).
+// Use --wait-ready flag to poll until agent is alive before sending (gt-kk330e).
 func sendOrQueueNudge(t *tmux.Tmux, townRoot, sessionName, message string) error {
 	// If --queue flag is set and we're in a workspace, queue the nudge
 	if nudgeQueueFlag && townRoot != "" {
@@ -547,6 +557,15 @@ func sendOrQueueNudge(t *tmux.Tmux, townRoot, sessionName, message string) error
 			return t.NudgeSession(sessionName, message)
 		}
 		return nil
+	}
+
+	// If --wait-ready flag is set, wait for agent to be alive before sending (gt-kk330e).
+	// This prevents the race condition where gt nudge lands before Claude has started.
+	if nudgeWaitReady {
+		timeout := time.Duration(nudgeWaitTimeout) * time.Second
+		if err := t.WaitForAgentReady(sessionName, timeout); err != nil {
+			return fmt.Errorf("agent not ready: %w", err)
+		}
 	}
 
 	// If --delay flag is set, wait before sending (gt-j7iaxs)

@@ -1332,6 +1332,24 @@ func (t *Tmux) IsAgentAlive(session string) bool {
 	return t.IsRuntimeRunning(session, processNames)
 }
 
+// WaitForAgentReady polls IsAgentAlive until the agent process is running or
+// the timeout expires. Returns nil when the agent is ready, or an error on timeout.
+// This is used by gt nudge --wait-ready to avoid sending messages before the
+// Claude session has fully started (gt-kk330e).
+func (t *Tmux) WaitForAgentReady(session string, timeout time.Duration) error {
+	if t.IsAgentAlive(session) {
+		return nil
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(constants.AgentReadyPollInterval)
+		if t.IsAgentAlive(session) {
+			return nil
+		}
+	}
+	return fmt.Errorf("timeout waiting for agent to be ready in session %s", session)
+}
+
 // WaitForCommand polls until the pane is NOT running one of the excluded commands.
 // Useful for waiting until a shell has started a new process (e.g., claude).
 // Returns nil when a non-excluded command is detected, or error on timeout.

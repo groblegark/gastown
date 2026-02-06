@@ -26,6 +26,15 @@ const (
 
 	// PollInterval is the default polling interval for wait loops.
 	PollInterval = 100 * time.Millisecond
+
+	// AgentReadyPollInterval is the polling interval for WaitForAgentReady.
+	// Uses a longer interval than PollInterval since agent startup takes seconds,
+	// not milliseconds. Avoids excessive tmux queries during startup (gt-kk330e).
+	AgentReadyPollInterval = 1 * time.Second
+
+	// DefaultWaitReadyTimeout is the default timeout for --wait-ready on gt nudge.
+	// Claude Code can take 30s+ to start on slower machines (gt-kk330e).
+	DefaultWaitReadyTimeout = 60 * time.Second
 )
 
 // Directory names within a Gas Town workspace.

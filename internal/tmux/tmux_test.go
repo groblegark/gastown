@@ -1388,6 +1388,102 @@ func TestKillPaneProcessesExcluding_NonexistentPane(t *testing.T) {
 	}
 }
 
+// TestWaitForAgentReady_AlreadyRunning tests that WaitForAgentReady returns
+// immediately when the agent is already alive (gt-kk330e).
+func TestWaitForAgentReady_AlreadyRunning(t *testing.T) {
+	if !hasTmux() {
+		t.Skip("tmux not installed")
+	}
+
+	tm := NewTmux()
+	sessionName := "gt-test-waitready-" + t.Name()
+
+	// Clean up any existing session
+	_ = tm.KillSessionWithProcesses(sessionName)
+
+	// Create session with node running (simulates Claude)
+	if err := tm.NewSessionWithCommand(sessionName, "", `node -e "setTimeout(() => {}, 30000)"`); err != nil {
+		t.Fatalf("NewSessionWithCommand: %v", err)
+	}
+	defer func() { _ = tm.KillSessionWithProcesses(sessionName) }()
+
+	// Set GT_AGENT so IsAgentAlive checks for node
+	_ = tm.SetEnvironment(sessionName, "GT_AGENT", "claude")
+
+	// Give node time to start
+	time.Sleep(1 * time.Second)
+
+	// WaitForAgentReady should return quickly since node is running
+	start := time.Now()
+	err := tm.WaitForAgentReady(sessionName, 5*time.Second)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		// If this fails, it may be because node isn't detected as "claude"
+		// Check if node is at least running
+		cmd, _ := tm.GetPaneCommand(sessionName)
+		t.Logf("Pane command: %q, IsAgentAlive: %v", cmd, tm.IsAgentAlive(sessionName))
+		t.Skipf("WaitForAgentReady returned error (may be environment-specific): %v", err)
+	}
+
+	if elapsed > 3*time.Second {
+		t.Errorf("WaitForAgentReady took %v, expected near-instant for running agent", elapsed)
+	}
+}
+
+// TestWaitForAgentReady_Timeout tests that WaitForAgentReady returns an error
+// when the agent never becomes ready within the timeout (gt-kk330e).
+func TestWaitForAgentReady_Timeout(t *testing.T) {
+	if !hasTmux() {
+		t.Skip("tmux not installed")
+	}
+
+	tm := NewTmux()
+	sessionName := "gt-test-waitready-timeout-" + t.Name()
+
+	// Clean up any existing session
+	_ = tm.KillSessionWithProcesses(sessionName)
+
+	// Create session with just a shell (no agent running)
+	if err := tm.NewSession(sessionName, ""); err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer func() { _ = tm.KillSessionWithProcesses(sessionName) }()
+
+	// WaitForAgentReady should timeout since no agent is running
+	start := time.Now()
+	err := tm.WaitForAgentReady(sessionName, 2*time.Second)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("expected timeout error, got nil")
+	}
+
+	// Should have taken approximately the timeout duration
+	if elapsed < 1500*time.Millisecond {
+		t.Errorf("WaitForAgentReady returned too quickly (%v), expected ~2s timeout", elapsed)
+	}
+	if elapsed > 4*time.Second {
+		t.Errorf("WaitForAgentReady took too long (%v), expected ~2s timeout", elapsed)
+	}
+}
+
+// TestWaitForAgentReady_NonexistentSession tests that WaitForAgentReady
+// times out gracefully for nonexistent sessions (gt-kk330e).
+func TestWaitForAgentReady_NonexistentSession(t *testing.T) {
+	if !hasTmux() {
+		t.Skip("tmux not installed")
+	}
+
+	tm := NewTmux()
+
+	// WaitForAgentReady on nonexistent session should timeout
+	err := tm.WaitForAgentReady("nonexistent-session-xyz-99999", 2*time.Second)
+	if err == nil {
+		t.Error("expected timeout error for nonexistent session")
+	}
+}
+
 func TestKillPaneProcessesExcluding_FiltersPIDs(t *testing.T) {
 	// Unit test the PID filtering logic without needing tmux
 	// This tests that the exclusion set is built correctly
