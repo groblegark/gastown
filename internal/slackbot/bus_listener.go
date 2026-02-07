@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/slack-go/slack"
 
 	"github.com/steveyegge/gastown/internal/rpcclient"
 )
@@ -27,6 +29,35 @@ type DecisionEventPayload struct {
 	ChosenLabel string `json:"chosen_label,omitempty"`
 	ResolvedBy  string `json:"resolved_by,omitempty"`
 	Rationale   string `json:"rationale,omitempty"`
+}
+
+// BeadStatusChangedPayload is the JSON payload for bead status change events.
+type BeadStatusChangedPayload struct {
+	BeadID    string `json:"bead_id"`
+	Title     string `json:"title"`
+	OldStatus string `json:"old_status"`
+	NewStatus string `json:"new_status"`
+	Assignee  string `json:"assignee,omitempty"`
+	ChangedBy string `json:"changed_by,omitempty"`
+}
+
+// WorkCompletedPayload is the JSON payload for work completion events.
+type WorkCompletedPayload struct {
+	BeadID   string `json:"bead_id"`
+	Title    string `json:"title"`
+	Assignee string `json:"assignee,omitempty"`
+	Summary  string `json:"summary,omitempty"`
+	Branch   string `json:"branch,omitempty"`
+	Commit   string `json:"commit,omitempty"`
+}
+
+// interestingTransitions defines which status transitions warrant Slack notifications.
+// Only significant transitions are notified to avoid noise.
+var interestingTransitions = map[string]map[string]bool{
+	"open":        {"in_progress": true, "closed": true},
+	"in_progress": {"closed": true, "blocked": true},
+	"blocked":     {"in_progress": true, "closed": true},
+	"deferred":    {"in_progress": true, "open": true},
 }
 
 // BusListenerConfig configures the NATS-based event listener.
@@ -59,12 +90,14 @@ func NewBusListener(cfg BusListenerConfig, bot *Bot, rpcClient *rpcclient.Client
 		cfg.StreamName = "HOOK_EVENTS"
 	}
 	if len(cfg.Subjects) == 0 {
-		// Default: subscribe to all decision-related events on the hooks stream
+		// Default: subscribe to decision events and bead lifecycle events
 		cfg.Subjects = []string{
 			"hooks.DecisionCreated",
 			"hooks.DecisionResponded",
 			"hooks.DecisionEscalated",
 			"hooks.DecisionExpired",
+			"hooks.BeadStatusChanged",
+			"hooks.WorkCompleted",
 		}
 	}
 	return &BusListener{
@@ -213,6 +246,38 @@ func (l *BusListener) consumePlainNATS(ctx context.Context, nc *nats.Conn) error
 
 // handleMessage parses a NATS message and dispatches to the appropriate handler.
 func (l *BusListener) handleMessage(subject string, data []byte) {
+	// Route bead lifecycle events (different payload structure)
+	switch {
+	case contains(subject, "BeadStatusChanged") || contains(subject, "bead.status_changed") || contains(subject, "beads.status_changed"):
+		var payload BeadStatusChangedPayload
+		if err := json.Unmarshal(data, &payload); err != nil {
+			log.Printf("BusListener: error parsing bead status event from %s: %v", subject, err)
+			return
+		}
+		if payload.BeadID == "" {
+			log.Printf("BusListener: ignoring bead status event with empty bead_id from %s", subject)
+			return
+		}
+		log.Printf("BusListener: received bead status change %s: %s → %s", payload.BeadID, payload.OldStatus, payload.NewStatus)
+		l.handleBeadStatusChanged(payload)
+		return
+
+	case contains(subject, "WorkCompleted") || contains(subject, "work.completed") || contains(subject, "work_completed"):
+		var payload WorkCompletedPayload
+		if err := json.Unmarshal(data, &payload); err != nil {
+			log.Printf("BusListener: error parsing work completed event from %s: %v", subject, err)
+			return
+		}
+		if payload.BeadID == "" {
+			log.Printf("BusListener: ignoring work completed event with empty bead_id from %s", subject)
+			return
+		}
+		log.Printf("BusListener: received work completed for %s", payload.BeadID)
+		l.handleWorkCompleted(payload)
+		return
+	}
+
+	// Decision events
 	var payload DecisionEventPayload
 	if err := json.Unmarshal(data, &payload); err != nil {
 		log.Printf("BusListener: error parsing event from %s: %v", subject, err)
@@ -339,6 +404,175 @@ func (l *BusListener) handleDecisionEscalated(payload DecisionEventPayload) {
 	// Escalated decisions are treated like new decisions for notification purposes
 	log.Printf("BusListener: decision %s escalated, treating as new notification", payload.DecisionID)
 	l.handleDecisionCreated(payload)
+}
+
+func (l *BusListener) handleBeadStatusChanged(payload BeadStatusChangedPayload) {
+	// Only notify for interesting transitions to avoid noise
+	oldNorm := strings.ToLower(payload.OldStatus)
+	newNorm := strings.ToLower(payload.NewStatus)
+	if targets, ok := interestingTransitions[oldNorm]; !ok || !targets[newNorm] {
+		log.Printf("BusListener: skipping uninteresting transition %s → %s for %s", payload.OldStatus, payload.NewStatus, payload.BeadID)
+		return
+	}
+
+	// De-duplicate
+	dedupeKey := fmt.Sprintf("status:%s:%s→%s", payload.BeadID, payload.OldStatus, payload.NewStatus)
+	l.seenMu.Lock()
+	if l.seen[dedupeKey] {
+		l.seenMu.Unlock()
+		return
+	}
+	l.seen[dedupeKey] = true
+	l.seenMu.Unlock()
+
+	if l.bot == nil {
+		log.Printf("BusListener: skipping bead status notification for %s (no bot)", payload.BeadID)
+		return
+	}
+
+	// Resolve channel from assignee identity
+	targetChannel := l.resolveChannelForAgent(payload.Assignee)
+
+	// Build status transition emoji
+	statusEmoji := ":arrows_counterclockwise:"
+	switch newNorm {
+	case "closed":
+		statusEmoji = ":white_check_mark:"
+	case "in_progress":
+		statusEmoji = ":hammer_and_wrench:"
+	case "blocked":
+		statusEmoji = ":no_entry_sign:"
+	}
+
+	title := payload.Title
+	if title == "" {
+		title = payload.BeadID
+	}
+
+	headerText := fmt.Sprintf("%s *%s* status changed: `%s` → `%s`",
+		statusEmoji, title, payload.OldStatus, payload.NewStatus)
+	if payload.ChangedBy != "" {
+		headerText += fmt.Sprintf(" (by %s)", payload.ChangedBy)
+	}
+
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", headerText, false, false),
+			nil, nil,
+		),
+		slack.NewContextBlock("",
+			slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("Bead: `%s`", payload.BeadID), false, false),
+		),
+	}
+
+	_, _, err := l.bot.client.PostMessage(targetChannel,
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		log.Printf("BusListener: error posting bead status change to Slack: %v", err)
+	} else {
+		log.Printf("BusListener: notified bead status change %s → %s for %s", payload.OldStatus, payload.NewStatus, payload.BeadID)
+	}
+}
+
+func (l *BusListener) handleWorkCompleted(payload WorkCompletedPayload) {
+	// De-duplicate
+	dedupeKey := "completed:" + payload.BeadID
+	l.seenMu.Lock()
+	if l.seen[dedupeKey] {
+		l.seenMu.Unlock()
+		return
+	}
+	l.seen[dedupeKey] = true
+	l.seenMu.Unlock()
+
+	if l.bot == nil {
+		log.Printf("BusListener: skipping work completed notification for %s (no bot)", payload.BeadID)
+		return
+	}
+
+	// Resolve channel from assignee identity
+	targetChannel := l.resolveChannelForAgent(payload.Assignee)
+
+	title := payload.Title
+	if title == "" {
+		title = payload.BeadID
+	}
+
+	headerText := fmt.Sprintf(":tada: *Work completed*: %s", title)
+
+	// Build detail fields
+	var detailParts []string
+	if payload.Assignee != "" {
+		detailParts = append(detailParts, fmt.Sprintf("*Assignee:* %s", payload.Assignee))
+	}
+	if payload.Branch != "" {
+		detailParts = append(detailParts, fmt.Sprintf("*Branch:* `%s`", payload.Branch))
+	}
+	if payload.Commit != "" {
+		short := payload.Commit
+		if len(short) > 8 {
+			short = short[:8]
+		}
+		detailParts = append(detailParts, fmt.Sprintf("*Commit:* `%s`", short))
+	}
+
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject("mrkdwn", headerText, false, false),
+			nil, nil,
+		),
+	}
+
+	if payload.Summary != "" {
+		blocks = append(blocks,
+			slack.NewSectionBlock(
+				slack.NewTextBlockObject("mrkdwn", payload.Summary, false, false),
+				nil, nil,
+			),
+		)
+	}
+
+	if len(detailParts) > 0 {
+		blocks = append(blocks,
+			slack.NewContextBlock("",
+				slack.NewTextBlockObject("mrkdwn",
+					fmt.Sprintf("Bead: `%s` | %s", payload.BeadID, strings.Join(detailParts, " | ")),
+					false, false,
+				),
+			),
+		)
+	} else {
+		blocks = append(blocks,
+			slack.NewContextBlock("",
+				slack.NewTextBlockObject("mrkdwn", fmt.Sprintf("Bead: `%s`", payload.BeadID), false, false),
+			),
+		)
+	}
+
+	_, _, err := l.bot.client.PostMessage(targetChannel,
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		log.Printf("BusListener: error posting work completion to Slack: %v", err)
+	} else {
+		log.Printf("BusListener: notified work completion for %s", payload.BeadID)
+	}
+}
+
+// resolveChannelForAgent resolves the Slack channel for a given agent identity.
+// Falls back to the bot's default channel if no specific routing is found.
+func (l *BusListener) resolveChannelForAgent(agent string) string {
+	if l.bot == nil {
+		return ""
+	}
+	if agent != "" {
+		ch := l.bot.resolveChannel(agent)
+		if ch != "" {
+			return ch
+		}
+	}
+	return l.bot.channelID
 }
 
 // EmitDecisionResponse publishes a decision response event to the bus.
