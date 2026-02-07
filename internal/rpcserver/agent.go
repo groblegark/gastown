@@ -334,8 +334,7 @@ func (s *AgentServer) SpawnPolecat(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("spawn failed: %w\n%s", err, string(output)))
+		return nil, cmdExecErr("spawn polecat", err, output)
 	}
 
 	// Parse output to extract polecat name
@@ -402,8 +401,7 @@ func (s *AgentServer) StartCrew(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("crew start failed: %w\n%s", err, string(output)))
+		return nil, cmdExecErr("start crew", err, output)
 	}
 
 	session := fmt.Sprintf("gt-%s-crew-%s", req.Msg.Rig, req.Msg.Name)
@@ -460,8 +458,7 @@ func (s *AgentServer) StopAgent(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("stop failed: %w\n%s", err, string(output)))
+		return nil, cmdExecErr("stop agent", err, output)
 	}
 
 	agent := &gastownv1.Agent{
@@ -493,8 +490,7 @@ func (s *AgentServer) NudgeAgent(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("nudge failed: %w\n%s", err, string(output)))
+		return nil, cmdExecErr("nudge agent", err, output)
 	}
 
 	// Extract session from output or construct it
@@ -564,7 +560,7 @@ func (s *AgentServer) PeekAgent(
 		output, err = s.tmux.CapturePane(session, lines)
 	}
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("capturing pane: %w", err))
+		return nil, unavailableErr("capturing terminal output", err, 2)
 	}
 
 	var lineSlice []string

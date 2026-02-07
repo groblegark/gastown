@@ -64,8 +64,7 @@ func (s *SlingServer) Sling(
 		Output:        io.Discard,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("sling failed: %w", err))
+		return nil, classifyErr("sling", err)
 	}
 
 	return connect.NewResponse(&gastownv1.SlingResponse{
@@ -110,8 +109,7 @@ func (s *SlingServer) SlingFormula(
 		Output:   io.Discard,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("sling formula failed: %w", err))
+		return nil, classifyErr("sling formula", err)
 	}
 
 	return connect.NewResponse(&gastownv1.SlingFormulaResponse{
@@ -147,8 +145,7 @@ func (s *SlingServer) SlingBatch(
 		Output:   io.Discard,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("batch sling failed: %w", err))
+		return nil, classifyErr("batch sling", err)
 	}
 
 	// Map internal results to proto response
@@ -186,8 +183,7 @@ func (s *SlingServer) Unsling(
 		TownRoot: s.townRoot,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("unsling failed: %w", err))
+		return nil, classifyErr("unsling", err)
 	}
 
 	return connect.NewResponse(&gastownv1.UnslingResponse{
@@ -214,7 +210,7 @@ func (s *SlingServer) GetWorkload(
 		Priority: -1,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("listing hooked beads: %w", err))
+		return nil, classifyErr("listing hooked beads", err)
 	}
 
 	resp := &gastownv1.GetWorkloadResponse{
