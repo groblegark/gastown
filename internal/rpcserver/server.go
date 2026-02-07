@@ -68,7 +68,7 @@ func (s *StatusServer) GetTownStatus(
 ) (*connect.Response[gastownv1.GetTownStatusResponse], error) {
 	status, err := s.collectTownStatus(req.Msg.Fast)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("collecting town status: %w", err))
+		return nil, unavailableErr("collecting town status", err, 5)
 	}
 	return connect.NewResponse(&gastownv1.GetTownStatusResponse{Status: status}), nil
 }
@@ -79,7 +79,7 @@ func (s *StatusServer) GetRigStatus(
 ) (*connect.Response[gastownv1.GetRigStatusResponse], error) {
 	status, err := s.collectTownStatus(false)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("collecting rig status: %w", err))
+		return nil, unavailableErr("collecting rig status", err, 5)
 	}
 
 	for _, r := range status.Rigs {
@@ -101,7 +101,7 @@ func (s *StatusServer) GetAgentStatus(
 
 	status, err := s.collectTownStatus(false)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("collecting agent status: %w", err))
+		return nil, unavailableErr("collecting agent status", err, 5)
 	}
 
 	addr := req.Msg.Address
@@ -371,7 +371,7 @@ func (s *DecisionServer) ListPending(
 
 	issues, err := client.ListDecisions()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("listing pending decisions: %w", err))
+		return nil, classifyErr("listing pending decisions", err)
 	}
 
 	var decisions []*gastownv1.Decision
@@ -569,7 +569,7 @@ func (s *DecisionServer) Resolve(
 			req.Msg.Rationale,
 			resolvedBy,
 		); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resolving decision with custom text: %w", err))
+			return nil, notFoundOrInternal("resolving decision "+req.Msg.DecisionId, err)
 		}
 	} else {
 		// Standard resolution with predefined option
@@ -579,14 +579,14 @@ func (s *DecisionServer) Resolve(
 			req.Msg.Rationale,
 			resolvedBy,
 		); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("resolving decision: %w", err))
+			return nil, notFoundOrInternal("resolving decision "+req.Msg.DecisionId, err)
 		}
 	}
 
 	// Fetch the updated decision
 	issue, fields, err := client.GetDecisionBead(req.Msg.DecisionId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("fetching resolved decision: %w", err))
+		return nil, notFoundOrInternal("fetching resolved decision "+req.Msg.DecisionId, err)
 	}
 
 	var options []*gastownv1.DecisionOption
@@ -669,12 +669,12 @@ func (s *DecisionServer) Cancel(
 		AddLabels:    []string{"decision:cancelled"},
 		RemoveLabels: []string{"decision:pending"},
 	}); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("updating decision: %w", err))
+		return nil, notFoundOrInternal("updating decision "+req.Msg.DecisionId, err)
 	}
 
 	// Close the bead
 	if err := client.Close(req.Msg.DecisionId, reason); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("closing decision: %w", err))
+		return nil, notFoundOrInternal("closing decision "+req.Msg.DecisionId, err)
 	}
 
 	// Publish cancellation event to bus
@@ -926,13 +926,13 @@ func (s *MailServer) ListInbox(
 
 	mailbox, err := mailRouter.GetMailbox(address)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("accessing mailbox for %q: %w", address, err))
+		return nil, unavailableErr(fmt.Sprintf("accessing mailbox for %q", address), err, 5)
 	}
 
 	total, unread, _ := mailbox.Count()
 	msgs, err := mailbox.List()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("listing inbox messages: %w", err))
+		return nil, unavailableErr("listing inbox messages", err, 5)
 	}
 
 	var messages []*gastownv1.Message
@@ -976,10 +976,7 @@ func (s *MailServer) ReadMessage(
 
 	msg, err := mailbox.Get(req.Msg.MessageId)
 	if err != nil {
-		if err == mail.ErrMessageNotFound {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("message not found: %s", req.Msg.MessageId))
-		}
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("reading message: %w", err))
+		return nil, notFoundOrInternal("reading message "+req.Msg.MessageId, err)
 	}
 
 	// Convert to proto message
@@ -1025,7 +1022,7 @@ func (s *MailServer) SendMessage(
 	// Send via mail router
 	mailRouter := mail.NewRouter(s.townRoot)
 	if err := mailRouter.Send(msg); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("sending message: %w", err))
+		return nil, classifyErr("sending message", err)
 	}
 
 	// Note: The mail router doesn't return the created message ID directly,
@@ -1046,10 +1043,7 @@ func (s *MailServer) MarkRead(
 	mailbox := mail.NewMailboxWithBeadsDir("", s.townRoot, townBeadsPath)
 
 	if err := mailbox.MarkReadOnly(req.Msg.MessageId); err != nil {
-		if err == mail.ErrMessageNotFound {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("message not found: %s", req.Msg.MessageId))
-		}
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("marking message as read: %w", err))
+		return nil, notFoundOrInternal("marking message as read "+req.Msg.MessageId, err)
 	}
 
 	return connect.NewResponse(&gastownv1.MarkReadResponse{}), nil
@@ -1068,10 +1062,7 @@ func (s *MailServer) DeleteMessage(
 	mailbox := mail.NewMailboxWithBeadsDir("", s.townRoot, townBeadsPath)
 
 	if err := mailbox.Delete(req.Msg.MessageId); err != nil {
-		if err == mail.ErrMessageNotFound {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("message not found: %s", req.Msg.MessageId))
-		}
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("deleting message: %w", err))
+		return nil, notFoundOrInternal("deleting message "+req.Msg.MessageId, err)
 	}
 
 	return connect.NewResponse(&gastownv1.DeleteMessageResponse{}), nil
@@ -1431,7 +1422,7 @@ func (s *ConvoyServer) ListConvoys(
 		Priority: -1,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("listing convoys: %w", err))
+		return nil, classifyErr("listing convoys", err)
 	}
 
 	var convoys []*gastownv1.Convoy
@@ -1467,7 +1458,7 @@ func (s *ConvoyServer) GetConvoyStatus(
 
 	issue, err := client.Show(req.Msg.ConvoyId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
+		return nil, notFoundOrInternal("getting convoy "+req.Msg.ConvoyId, err)
 	}
 	if issue == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
@@ -1535,7 +1526,7 @@ func (s *ConvoyServer) CreateConvoy(
 		Description: description,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("creating convoy: %w", err))
+		return nil, classifyErr("creating convoy", err)
 	}
 
 	trackedCount := 0
@@ -1565,7 +1556,7 @@ func (s *ConvoyServer) AddToConvoy(
 
 	issue, err := client.Show(req.Msg.ConvoyId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
+		return nil, notFoundOrInternal("getting convoy "+req.Msg.ConvoyId, err)
 	}
 	if issue == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
@@ -1575,7 +1566,7 @@ func (s *ConvoyServer) AddToConvoy(
 	if issue.Status == "closed" {
 		openStatus := "open"
 		if err := client.Update(issue.ID, beads.UpdateOptions{Status: &openStatus}); err != nil {
-			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("reopening convoy: %w", err))
+			return nil, classifyErr("reopening convoy", err)
 		}
 		reopened = true
 	}
@@ -1610,7 +1601,7 @@ func (s *ConvoyServer) CloseConvoy(
 
 	issue, err := client.Show(req.Msg.ConvoyId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
+		return nil, notFoundOrInternal("getting convoy "+req.Msg.ConvoyId, err)
 	}
 	if issue == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
@@ -1626,7 +1617,7 @@ func (s *ConvoyServer) CloseConvoy(
 		reason = "Closed via RPC"
 	}
 	if err := client.CloseWithReason(reason, issue.ID); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("closing convoy: %w", err))
+		return nil, classifyErr("closing convoy", err)
 	}
 
 	convoy := s.issueToConvoy(*issue)

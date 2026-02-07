@@ -182,7 +182,7 @@ func (s *BeadsServer) ListIssues(
 
 	issues, err := b.List(opts)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, classifyErr("listing issues", err)
 	}
 
 	var protoIssues []*gastownv1.Issue
@@ -217,10 +217,7 @@ func (s *BeadsServer) GetIssue(
 
 	issue, err := b.Show(req.Msg.Id)
 	if err != nil {
-		if err == beads.ErrNotFound {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("issue not found: %s", req.Msg.Id))
-		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, notFoundOrInternal("getting issue "+req.Msg.Id, err)
 	}
 
 	return connect.NewResponse(&gastownv1.GetIssueResponse{
@@ -263,7 +260,7 @@ func (s *BeadsServer) CreateIssue(
 	}
 
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, classifyErr("creating issue", err)
 	}
 
 	// Handle initial labels
@@ -325,16 +322,13 @@ func (s *BeadsServer) UpdateIssue(
 	}
 
 	if err := b.Update(req.Msg.Id, opts); err != nil {
-		if err == beads.ErrNotFound {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("issue not found: %s", req.Msg.Id))
-		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, notFoundOrInternal("updating issue "+req.Msg.Id, err)
 	}
 
 	// Fetch updated issue
 	issue, err := b.Show(req.Msg.Id)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, notFoundOrInternal("fetching updated issue "+req.Msg.Id, err)
 	}
 
 	return connect.NewResponse(&gastownv1.UpdateIssueResponse{
@@ -440,7 +434,7 @@ func (s *BeadsServer) SearchIssues(
 
 	out, err := b.Run(args...)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, classifyErr("searching issues", err)
 	}
 
 	// Parse JSON output - bd search returns array of issues
@@ -480,7 +474,7 @@ func (s *BeadsServer) GetReadyIssues(
 	}
 
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, classifyErr("listing ready issues", err)
 	}
 
 	var protoIssues []*gastownv1.Issue
@@ -507,7 +501,7 @@ func (s *BeadsServer) GetBlockedIssues(
 
 	issues, err := b.Blocked()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, classifyErr("listing blocked issues", err)
 	}
 
 	var protoIssues []*gastownv1.Issue
@@ -547,7 +541,7 @@ func (s *BeadsServer) AddDependency(
 	}
 
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, classifyErr("adding dependency", err)
 	}
 
 	return connect.NewResponse(&gastownv1.AddDependencyResponse{
@@ -566,7 +560,7 @@ func (s *BeadsServer) RemoveDependency(
 	b := beads.New(s.townRoot)
 
 	if err := b.RemoveDependency(req.Msg.IssueId, req.Msg.DependsOnId); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, classifyErr("removing dependency", err)
 	}
 
 	return connect.NewResponse(&gastownv1.RemoveDependencyResponse{
@@ -595,7 +589,7 @@ func (s *BeadsServer) ListDependencies(
 
 	issues, err := b.ListDependencies(req.Msg.IssueId, req.Msg.Direction, depType)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, classifyErr("listing dependencies", err)
 	}
 
 	var protoIssues []*gastownv1.Issue
@@ -625,7 +619,7 @@ func (s *BeadsServer) AddComment(
 	}
 
 	if _, err := b.Run(args...); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, classifyErr("adding comment", err)
 	}
 
 	// Return a simple response (bd doesn't return the created comment)
@@ -727,7 +721,7 @@ func (s *BeadsServer) ManageLabels(
 	// Fetch updated issue to get current labels
 	issue, err := b.Show(req.Msg.IssueId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, notFoundOrInternal("fetching issue labels "+req.Msg.IssueId, err)
 	}
 
 	return connect.NewResponse(&gastownv1.ManageLabelsResponse{
@@ -743,7 +737,7 @@ func (s *BeadsServer) GetStats(
 
 	rawStats, err := b.Stats()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, classifyErr("getting stats", err)
 	}
 
 	// Get counts by listing issues

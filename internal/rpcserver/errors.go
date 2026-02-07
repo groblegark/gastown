@@ -2,12 +2,16 @@ package rpcserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
 	"strings"
 
 	"connectrpc.com/connect"
+
+	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/mail"
 )
 
 // Error helpers for consistent RPC error handling across all services.
@@ -90,6 +94,66 @@ func containsAny(s string, substrs ...string) bool {
 		}
 	}
 	return false
+}
+
+// classifyErr classifies errors from internal packages (beads, mail, sling, etc.)
+// into appropriate Connect error codes. It checks for known sentinel errors first,
+// then falls back to error message pattern matching.
+//
+// Use this for errors returned by internal Go packages (not external commands).
+// For external command errors, use cmdExecErr instead.
+func classifyErr(operation string, err error) *connect.Error {
+	if err == nil {
+		return nil
+	}
+
+	// Check for context cancellation
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return connect.NewError(connect.CodeCanceled, fmt.Errorf("%s was cancelled", operation))
+	}
+
+	// Check for known sentinel errors: not found
+	if errors.Is(err, beads.ErrNotFound) || errors.Is(err, mail.ErrMessageNotFound) {
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("%s: resource not found", operation))
+	}
+
+	// Check for known sentinel errors: not installed / unavailable
+	if errors.Is(err, beads.ErrNotInstalled) {
+		return unavailableErr(operation+": beads backend not available", err, 10)
+	}
+
+	// Pattern-match on error message for common categories
+	errMsg := strings.ToLower(err.Error())
+
+	if containsAny(errMsg, "not found", "does not exist", "no such") {
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("%s: resource not found", operation))
+	}
+	if containsAny(errMsg, "already exists", "duplicate", "conflict") {
+		return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("%s: resource already exists", operation))
+	}
+	if containsAny(errMsg, "permission denied", "unauthorized", "forbidden") {
+		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("%s: permission denied", operation))
+	}
+	if containsAny(errMsg, "invalid", "bad request", "malformed") {
+		return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s: %s", operation, err.Error()))
+	}
+
+	// Default: unexpected internal error
+	return connect.NewError(connect.CodeInternal, fmt.Errorf("%s: %w", operation, err))
+}
+
+// notFoundOrInternal returns CodeNotFound if the error matches a not-found pattern,
+// otherwise CodeInternal. Use for operations where the primary expected error is
+// a missing resource (e.g., Show, Get).
+func notFoundOrInternal(operation string, err error) *connect.Error {
+	if errors.Is(err, beads.ErrNotFound) || errors.Is(err, mail.ErrMessageNotFound) {
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("%s: resource not found", operation))
+	}
+	errMsg := strings.ToLower(err.Error())
+	if containsAny(errMsg, "not found", "does not exist", "no such") {
+		return connect.NewError(connect.CodeNotFound, fmt.Errorf("%s: resource not found", operation))
+	}
+	return connect.NewError(connect.CodeInternal, fmt.Errorf("%s: %w", operation, err))
 }
 
 // truncateLog truncates a string for logging to prevent log flooding.
