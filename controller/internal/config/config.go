@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"strconv"
+	"time"
 )
 
 // Config holds controller configuration. Values come from flags, env vars,
@@ -35,6 +36,10 @@ type Config struct {
 
 	// DefaultImage is the default container image for agent pods (env: AGENT_IMAGE).
 	DefaultImage string
+
+	// SyncInterval is how often to reconcile pod statuses with beads (env: SYNC_INTERVAL).
+	// Default: 60s.
+	SyncInterval time.Duration
 }
 
 // Parse reads configuration from flags and environment variables.
@@ -49,6 +54,7 @@ func Parse() *Config {
 		TownRoot:     os.Getenv("GT_TOWN_ROOT"),
 		BdBinary:     envOr("BD_BINARY", "bd"),
 		DefaultImage: os.Getenv("AGENT_IMAGE"),
+		SyncInterval: envDurationOr("SYNC_INTERVAL", 60*time.Second),
 	}
 
 	flag.StringVar(&cfg.DaemonHost, "daemon-host", cfg.DaemonHost, "BD Daemon hostname")
@@ -59,6 +65,7 @@ func Parse() *Config {
 	flag.StringVar(&cfg.TownRoot, "town-root", cfg.TownRoot, "Gas Town workspace root directory")
 	flag.StringVar(&cfg.BdBinary, "bd-binary", cfg.BdBinary, "Path to bd executable")
 	flag.StringVar(&cfg.DefaultImage, "agent-image", cfg.DefaultImage, "Default container image for agent pods")
+	flag.DurationVar(&cfg.SyncInterval, "sync-interval", cfg.SyncInterval, "Interval for periodic pod status sync")
 	flag.Parse()
 
 	return cfg
@@ -75,6 +82,15 @@ func envIntOr(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+func envDurationOr(key string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
 		}
 	}
 	return fallback

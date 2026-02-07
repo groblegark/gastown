@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -49,7 +50,11 @@ func main() {
 		DaemonPort:   fmt.Sprintf("%d", cfg.DaemonPort),
 	}, logger)
 	pods := podmanager.New(k8sClient, logger)
-	status := statusreporter.NewStubReporter(logger)
+	status := statusreporter.NewBdReporter(statusreporter.BdConfig{
+		BdBinary:  cfg.BdBinary,
+		TownRoot:  cfg.TownRoot,
+		Namespace: cfg.Namespace,
+	}, k8sClient, logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
@@ -69,7 +74,15 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, watcher b
 		watcherDone <- watcher.Start(ctx)
 	}()
 
-	logger.Info("controller ready, waiting for beads events")
+	// Start periodic SyncAll reconciliation.
+	syncInterval := 60 * time.Second
+	if cfg.SyncInterval > 0 {
+		syncInterval = cfg.SyncInterval
+	}
+	go runPeriodicSync(ctx, logger, status, syncInterval)
+
+	logger.Info("controller ready, waiting for beads events",
+		"sync_interval", syncInterval)
 
 	for {
 		select {
@@ -91,21 +104,69 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, watcher b
 	}
 }
 
+// runPeriodicSync runs SyncAll at a regular interval to reconcile pod statuses.
+func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusreporter.Reporter, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := status.SyncAll(ctx); err != nil {
+				logger.Warn("periodic sync failed", "error", err)
+			}
+			// Log metrics snapshot after each sync.
+			m := status.Metrics()
+			logger.Info("metrics",
+				"reports_total", m.StatusReportsTotal,
+				"report_errors", m.StatusReportErrors,
+				"sync_runs", m.SyncAllRuns,
+				"sync_errors", m.SyncAllErrors)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 // handleEvent translates a beads lifecycle event into K8s pod operations.
 func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, event beadswatcher.Event, pods podmanager.Manager, status statusreporter.Reporter) error {
 	logger.Info("handling beads event",
 		"type", event.Type, "rig", event.Rig, "role", event.Role,
 		"agent", event.AgentName, "bead", event.BeadID)
 
+	agentBeadID := fmt.Sprintf("gt-%s-%s-%s", event.Rig, event.Role, event.AgentName)
+
 	switch event.Type {
 	case beadswatcher.AgentSpawn:
 		spec := buildAgentPodSpec(cfg, event)
-		return pods.CreateAgentPod(ctx, spec)
+		if err := pods.CreateAgentPod(ctx, spec); err != nil {
+			return err
+		}
+		// Report spawning status to beads.
+		_ = status.ReportPodStatus(ctx, agentBeadID, statusreporter.PodStatus{
+			PodName:   spec.PodName(),
+			Namespace: spec.Namespace,
+			Phase:     string("Pending"),
+			Ready:     false,
+		})
+		return nil
 
 	case beadswatcher.AgentDone, beadswatcher.AgentKill:
 		podName := fmt.Sprintf("gt-%s-%s-%s", event.Rig, event.Role, event.AgentName)
 		ns := namespaceFromEvent(event, cfg.Namespace)
-		return pods.DeleteAgentPod(ctx, podName, ns)
+		err := pods.DeleteAgentPod(ctx, podName, ns)
+		// Report done status to beads regardless of delete error.
+		phase := "Succeeded"
+		if event.Type == beadswatcher.AgentKill {
+			phase = "Failed"
+		}
+		_ = status.ReportPodStatus(ctx, agentBeadID, statusreporter.PodStatus{
+			PodName:   podName,
+			Namespace: ns,
+			Phase:     phase,
+			Ready:     false,
+		})
+		return err
 
 	case beadswatcher.AgentStuck:
 		// Delete and recreate the pod to restart the agent.
@@ -115,7 +176,18 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 			logger.Warn("failed to delete stuck pod (may not exist)", "pod", podName, "error", err)
 		}
 		spec := buildAgentPodSpec(cfg, event)
-		return pods.CreateAgentPod(ctx, spec)
+		if err := pods.CreateAgentPod(ctx, spec); err != nil {
+			return err
+		}
+		// Report restarting status.
+		_ = status.ReportPodStatus(ctx, agentBeadID, statusreporter.PodStatus{
+			PodName:   spec.PodName(),
+			Namespace: spec.Namespace,
+			Phase:     string("Pending"),
+			Ready:     false,
+			Message:   "restarted due to stuck detection",
+		})
+		return nil
 
 	default:
 		logger.Warn("unknown event type", "type", event.Type)
