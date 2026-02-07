@@ -464,8 +464,8 @@ case "$cmd" in
   show)
     beadID="$1"
     case "$beadID" in
-      hq-gastown-polecat-nux)
-        echo '[{"id":"hq-gastown-polecat-nux","title":"Polecat nux","status":"open","hook_bead":"gt-abc123","agent_state":"working"}]'
+      gt-gastown-polecat-nux)
+        echo '[{"id":"gt-gastown-polecat-nux","title":"Polecat nux","status":"open","hook_bead":"gt-abc123","agent_state":"working"}]'
         ;;
       gt-abc123)
         echo '[{"id":"gt-abc123","title":"Bug to fix","status":"hooked","description":"attached_molecule: gt-wisp-xyz"}]'
