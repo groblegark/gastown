@@ -2459,23 +2459,23 @@ func (s *TerminalServer) SendInput(
 ) (*connect.Response[gastownv1.SendInputResponse], error) {
 	session := req.Msg.Session
 	if session == "" {
-		return nil, invalidArg("session", "session name is required")
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session name is required"))
 	}
 
 	// Validate session starts with "gt-" to prevent arbitrary tmux access
 	if !strings.HasPrefix(session, "gt-") {
-		return nil, invalidArg("session", "session must start with 'gt-'")
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session must start with 'gt-'"))
 	}
 
 	input := req.Msg.Input
 	if input == "" {
-		return nil, invalidArg("input", "input text is required")
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("input text is required"))
 	}
 
 	// Check session exists
 	exists, err := s.tmuxClient.HasSession(session)
 	if err != nil {
-		return nil, internalErr("failed to check session existence", err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to check session existence: %w", err))
 	}
 	if !exists {
 		return connect.NewResponse(&gastownv1.SendInputResponse{
