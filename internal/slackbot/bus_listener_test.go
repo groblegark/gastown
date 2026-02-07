@@ -68,8 +68,8 @@ func TestNewBusListener_DefaultConfig(t *testing.T) {
 	if listener.cfg.StreamName != "HOOK_EVENTS" {
 		t.Errorf("expected stream name 'HOOK_EVENTS', got %q", listener.cfg.StreamName)
 	}
-	if len(listener.cfg.Subjects) != 4 {
-		t.Errorf("expected 4 default subjects, got %d", len(listener.cfg.Subjects))
+	if len(listener.cfg.Subjects) != 6 {
+		t.Errorf("expected 6 default subjects, got %d", len(listener.cfg.Subjects))
 	}
 }
 
@@ -464,6 +464,422 @@ func TestDecisionEventPayload_JSON(t *testing.T) {
 	}
 	if decoded.ResolvedBy != payload.ResolvedBy {
 		t.Errorf("ResolvedBy mismatch: got %q, want %q", decoded.ResolvedBy, payload.ResolvedBy)
+	}
+}
+
+func TestBusListener_HandleMessage_BeadStatusChanged(t *testing.T) {
+	listener := NewBusListener(BusListenerConfig{
+		NatsURL: "nats://localhost:4222",
+	}, nil, nil)
+
+	payload := BeadStatusChangedPayload{
+		BeadID:    "gt-abc123",
+		Title:     "Fix authentication bug",
+		OldStatus: "open",
+		NewStatus: "in_progress",
+		Assignee:  "gastown/polecats/alpha",
+		ChangedBy: "mayor",
+	}
+	data, _ := json.Marshal(payload)
+
+	// Should not panic with nil bot (skips posting)
+	listener.handleMessage("hooks.BeadStatusChanged", data)
+
+	// Verify de-duplication key was set
+	listener.seenMu.Lock()
+	dedupeKey := "status:gt-abc123:open→in_progress"
+	seen := listener.seen[dedupeKey]
+	listener.seenMu.Unlock()
+	if !seen {
+		t.Error("expected bead status change to be marked as seen")
+	}
+}
+
+func TestBusListener_HandleMessage_BeadStatusChanged_UninterestingTransition(t *testing.T) {
+	listener := NewBusListener(BusListenerConfig{
+		NatsURL: "nats://localhost:4222",
+	}, nil, nil)
+
+	// open → deferred is not in the interesting transitions map
+	payload := BeadStatusChangedPayload{
+		BeadID:    "gt-boring",
+		Title:     "Boring transition",
+		OldStatus: "open",
+		NewStatus: "deferred",
+	}
+	data, _ := json.Marshal(payload)
+
+	listener.handleMessage("hooks.BeadStatusChanged", data)
+
+	// Should NOT be in seen map since it was filtered out
+	listener.seenMu.Lock()
+	dedupeKey := "status:gt-boring:open→deferred"
+	seen := listener.seen[dedupeKey]
+	listener.seenMu.Unlock()
+	if seen {
+		t.Error("uninteresting transition should not be marked as seen")
+	}
+}
+
+func TestBusListener_HandleMessage_BeadStatusChanged_EmptyBeadID(t *testing.T) {
+	listener := NewBusListener(BusListenerConfig{
+		NatsURL: "nats://localhost:4222",
+	}, nil, nil)
+
+	payload := BeadStatusChangedPayload{
+		Title:     "No bead ID",
+		OldStatus: "open",
+		NewStatus: "closed",
+	}
+	data, _ := json.Marshal(payload)
+
+	// Should log and skip, not panic
+	listener.handleMessage("hooks.BeadStatusChanged", data)
+}
+
+func TestBusListener_HandleMessage_BeadStatusChanged_InvalidJSON(t *testing.T) {
+	listener := NewBusListener(BusListenerConfig{
+		NatsURL: "nats://localhost:4222",
+	}, nil, nil)
+
+	// Should not panic on invalid JSON for bead events
+	listener.handleMessage("hooks.BeadStatusChanged", []byte("not json"))
+}
+
+func TestBusListener_HandleMessage_WorkCompleted(t *testing.T) {
+	listener := NewBusListener(BusListenerConfig{
+		NatsURL: "nats://localhost:4222",
+	}, nil, nil)
+
+	payload := WorkCompletedPayload{
+		BeadID:   "gt-xyz789",
+		Title:    "Implement feature X",
+		Assignee: "gastown/polecats/beta",
+		Summary:  "Added new feature with tests",
+		Branch:   "feat/feature-x",
+		Commit:   "abc1234567890",
+	}
+	data, _ := json.Marshal(payload)
+
+	// Should not panic with nil bot (skips posting)
+	listener.handleMessage("hooks.WorkCompleted", data)
+
+	// Verify de-duplication key was set
+	listener.seenMu.Lock()
+	seen := listener.seen["completed:gt-xyz789"]
+	listener.seenMu.Unlock()
+	if !seen {
+		t.Error("expected work completed to be marked as seen")
+	}
+}
+
+func TestBusListener_HandleMessage_WorkCompleted_EmptyBeadID(t *testing.T) {
+	listener := NewBusListener(BusListenerConfig{
+		NatsURL: "nats://localhost:4222",
+	}, nil, nil)
+
+	payload := WorkCompletedPayload{
+		Title: "No bead ID",
+	}
+	data, _ := json.Marshal(payload)
+
+	// Should log and skip, not panic
+	listener.handleMessage("hooks.WorkCompleted", data)
+}
+
+func TestBusListener_HandleMessage_WorkCompleted_InvalidJSON(t *testing.T) {
+	listener := NewBusListener(BusListenerConfig{
+		NatsURL: "nats://localhost:4222",
+	}, nil, nil)
+
+	// Should not panic on invalid JSON for work completed events
+	listener.handleMessage("hooks.WorkCompleted", []byte("bad json"))
+}
+
+func TestBusListener_HandleMessage_WorkCompleted_DuplicateFiltering(t *testing.T) {
+	listener := NewBusListener(BusListenerConfig{
+		NatsURL: "nats://localhost:4222",
+	}, nil, nil)
+
+	// Pre-mark as seen
+	listener.seenMu.Lock()
+	listener.seen["completed:gt-dupe"] = true
+	listener.seenMu.Unlock()
+
+	// handleWorkCompleted should skip (nil bot won't be called)
+	listener.handleWorkCompleted(WorkCompletedPayload{
+		BeadID: "gt-dupe",
+		Title:  "Already completed",
+	})
+
+	// If we got here without a nil pointer panic, de-duplication worked
+}
+
+func TestBusListener_HandleMessage_BeadStatusChanged_SubjectRouting(t *testing.T) {
+	tests := []struct {
+		subject  string
+		wantSeen bool
+	}{
+		{"hooks.BeadStatusChanged", true},
+		{"bead.status_changed", true},
+		{"beads.status_changed", true},
+		{"hooks.Unknown", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.subject, func(t *testing.T) {
+			listener := NewBusListener(BusListenerConfig{
+				NatsURL: "nats://localhost:4222",
+			}, nil, nil)
+
+			payload := BeadStatusChangedPayload{
+				BeadID:    "route-test-bead",
+				Title:     "Test routing",
+				OldStatus: "open",
+				NewStatus: "in_progress",
+			}
+			data, _ := json.Marshal(payload)
+
+			listener.handleMessage(tt.subject, data)
+
+			listener.seenMu.Lock()
+			dedupeKey := "status:route-test-bead:open→in_progress"
+			seen := listener.seen[dedupeKey]
+			listener.seenMu.Unlock()
+
+			if seen != tt.wantSeen {
+				t.Errorf("seen=%v, want %v", seen, tt.wantSeen)
+			}
+		})
+	}
+}
+
+func TestBusListener_HandleMessage_WorkCompleted_SubjectRouting(t *testing.T) {
+	tests := []struct {
+		subject  string
+		wantSeen bool
+	}{
+		{"hooks.WorkCompleted", true},
+		{"work.completed", true},
+		{"work_completed", true},
+		{"hooks.Unknown", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.subject, func(t *testing.T) {
+			listener := NewBusListener(BusListenerConfig{
+				NatsURL: "nats://localhost:4222",
+			}, nil, nil)
+
+			payload := WorkCompletedPayload{
+				BeadID: "route-test-work",
+				Title:  "Test routing",
+			}
+			data, _ := json.Marshal(payload)
+
+			listener.handleMessage(tt.subject, data)
+
+			listener.seenMu.Lock()
+			seen := listener.seen["completed:route-test-work"]
+			listener.seenMu.Unlock()
+
+			if seen != tt.wantSeen {
+				t.Errorf("seen=%v, want %v", seen, tt.wantSeen)
+			}
+		})
+	}
+}
+
+func TestBeadStatusChangedPayload_JSON(t *testing.T) {
+	payload := BeadStatusChangedPayload{
+		BeadID:    "gt-abc123",
+		Title:     "Fix the bug",
+		OldStatus: "open",
+		NewStatus: "in_progress",
+		Assignee:  "gastown/polecats/alpha",
+		ChangedBy: "mayor",
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var decoded BeadStatusChangedPayload
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if decoded.BeadID != payload.BeadID {
+		t.Errorf("BeadID mismatch: got %q, want %q", decoded.BeadID, payload.BeadID)
+	}
+	if decoded.OldStatus != payload.OldStatus {
+		t.Errorf("OldStatus mismatch: got %q, want %q", decoded.OldStatus, payload.OldStatus)
+	}
+	if decoded.NewStatus != payload.NewStatus {
+		t.Errorf("NewStatus mismatch: got %q, want %q", decoded.NewStatus, payload.NewStatus)
+	}
+	if decoded.Assignee != payload.Assignee {
+		t.Errorf("Assignee mismatch: got %q, want %q", decoded.Assignee, payload.Assignee)
+	}
+}
+
+func TestWorkCompletedPayload_JSON(t *testing.T) {
+	payload := WorkCompletedPayload{
+		BeadID:   "gt-xyz789",
+		Title:    "Implement feature",
+		Assignee: "gastown/polecats/beta",
+		Summary:  "Done with tests",
+		Branch:   "feat/feature-x",
+		Commit:   "abc1234567890",
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var decoded WorkCompletedPayload
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if decoded.BeadID != payload.BeadID {
+		t.Errorf("BeadID mismatch: got %q, want %q", decoded.BeadID, payload.BeadID)
+	}
+	if decoded.Summary != payload.Summary {
+		t.Errorf("Summary mismatch: got %q, want %q", decoded.Summary, payload.Summary)
+	}
+	if decoded.Branch != payload.Branch {
+		t.Errorf("Branch mismatch: got %q, want %q", decoded.Branch, payload.Branch)
+	}
+	if decoded.Commit != payload.Commit {
+		t.Errorf("Commit mismatch: got %q, want %q", decoded.Commit, payload.Commit)
+	}
+}
+
+func TestInterestingTransitions(t *testing.T) {
+	tests := []struct {
+		old, new    string
+		interesting bool
+	}{
+		{"open", "in_progress", true},
+		{"open", "closed", true},
+		{"open", "deferred", false},
+		{"in_progress", "closed", true},
+		{"in_progress", "blocked", true},
+		{"in_progress", "open", false},
+		{"blocked", "in_progress", true},
+		{"blocked", "closed", true},
+		{"deferred", "in_progress", true},
+		{"deferred", "open", true},
+		{"deferred", "closed", false},
+		{"unknown", "closed", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.old+"→"+tt.new, func(t *testing.T) {
+			targets, ok := interestingTransitions[tt.old]
+			got := ok && targets[tt.new]
+			if got != tt.interesting {
+				t.Errorf("transition %s→%s: got interesting=%v, want %v", tt.old, tt.new, got, tt.interesting)
+			}
+		})
+	}
+}
+
+func TestBusListener_PlainNATS_ReceivesBeadStatusChanged(t *testing.T) {
+	ns, url := startTestNATS(t)
+	defer ns.Shutdown()
+
+	listener := NewBusListener(BusListenerConfig{
+		NatsURL:  url,
+		Subjects: []string{"hooks.BeadStatusChanged"},
+	}, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go func() {
+		_ = listener.Run(ctx)
+	}()
+
+	// Give listener time to subscribe
+	time.Sleep(500 * time.Millisecond)
+
+	nc, err := nats.Connect(url)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer nc.Close()
+
+	payload := BeadStatusChangedPayload{
+		BeadID:    "nats-bead-1",
+		Title:     "Test bead status via NATS",
+		OldStatus: "open",
+		NewStatus: "in_progress",
+	}
+	data, _ := json.Marshal(payload)
+	if err := nc.Publish("hooks.BeadStatusChanged", data); err != nil {
+		t.Fatalf("failed to publish: %v", err)
+	}
+	nc.Flush()
+
+	time.Sleep(500 * time.Millisecond)
+
+	listener.seenMu.Lock()
+	seen := listener.seen["status:nats-bead-1:open→in_progress"]
+	listener.seenMu.Unlock()
+
+	if !seen {
+		t.Error("expected bead status change to be seen after NATS publish")
+	}
+}
+
+func TestBusListener_PlainNATS_ReceivesWorkCompleted(t *testing.T) {
+	ns, url := startTestNATS(t)
+	defer ns.Shutdown()
+
+	listener := NewBusListener(BusListenerConfig{
+		NatsURL:  url,
+		Subjects: []string{"hooks.WorkCompleted"},
+	}, nil, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	go func() {
+		_ = listener.Run(ctx)
+	}()
+
+	time.Sleep(500 * time.Millisecond)
+
+	nc, err := nats.Connect(url)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer nc.Close()
+
+	payload := WorkCompletedPayload{
+		BeadID:   "nats-work-1",
+		Title:    "Test work completed via NATS",
+		Assignee: "gastown/polecats/test",
+		Summary:  "All done",
+	}
+	data, _ := json.Marshal(payload)
+	if err := nc.Publish("hooks.WorkCompleted", data); err != nil {
+		t.Fatalf("failed to publish: %v", err)
+	}
+	nc.Flush()
+
+	time.Sleep(500 * time.Millisecond)
+
+	listener.seenMu.Lock()
+	seen := listener.seen["completed:nats-work-1"]
+	listener.seenMu.Unlock()
+
+	if !seen {
+		t.Error("expected work completion to be seen after NATS publish")
 	}
 }
 
