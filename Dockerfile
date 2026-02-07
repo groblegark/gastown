@@ -8,6 +8,7 @@ RUN apk add --no-cache git
 
 WORKDIR /src
 COPY go.mod go.sum ./
+ENV GOTOOLCHAIN=auto
 RUN go mod download
 
 COPY . .
