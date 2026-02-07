@@ -3,8 +3,7 @@ package rpcserver
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strings"
+	"io"
 
 	"connectrpc.com/connect"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/steveyegge/gastown/gen/gastown/v1/gastownv1connect"
 
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/sling"
 )
 
 // SlingServer implements the SlingService.
@@ -40,118 +40,43 @@ func (s *SlingServer) Sling(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("target is required for RPC sling"))
 	}
 
-	// Build gt sling command
-	args := []string{"sling", beadID, target}
-
-	if req.Msg.Args != "" {
-		args = append(args, "--args", req.Msg.Args)
-	}
-	if req.Msg.Subject != "" {
-		args = append(args, "--subject", req.Msg.Subject)
-	}
-	if req.Msg.Message != "" {
-		args = append(args, "--message", req.Msg.Message)
-	}
-	if req.Msg.Create {
-		args = append(args, "--create")
-	}
-	if req.Msg.Force {
-		args = append(args, "--force")
-	}
-	if req.Msg.NoConvoy {
-		args = append(args, "--no-convoy")
-	}
-	if req.Msg.Convoy != "" {
-		args = append(args, "--convoy", req.Msg.Convoy)
-	}
-	if req.Msg.NoMerge {
-		args = append(args, "--no-merge")
-	}
+	mergeStrategy := ""
 	if req.Msg.MergeStrategy != gastownv1.MergeStrategy_MERGE_STRATEGY_UNSPECIFIED {
-		strategy := mergeStrategyToString(req.Msg.MergeStrategy)
-		if strategy != "" {
-			args = append(args, "--merge", strategy)
-		}
-	}
-	if req.Msg.Owned {
-		args = append(args, "--owned")
-	}
-	if req.Msg.Account != "" {
-		args = append(args, "--account", req.Msg.Account)
-	}
-	if req.Msg.Agent != "" {
-		args = append(args, "--agent", req.Msg.Agent)
+		mergeStrategy = mergeStrategyToString(req.Msg.MergeStrategy)
 	}
 
-	cmd := exec.CommandContext(ctx, "gt", args...)
-	cmd.Dir = s.townRoot
-	output, err := cmd.CombinedOutput()
+	result, err := sling.Sling(sling.SlingOptions{
+		BeadID:        beadID,
+		Target:        target,
+		TownRoot:      s.townRoot,
+		Args:          req.Msg.Args,
+		Subject:       req.Msg.Subject,
+		Message:       req.Msg.Message,
+		Create:        req.Msg.Create,
+		Force:         req.Msg.Force,
+		NoConvoy:      req.Msg.NoConvoy,
+		Convoy:        req.Msg.Convoy,
+		NoMerge:       req.Msg.NoMerge,
+		MergeStrategy: mergeStrategy,
+		Owned:         req.Msg.Owned,
+		Account:       req.Msg.Account,
+		Agent:         req.Msg.Agent,
+		Output:        io.Discard,
+	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("sling failed: %w\n%s", err, string(output)))
+			fmt.Errorf("sling failed: %w", err))
 	}
 
-	// Parse output for response data
-	resp := &gastownv1.SlingResponse{
-		BeadId: beadID,
-	}
-
-	outputStr := string(output)
-
-	// Extract target agent from output
-	if idx := strings.Index(outputStr, "Slinging"); idx != -1 {
-		// Parse "Slinging <bead> to <target>..."
-		lines := strings.Split(outputStr, "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "Slinging") && strings.Contains(line, " to ") {
-				parts := strings.Split(line, " to ")
-				if len(parts) >= 2 {
-					resp.TargetAgent = strings.TrimSuffix(strings.TrimSpace(parts[1]), "...")
-				}
-			}
-		}
-	}
-
-	// Check for polecat spawn
-	if strings.Contains(outputStr, "Polecat") && strings.Contains(outputStr, "spawned") {
-		resp.PolecatSpawned = true
-		// Extract polecat name
-		lines := strings.Split(outputStr, "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "Allocated polecat:") {
-				parts := strings.Split(line, ":")
-				if len(parts) >= 2 {
-					resp.PolecatName = strings.TrimSpace(parts[1])
-				}
-			}
-		}
-	}
-
-	// Check for convoy
-	if strings.Contains(outputStr, "convoy") {
-		lines := strings.Split(outputStr, "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "Created convoy") || strings.Contains(line, "Added to convoy") {
-				// Extract convoy ID (format: "convoy 🚚 hq-cv-xxx")
-				if idx := strings.Index(line, "hq-cv-"); idx != -1 {
-					end := idx + 12 // hq-cv-xxxxx
-					if end > len(line) {
-						end = len(line)
-					}
-					resp.ConvoyId = line[idx:end]
-					resp.ConvoyCreated = strings.Contains(line, "Created")
-				}
-			}
-		}
-	}
-
-	// Get bead title
-	client := beads.New(beads.GetTownBeadsPath(s.townRoot))
-	if issue, err := client.Show(beadID); err == nil && issue != nil {
-		resp.BeadTitle = issue.Title
-	}
-
-	return connect.NewResponse(resp), nil
+	return connect.NewResponse(&gastownv1.SlingResponse{
+		BeadId:         result.BeadID,
+		TargetAgent:    result.TargetAgent,
+		ConvoyId:       result.ConvoyID,
+		PolecatSpawned: result.PolecatSpawned,
+		PolecatName:    result.PolecatName,
+		BeadTitle:      result.BeadTitle,
+		ConvoyCreated:  result.ConvoyCreated,
+	}), nil
 }
 
 func (s *SlingServer) SlingFormula(
@@ -163,95 +88,40 @@ func (s *SlingServer) SlingFormula(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("formula is required"))
 	}
 
-	// Build gt sling command for formula
-	args := []string{"sling", formula}
-
-	if req.Msg.Target != "" {
-		args = append(args, req.Msg.Target)
-	}
-	if req.Msg.OnBead != "" {
-		args = append(args, "--on", req.Msg.OnBead)
-	}
+	// Convert proto vars map to []string key=value pairs
+	var vars []string
 	for k, v := range req.Msg.Vars {
-		args = append(args, "--var", fmt.Sprintf("%s=%s", k, v))
-	}
-	if req.Msg.Args != "" {
-		args = append(args, "--args", req.Msg.Args)
-	}
-	if req.Msg.Subject != "" {
-		args = append(args, "--subject", req.Msg.Subject)
-	}
-	if req.Msg.Message != "" {
-		args = append(args, "--message", req.Msg.Message)
-	}
-	if req.Msg.Create {
-		args = append(args, "--create")
-	}
-	if req.Msg.Force {
-		args = append(args, "--force")
-	}
-	if req.Msg.Account != "" {
-		args = append(args, "--account", req.Msg.Account)
-	}
-	if req.Msg.Agent != "" {
-		args = append(args, "--agent", req.Msg.Agent)
+		vars = append(vars, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	cmd := exec.CommandContext(ctx, "gt", args...)
-	cmd.Dir = s.townRoot
-	output, err := cmd.CombinedOutput()
+	result, err := sling.SlingFormula(sling.FormulaOptions{
+		Formula:  formula,
+		TownRoot: s.townRoot,
+		Target:   req.Msg.Target,
+		OnBead:   req.Msg.OnBead,
+		Vars:     vars,
+		Args:     req.Msg.Args,
+		Subject:  req.Msg.Subject,
+		Message:  req.Msg.Message,
+		Create:   req.Msg.Create,
+		Force:    req.Msg.Force,
+		Account:  req.Msg.Account,
+		Agent:    req.Msg.Agent,
+		Output:   io.Discard,
+	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("sling formula failed: %w\n%s", err, string(output)))
+			fmt.Errorf("sling formula failed: %w", err))
 	}
 
-	resp := &gastownv1.SlingFormulaResponse{
-		BeadId: req.Msg.OnBead,
-	}
-
-	outputStr := string(output)
-
-	// Extract wisp ID
-	if strings.Contains(outputStr, "wisp created:") {
-		lines := strings.Split(outputStr, "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "wisp created:") {
-				parts := strings.Split(line, ":")
-				if len(parts) >= 2 {
-					resp.WispId = strings.TrimSpace(parts[len(parts)-1])
-				}
-			}
-		}
-	}
-
-	// Extract target agent
-	if strings.Contains(outputStr, " to ") {
-		lines := strings.Split(outputStr, "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "Slinging") && strings.Contains(line, " to ") {
-				parts := strings.Split(line, " to ")
-				if len(parts) >= 2 {
-					resp.TargetAgent = strings.TrimSuffix(strings.TrimSpace(parts[1]), "...")
-				}
-			}
-		}
-	}
-
-	// Check for polecat spawn
-	if strings.Contains(outputStr, "Polecat") && strings.Contains(outputStr, "spawned") {
-		resp.PolecatSpawned = true
-		lines := strings.Split(outputStr, "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "Allocated polecat:") {
-				parts := strings.Split(line, ":")
-				if len(parts) >= 2 {
-					resp.PolecatName = strings.TrimSpace(parts[1])
-				}
-			}
-		}
-	}
-
-	return connect.NewResponse(resp), nil
+	return connect.NewResponse(&gastownv1.SlingFormulaResponse{
+		WispId:         result.WispID,
+		TargetAgent:    result.TargetAgent,
+		BeadId:         result.BeadID,
+		ConvoyId:       result.ConvoyID,
+		PolecatSpawned: result.PolecatSpawned,
+		PolecatName:    result.PolecatName,
+	}), nil
 }
 
 func (s *SlingServer) SlingBatch(
@@ -265,89 +135,40 @@ func (s *SlingServer) SlingBatch(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("rig is required for batch sling"))
 	}
 
-	// Build gt sling command with multiple beads
-	args := append([]string{"sling"}, req.Msg.BeadIds...)
-	args = append(args, req.Msg.Rig)
-
-	if req.Msg.Args != "" {
-		args = append(args, "--args", req.Msg.Args)
-	}
-	if req.Msg.Message != "" {
-		args = append(args, "--message", req.Msg.Message)
-	}
-	if req.Msg.Force {
-		args = append(args, "--force")
-	}
-	if req.Msg.Account != "" {
-		args = append(args, "--account", req.Msg.Account)
-	}
-	if req.Msg.Agent != "" {
-		args = append(args, "--agent", req.Msg.Agent)
-	}
-
-	cmd := exec.CommandContext(ctx, "gt", args...)
-	cmd.Dir = s.townRoot
-	output, err := cmd.CombinedOutput()
+	result, err := sling.SlingBatch(sling.BatchOptions{
+		BeadIDs:  req.Msg.BeadIds,
+		Rig:      req.Msg.Rig,
+		TownRoot: s.townRoot,
+		Args:     req.Msg.Args,
+		Message:  req.Msg.Message,
+		Force:    req.Msg.Force,
+		Account:  req.Msg.Account,
+		Agent:    req.Msg.Agent,
+		Output:   io.Discard,
+	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("batch sling failed: %w\n%s", err, string(output)))
+			fmt.Errorf("batch sling failed: %w", err))
 	}
 
-	resp := &gastownv1.SlingBatchResponse{
-		Results: make([]*gastownv1.BatchSlingResult, 0, len(req.Msg.BeadIds)),
+	// Map internal results to proto response
+	protoResults := make([]*gastownv1.BatchSlingResult, 0, len(result.Results))
+	for _, r := range result.Results {
+		protoResults = append(protoResults, &gastownv1.BatchSlingResult{
+			BeadId:      r.BeadID,
+			Success:     r.Success,
+			Error:       r.Error,
+			TargetAgent: r.TargetAgent,
+			PolecatName: r.PolecatName,
+		})
 	}
 
-	outputStr := string(output)
-
-	// Parse results for each bead
-	for _, beadID := range req.Msg.BeadIds {
-		result := &gastownv1.BatchSlingResult{
-			BeadId:  beadID,
-			Success: true, // Assume success if we got here
-		}
-
-		// Extract polecat name for this bead from output
-		if strings.Contains(outputStr, beadID) {
-			// Look for polecat assignment
-			lines := strings.Split(outputStr, "\n")
-			for i, line := range lines {
-				if strings.Contains(line, beadID) && strings.Contains(line, "Slinging") {
-					// Check subsequent lines for polecat info
-					for j := i; j < len(lines) && j < i+10; j++ {
-						if strings.Contains(lines[j], "Allocated polecat:") {
-							parts := strings.Split(lines[j], ":")
-							if len(parts) >= 2 {
-								result.PolecatName = strings.TrimSpace(parts[1])
-								result.TargetAgent = fmt.Sprintf("%s/polecats/%s", req.Msg.Rig, result.PolecatName)
-							}
-							break
-						}
-					}
-				}
-			}
-		}
-
-		resp.Results = append(resp.Results, result)
-		resp.SuccessCount++
-	}
-
-	// Extract convoy ID if created
-	if strings.Contains(outputStr, "convoy") {
-		lines := strings.Split(outputStr, "\n")
-		for _, line := range lines {
-			if strings.Contains(line, "Created convoy") {
-				if idx := strings.Index(line, "hq-cv-"); idx != -1 {
-					end := idx + 12
-					if end > len(line) {
-						end = len(line)
-					}
-					resp.ConvoyId = line[idx:end]
-				}
-			}
-		}
-	}
-
-	return connect.NewResponse(resp), nil
+	return connect.NewResponse(&gastownv1.SlingBatchResponse{
+		Results:      protoResults,
+		ConvoyId:     result.ConvoyID,
+		SuccessCount: result.SuccessCount,
+		FailureCount: result.FailureCount,
+	}), nil
 }
 
 func (s *SlingServer) Unsling(
@@ -359,38 +180,20 @@ func (s *SlingServer) Unsling(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("bead_id is required"))
 	}
 
-	// Get current assignee before unsling
-	client := beads.New(beads.GetTownBeadsPath(s.townRoot))
-	issue, err := client.Show(beadID)
-	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("bead not found: %w", err))
-	}
-
-	previousAgent := ""
-	wasIncomplete := false
-	if issue != nil {
-		previousAgent = issue.Assignee
-		wasIncomplete = issue.Status != "closed"
-	}
-
-	// Build gt unhook command
-	args := []string{"unhook", beadID}
-	if req.Msg.Force {
-		args = append(args, "--force")
-	}
-
-	cmd := exec.CommandContext(ctx, "gt", args...)
-	cmd.Dir = s.townRoot
-	output, err := cmd.CombinedOutput()
+	result, err := sling.Unsling(sling.UnslingOptions{
+		BeadID:   beadID,
+		Force:    req.Msg.Force,
+		TownRoot: s.townRoot,
+	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("unsling failed: %w\n%s", err, string(output)))
+			fmt.Errorf("unsling failed: %w", err))
 	}
 
 	return connect.NewResponse(&gastownv1.UnslingResponse{
-		BeadId:        beadID,
-		PreviousAgent: previousAgent,
-		WasIncomplete: wasIncomplete,
+		BeadId:        result.BeadID,
+		PreviousAgent: result.PreviousAgent,
+		WasIncomplete: result.WasIncomplete,
 	}), nil
 }
 
