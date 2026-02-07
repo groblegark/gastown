@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -200,7 +201,7 @@ func runNudge(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		if err := sendOrQueueNudge(t, townRoot, deaconSession, message); err != nil {
+		if err := sendOrQueueNudge(t, townRoot, deaconSession, message, "deacon"); err != nil {
 			return fmt.Errorf("nudging deacon: %w", err)
 		}
 
@@ -261,7 +262,7 @@ func runNudge(cmd *cobra.Command, args []string) error {
 		}
 
 		// Send nudge using queue (safe) or direct (may cause API 400)
-		if err := sendOrQueueNudge(t, townRoot, sessionName, message); err != nil {
+		if err := sendOrQueueNudge(t, townRoot, sessionName, message, target); err != nil {
 			return fmt.Errorf("nudging session: %w", err)
 		}
 
@@ -282,7 +283,7 @@ func runNudge(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("session %q not found", target)
 		}
 
-		if err := sendOrQueueNudge(t, townRoot, target, message); err != nil {
+		if err := sendOrQueueNudge(t, townRoot, target, message, ""); err != nil {
 			return fmt.Errorf("nudging session: %w", err)
 		}
 
@@ -564,7 +565,10 @@ func addressToAgentBeadID(address string) string {
 // Use --queue flag to buffer nudges when the target may be busy processing tools.
 // Use --delay flag to wait before sending (useful after session restart) (gt-j7iaxs).
 // Use --wait-ready flag to poll until agent is alive before sending (gt-kk330e).
-func sendOrQueueNudge(t *tmux.Tmux, townRoot, sessionName, message string) error {
+//
+// targetAddress is the original rig/polecat address (e.g., "gastown/furiosa") used to
+// check if the target is OJ-managed. Pass "" if unknown (falls through to tmux).
+func sendOrQueueNudge(t *tmux.Tmux, townRoot, sessionName, message, targetAddress string) error {
 	// If --queue flag is set and we're in a workspace, queue the nudge
 	if nudgeQueueFlag && townRoot != "" {
 		nq := inject.NewNudgeQueue(townRoot, sessionName)
@@ -588,6 +592,15 @@ func sendOrQueueNudge(t *tmux.Tmux, townRoot, sessionName, message string) error
 	// This helps when sending nudges right after session restart - gives Claude Code time to start
 	if nudgeDelayFlag > 0 {
 		time.Sleep(time.Duration(nudgeDelayFlag) * time.Millisecond)
+	}
+
+	// Check if target is OJ-managed — if so, use oj agent send instead of tmux (od-ki9.4).
+	// This deduplicates the GT nudge (tmux) and OJ nudge (daemon RPC) paths by routing
+	// OJ-managed polecats through the OJ send protocol which handles clear/literal/wait/enter.
+	if townRoot != "" && targetAddress != "" {
+		if ojJobID := getOjJobIDForTarget(townRoot, targetAddress); ojJobID != "" {
+			return nudgeViaOj(ojJobID, message)
+		}
 	}
 
 	// Default: send directly via tmux to wake up the target immediately
@@ -660,5 +673,52 @@ func runNudgeDrain(cmd *cobra.Command, args []string) error {
 		fmt.Printf("<system-reminder>\n📬 Nudge received:\n%s\n</system-reminder>\n", entry.Content)
 	}
 
+	return nil
+}
+
+// getOjJobIDForTarget looks up the oj_job_id for an agent's hooked work bead.
+// Returns empty string if the agent is not OJ-managed or on any error.
+// This enables the nudge command to route OJ-managed polecats through "oj agent send"
+// instead of tmux send-keys (od-ki9.4).
+func getOjJobIDForTarget(townRoot, targetAddress string) string {
+	// Convert target address to agent bead ID
+	agentBeadID := addressToAgentBeadID(targetAddress)
+	if agentBeadID == "" {
+		return ""
+	}
+
+	// Read the agent bead to get its hook_bead (the work bead)
+	bd := beads.New(townRoot)
+	agentIssue, err := bd.Show(agentBeadID)
+	if err != nil || agentIssue == nil {
+		return ""
+	}
+	hookBeadID := agentIssue.HookBead
+	if hookBeadID == "" {
+		return ""
+	}
+
+	// Read the hook bead and check for oj_job_id in attachment fields
+	hookIssue, err := bd.Show(hookBeadID)
+	if err != nil || hookIssue == nil {
+		return ""
+	}
+
+	fields := beads.ParseAttachmentFields(hookIssue)
+	if fields == nil {
+		return ""
+	}
+	return fields.OjJobID
+}
+
+// nudgeViaOj sends a message to an OJ-managed agent via "oj agent send".
+// This uses OJ's send protocol which handles clear (2x Escape) + send_literal +
+// dynamic wait + Enter, providing reliable delivery to OJ-managed sessions (od-ki9.4).
+func nudgeViaOj(ojJobID, message string) error {
+	cmd := exec.Command("oj", "agent", "send", ojJobID, message)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("oj agent send failed: %w (output: %s)", err, strings.TrimSpace(string(output)))
+	}
 	return nil
 }

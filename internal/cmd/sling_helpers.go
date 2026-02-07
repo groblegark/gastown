@@ -370,6 +370,7 @@ func storeConvoyOwnedInBead(beadID string, owned bool) error {
 
 // injectStartPrompt sends a prompt to the target pane to start working.
 // Uses the reliable nudge pattern: literal mode + 500ms debounce + separate Enter.
+// For OJ-managed polecats, routes through "oj agent send" instead of tmux (od-ki9.4).
 func injectStartPrompt(pane, beadID, subject, args string) error {
 	if pane == "" {
 		return fmt.Errorf("no target pane")
@@ -395,9 +396,35 @@ func injectStartPrompt(pane, beadID, subject, args string) error {
 		prompt = fmt.Sprintf("Work slung: %s. Start working on it now - run `gt hook` to see the hook, then begin.", beadID)
 	}
 
+	// Check if the work bead has an oj_job_id — if so, the polecat is OJ-managed
+	// and we should use "oj agent send" instead of tmux (od-ki9.4).
+	if ojJobID := getOjJobIDFromWorkBead(beadID); ojJobID != "" {
+		return nudgeViaOj(ojJobID, prompt)
+	}
+
 	// Use the reliable nudge pattern (same as gt nudge / tmux.NudgeSession)
 	t := tmux.NewTmux()
 	return t.NudgePane(pane, prompt)
+}
+
+// getOjJobIDFromWorkBead reads the oj_job_id from a work bead's attachment fields.
+// Returns empty string if not found or on error. Used by injectStartPrompt to detect
+// OJ-managed polecats during sling (od-ki9.4).
+func getOjJobIDFromWorkBead(beadID string) string {
+	townRoot, err := workspace.FindFromCwd()
+	if err != nil {
+		return ""
+	}
+	bd := beads.New(townRoot)
+	issue, err := bd.Show(beadID)
+	if err != nil || issue == nil {
+		return ""
+	}
+	fields := beads.ParseAttachmentFields(issue)
+	if fields == nil {
+		return ""
+	}
+	return fields.OjJobID
 }
 
 // getSessionFromPane extracts session name from a pane target.
