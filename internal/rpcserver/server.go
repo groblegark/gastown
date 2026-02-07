@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/crew"
+	"github.com/steveyegge/gastown/internal/daemon"
 	"github.com/steveyegge/gastown/internal/eventbus"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mail"
@@ -406,6 +408,166 @@ func (s *StatusServer) findBead(beadID, rigName string) (*beads.Issue, error) {
 	// Fall back to town beads
 	townClient := beads.New(beads.GetTownBeadsPath(s.townRoot))
 	return townClient.Show(beadID)
+}
+
+// HealthCheck returns structured health information for all system components.
+func (s *StatusServer) HealthCheck(
+	ctx context.Context,
+	req *connect.Request[gastownv1.HealthCheckRequest],
+) (*connect.Response[gastownv1.HealthCheckResponse], error) {
+	var components []*gastownv1.ComponentHealth
+
+	// Check daemon
+	components = append(components, s.checkDaemon())
+
+	// Check dolt
+	components = append(components, s.checkDolt())
+
+	// Check tmux
+	components = append(components, s.checkTmux())
+
+	// Check beads
+	components = append(components, s.checkBeads())
+
+	// Determine overall status
+	overall := "healthy"
+	for _, c := range components {
+		if !c.Healthy {
+			overall = "degraded"
+			break
+		}
+	}
+
+	return connect.NewResponse(&gastownv1.HealthCheckResponse{
+		Status:     overall,
+		Components: components,
+	}), nil
+}
+
+// checkDaemon checks whether the Gas Town daemon process is running.
+func (s *StatusServer) checkDaemon() *gastownv1.ComponentHealth {
+	start := time.Now()
+	running, pid, err := daemon.IsRunning(s.townRoot)
+	latency := time.Since(start).Milliseconds()
+
+	if err != nil {
+		return &gastownv1.ComponentHealth{
+			Name:      "daemon",
+			Healthy:   false,
+			LatencyMs: latency,
+			Message:   fmt.Sprintf("check failed: %v", err),
+		}
+	}
+	if !running {
+		return &gastownv1.ComponentHealth{
+			Name:      "daemon",
+			Healthy:   false,
+			LatencyMs: latency,
+			Message:   "not running",
+		}
+	}
+	return &gastownv1.ComponentHealth{
+		Name:      "daemon",
+		Healthy:   true,
+		LatencyMs: latency,
+		Message:   fmt.Sprintf("running (PID %d)", pid),
+	}
+}
+
+// checkDolt checks whether the dolt CLI is available and the beads backend is accessible.
+func (s *StatusServer) checkDolt() *gastownv1.ComponentHealth {
+	start := time.Now()
+
+	// Check if dolt binary exists
+	doltPath, err := exec.LookPath("dolt")
+	latency := time.Since(start).Milliseconds()
+
+	if err != nil {
+		return &gastownv1.ComponentHealth{
+			Name:      "dolt",
+			Healthy:   false,
+			LatencyMs: latency,
+			Message:   "dolt CLI not found in PATH",
+		}
+	}
+
+	// Check beads backend directory
+	beadsDir := filepath.Join(s.townRoot, ".beads")
+	doltDir := filepath.Join(beadsDir, "dolt")
+	if _, err := os.Stat(doltDir); os.IsNotExist(err) {
+		return &gastownv1.ComponentHealth{
+			Name:      "dolt",
+			Healthy:   false,
+			LatencyMs: time.Since(start).Milliseconds(),
+			Message:   fmt.Sprintf("dolt CLI found (%s) but dolt/ backend directory missing", doltPath),
+		}
+	}
+
+	return &gastownv1.ComponentHealth{
+		Name:      "dolt",
+		Healthy:   true,
+		LatencyMs: time.Since(start).Milliseconds(),
+		Message:   fmt.Sprintf("available (%s)", doltPath),
+	}
+}
+
+// checkTmux checks whether tmux is running and has Gas Town sessions.
+func (s *StatusServer) checkTmux() *gastownv1.ComponentHealth {
+	start := time.Now()
+	t := tmux.NewTmux()
+	sessions, err := t.ListSessions()
+	latency := time.Since(start).Milliseconds()
+
+	if err != nil {
+		return &gastownv1.ComponentHealth{
+			Name:      "tmux",
+			Healthy:   false,
+			LatencyMs: latency,
+			Message:   fmt.Sprintf("failed to list sessions: %v", err),
+		}
+	}
+
+	// Count Gas Town sessions
+	gtCount := 0
+	for _, sess := range sessions {
+		if strings.HasPrefix(sess, "gt-") || strings.HasPrefix(sess, "hq-") {
+			gtCount++
+		}
+	}
+
+	return &gastownv1.ComponentHealth{
+		Name:      "tmux",
+		Healthy:   true,
+		LatencyMs: latency,
+		Message:   fmt.Sprintf("%d Gas Town sessions active", gtCount),
+	}
+}
+
+// checkBeads checks whether the beads database is accessible.
+func (s *StatusServer) checkBeads() *gastownv1.ComponentHealth {
+	start := time.Now()
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	client := beads.New(townBeadsPath)
+
+	// Try a lightweight operation to verify connectivity
+	_, err := client.List(beads.ListOptions{Status: "open", Priority: -1})
+	latency := time.Since(start).Milliseconds()
+
+	if err != nil {
+		return &gastownv1.ComponentHealth{
+			Name:      "beads",
+			Healthy:   false,
+			LatencyMs: latency,
+			Message:   fmt.Sprintf("query failed: %v", err),
+		}
+	}
+
+	return &gastownv1.ComponentHealth{
+		Name:      "beads",
+		Healthy:   true,
+		LatencyMs: latency,
+		Message:   "database accessible",
+	}
 }
 
 // agentAddressToBeadID converts an AgentAddress to the canonical agent bead ID.
@@ -2890,10 +3052,37 @@ func RunServer(cfg ServerConfig) error {
 	beadsPath, beadsHandler := gastownv1connect.NewBeadsServiceHandler(beadsServer, opts...)
 	mux.Handle(beadsPath, beadsHandler)
 
-	// Health check endpoint
+	// Health check endpoint - structured health with component details
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"ok"}`)
+		resp, _ := statusServer.HealthCheck(r.Context(), connect.NewRequest(&gastownv1.HealthCheckRequest{}))
+		hc := resp.Msg
+
+		type componentJSON struct {
+			Name      string `json:"name"`
+			Healthy   bool   `json:"healthy"`
+			LatencyMs int64  `json:"latency_ms"`
+			Message   string `json:"message"`
+		}
+		type healthJSON struct {
+			Status     string          `json:"status"`
+			Components []componentJSON `json:"components"`
+		}
+
+		out := healthJSON{Status: hc.Status}
+		for _, c := range hc.Components {
+			out.Components = append(out.Components, componentJSON{
+				Name:      c.Name,
+				Healthy:   c.Healthy,
+				LatencyMs: c.LatencyMs,
+				Message:   c.Message,
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if hc.Status != "healthy" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		json.NewEncoder(w).Encode(out)
 	})
 
 	// SSE endpoint for decision events (browser-friendly streaming)

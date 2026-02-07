@@ -824,6 +824,165 @@ func (x *AgentHookInfo) GetBeadTitle() string {
 	return ""
 }
 
+// HealthCheckRequest has no parameters - checks all components.
+type HealthCheckRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HealthCheckRequest) Reset() {
+	*x = HealthCheckRequest{}
+	mi := &file_gastown_v1_status_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HealthCheckRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HealthCheckRequest) ProtoMessage() {}
+
+func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gastown_v1_status_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HealthCheckRequest.ProtoReflect.Descriptor instead.
+func (*HealthCheckRequest) Descriptor() ([]byte, []int) {
+	return file_gastown_v1_status_proto_rawDescGZIP(), []int{12}
+}
+
+// HealthCheckResponse returns overall status and per-component health.
+type HealthCheckResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"` // "healthy", "degraded", or "unhealthy"
+	Components    []*ComponentHealth     `protobuf:"bytes,2,rep,name=components,proto3" json:"components,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HealthCheckResponse) Reset() {
+	*x = HealthCheckResponse{}
+	mi := &file_gastown_v1_status_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HealthCheckResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HealthCheckResponse) ProtoMessage() {}
+
+func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_gastown_v1_status_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HealthCheckResponse.ProtoReflect.Descriptor instead.
+func (*HealthCheckResponse) Descriptor() ([]byte, []int) {
+	return file_gastown_v1_status_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *HealthCheckResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *HealthCheckResponse) GetComponents() []*ComponentHealth {
+	if x != nil {
+		return x.Components
+	}
+	return nil
+}
+
+// ComponentHealth reports the health of a single system component.
+type ComponentHealth struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // e.g. "daemon", "dolt", "tmux", "beads"
+	Healthy       bool                   `protobuf:"varint,2,opt,name=healthy,proto3" json:"healthy,omitempty"`
+	LatencyMs     int64                  `protobuf:"varint,3,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"` // Time taken to check this component
+	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`                       // Human-readable status or error message
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ComponentHealth) Reset() {
+	*x = ComponentHealth{}
+	mi := &file_gastown_v1_status_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ComponentHealth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ComponentHealth) ProtoMessage() {}
+
+func (x *ComponentHealth) ProtoReflect() protoreflect.Message {
+	mi := &file_gastown_v1_status_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ComponentHealth.ProtoReflect.Descriptor instead.
+func (*ComponentHealth) Descriptor() ([]byte, []int) {
+	return file_gastown_v1_status_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ComponentHealth) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ComponentHealth) GetHealthy() bool {
+	if x != nil {
+		return x.Healthy
+	}
+	return false
+}
+
+func (x *ComponentHealth) GetLatencyMs() int64 {
+	if x != nil {
+		return x.LatencyMs
+	}
+	return 0
+}
+
+func (x *ComponentHealth) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 // Merge queue summary
 type MQSummary struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -837,7 +996,7 @@ type MQSummary struct {
 
 func (x *MQSummary) Reset() {
 	*x = MQSummary{}
-	mi := &file_gastown_v1_status_proto_msgTypes[12]
+	mi := &file_gastown_v1_status_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -849,7 +1008,7 @@ func (x *MQSummary) String() string {
 func (*MQSummary) ProtoMessage() {}
 
 func (x *MQSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_gastown_v1_status_proto_msgTypes[12]
+	mi := &file_gastown_v1_status_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -862,7 +1021,7 @@ func (x *MQSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MQSummary.ProtoReflect.Descriptor instead.
 func (*MQSummary) Descriptor() ([]byte, []int) {
-	return file_gastown_v1_status_proto_rawDescGZIP(), []int{12}
+	return file_gastown_v1_status_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *MQSummary) GetPending() int32 {
@@ -959,18 +1118,31 @@ const file_gastown_v1_status_proto_rawDesc = "" +
 	"\x05agent\x18\x01 \x01(\v2\x18.gastown.v1.AgentAddressR\x05agent\x12\x17\n" +
 	"\abead_id\x18\x02 \x01(\tR\x06beadId\x12\x1d\n" +
 	"\n" +
-	"bead_title\x18\x03 \x01(\tR\tbeadTitle\"\x9a\x01\n" +
+	"bead_title\x18\x03 \x01(\tR\tbeadTitle\"\x14\n" +
+	"\x12HealthCheckRequest\"j\n" +
+	"\x13HealthCheckResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12;\n" +
+	"\n" +
+	"components\x18\x02 \x03(\v2\x1b.gastown.v1.ComponentHealthR\n" +
+	"components\"x\n" +
+	"\x0fComponentHealth\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\ahealthy\x18\x02 \x01(\bR\ahealthy\x12\x1d\n" +
+	"\n" +
+	"latency_ms\x18\x03 \x01(\x03R\tlatencyMs\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\"\x9a\x01\n" +
 	"\tMQSummary\x12\x18\n" +
 	"\apending\x18\x01 \x01(\x05R\apending\x12\x1f\n" +
 	"\vin_progress\x18\x02 \x01(\x05R\n" +
 	"inProgress\x12'\n" +
 	"\x0fcompleted_today\x18\x03 \x01(\x05R\x0ecompletedToday\x12)\n" +
-	"\x05queue\x18\x04 \x03(\v2\x13.gastown.v1.BeadRefR\x05queue2\xdc\x02\n" +
+	"\x05queue\x18\x04 \x03(\v2\x13.gastown.v1.BeadRefR\x05queue2\xac\x03\n" +
 	"\rStatusService\x12T\n" +
 	"\rGetTownStatus\x12 .gastown.v1.GetTownStatusRequest\x1a!.gastown.v1.GetTownStatusResponse\x12Q\n" +
 	"\fGetRigStatus\x12\x1f.gastown.v1.GetRigStatusRequest\x1a .gastown.v1.GetRigStatusResponse\x12W\n" +
 	"\x0eGetAgentStatus\x12!.gastown.v1.GetAgentStatusRequest\x1a\".gastown.v1.GetAgentStatusResponse\x12I\n" +
-	"\vWatchStatus\x12\x1e.gastown.v1.WatchStatusRequest\x1a\x18.gastown.v1.StatusUpdate0\x01B\x9e\x01\n" +
+	"\vWatchStatus\x12\x1e.gastown.v1.WatchStatusRequest\x1a\x18.gastown.v1.StatusUpdate0\x01\x12N\n" +
+	"\vHealthCheck\x12\x1e.gastown.v1.HealthCheckRequest\x1a\x1f.gastown.v1.HealthCheckResponseB\x9e\x01\n" +
 	"\x0ecom.gastown.v1B\vStatusProtoP\x01Z6github.com/steveyegge/gastown/gen/gastown/v1;gastownv1\xa2\x02\x03GXX\xaa\x02\n" +
 	"Gastown.V1\xca\x02\n" +
 	"Gastown\\V1\xe2\x02\x16Gastown\\V1\\GPBMetadata\xea\x02\vGastown::V1b\x06proto3"
@@ -987,7 +1159,7 @@ func file_gastown_v1_status_proto_rawDescGZIP() []byte {
 	return file_gastown_v1_status_proto_rawDescData
 }
 
-var file_gastown_v1_status_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_gastown_v1_status_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_gastown_v1_status_proto_goTypes = []any{
 	(*GetTownStatusRequest)(nil),   // 0: gastown.v1.GetTownStatusRequest
 	(*GetTownStatusResponse)(nil),  // 1: gastown.v1.GetTownStatusResponse
@@ -1001,43 +1173,49 @@ var file_gastown_v1_status_proto_goTypes = []any{
 	(*RigStatus)(nil),              // 9: gastown.v1.RigStatus
 	(*AgentRuntime)(nil),           // 10: gastown.v1.AgentRuntime
 	(*AgentHookInfo)(nil),          // 11: gastown.v1.AgentHookInfo
-	(*MQSummary)(nil),              // 12: gastown.v1.MQSummary
-	(*AgentAddress)(nil),           // 13: gastown.v1.AgentAddress
-	(*timestamppb.Timestamp)(nil),  // 14: google.protobuf.Timestamp
-	(*OverseerInfo)(nil),           // 15: gastown.v1.OverseerInfo
-	(*BeadRef)(nil),                // 16: gastown.v1.BeadRef
+	(*HealthCheckRequest)(nil),     // 12: gastown.v1.HealthCheckRequest
+	(*HealthCheckResponse)(nil),    // 13: gastown.v1.HealthCheckResponse
+	(*ComponentHealth)(nil),        // 14: gastown.v1.ComponentHealth
+	(*MQSummary)(nil),              // 15: gastown.v1.MQSummary
+	(*AgentAddress)(nil),           // 16: gastown.v1.AgentAddress
+	(*timestamppb.Timestamp)(nil),  // 17: google.protobuf.Timestamp
+	(*OverseerInfo)(nil),           // 18: gastown.v1.OverseerInfo
+	(*BeadRef)(nil),                // 19: gastown.v1.BeadRef
 }
 var file_gastown_v1_status_proto_depIdxs = []int32{
 	8,  // 0: gastown.v1.GetTownStatusResponse.status:type_name -> gastown.v1.TownStatus
 	9,  // 1: gastown.v1.GetRigStatusResponse.status:type_name -> gastown.v1.RigStatus
-	13, // 2: gastown.v1.GetAgentStatusRequest.address:type_name -> gastown.v1.AgentAddress
+	16, // 2: gastown.v1.GetAgentStatusRequest.address:type_name -> gastown.v1.AgentAddress
 	10, // 3: gastown.v1.GetAgentStatusResponse.agent:type_name -> gastown.v1.AgentRuntime
-	14, // 4: gastown.v1.StatusUpdate.timestamp:type_name -> google.protobuf.Timestamp
+	17, // 4: gastown.v1.StatusUpdate.timestamp:type_name -> google.protobuf.Timestamp
 	8,  // 5: gastown.v1.StatusUpdate.town:type_name -> gastown.v1.TownStatus
 	9,  // 6: gastown.v1.StatusUpdate.rig:type_name -> gastown.v1.RigStatus
 	10, // 7: gastown.v1.StatusUpdate.agent:type_name -> gastown.v1.AgentRuntime
-	15, // 8: gastown.v1.TownStatus.overseer:type_name -> gastown.v1.OverseerInfo
+	18, // 8: gastown.v1.TownStatus.overseer:type_name -> gastown.v1.OverseerInfo
 	10, // 9: gastown.v1.TownStatus.global_agents:type_name -> gastown.v1.AgentRuntime
 	9,  // 10: gastown.v1.TownStatus.rigs:type_name -> gastown.v1.RigStatus
 	10, // 11: gastown.v1.RigStatus.agents:type_name -> gastown.v1.AgentRuntime
 	11, // 12: gastown.v1.RigStatus.hooks:type_name -> gastown.v1.AgentHookInfo
-	12, // 13: gastown.v1.RigStatus.merge_queue:type_name -> gastown.v1.MQSummary
-	13, // 14: gastown.v1.AgentRuntime.address:type_name -> gastown.v1.AgentAddress
-	13, // 15: gastown.v1.AgentHookInfo.agent:type_name -> gastown.v1.AgentAddress
-	16, // 16: gastown.v1.MQSummary.queue:type_name -> gastown.v1.BeadRef
-	0,  // 17: gastown.v1.StatusService.GetTownStatus:input_type -> gastown.v1.GetTownStatusRequest
-	2,  // 18: gastown.v1.StatusService.GetRigStatus:input_type -> gastown.v1.GetRigStatusRequest
-	4,  // 19: gastown.v1.StatusService.GetAgentStatus:input_type -> gastown.v1.GetAgentStatusRequest
-	6,  // 20: gastown.v1.StatusService.WatchStatus:input_type -> gastown.v1.WatchStatusRequest
-	1,  // 21: gastown.v1.StatusService.GetTownStatus:output_type -> gastown.v1.GetTownStatusResponse
-	3,  // 22: gastown.v1.StatusService.GetRigStatus:output_type -> gastown.v1.GetRigStatusResponse
-	5,  // 23: gastown.v1.StatusService.GetAgentStatus:output_type -> gastown.v1.GetAgentStatusResponse
-	7,  // 24: gastown.v1.StatusService.WatchStatus:output_type -> gastown.v1.StatusUpdate
-	21, // [21:25] is the sub-list for method output_type
-	17, // [17:21] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	15, // 13: gastown.v1.RigStatus.merge_queue:type_name -> gastown.v1.MQSummary
+	16, // 14: gastown.v1.AgentRuntime.address:type_name -> gastown.v1.AgentAddress
+	16, // 15: gastown.v1.AgentHookInfo.agent:type_name -> gastown.v1.AgentAddress
+	14, // 16: gastown.v1.HealthCheckResponse.components:type_name -> gastown.v1.ComponentHealth
+	19, // 17: gastown.v1.MQSummary.queue:type_name -> gastown.v1.BeadRef
+	0,  // 18: gastown.v1.StatusService.GetTownStatus:input_type -> gastown.v1.GetTownStatusRequest
+	2,  // 19: gastown.v1.StatusService.GetRigStatus:input_type -> gastown.v1.GetRigStatusRequest
+	4,  // 20: gastown.v1.StatusService.GetAgentStatus:input_type -> gastown.v1.GetAgentStatusRequest
+	6,  // 21: gastown.v1.StatusService.WatchStatus:input_type -> gastown.v1.WatchStatusRequest
+	12, // 22: gastown.v1.StatusService.HealthCheck:input_type -> gastown.v1.HealthCheckRequest
+	1,  // 23: gastown.v1.StatusService.GetTownStatus:output_type -> gastown.v1.GetTownStatusResponse
+	3,  // 24: gastown.v1.StatusService.GetRigStatus:output_type -> gastown.v1.GetRigStatusResponse
+	5,  // 25: gastown.v1.StatusService.GetAgentStatus:output_type -> gastown.v1.GetAgentStatusResponse
+	7,  // 26: gastown.v1.StatusService.WatchStatus:output_type -> gastown.v1.StatusUpdate
+	13, // 27: gastown.v1.StatusService.HealthCheck:output_type -> gastown.v1.HealthCheckResponse
+	23, // [23:28] is the sub-list for method output_type
+	18, // [18:23] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_gastown_v1_status_proto_init() }
@@ -1057,7 +1235,7 @@ func file_gastown_v1_status_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gastown_v1_status_proto_rawDesc), len(file_gastown_v1_status_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

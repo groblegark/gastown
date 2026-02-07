@@ -20,6 +20,9 @@ service StatusService {
 
   // WatchStatus streams status updates in real-time
   rpc WatchStatus(WatchStatusRequest) returns (stream StatusUpdate);
+
+  // HealthCheck returns structured health of all system components
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 }
 
 message GetTownStatusRequest {
@@ -103,6 +106,23 @@ message AgentHookInfo {
   AgentAddress agent = 1;
   string bead_id = 2;
   string bead_title = 3;
+}
+
+// HealthCheckRequest has no parameters - checks all components.
+message HealthCheckRequest {}
+
+// HealthCheckResponse returns overall status and per-component health.
+message HealthCheckResponse {
+  string status = 1;  // "healthy", "degraded", or "unhealthy"
+  repeated ComponentHealth components = 2;
+}
+
+// ComponentHealth reports the health of a single system component.
+message ComponentHealth {
+  string name = 1;        // e.g. "daemon", "dolt", "tmux", "beads"
+  bool healthy = 2;
+  int64 latency_ms = 3;   // Time taken to check this component
+  string message = 4;     // Human-readable status or error message
 }
 
 // Merge queue summary

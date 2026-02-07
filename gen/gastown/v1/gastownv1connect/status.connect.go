@@ -45,6 +45,9 @@ const (
 	// StatusServiceWatchStatusProcedure is the fully-qualified name of the StatusService's WatchStatus
 	// RPC.
 	StatusServiceWatchStatusProcedure = "/gastown.v1.StatusService/WatchStatus"
+	// StatusServiceHealthCheckProcedure is the fully-qualified name of the StatusService's HealthCheck
+	// RPC.
+	StatusServiceHealthCheckProcedure = "/gastown.v1.StatusService/HealthCheck"
 )
 
 // StatusServiceClient is a client for the gastown.v1.StatusService service.
@@ -57,6 +60,8 @@ type StatusServiceClient interface {
 	GetAgentStatus(context.Context, *connect.Request[v1.GetAgentStatusRequest]) (*connect.Response[v1.GetAgentStatusResponse], error)
 	// WatchStatus streams status updates in real-time
 	WatchStatus(context.Context, *connect.Request[v1.WatchStatusRequest]) (*connect.ServerStreamForClient[v1.StatusUpdate], error)
+	// HealthCheck returns structured health of all system components
+	HealthCheck(context.Context, *connect.Request[v1.HealthCheckRequest]) (*connect.Response[v1.HealthCheckResponse], error)
 }
 
 // NewStatusServiceClient constructs a client for the gastown.v1.StatusService service. By default,
@@ -94,6 +99,12 @@ func NewStatusServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(statusServiceMethods.ByName("WatchStatus")),
 			connect.WithClientOptions(opts...),
 		),
+		healthCheck: connect.NewClient[v1.HealthCheckRequest, v1.HealthCheckResponse](
+			httpClient,
+			baseURL+StatusServiceHealthCheckProcedure,
+			connect.WithSchema(statusServiceMethods.ByName("HealthCheck")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -103,6 +114,7 @@ type statusServiceClient struct {
 	getRigStatus   *connect.Client[v1.GetRigStatusRequest, v1.GetRigStatusResponse]
 	getAgentStatus *connect.Client[v1.GetAgentStatusRequest, v1.GetAgentStatusResponse]
 	watchStatus    *connect.Client[v1.WatchStatusRequest, v1.StatusUpdate]
+	healthCheck    *connect.Client[v1.HealthCheckRequest, v1.HealthCheckResponse]
 }
 
 // GetTownStatus calls gastown.v1.StatusService.GetTownStatus.
@@ -125,6 +137,11 @@ func (c *statusServiceClient) WatchStatus(ctx context.Context, req *connect.Requ
 	return c.watchStatus.CallServerStream(ctx, req)
 }
 
+// HealthCheck calls gastown.v1.StatusService.HealthCheck.
+func (c *statusServiceClient) HealthCheck(ctx context.Context, req *connect.Request[v1.HealthCheckRequest]) (*connect.Response[v1.HealthCheckResponse], error) {
+	return c.healthCheck.CallUnary(ctx, req)
+}
+
 // StatusServiceHandler is an implementation of the gastown.v1.StatusService service.
 type StatusServiceHandler interface {
 	// GetTownStatus returns the full status of the town
@@ -135,6 +152,8 @@ type StatusServiceHandler interface {
 	GetAgentStatus(context.Context, *connect.Request[v1.GetAgentStatusRequest]) (*connect.Response[v1.GetAgentStatusResponse], error)
 	// WatchStatus streams status updates in real-time
 	WatchStatus(context.Context, *connect.Request[v1.WatchStatusRequest], *connect.ServerStream[v1.StatusUpdate]) error
+	// HealthCheck returns structured health of all system components
+	HealthCheck(context.Context, *connect.Request[v1.HealthCheckRequest]) (*connect.Response[v1.HealthCheckResponse], error)
 }
 
 // NewStatusServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -168,6 +187,12 @@ func NewStatusServiceHandler(svc StatusServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(statusServiceMethods.ByName("WatchStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
+	statusServiceHealthCheckHandler := connect.NewUnaryHandler(
+		StatusServiceHealthCheckProcedure,
+		svc.HealthCheck,
+		connect.WithSchema(statusServiceMethods.ByName("HealthCheck")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/gastown.v1.StatusService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case StatusServiceGetTownStatusProcedure:
@@ -178,6 +203,8 @@ func NewStatusServiceHandler(svc StatusServiceHandler, opts ...connect.HandlerOp
 			statusServiceGetAgentStatusHandler.ServeHTTP(w, r)
 		case StatusServiceWatchStatusProcedure:
 			statusServiceWatchStatusHandler.ServeHTTP(w, r)
+		case StatusServiceHealthCheckProcedure:
+			statusServiceHealthCheckHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -201,4 +228,8 @@ func (UnimplementedStatusServiceHandler) GetAgentStatus(context.Context, *connec
 
 func (UnimplementedStatusServiceHandler) WatchStatus(context.Context, *connect.Request[v1.WatchStatusRequest], *connect.ServerStream[v1.StatusUpdate]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("gastown.v1.StatusService.WatchStatus is not implemented"))
+}
+
+func (UnimplementedStatusServiceHandler) HealthCheck(context.Context, *connect.Request[v1.HealthCheckRequest]) (*connect.Response[v1.HealthCheckResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gastown.v1.StatusService.HealthCheck is not implemented"))
 }
