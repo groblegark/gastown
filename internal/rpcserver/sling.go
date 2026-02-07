@@ -87,8 +87,7 @@ func (s *SlingServer) Sling(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("sling failed: %w\n%s", err, string(output)))
+		return nil, cmdExecErr("sling", err, output)
 	}
 
 	// Parse output for response data
@@ -201,8 +200,7 @@ func (s *SlingServer) SlingFormula(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("sling formula failed: %w\n%s", err, string(output)))
+		return nil, cmdExecErr("sling formula", err, output)
 	}
 
 	resp := &gastownv1.SlingFormulaResponse{
@@ -289,8 +287,7 @@ func (s *SlingServer) SlingBatch(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("batch sling failed: %w\n%s", err, string(output)))
+		return nil, cmdExecErr("batch sling", err, output)
 	}
 
 	resp := &gastownv1.SlingBatchResponse{
@@ -383,8 +380,7 @@ func (s *SlingServer) Unsling(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("unsling failed: %w\n%s", err, string(output)))
+		return nil, cmdExecErr("unsling", err, output)
 	}
 
 	return connect.NewResponse(&gastownv1.UnslingResponse{

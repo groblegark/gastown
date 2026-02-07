@@ -68,7 +68,7 @@ func (s *StatusServer) GetTownStatus(
 ) (*connect.Response[gastownv1.GetTownStatusResponse], error) {
 	status, err := s.collectTownStatus(req.Msg.Fast)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("collecting town status: %w", err))
 	}
 	return connect.NewResponse(&gastownv1.GetTownStatusResponse{Status: status}), nil
 }
@@ -79,7 +79,7 @@ func (s *StatusServer) GetRigStatus(
 ) (*connect.Response[gastownv1.GetRigStatusResponse], error) {
 	status, err := s.collectTownStatus(false)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("collecting rig status: %w", err))
 	}
 
 	for _, r := range status.Rigs {
@@ -101,7 +101,7 @@ func (s *StatusServer) GetAgentStatus(
 
 	status, err := s.collectTownStatus(false)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("collecting agent status: %w", err))
 	}
 
 	addr := req.Msg.Address
@@ -371,7 +371,7 @@ func (s *DecisionServer) ListPending(
 
 	issues, err := client.ListDecisions()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("listing pending decisions: %w", err))
 	}
 
 	var decisions []*gastownv1.Decision
@@ -419,7 +419,7 @@ func (s *DecisionServer) GetDecision(
 
 	issue, fields, err := client.GetDecisionBead(req.Msg.DecisionId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("decision not found: %s", req.Msg.DecisionId))
 	}
 	if issue == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("decision not found: %s", req.Msg.DecisionId))
@@ -926,13 +926,13 @@ func (s *MailServer) ListInbox(
 
 	mailbox, err := mailRouter.GetMailbox(address)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("accessing mailbox for %q: %w", address, err))
 	}
 
 	total, unread, _ := mailbox.Count()
 	msgs, err := mailbox.List()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("listing inbox messages: %w", err))
 	}
 
 	var messages []*gastownv1.Message
@@ -979,7 +979,7 @@ func (s *MailServer) ReadMessage(
 		if err == mail.ErrMessageNotFound {
 			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("message not found: %s", req.Msg.MessageId))
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("reading message: %w", err))
 	}
 
 	// Convert to proto message
@@ -1049,7 +1049,7 @@ func (s *MailServer) MarkRead(
 		if err == mail.ErrMessageNotFound {
 			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("message not found: %s", req.Msg.MessageId))
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("marking message as read: %w", err))
 	}
 
 	return connect.NewResponse(&gastownv1.MarkReadResponse{}), nil
@@ -1071,7 +1071,7 @@ func (s *MailServer) DeleteMessage(
 		if err == mail.ErrMessageNotFound {
 			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("message not found: %s", req.Msg.MessageId))
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("deleting message: %w", err))
 	}
 
 	return connect.NewResponse(&gastownv1.DeleteMessageResponse{}), nil
@@ -1431,7 +1431,7 @@ func (s *ConvoyServer) ListConvoys(
 		Priority: -1,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("listing convoys: %w", err))
 	}
 
 	var convoys []*gastownv1.Convoy
@@ -1467,7 +1467,7 @@ func (s *ConvoyServer) GetConvoyStatus(
 
 	issue, err := client.Show(req.Msg.ConvoyId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
 	}
 	if issue == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
@@ -1565,7 +1565,7 @@ func (s *ConvoyServer) AddToConvoy(
 
 	issue, err := client.Show(req.Msg.ConvoyId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
 	}
 	if issue == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
@@ -1610,7 +1610,7 @@ func (s *ConvoyServer) CloseConvoy(
 
 	issue, err := client.Show(req.Msg.ConvoyId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
 	}
 	if issue == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("convoy not found: %s", req.Msg.ConvoyId))
@@ -1847,13 +1847,13 @@ func (s *ActivityServer) WatchEvents(
 	if err != nil {
 		file, err = os.OpenFile(eventsFile, os.O_RDONLY|os.O_CREATE, 0644)
 		if err != nil {
-			return connect.NewError(connect.CodeInternal, fmt.Errorf("opening events file: %w", err))
+			return unavailableErr("opening events file", err, 5)
 		}
 	}
 	defer file.Close()
 
 	if _, err := file.Seek(0, io.SeekEnd); err != nil {
-		return connect.NewError(connect.CodeInternal, fmt.Errorf("seeking to end: %w", err))
+		return unavailableErr("seeking events file", err, 5)
 	}
 
 	reader := bufio.NewReader(file)
@@ -1933,12 +1933,12 @@ func (s *ActivityServer) EmitEvent(
 
 	f, err := os.OpenFile(eventsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("opening events file: %w", err))
+		return nil, unavailableErr("opening events file", err, 5)
 	}
 	defer f.Close()
 
 	if _, err := f.Write(data); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("writing event: %w", err))
+		return nil, unavailableErr("writing event", err, 5)
 	}
 
 	return connect.NewResponse(&gastownv1.EmitEventResponse{
@@ -2161,7 +2161,7 @@ func (s *TerminalServer) PeekSession(
 
 	exists, err := s.tmuxClient.HasSession(session)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, unavailableErr("checking tmux session", err, 2)
 	}
 
 	if !exists {
@@ -2186,7 +2186,7 @@ func (s *TerminalServer) PeekSession(
 	}
 
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("capturing pane: %w", err))
+		return nil, unavailableErr("capturing terminal output", err, 2)
 	}
 
 	var lineSlice []string
@@ -2207,7 +2207,7 @@ func (s *TerminalServer) ListSessions(
 ) (*connect.Response[gastownv1.ListSessionsResponse], error) {
 	sessions, err := s.tmuxClient.ListSessions()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, unavailableErr("listing tmux sessions", err, 2)
 	}
 
 	if req.Msg.Prefix != "" {
@@ -2235,7 +2235,7 @@ func (s *TerminalServer) HasSession(
 
 	exists, err := s.tmuxClient.HasSession(req.Msg.Session)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, unavailableErr("checking tmux session", err, 2)
 	}
 
 	return connect.NewResponse(&gastownv1.HasSessionResponse{
