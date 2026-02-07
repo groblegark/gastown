@@ -32,12 +32,12 @@ func (s *SlingServer) Sling(
 ) (*connect.Response[gastownv1.SlingResponse], error) {
 	beadID := req.Msg.BeadId
 	if beadID == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("bead_id is required"))
+		return nil, invalidArg("bead_id", "bead ID is required")
 	}
 
 	target := req.Msg.Target
 	if target == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("target is required for RPC sling"))
+		return nil, invalidArg("target", "target rig is required")
 	}
 
 	// Build gt sling command
@@ -87,8 +87,7 @@ func (s *SlingServer) Sling(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("sling failed: %w\n%s", err, string(output)))
+		return nil, cmdError("sling", err, output)
 	}
 
 	// Parse output for response data
@@ -160,7 +159,7 @@ func (s *SlingServer) SlingFormula(
 ) (*connect.Response[gastownv1.SlingFormulaResponse], error) {
 	formula := req.Msg.Formula
 	if formula == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("formula is required"))
+		return nil, invalidArg("formula", "formula name is required")
 	}
 
 	// Build gt sling command for formula
@@ -201,8 +200,7 @@ func (s *SlingServer) SlingFormula(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("sling formula failed: %w\n%s", err, string(output)))
+		return nil, cmdError("sling formula", err, output)
 	}
 
 	resp := &gastownv1.SlingFormulaResponse{
@@ -259,10 +257,10 @@ func (s *SlingServer) SlingBatch(
 	req *connect.Request[gastownv1.SlingBatchRequest],
 ) (*connect.Response[gastownv1.SlingBatchResponse], error) {
 	if len(req.Msg.BeadIds) == 0 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("bead_ids is required"))
+		return nil, invalidArg("bead_ids", "at least one bead ID is required")
 	}
 	if req.Msg.Rig == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("rig is required for batch sling"))
+		return nil, invalidArg("rig", "target rig is required for batch sling")
 	}
 
 	// Build gt sling command with multiple beads
@@ -289,8 +287,7 @@ func (s *SlingServer) SlingBatch(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("batch sling failed: %w\n%s", err, string(output)))
+		return nil, cmdError("batch sling", err, output)
 	}
 
 	resp := &gastownv1.SlingBatchResponse{
@@ -356,14 +353,14 @@ func (s *SlingServer) Unsling(
 ) (*connect.Response[gastownv1.UnslingResponse], error) {
 	beadID := req.Msg.BeadId
 	if beadID == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("bead_id is required"))
+		return nil, invalidArg("bead_id", "bead ID is required")
 	}
 
 	// Get current assignee before unsling
 	client := beads.New(beads.GetTownBeadsPath(s.townRoot))
 	issue, err := client.Show(beadID)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("bead not found: %w", err))
+		return nil, notFound("bead", beadID)
 	}
 
 	previousAgent := ""
@@ -383,8 +380,7 @@ func (s *SlingServer) Unsling(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("unsling failed: %w\n%s", err, string(output)))
+		return nil, cmdError("unsling", err, output)
 	}
 
 	return connect.NewResponse(&gastownv1.UnslingResponse{
@@ -400,7 +396,7 @@ func (s *SlingServer) GetWorkload(
 ) (*connect.Response[gastownv1.GetWorkloadResponse], error) {
 	agent := req.Msg.Agent
 	if agent == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("agent is required"))
+		return nil, invalidArg("agent", "agent address is required")
 	}
 
 	// Query beads with status=hooked and assignee=agent
@@ -411,7 +407,7 @@ func (s *SlingServer) GetWorkload(
 		Priority: -1,
 	})
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("listing hooked beads: %w", err))
+		return nil, internalErr("failed to list hooked beads", err)
 	}
 
 	resp := &gastownv1.GetWorkloadResponse{

@@ -182,7 +182,7 @@ func (s *BeadsServer) ListIssues(
 
 	issues, err := b.List(opts)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to list issues", err)
 	}
 
 	var protoIssues []*gastownv1.Issue
@@ -210,7 +210,7 @@ func (s *BeadsServer) GetIssue(
 	req *connect.Request[gastownv1.GetIssueRequest],
 ) (*connect.Response[gastownv1.GetIssueResponse], error) {
 	if req.Msg.Id == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("issue ID required"))
+		return nil, invalidArg("id", "issue ID is required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -218,9 +218,9 @@ func (s *BeadsServer) GetIssue(
 	issue, err := b.Show(req.Msg.Id)
 	if err != nil {
 		if err == beads.ErrNotFound {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("issue not found: %s", req.Msg.Id))
+			return nil, notFound("issue", req.Msg.Id)
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to get issue", err)
 	}
 
 	return connect.NewResponse(&gastownv1.GetIssueResponse{
@@ -233,7 +233,7 @@ func (s *BeadsServer) CreateIssue(
 	req *connect.Request[gastownv1.CreateIssueRequest],
 ) (*connect.Response[gastownv1.CreateIssueResponse], error) {
 	if req.Msg.Title == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("title required"))
+		return nil, invalidArg("title", "issue title is required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -263,7 +263,7 @@ func (s *BeadsServer) CreateIssue(
 	}
 
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to create issue", err)
 	}
 
 	// Handle initial labels
@@ -296,7 +296,7 @@ func (s *BeadsServer) UpdateIssue(
 	req *connect.Request[gastownv1.UpdateIssueRequest],
 ) (*connect.Response[gastownv1.UpdateIssueResponse], error) {
 	if req.Msg.Id == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("issue ID required"))
+		return nil, invalidArg("id", "issue ID is required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -326,15 +326,15 @@ func (s *BeadsServer) UpdateIssue(
 
 	if err := b.Update(req.Msg.Id, opts); err != nil {
 		if err == beads.ErrNotFound {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("issue not found: %s", req.Msg.Id))
+			return nil, notFound("issue", req.Msg.Id)
 		}
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to update issue", err)
 	}
 
 	// Fetch updated issue
 	issue, err := b.Show(req.Msg.Id)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to fetch updated issue", err)
 	}
 
 	return connect.NewResponse(&gastownv1.UpdateIssueResponse{
@@ -347,7 +347,7 @@ func (s *BeadsServer) CloseIssues(
 	req *connect.Request[gastownv1.CloseIssuesRequest],
 ) (*connect.Response[gastownv1.CloseIssuesResponse], error) {
 	if len(req.Msg.Ids) == 0 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("at least one issue ID required"))
+		return nil, invalidArg("ids", "at least one issue ID is required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -380,7 +380,7 @@ func (s *BeadsServer) ReopenIssues(
 	req *connect.Request[gastownv1.ReopenIssuesRequest],
 ) (*connect.Response[gastownv1.ReopenIssuesResponse], error) {
 	if len(req.Msg.Ids) == 0 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("at least one issue ID required"))
+		return nil, invalidArg("ids", "at least one issue ID is required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -408,7 +408,7 @@ func (s *BeadsServer) SearchIssues(
 	req *connect.Request[gastownv1.SearchIssuesRequest],
 ) (*connect.Response[gastownv1.SearchIssuesResponse], error) {
 	if req.Msg.Query == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("search query required"))
+		return nil, invalidArg("query", "search query is required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -440,7 +440,7 @@ func (s *BeadsServer) SearchIssues(
 
 	out, err := b.Run(args...)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("search query failed", err)
 	}
 
 	// Parse JSON output - bd search returns array of issues
@@ -480,7 +480,7 @@ func (s *BeadsServer) GetReadyIssues(
 	}
 
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to get ready issues", err)
 	}
 
 	var protoIssues []*gastownv1.Issue
@@ -507,7 +507,7 @@ func (s *BeadsServer) GetBlockedIssues(
 
 	issues, err := b.Blocked()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to get blocked issues", err)
 	}
 
 	var protoIssues []*gastownv1.Issue
@@ -531,7 +531,7 @@ func (s *BeadsServer) AddDependency(
 	req *connect.Request[gastownv1.AddDependencyRequest],
 ) (*connect.Response[gastownv1.AddDependencyResponse], error) {
 	if req.Msg.IssueId == "" || req.Msg.DependsOnId == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("both issue_id and depends_on_id required"))
+		return nil, invalidArg("issue_id/depends_on_id", "both issue_id and depends_on_id are required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -547,7 +547,7 @@ func (s *BeadsServer) AddDependency(
 	}
 
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to add dependency", err)
 	}
 
 	return connect.NewResponse(&gastownv1.AddDependencyResponse{
@@ -560,13 +560,13 @@ func (s *BeadsServer) RemoveDependency(
 	req *connect.Request[gastownv1.RemoveDependencyRequest],
 ) (*connect.Response[gastownv1.RemoveDependencyResponse], error) {
 	if req.Msg.IssueId == "" || req.Msg.DependsOnId == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("both issue_id and depends_on_id required"))
+		return nil, invalidArg("issue_id/depends_on_id", "both issue_id and depends_on_id are required")
 	}
 
 	b := beads.New(s.townRoot)
 
 	if err := b.RemoveDependency(req.Msg.IssueId, req.Msg.DependsOnId); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to remove dependency", err)
 	}
 
 	return connect.NewResponse(&gastownv1.RemoveDependencyResponse{
@@ -579,7 +579,7 @@ func (s *BeadsServer) ListDependencies(
 	req *connect.Request[gastownv1.ListDependenciesRequest],
 ) (*connect.Response[gastownv1.ListDependenciesResponse], error) {
 	if req.Msg.IssueId == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("issue_id required"))
+		return nil, invalidArg("issue_id", "issue ID is required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -595,7 +595,7 @@ func (s *BeadsServer) ListDependencies(
 
 	issues, err := b.ListDependencies(req.Msg.IssueId, req.Msg.Direction, depType)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to list dependencies", err)
 	}
 
 	var protoIssues []*gastownv1.Issue
@@ -613,7 +613,7 @@ func (s *BeadsServer) AddComment(
 	req *connect.Request[gastownv1.AddCommentRequest],
 ) (*connect.Response[gastownv1.AddCommentResponse], error) {
 	if req.Msg.IssueId == "" || req.Msg.Text == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("issue_id and text required"))
+		return nil, invalidArg("issue_id/text", "both issue_id and text are required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -625,7 +625,7 @@ func (s *BeadsServer) AddComment(
 	}
 
 	if _, err := b.Run(args...); err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to add comment", err)
 	}
 
 	// Return a simple response (bd doesn't return the created comment)
@@ -644,7 +644,7 @@ func (s *BeadsServer) ListComments(
 	req *connect.Request[gastownv1.ListCommentsRequest],
 ) (*connect.Response[gastownv1.ListCommentsResponse], error) {
 	if req.Msg.IssueId == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("issue_id required"))
+		return nil, invalidArg("issue_id", "issue ID is required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -705,7 +705,7 @@ func (s *BeadsServer) ManageLabels(
 	req *connect.Request[gastownv1.ManageLabelsRequest],
 ) (*connect.Response[gastownv1.ManageLabelsResponse], error) {
 	if req.Msg.IssueId == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("issue_id required"))
+		return nil, invalidArg("issue_id", "issue ID is required")
 	}
 
 	b := beads.New(s.townRoot)
@@ -727,7 +727,7 @@ func (s *BeadsServer) ManageLabels(
 	// Fetch updated issue to get current labels
 	issue, err := b.Show(req.Msg.IssueId)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to fetch updated issue", err)
 	}
 
 	return connect.NewResponse(&gastownv1.ManageLabelsResponse{
@@ -743,7 +743,7 @@ func (s *BeadsServer) GetStats(
 
 	rawStats, err := b.Stats()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, err)
+		return nil, internalErr("failed to get issue statistics", err)
 	}
 
 	// Get counts by listing issues

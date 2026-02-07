@@ -66,7 +66,7 @@ func (s *AgentServer) ListAgents(
 	if req.Msg.Rig != "" {
 		r, err := rigMgr.GetRig(req.Msg.Rig)
 		if err != nil {
-			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("rig not found: %s", req.Msg.Rig))
+			return nil, notFound("rig", req.Msg.Rig)
 		}
 		rigsToScan = []*rig.Rig{r}
 	} else {
@@ -219,7 +219,7 @@ func (s *AgentServer) GetAgent(
 ) (*connect.Response[gastownv1.GetAgentResponse], error) {
 	address := req.Msg.Agent
 	if address == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("agent address is required"))
+		return nil, invalidArg("agent", "agent address is required")
 	}
 
 	// Parse address to determine type
@@ -281,7 +281,7 @@ func (s *AgentServer) GetAgent(
 			Session: session,
 		}
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid agent address format: %s", address))
+		return nil, invalidArg("agent", "invalid agent address format: "+address)
 	}
 
 	// Check if session exists
@@ -312,7 +312,7 @@ func (s *AgentServer) SpawnPolecat(
 	req *connect.Request[gastownv1.SpawnPolecatRequest],
 ) (*connect.Response[gastownv1.SpawnPolecatResponse], error) {
 	if req.Msg.Rig == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("rig is required"))
+		return nil, invalidArg("rig", "rig name is required")
 	}
 
 	// Build gt polecat spawn command
@@ -334,8 +334,7 @@ func (s *AgentServer) SpawnPolecat(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("spawn failed: %w\n%s", err, string(output)))
+		return nil, cmdError("spawn polecat", err, output)
 	}
 
 	// Parse output to extract polecat name
@@ -380,10 +379,10 @@ func (s *AgentServer) StartCrew(
 	req *connect.Request[gastownv1.StartCrewRequest],
 ) (*connect.Response[gastownv1.StartCrewResponse], error) {
 	if req.Msg.Rig == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("rig is required"))
+		return nil, invalidArg("rig", "rig name is required")
 	}
 	if req.Msg.Name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("crew name is required"))
+		return nil, invalidArg("name", "crew name is required")
 	}
 
 	// Build gt crew start command
@@ -402,8 +401,7 @@ func (s *AgentServer) StartCrew(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("crew start failed: %w\n%s", err, string(output)))
+		return nil, cmdError("start crew", err, output)
 	}
 
 	session := fmt.Sprintf("gt-%s-crew-%s", req.Msg.Rig, req.Msg.Name)
@@ -432,7 +430,7 @@ func (s *AgentServer) StopAgent(
 ) (*connect.Response[gastownv1.StopAgentResponse], error) {
 	address := req.Msg.Agent
 	if address == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("agent address is required"))
+		return nil, invalidArg("agent", "agent address is required")
 	}
 
 	// Parse address to get agent details
@@ -454,14 +452,13 @@ func (s *AgentServer) StopAgent(
 		}
 		cmd = exec.CommandContext(ctx, "gt", args...)
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("cannot stop agent: %s", address))
+		return nil, invalidArg("agent", "cannot stop agent type: "+address)
 	}
 
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("stop failed: %w\n%s", err, string(output)))
+		return nil, cmdError("stop agent", err, output)
 	}
 
 	agent := &gastownv1.Agent{
@@ -480,10 +477,10 @@ func (s *AgentServer) NudgeAgent(
 	req *connect.Request[gastownv1.NudgeAgentRequest],
 ) (*connect.Response[gastownv1.NudgeAgentResponse], error) {
 	if req.Msg.Agent == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("agent address is required"))
+		return nil, invalidArg("agent", "agent address is required")
 	}
 	if req.Msg.Message == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("message is required"))
+		return nil, invalidArg("message", "nudge message is required")
 	}
 
 	// Build gt nudge command
@@ -493,8 +490,7 @@ func (s *AgentServer) NudgeAgent(
 	cmd.Dir = s.townRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal,
-			fmt.Errorf("nudge failed: %w\n%s", err, string(output)))
+		return nil, cmdError("nudge agent", err, output)
 	}
 
 	// Extract session from output or construct it
@@ -517,7 +513,7 @@ func (s *AgentServer) PeekAgent(
 	req *connect.Request[gastownv1.PeekAgentRequest],
 ) (*connect.Response[gastownv1.PeekAgentResponse], error) {
 	if req.Msg.Agent == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("agent address is required"))
+		return nil, invalidArg("agent", "agent address is required")
 	}
 
 	// Parse address to get session name
@@ -538,7 +534,7 @@ func (s *AgentServer) PeekAgent(
 	case len(parts) >= 3 && parts[1] == "polecats":
 		session = fmt.Sprintf("gt-%s-%s", parts[0], parts[2])
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid agent address: %s", req.Msg.Agent))
+		return nil, invalidArg("agent", "invalid agent address: "+req.Msg.Agent)
 	}
 
 	exists, _ := s.tmux.HasSession(session)
@@ -564,7 +560,7 @@ func (s *AgentServer) PeekAgent(
 		output, err = s.tmux.CapturePane(session, lines)
 	}
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("capturing pane: %w", err))
+		return nil, internalErr("failed to capture terminal pane", err)
 	}
 
 	var lineSlice []string
