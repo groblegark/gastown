@@ -1,5 +1,7 @@
 # Binaries
 /gt
+controller/controller
+controller/bin/
 *.exe
 
 # Build
