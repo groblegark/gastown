@@ -467,6 +467,36 @@ func TestMessageValidate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "missing ID",
+			msg: &Message{
+				From:    "mayor/",
+				To:      "gastown/Toast",
+				Subject: "Test",
+			},
+			wantErr: true,
+			errMsg:  "must have an ID",
+		},
+		{
+			name: "missing From",
+			msg: &Message{
+				ID:      "msg-001",
+				To:      "gastown/Toast",
+				Subject: "Test",
+			},
+			wantErr: true,
+			errMsg:  "must have a From address",
+		},
+		{
+			name: "missing Subject",
+			msg: &Message{
+				ID:   "msg-001",
+				From: "mayor/",
+				To:   "gastown/Toast",
+			},
+			wantErr: true,
+			errMsg:  "must have a Subject",
+		},
+		{
 			name: "no routing target",
 			msg: &Message{
 				ID:      "msg-001",

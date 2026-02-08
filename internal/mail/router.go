@@ -755,6 +755,11 @@ func (r *Router) validateRecipient(identity string) error {
 
 // sendToSingle sends a message to a single recipient.
 func (r *Router) sendToSingle(msg *Message) error {
+	// Validate message before sending
+	if err := msg.Validate(); err != nil {
+		return fmt.Errorf("invalid message: %w", err)
+	}
+
 	// Convert addresses to beads identities
 	toIdentity := AddressToIdentity(msg.To)
 
