@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -359,5 +360,389 @@ func TestIsDoltUnhealthy_NoDir(t *testing.T) {
 	// Non-existent directory should return false
 	if IsDoltUnhealthy("/nonexistent/path") {
 		t.Error("expected false for non-existent directory")
+	}
+}
+
+// ============================================================================
+// Concurrent EnsureRunning and integrated backoff tests
+// ============================================================================
+
+// newTestManager creates a DoltServerManager with test hooks for concurrency testing.
+// Default hooks: server not running, health check passes, start succeeds.
+func newTestManager(t *testing.T) *DoltServerManager {
+	t.Helper()
+	tmpDir := t.TempDir()
+	daemonDir := filepath.Join(tmpDir, "daemon")
+	if err := os.MkdirAll(daemonDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	return &DoltServerManager{
+		config: &DoltServerConfig{
+			Enabled:              true,
+			Port:                 13306,
+			Host:                 "127.0.0.1",
+			RestartDelay:         10 * time.Millisecond,
+			MaxRestartDelay:      100 * time.Millisecond,
+			MaxRestartsInWindow:  5,
+			RestartWindow:        10 * time.Minute,
+			HealthyResetInterval: 50 * time.Millisecond,
+		},
+		townRoot:      tmpDir,
+		logger:           func(format string, v ...interface{}) { t.Logf(format, v...) },
+		runningFn:        func() (int, bool) { return 0, false },
+		healthCheckFn:    func() error { return nil },
+		startFn:          func() error { return nil },
+		stopFn:           func() {},
+		unhealthyAlertFn: func(error) {},
+		crashAlertFn:     func(int) {},
+	}
+}
+
+// TestConcurrentEnsureRunning_OnlyOneRestart verifies that when multiple
+// goroutines call EnsureRunning concurrently and the server is not running,
+// only one goroutine enters restartWithBackoff and starts the server.
+func TestConcurrentEnsureRunning_OnlyOneRestart(t *testing.T) {
+	var startCount atomic.Int32
+
+	m := newTestManager(t)
+	m.startFn = func() error {
+		startCount.Add(1)
+		return nil
+	}
+	m.sleepFn = func(d time.Duration) {
+		time.Sleep(200 * time.Millisecond) // Hold to let other goroutines try
+	}
+
+	const n = 10
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_ = m.EnsureRunning()
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	if got := startCount.Load(); got != 1 {
+		t.Errorf("expected exactly 1 start call, got %d", got)
+	}
+}
+
+// TestConcurrentEnsureRunning_BackoffSleepReleasesLock verifies that during
+// the backoff sleep in restartWithBackoff, the mutex is released, allowing
+// concurrent callers to check the restarting flag and return immediately.
+func TestConcurrentEnsureRunning_BackoffSleepReleasesLock(t *testing.T) {
+	sleepStarted := make(chan struct{})
+	sleepDone := make(chan struct{})
+
+	m := newTestManager(t)
+	m.startFn = func() error { return nil }
+	m.sleepFn = func(d time.Duration) {
+		close(sleepStarted)
+		<-sleepDone
+	}
+
+	// First goroutine enters restartWithBackoff
+	done1 := make(chan error, 1)
+	go func() {
+		done1 <- m.EnsureRunning()
+	}()
+
+	// Wait for first goroutine to be sleeping (mutex released)
+	<-sleepStarted
+
+	// Second goroutine should see restarting=true and return immediately
+	done2 := make(chan error, 1)
+	go func() {
+		done2 <- m.EnsureRunning()
+	}()
+
+	select {
+	case err := <-done2:
+		if err != nil {
+			t.Errorf("concurrent caller got error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("concurrent caller blocked while restart was sleeping")
+	}
+
+	// Let first goroutine finish
+	close(sleepDone)
+
+	select {
+	case err := <-done1:
+		if err != nil {
+			t.Errorf("first caller got error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first caller never completed")
+	}
+}
+
+// TestEnsureRunning_UnhealthyTriggersRestart verifies the full flow:
+// server running but unhealthy -> stop -> restart with backoff.
+func TestEnsureRunning_UnhealthyTriggersRestart(t *testing.T) {
+	var stopCount, startCount atomic.Int32
+
+	m := newTestManager(t)
+	m.runningFn = func() (int, bool) { return 1234, true }
+	m.healthCheckFn = func() error { return fmt.Errorf("connection refused") }
+	m.stopFn = func() { stopCount.Add(1) }
+	m.startFn = func() error {
+		startCount.Add(1)
+		return nil
+	}
+	m.sleepFn = func(d time.Duration) {} // instant
+
+	err := m.EnsureRunning()
+	if err != nil {
+		t.Fatalf("EnsureRunning returned error: %v", err)
+	}
+
+	if got := stopCount.Load(); got != 1 {
+		t.Errorf("expected 1 stop, got %d", got)
+	}
+	if got := startCount.Load(); got != 1 {
+		t.Errorf("expected 1 start, got %d", got)
+	}
+}
+
+// TestEnsureRunning_HealthyResetsBackoff verifies that a healthy server
+// resets backoff state after HealthyResetInterval elapses.
+func TestEnsureRunning_HealthyResetsBackoff(t *testing.T) {
+	var clockOffset atomic.Int64
+	baseTime := time.Now()
+
+	m := newTestManager(t)
+	m.config.HealthyResetInterval = 100 * time.Millisecond
+	m.runningFn = func() (int, bool) { return 1234, true }
+	m.healthCheckFn = func() error { return nil }
+	m.nowFn = func() time.Time {
+		return baseTime.Add(time.Duration(clockOffset.Load()))
+	}
+
+	// Set up accumulated backoff state
+	m.currentDelay = 40 * time.Second
+	m.restartTimes = []time.Time{baseTime}
+	m.escalated = true
+
+	// First heartbeat: sets lastHealthyTime
+	_ = m.EnsureRunning()
+	if m.currentDelay != 40*time.Second {
+		t.Errorf("should not reset on first heartbeat, got delay %v", m.currentDelay)
+	}
+
+	// Advance clock past HealthyResetInterval
+	clockOffset.Store(int64(200 * time.Millisecond))
+
+	// Second heartbeat: should reset backoff
+	_ = m.EnsureRunning()
+	if m.currentDelay != 0 {
+		t.Errorf("expected backoff reset to 0, got %v", m.currentDelay)
+	}
+	if m.restartTimes != nil {
+		t.Error("expected restartTimes nil after healthy reset")
+	}
+	if m.escalated {
+		t.Error("expected escalated false after healthy reset")
+	}
+}
+
+// TestEscalation_RestartCapExceeded verifies that when the restart cap is
+// exceeded, sendEscalationMail is called exactly once with the correct count,
+// and subsequent calls do not double-escalate.
+func TestEscalation_RestartCapExceeded(t *testing.T) {
+	var escalateCount atomic.Int32
+	var escalateArg atomic.Int32
+
+	m := newTestManager(t)
+	m.config.MaxRestartsInWindow = 3
+	m.sleepFn = func(d time.Duration) {}
+	m.escalateFn = func(count int) {
+		escalateCount.Add(1)
+		escalateArg.Store(int32(count))
+	}
+
+	// Pre-fill restart times to reach the cap
+	now := time.Now()
+	m.restartTimes = []time.Time{
+		now.Add(-1 * time.Minute),
+		now.Add(-30 * time.Second),
+		now.Add(-10 * time.Second),
+	}
+
+	// First call: cap exceeded -> escalate
+	err := m.EnsureRunning()
+	if err == nil {
+		t.Fatal("expected error when restart cap exceeded")
+	}
+	if got := escalateCount.Load(); got != 1 {
+		t.Errorf("expected 1 escalation, got %d", got)
+	}
+	if got := escalateArg.Load(); got != 3 {
+		t.Errorf("expected escalation count 3, got %d", got)
+	}
+
+	// Second call: still exceeded but no double escalation
+	err = m.EnsureRunning()
+	if err == nil {
+		t.Fatal("expected error on second call")
+	}
+	if got := escalateCount.Load(); got != 1 {
+		t.Errorf("expected still 1 escalation (no double), got %d", got)
+	}
+}
+
+// TestEnsureRunning_BackoffDelayIncreases verifies that each restart
+// through the full EnsureRunning flow increases the backoff delay exponentially.
+func TestEnsureRunning_BackoffDelayIncreases(t *testing.T) {
+	var mu sync.Mutex
+	var delays []time.Duration
+
+	m := newTestManager(t)
+	m.startFn = func() error { return nil }
+	m.sleepFn = func(d time.Duration) {
+		mu.Lock()
+		delays = append(delays, d)
+		mu.Unlock()
+	}
+
+	for i := 0; i < 4; i++ {
+		if err := m.EnsureRunning(); err != nil {
+			t.Fatalf("restart %d: %v", i, err)
+		}
+	}
+
+	// Verify delays increase: 10ms, 20ms, 40ms, 80ms
+	expected := []time.Duration{
+		10 * time.Millisecond,
+		20 * time.Millisecond,
+		40 * time.Millisecond,
+		80 * time.Millisecond,
+	}
+
+	if len(delays) != len(expected) {
+		t.Fatalf("expected %d sleeps, got %d: %v", len(expected), len(delays), delays)
+	}
+	for i, exp := range expected {
+		if delays[i] != exp {
+			t.Errorf("delay[%d]: expected %v, got %v", i, exp, delays[i])
+		}
+	}
+}
+
+// TestEnsureRunning_MultipleRestartCycles verifies that after a restart
+// completes, the restarting flag is properly cleared so subsequent calls
+// can initiate new restarts.
+func TestEnsureRunning_MultipleRestartCycles(t *testing.T) {
+	var startCount atomic.Int32
+
+	m := newTestManager(t)
+	m.startFn = func() error {
+		startCount.Add(1)
+		return nil
+	}
+	m.sleepFn = func(d time.Duration) {}
+
+	// First restart
+	if err := m.EnsureRunning(); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+
+	// Restarting flag must be cleared
+	m.mu.Lock()
+	if m.restarting {
+		t.Error("restarting should be false after completion")
+	}
+	m.mu.Unlock()
+
+	// Second restart (not blocked by stale flag)
+	if err := m.EnsureRunning(); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+
+	if got := startCount.Load(); got != 2 {
+		t.Errorf("expected 2 starts, got %d", got)
+	}
+}
+
+// TestEnsureRunning_HeartbeatCycle simulates a daemon heartbeat loop:
+// server not running -> start -> healthy -> unhealthy -> stop+restart.
+func TestEnsureRunning_HeartbeatCycle(t *testing.T) {
+	var (
+		healthy atomic.Bool
+		running atomic.Bool
+		started atomic.Int32
+	)
+
+	m := newTestManager(t)
+	m.runningFn = func() (int, bool) {
+		if running.Load() {
+			return 1234, true
+		}
+		return 0, false
+	}
+	m.healthCheckFn = func() error {
+		if healthy.Load() {
+			return nil
+		}
+		return fmt.Errorf("unhealthy")
+	}
+	m.startFn = func() error {
+		started.Add(1)
+		running.Store(true)
+		healthy.Store(true)
+		return nil
+	}
+	m.stopFn = func() {
+		running.Store(false)
+	}
+	m.sleepFn = func(d time.Duration) {}
+
+	// Phase 1: not running -> start
+	if err := m.EnsureRunning(); err != nil {
+		t.Fatalf("phase 1: %v", err)
+	}
+	if started.Load() != 1 {
+		t.Fatalf("expected 1 start, got %d", started.Load())
+	}
+
+	// Phase 2: running and healthy -> no restart
+	if err := m.EnsureRunning(); err != nil {
+		t.Fatalf("phase 2: %v", err)
+	}
+	if started.Load() != 1 {
+		t.Error("should not restart when healthy")
+	}
+
+	// Phase 3: unhealthy -> stop and restart
+	healthy.Store(false)
+	if err := m.EnsureRunning(); err != nil {
+		t.Fatalf("phase 3: %v", err)
+	}
+	if started.Load() != 2 {
+		t.Errorf("expected 2 starts, got %d", started.Load())
+	}
+}
+
+// TestEnsureRunning_StartFailurePropagates verifies that an error from
+// startLocked propagates through restartWithBackoff to EnsureRunning.
+func TestEnsureRunning_StartFailurePropagates(t *testing.T) {
+	m := newTestManager(t)
+	m.startFn = func() error { return fmt.Errorf("dolt not found in PATH") }
+	m.sleepFn = func(d time.Duration) {}
+
+	err := m.EnsureRunning()
+	if err == nil {
+		t.Fatal("expected error when start fails")
+	}
+	if err.Error() != "dolt not found in PATH" {
+		t.Errorf("unexpected error: %v", err)
 	}
 }

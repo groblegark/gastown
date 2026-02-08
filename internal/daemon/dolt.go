@@ -117,6 +117,17 @@ type DoltServerManager struct {
 	lastHealthyTime time.Time     // Last time the server was confirmed healthy
 	escalated       bool          // Whether we've already escalated (avoid spamming)
 	restarting      bool          // Whether a restart is in progress (guards against concurrent restarts)
+
+	// Test hooks (nil = use real implementations; set only in tests)
+	healthCheckFn    func() error
+	startFn          func() error
+	runningFn        func() (int, bool)
+	stopFn           func()
+	sleepFn          func(time.Duration)
+	nowFn            func() time.Time
+	escalateFn       func(int)
+	unhealthyAlertFn func(error)
+	crashAlertFn     func(int)
 }
 
 // NewDoltServerManager creates a new Dolt server manager.
@@ -129,6 +140,21 @@ func NewDoltServerManager(townRoot string, config *DoltServerConfig, logger func
 		townRoot: townRoot,
 		logger:   logger,
 	}
+}
+
+func (m *DoltServerManager) now() time.Time {
+	if m.nowFn != nil {
+		return m.nowFn()
+	}
+	return time.Now()
+}
+
+func (m *DoltServerManager) doSleep(d time.Duration) {
+	if m.sleepFn != nil {
+		m.sleepFn(d)
+		return
+	}
+	time.Sleep(d)
 }
 
 // pidFile returns the path to the Dolt server PID file.
@@ -190,6 +216,9 @@ func (m *DoltServerManager) Status() *DoltServerStatus {
 // isRunning checks if the Dolt server process is running.
 // Must be called with m.mu held.
 func (m *DoltServerManager) isRunning() (int, bool) {
+	if m.runningFn != nil {
+		return m.runningFn()
+	}
 	// First check our tracked process
 	if m.process != nil {
 		if isProcessAlive(m.process) {
@@ -271,7 +300,7 @@ func (m *DoltServerManager) EnsureRunning() error {
 	pid, running := m.isRunning()
 	if running {
 		// Already running, check health
-		m.lastCheck = time.Now()
+		m.lastCheck = m.now()
 		if err := m.checkHealthLocked(); err != nil {
 			m.logger("Dolt server unhealthy: %v, restarting...", err)
 			m.sendUnhealthyAlert(err)
@@ -298,7 +327,7 @@ func (m *DoltServerManager) EnsureRunning() error {
 // and a max-restart cap. If the cap is exceeded, it escalates instead of retrying.
 // Must be called with m.mu held.
 func (m *DoltServerManager) restartWithBackoff() error {
-	now := time.Now()
+	now := m.now()
 
 	// Prune restart times outside the window
 	m.pruneRestartTimes(now)
@@ -330,12 +359,12 @@ func (m *DoltServerManager) restartWithBackoff() error {
 			delay, len(m.restartTimes)+1)
 		// Unlock during sleep so we don't hold the mutex during backoff
 		m.mu.Unlock()
-		time.Sleep(delay)
+		m.doSleep(delay)
 		m.mu.Lock()
 	}
 
 	// Record this restart attempt
-	m.restartTimes = append(m.restartTimes, time.Now())
+	m.restartTimes = append(m.restartTimes, m.now())
 
 	// Advance the backoff for next time
 	m.advanceBackoff()
@@ -391,7 +420,7 @@ func (m *DoltServerManager) pruneRestartTimes(now time.Time) {
 // for the configured HealthyResetInterval.
 // Must be called with m.mu held.
 func (m *DoltServerManager) maybeResetBackoff() {
-	now := time.Now()
+	now := m.now()
 	resetInterval := m.config.HealthyResetInterval
 	if resetInterval <= 0 {
 		resetInterval = 5 * time.Minute
@@ -419,6 +448,10 @@ func (m *DoltServerManager) maybeResetBackoff() {
 // exceeded its restart cap, indicating a systemic issue.
 // Runs the mail command asynchronously to avoid blocking the mutex.
 func (m *DoltServerManager) sendEscalationMail(restartCount int) {
+	if m.escalateFn != nil {
+		m.escalateFn(restartCount)
+		return
+	}
 	subject := fmt.Sprintf("ESCALATION: Dolt server crash-looping (%d restarts)", restartCount)
 	body := fmt.Sprintf(`The Dolt server has restarted %d times within %v and has been capped.
 
@@ -464,6 +497,10 @@ Action needed: Investigate and fix the root cause, then restart the daemon or th
 // This is for single crash detection — distinct from crash-loop escalation.
 // Runs asynchronously to avoid blocking.
 func (m *DoltServerManager) sendCrashAlert(deadPID int) {
+	if m.crashAlertFn != nil {
+		m.crashAlertFn(deadPID)
+		return
+	}
 	subject := "ALERT: Dolt server crashed"
 	body := fmt.Sprintf(`The Dolt server (PID %d) was found dead. The daemon is restarting it.
 
@@ -489,6 +526,10 @@ Check the log file for crash details. If crashes recur, the daemon will escalate
 // sendUnhealthyAlert sends a mail to the mayor when the Dolt server fails health checks.
 // The server is running but not responding to queries. Runs asynchronously.
 func (m *DoltServerManager) sendUnhealthyAlert(healthErr error) {
+	if m.unhealthyAlertFn != nil {
+		m.unhealthyAlertFn(healthErr)
+		return
+	}
 	subject := "ALERT: Dolt server unhealthy"
 	body := fmt.Sprintf(`The Dolt server is running but failing health checks. The daemon is restarting it.
 
@@ -584,6 +625,9 @@ func (m *DoltServerManager) Start() error {
 
 // startLocked starts the Dolt server. Must be called with m.mu held.
 func (m *DoltServerManager) startLocked() error {
+	if m.startFn != nil {
+		return m.startFn()
+	}
 	// Ensure data directory exists
 	if err := os.MkdirAll(m.config.DataDir, 0755); err != nil {
 		return fmt.Errorf("creating data directory: %w", err)
@@ -664,6 +708,10 @@ func (m *DoltServerManager) Stop() error {
 
 // stopLocked stops the Dolt server. Must be called with m.mu held.
 func (m *DoltServerManager) stopLocked() {
+	if m.stopFn != nil {
+		m.stopFn()
+		return
+	}
 	pid, running := m.isRunning()
 	if !running {
 		return
@@ -719,6 +767,9 @@ func (m *DoltServerManager) checkHealth() error {
 // warnings for degraded resource conditions (high latency, high connection count,
 // disk usage). Returns an error only if the server is unreachable.
 func (m *DoltServerManager) checkHealthLocked() error {
+	if m.healthCheckFn != nil {
+		return m.healthCheckFn()
+	}
 	// 1. Connectivity + latency: time a SELECT 1
 	ctx, cancel := context.WithTimeout(context.Background(), doltCmdTimeout)
 	defer cancel()
