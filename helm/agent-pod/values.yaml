@@ -20,9 +20,20 @@ agent:
   # Rig this agent belongs to
   rig: gastown
 
+  # Claude credentials secret (K8s secret with credentials.json key)
+  # Staged at /tmp/claude-credentials/, then copied to PVC by entrypoint.
+  credentialsSecret: ""
+
   # Coop terminal manager configuration
   coop:
     healthPort: 9090
+
+  # Session persistence: auto-resume Claude sessions across pod restarts.
+  # When enabled, ~/.claude and coop state are persisted on the workspace PVC.
+  # On restart, the entrypoint discovers the previous session and passes
+  # --resume to Claude. Requires persistence.enabled=true.
+  sessionResume:
+    enabled: true
 
   # Screen session configuration (legacy, used for SCREENRC_SCROLLBACK env)
   screen:

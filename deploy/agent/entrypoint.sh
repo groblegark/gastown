@@ -15,6 +15,7 @@
 #   GT_COMMAND    - command to run in screen (default: "claude --dangerously-skip-permissions")
 #   BD_DAEMON_HOST - beads daemon URL
 #   BD_DAEMON_PORT - beads daemon port
+#   GT_SESSION_RESUME - set to "1" to auto-resume previous Claude session on restart
 
 set -euo pipefail
 
@@ -23,6 +24,7 @@ RIG="${GT_RIG:-}"
 AGENT="${GT_AGENT:-unknown}"
 COMMAND="${GT_COMMAND:-claude --dangerously-skip-permissions}"
 WORKSPACE="/home/agent/gt"
+SESSION_RESUME="${GT_SESSION_RESUME:-1}"
 
 echo "[entrypoint] Starting ${ROLE} agent: ${AGENT} (rig: ${RIG:-none})"
 
@@ -81,13 +83,45 @@ if [ -f "${CONFIG_DIR}/prompt" ]; then
     echo "[entrypoint] Loaded startup prompt from ConfigMap"
 fi
 
+# ── Session persistence ──────────────────────────────────────────────────
+#
+# Persist Claude state (~/.claude) and coop session artifacts on the
+# workspace PVC so they survive pod restarts.  The PVC is already mounted
+# at /home/agent/gt.  We store session state under .state/ on the PVC
+# and symlink the ephemeral home-directory paths into it.
+#
+#   PVC layout:
+#     /home/agent/gt/.state/claude/     →  symlinked from ~/.claude
+#     /home/agent/gt/.state/coop/       →  symlinked from $XDG_STATE_HOME/coop
+
+STATE_DIR="${WORKSPACE}/.state"
+CLAUDE_STATE="${STATE_DIR}/claude"
+COOP_STATE="${STATE_DIR}/coop"
+
+mkdir -p "${CLAUDE_STATE}" "${COOP_STATE}"
+
+# Symlink ~/.claude → PVC-backed directory.
+CLAUDE_DIR="${HOME}/.claude"
+# Remove the ephemeral dir (or stale symlink) and replace with symlink.
+rm -rf "${CLAUDE_DIR}"
+ln -sfn "${CLAUDE_STATE}" "${CLAUDE_DIR}"
+echo "[entrypoint] Linked ${CLAUDE_DIR} → ${CLAUDE_STATE} (PVC-backed)"
+
+# Copy credentials from staging mount into PVC dir (K8s secret mount lives
+# at /tmp/claude-credentials/credentials.json, set by helm chart).
+CREDS_STAGING="/tmp/claude-credentials/credentials.json"
+if [ -f "${CREDS_STAGING}" ]; then
+    cp "${CREDS_STAGING}" "${CLAUDE_STATE}/.credentials.json"
+    echo "[entrypoint] Copied Claude credentials to PVC state dir"
+fi
+
+# Set XDG_STATE_HOME so coop writes session artifacts to the PVC.
+export XDG_STATE_HOME="${STATE_DIR}"
+echo "[entrypoint] XDG_STATE_HOME=${XDG_STATE_HOME}"
+
 # ── Claude settings ──────────────────────────────────────────────────────
 
-# Create Claude settings directory
-CLAUDE_DIR="${HOME}/.claude"
-mkdir -p "${CLAUDE_DIR}"
-
-# Write minimal settings.json for bypass permissions
+# Write minimal settings.json for bypass permissions (idempotent).
 cat > "${CLAUDE_DIR}/settings.json" <<'SETTINGS'
 {
   "permissions": {
@@ -118,13 +152,45 @@ Run \`gt prime\` for full context.
 CLAUDEMD
 fi
 
+# ── Session resume detection ─────────────────────────────────────────────
+#
+# If this is a restart (PVC already has Claude session logs from a previous
+# run), discover the most recent session and add --resume/--continue flags.
+
+RESUME_ARGS=""
+if [ "${SESSION_RESUME}" = "1" ]; then
+    # Claude stores session logs at ~/.claude/projects/<hash>/*.jsonl
+    LATEST_LOG=$(find "${CLAUDE_STATE}/projects" -name '*.jsonl' -type f 2>/dev/null \
+        | xargs ls -t 2>/dev/null | head -1)
+
+    if [ -n "${LATEST_LOG}" ]; then
+        # Extract conversation ID from the first line's sessionId field.
+        CONV_ID=$(head -1 "${LATEST_LOG}" 2>/dev/null \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sessionId',d.get('conversationId','')))" 2>/dev/null || true)
+
+        if [ -n "${CONV_ID}" ]; then
+            RESUME_ARGS="--resume ${CONV_ID}"
+            echo "[entrypoint] Resuming previous session: ${CONV_ID}"
+        else
+            RESUME_ARGS="--continue"
+            echo "[entrypoint] Resuming most recent session (no conversation ID found)"
+        fi
+    else
+        echo "[entrypoint] No previous session logs found — starting fresh"
+    fi
+fi
+
 # ── Start screen session with Claude ─────────────────────────────────────
 
 SESSION_NAME="agent"
 
 echo "[entrypoint] Starting screen session '${SESSION_NAME}' in ${WORKSPACE}"
 
-# Build the full command with optional startup prompt
+# Build the full command with resume args and optional startup prompt.
+# Resume args are inserted before any startup prompt.
+if [ -n "${RESUME_ARGS}" ]; then
+    COMMAND="${COMMAND} ${RESUME_ARGS}"
+fi
 if [ -n "${STARTUP_PROMPT:-}" ]; then
     FULL_COMMAND="${COMMAND} \"${STARTUP_PROMPT}\""
 else

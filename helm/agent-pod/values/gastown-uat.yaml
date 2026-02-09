@@ -18,6 +18,9 @@ agent:
 
   replicaCount: 1
 
+  # Claude Max credentials (synced via sync-claude-credentials.sh)
+  credentialsSecret: "claude-credentials"
+
   persistence:
     enabled: true
     storageClass: gp2    # e2e cluster only has gp2
@@ -47,8 +50,7 @@ bdDaemon:
   host: "gastown-uat-daemon.gastown-uat.svc.cluster.local"
   port: 9876
 
-# No Anthropic API key — will use Claude Max session via coop later
-# See beads-da7 and alfredjeanlab/coop#36
+# No Anthropic API key — using Claude Max session via coop
 externalSecrets:
   enabled: false
 

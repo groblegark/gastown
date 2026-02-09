@@ -160,11 +160,14 @@ func TestK8sManager_CreateSetsEnvVars(t *testing.T) {
 		envMap[e.Name] = e.Value
 	}
 
-	required := []string{"GT_ROLE", "GT_RIG", "GT_AGENT", "BD_DAEMON_HOST", "HOME"}
+	required := []string{"GT_ROLE", "GT_RIG", "GT_AGENT", "BD_DAEMON_HOST", "HOME", "XDG_STATE_HOME"}
 	for _, key := range required {
 		if _, ok := envMap[key]; !ok {
 			t.Errorf("missing env var %s", key)
 		}
+	}
+	if envMap["XDG_STATE_HOME"] != MountStateDir {
+		t.Errorf("XDG_STATE_HOME = %q, want %q", envMap["XDG_STATE_HOME"], MountStateDir)
 	}
 }
 
@@ -1047,6 +1050,101 @@ func TestK8sManager_CoopSidecarAuthToken(t *testing.T) {
 		t.Error("COOP_AUTH_TOKEN should be from secret")
 	} else if env.ValueFrom.SecretKeyRef.Name != "coop-auth" {
 		t.Errorf("COOP_AUTH_TOKEN secret = %q, want %q", env.ValueFrom.SecretKeyRef.Name, "coop-auth")
+	}
+}
+
+func TestK8sManager_CoopSidecarWorkspaceMount(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "crew", AgentName: "ws-mount",
+		Image: "agent:latest", Namespace: "gastown",
+		WorkspaceStorage: &WorkspaceStorageSpec{
+			Size:             "10Gi",
+			StorageClassName: "gp2",
+		},
+		CoopSidecar: &CoopSidecarSpec{
+			Image: "coop:latest",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-crew-ws-mount", metav1.GetOptions{})
+	coop := pod.Spec.Containers[1]
+
+	mountMap := make(map[string]string)
+	for _, m := range coop.VolumeMounts {
+		mountMap[m.Name] = m.MountPath
+	}
+
+	// Coop sidecar should mount workspace PVC for session state access.
+	if mountMap[VolumeWorkspace] != MountWorkspace {
+		t.Errorf("coop workspace mount = %q, want %q", mountMap[VolumeWorkspace], MountWorkspace)
+	}
+	if mountMap[VolumeTmp] != MountTmp {
+		t.Errorf("coop tmp mount = %q, want %q", mountMap[VolumeTmp], MountTmp)
+	}
+}
+
+func TestK8sManager_CoopSidecarNoWorkspaceMountWithoutPVC(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	// Polecat without WorkspaceStorage — coop should NOT get workspace mount.
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "polecat", AgentName: "no-ws",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image: "coop:latest",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-no-ws", metav1.GetOptions{})
+	coop := pod.Spec.Containers[1]
+
+	for _, m := range coop.VolumeMounts {
+		if m.Name == VolumeWorkspace {
+			t.Error("coop should not mount workspace for ephemeral polecats without PVC")
+		}
+	}
+}
+
+func TestK8sManager_CoopSidecarXDGStateHome(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "crew", AgentName: "xdg-test",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image: "coop:latest",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-crew-xdg-test", metav1.GetOptions{})
+	coop := pod.Spec.Containers[1]
+
+	envMap := make(map[string]corev1.EnvVar)
+	for _, e := range coop.Env {
+		envMap[e.Name] = e
+	}
+
+	if env, ok := envMap["XDG_STATE_HOME"]; !ok {
+		t.Error("missing XDG_STATE_HOME env var on coop sidecar")
+	} else if env.Value != MountStateDir {
+		t.Errorf("XDG_STATE_HOME = %q, want %q", env.Value, MountStateDir)
 	}
 }
 

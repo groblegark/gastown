@@ -43,7 +43,10 @@ const (
 	MountWorkspace   = "/home/agent/gt"
 	MountTmp         = "/tmp"
 	MountBeadsConfig = "/etc/agent-pod"
-	MountClaudeCreds = "/home/agent/.claude/.credentials.json"
+	MountClaudeCreds = "/tmp/claude-credentials"
+
+	// Session persistence: state dir on the workspace PVC.
+	MountStateDir = "/home/agent/gt/.state"
 
 	// Container constants.
 	ContainerName = "agent"
@@ -382,6 +385,9 @@ func (m *K8sManager) buildEnvVars(spec AgentPodSpec) []corev1.EnvVar {
 		{Name: "GT_RIG", Value: spec.Rig},
 		{Name: "GT_AGENT", Value: spec.AgentName},
 		{Name: "HOME", Value: "/home/agent"},
+		// Session persistence: point XDG_STATE_HOME to the PVC so Claude
+		// session logs and coop session artifacts survive pod restarts.
+		{Name: "XDG_STATE_HOME", Value: MountStateDir},
 	}
 
 	// Add role-specific env vars.
@@ -533,12 +539,11 @@ func (m *K8sManager) buildVolumeMounts(spec AgentPodSpec) []corev1.VolumeMount {
 		})
 	}
 
-	// Claude credentials: mount secret key as a single file.
+	// Claude credentials: mount secret to staging dir; entrypoint copies to PVC.
 	if spec.CredentialsSecret != "" {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      VolumeClaudeCreds,
 			MountPath: MountClaudeCreds,
-			SubPath:   "credentials.json",
 			ReadOnly:  true,
 		})
 	}
@@ -606,6 +611,24 @@ func (m *K8sManager) buildCoopSidecar(spec AgentPodSpec) corev1.Container {
 
 	resources := m.buildCoopResources(coop)
 
+	// Coop env: set XDG_STATE_HOME so coop writes session artifacts to the PVC.
+	envVars = append(envVars, corev1.EnvVar{
+		Name:  "XDG_STATE_HOME",
+		Value: MountStateDir,
+	})
+
+	coopMounts := []corev1.VolumeMount{
+		{Name: VolumeTmp, MountPath: "/tmp"},
+	}
+	// Give coop access to the workspace PVC so it can discover Claude session
+	// logs in .state/claude/ for resume and write its own artifacts to .state/coop/.
+	if spec.WorkspaceStorage != nil {
+		coopMounts = append(coopMounts, corev1.VolumeMount{
+			Name:      VolumeWorkspace,
+			MountPath: MountWorkspace,
+		})
+	}
+
 	return corev1.Container{
 		Name:  CoopContainerName,
 		Image: coop.Image,
@@ -615,9 +638,7 @@ func (m *K8sManager) buildCoopSidecar(spec AgentPodSpec) corev1.Container {
 			{Name: "api", ContainerPort: port},
 			{Name: "health", ContainerPort: healthPort},
 		},
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: VolumeTmp, MountPath: "/tmp"},
-		},
+		VolumeMounts: coopMounts,
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
