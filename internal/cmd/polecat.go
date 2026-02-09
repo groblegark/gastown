@@ -363,6 +363,7 @@ type PolecatListItem struct {
 	State          polecat.State `json:"state"`
 	Issue          string        `json:"issue,omitempty"`
 	SessionRunning bool          `json:"session_running"`
+	Target         string        `json:"target,omitempty"` // "local" or "k8s"
 }
 
 // getPolecatManager creates a polecat manager for the given rig.
@@ -410,6 +411,9 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 		mgr := polecat.NewManager(r, polecatGit, t)
 		polecatMgr := polecat.NewSessionManager(t, r)
 
+		// Track local polecat names to avoid duplicates with K8s discovery
+		localPolecatNames := make(map[string]bool)
+
 		polecats, err := mgr.List()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to list polecats in %s: %v\n", r.Name, err)
@@ -418,13 +422,44 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 
 		for _, p := range polecats {
 			running, _ := polecatMgr.IsRunning(p.Name)
+			localPolecatNames[p.Name] = true
 			allPolecats = append(allPolecats, PolecatListItem{
 				Rig:            r.Name,
 				Name:           p.Name,
 				State:          p.State,
 				Issue:          p.Issue,
 				SessionRunning: running,
+				Target:         "local",
 			})
+		}
+
+		// Discover K8s polecats from agent beads (no local worktree)
+		rigBeadsPath := filepath.Join(r.Path, "mayor", "rig")
+		rigBeads := beads.New(rigBeadsPath)
+		agentBeadMap, err := rigBeads.ListAgentBeads()
+		if err == nil {
+			for _, issue := range agentBeadMap {
+				if !beads.HasLabel(issue, "execution_target:k8s") {
+					continue
+				}
+				// Extract polecat name from agent bead title (format: "agent: RIG/NAME")
+				name := extractPolecatNameFromBead(issue, r.Name)
+				if name == "" || localPolecatNames[name] {
+					continue
+				}
+				state := polecat.State(issue.AgentState)
+				if state == "" {
+					state = polecat.StateWorking
+				}
+				allPolecats = append(allPolecats, PolecatListItem{
+					Rig:            r.Name,
+					Name:           name,
+					State:          state,
+					Issue:          issue.HookBead,
+					SessionRunning: false,
+					Target:         "k8s",
+				})
+			}
 		}
 	}
 
@@ -443,9 +478,13 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%s\n\n", style.Bold.Render("Active Polecats"))
 	for _, p := range allPolecats {
 		// Session indicator
-		sessionStatus := style.Dim.Render("○")
-		if p.SessionRunning {
+		var sessionStatus string
+		if p.Target == "k8s" {
+			sessionStatus = style.Info.Render("☸") // K8s wheel
+		} else if p.SessionRunning {
 			sessionStatus = style.Success.Render("●")
+		} else {
+			sessionStatus = style.Dim.Render("○")
 		}
 
 		// Display actual state (no normalization - idle means idle)
@@ -583,6 +622,7 @@ type PolecatStatus struct {
 	Windows        int           `json:"windows,omitempty"`
 	CreatedAt      string        `json:"created_at,omitempty"`
 	LastActivity   string        `json:"last_activity,omitempty"`
+	Target         string        `json:"target,omitempty"` // "local" or "k8s"
 }
 
 func runPolecatStatus(cmd *cobra.Command, args []string) error {
@@ -596,7 +636,12 @@ func runPolecatStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get polecat info
+	// Check if this is a K8s polecat
+	if isK8sPolecat(r, rigName, polecatName) {
+		return runPolecatStatusK8s(r, rigName, polecatName)
+	}
+
+	// Get polecat info (local)
 	p, err := mgr.Get(polecatName)
 	if err != nil {
 		return fmt.Errorf("polecat '%s' not found in rig '%s'", polecatName, rigName)
@@ -627,6 +672,7 @@ func runPolecatStatus(cmd *cobra.Command, args []string) error {
 			SessionID:      sessInfo.SessionID,
 			Attached:       sessInfo.Attached,
 			Windows:        sessInfo.Windows,
+			Target:         "local",
 		}
 		if !sessInfo.Created.IsZero() {
 			status.CreatedAt = sessInfo.Created.Format("2006-01-02 15:04:05")
@@ -655,6 +701,7 @@ func runPolecatStatus(cmd *cobra.Command, args []string) error {
 		stateStr = style.Dim.Render(stateStr)
 	}
 	fmt.Printf("  State:         %s\n", stateStr)
+	fmt.Printf("  Target:        %s\n", "local")
 
 	// Issue
 	if p.Issue != "" {
@@ -699,6 +746,68 @@ func runPolecatStatus(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Printf("  Status:        %s\n", style.Dim.Render("not running"))
 	}
+
+	return nil
+}
+
+// runPolecatStatusK8s displays status for a K8s-backed polecat from its agent bead.
+func runPolecatStatusK8s(r *rig.Rig, rigName, polecatName string) error {
+	townRoot := filepath.Dir(r.Path)
+	prefix := beads.GetPrefixForRig(townRoot, rigName)
+	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
+
+	rigBeadsPath := filepath.Join(r.Path, "mayor", "rig")
+	rigBeads := beads.New(rigBeadsPath)
+	issue, err := rigBeads.Show(agentBeadID)
+	if err != nil {
+		return fmt.Errorf("K8s polecat '%s' not found in rig '%s'", polecatName, rigName)
+	}
+
+	state := polecat.State(issue.AgentState)
+	if state == "" {
+		state = polecat.State("unknown")
+	}
+
+	if polecatStatusJSON {
+		status := PolecatStatus{
+			Rig:    rigName,
+			Name:   polecatName,
+			State:  state,
+			Issue:  issue.HookBead,
+			Target: "k8s",
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(status)
+	}
+
+	// Human-readable output
+	fmt.Printf("%s\n\n", style.Bold.Render(fmt.Sprintf("Polecat: %s/%s", rigName, polecatName)))
+
+	// State with K8s icon
+	stateStr := string(state)
+	switch state {
+	case polecat.StateWorking:
+		stateStr = style.Success.Render("☸ " + stateStr)
+	case polecat.StateStuck:
+		stateStr = style.Warning.Render("☸ " + stateStr)
+	case polecat.StateDone:
+		stateStr = style.Success.Render("☸ " + stateStr)
+	default:
+		stateStr = style.Info.Render("☸ " + stateStr)
+	}
+	fmt.Printf("  State:         %s\n", stateStr)
+	fmt.Printf("  Target:        %s\n", style.Info.Render("k8s"))
+
+	// Issue
+	if issue.HookBead != "" {
+		fmt.Printf("  Issue:         %s\n", issue.HookBead)
+	} else {
+		fmt.Printf("  Issue:         %s\n", style.Dim.Render("(none)"))
+	}
+
+	// Agent bead
+	fmt.Printf("  Agent Bead:    %s\n", style.Dim.Render(agentBeadID))
 
 	return nil
 }
@@ -1143,15 +1252,50 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 
 	for _, p := range targets {
 		if polecatNukeDryRun {
-			fmt.Printf("Would nuke %s/%s:\n", p.rigName, p.polecatName)
-			fmt.Printf("  - Kill session: gt-%s-%s\n", p.rigName, p.polecatName)
-			fmt.Printf("  - Delete worktree: %s/polecats/%s\n", p.r.Path, p.polecatName)
-			fmt.Printf("  - Reject any open MRs for the branch\n")
-			fmt.Printf("  - Delete branch (if exists)\n")
-			fmt.Printf("  - Close agent bead: %s\n", polecatBeadIDForRig(p.r, p.rigName, p.polecatName))
-
-			displayDryRunSafetyCheck(p)
+			fmt.Printf("Would nuke %s/%s", p.rigName, p.polecatName)
+			if p.isK8s {
+				fmt.Printf(" (K8s):\n")
+				fmt.Printf("  - Close agent bead: %s\n", polecatBeadIDForRig(p.r, p.rigName, p.polecatName))
+				fmt.Printf("  - K8s controller will terminate the pod\n")
+			} else {
+				fmt.Printf(":\n")
+				fmt.Printf("  - Kill session: gt-%s-%s\n", p.rigName, p.polecatName)
+				fmt.Printf("  - Delete worktree: %s/polecats/%s\n", p.r.Path, p.polecatName)
+				fmt.Printf("  - Reject any open MRs for the branch\n")
+				fmt.Printf("  - Delete branch (if exists)\n")
+				fmt.Printf("  - Close agent bead: %s\n", polecatBeadIDForRig(p.r, p.rigName, p.polecatName))
+				displayDryRunSafetyCheck(p)
+			}
 			fmt.Println()
+			continue
+		}
+
+		// K8s polecats: no local worktree/session — just close the agent bead.
+		// The K8s controller watches for closed agent beads and terminates the pod.
+		if p.isK8s {
+			if polecatNukeForce {
+				fmt.Printf("%s Nuking %s/%s (K8s, --force)...\n", style.Warning.Render("⚠"), p.rigName, p.polecatName)
+			} else {
+				fmt.Printf("Nuking %s/%s (K8s)...\n", p.rigName, p.polecatName)
+			}
+
+			agentBeadID := polecatBeadIDForRig(p.r, p.rigName, p.polecatName)
+			closeArgs := []string{"close", agentBeadID, "--reason=nuked"}
+			if polecatNukeForce {
+				closeArgs = append(closeArgs, "--force")
+			}
+			if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
+				closeArgs = append(closeArgs, "--session="+sessionID)
+			}
+			closeCmd := exec.Command("bd", closeArgs...)
+			closeCmd.Dir = filepath.Join(p.r.Path, "mayor", "rig")
+			if err := closeCmd.Run(); err != nil {
+				nukeErrors = append(nukeErrors, fmt.Sprintf("%s/%s: agent bead close failed: %v", p.rigName, p.polecatName, err))
+				continue
+			}
+			fmt.Printf("  %s closed agent bead %s\n", style.Success.Render("✓"), agentBeadID)
+			fmt.Printf("  %s K8s controller will terminate the pod\n", style.Dim.Render("○"))
+			nuked++
 			continue
 		}
 

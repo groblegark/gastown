@@ -84,6 +84,7 @@ type AgentRuntime struct {
 	WorkTitle    string `json:"work_title,omitempty"`    // Title of pinned work
 	HookBead     string `json:"hook_bead,omitempty"`     // Pinned bead ID from agent bead
 	State        string `json:"state,omitempty"`         // Agent state from agent bead
+	Target       string `json:"target,omitempty"`        // Execution target: "local" or "k8s"
 	UnreadMail   int    `json:"unread_mail"`             // Number of unread messages
 	FirstSubject string `json:"first_subject,omitempty"` // Subject of first unread message
 }
@@ -604,34 +605,49 @@ func outputStatusText(status TownStatus) error {
 // renderAgentDetails renders full agent bead details
 func renderAgentDetails(agent AgentRuntime, indent string, hooks []AgentHookInfo, townRoot string) { //nolint:unparam // indent kept for future customization
 	// Line 1: Agent bead ID + status
-	// Per gt-zecmc: derive status from tmux (observable reality), not bead state.
-	// "Discover, don't track" - agent liveness is observable from tmux session.
-	sessionExists := agent.Running
-
 	var statusStr string
 	var stateInfo string
 
-	if sessionExists {
-		statusStr = style.Success.Render("running")
+	if agent.Target == "k8s" {
+		// K8s polecats: derive status from agent_state (no tmux session)
+		switch agent.State {
+		case "spawning":
+			statusStr = style.Info.Render("☸ spawning")
+		case "working":
+			statusStr = style.Success.Render("☸ working")
+		case "done":
+			statusStr = style.Success.Render("☸ done")
+		case "stuck":
+			statusStr = style.Warning.Render("☸ stuck")
+		default:
+			statusStr = style.Info.Render("☸ k8s")
+		}
 	} else {
-		statusStr = style.Error.Render("stopped")
-	}
+		// Per gt-zecmc: derive status from tmux (observable reality), not bead state.
+		// "Discover, don't track" - agent liveness is observable from tmux session.
+		sessionExists := agent.Running
+		if sessionExists {
+			statusStr = style.Success.Render("running")
+		} else {
+			statusStr = style.Error.Render("stopped")
+		}
 
-	// Show non-observable states that represent intentional agent decisions.
-	// These can't be discovered from tmux and are legitimately recorded in beads.
-	beadState := agent.State
-	switch beadState {
-	case "stuck":
-		// Agent escalated - needs help
-		stateInfo = style.Warning.Render(" [stuck]")
-	case "awaiting-gate":
-		// Agent waiting for external trigger (phase gate)
-		stateInfo = style.Dim.Render(" [awaiting-gate]")
-	case "muted", "paused", "degraded":
-		// Other intentional non-observable states
-		stateInfo = style.Dim.Render(fmt.Sprintf(" [%s]", beadState))
-	// Ignore observable states: "running", "idle", "dead", "done", "stopped", ""
-	// These should be derived from tmux, not bead.
+		// Show non-observable states that represent intentional agent decisions.
+		// These can't be discovered from tmux and are legitimately recorded in beads.
+		beadState := agent.State
+		switch beadState {
+		case "stuck":
+			// Agent escalated - needs help
+			stateInfo = style.Warning.Render(" [stuck]")
+		case "awaiting-gate":
+			// Agent waiting for external trigger (phase gate)
+			stateInfo = style.Dim.Render(" [awaiting-gate]")
+		case "muted", "paused", "degraded":
+			// Other intentional non-observable states
+			stateInfo = style.Dim.Render(fmt.Sprintf(" [%s]", beadState))
+		// Ignore observable states: "running", "idle", "dead", "done", "stopped", ""
+		// These should be derived from tmux, not bead.
+		}
 	}
 
 	// Build agent bead ID using canonical naming: prefix-rig-role-name
@@ -835,6 +851,23 @@ func renderAgentCompact(agent AgentRuntime, indent string, hooks []AgentHookInfo
 // Per gt-zecmc: uses tmux state (observable reality), not bead state.
 // Non-observable states (stuck, awaiting-gate, muted, etc.) are shown as suffixes.
 func buildStatusIndicator(agent AgentRuntime) string {
+	// K8s polecats: no tmux session — use agent_state for liveness
+	if agent.Target == "k8s" {
+		beadState := agent.State
+		switch beadState {
+		case "spawning":
+			return style.Info.Render("☸ spawning")
+		case "working":
+			return style.Success.Render("☸ working")
+		case "done":
+			return style.Success.Render("☸ done")
+		case "stuck":
+			return style.Warning.Render("☸ stuck")
+		default:
+			return style.Info.Render("☸")
+		}
+	}
+
 	sessionExists := agent.Running
 
 	// Base indicator from tmux state
@@ -1134,6 +1167,10 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 					if fields != nil {
 						agent.State = fields.AgentState
 					}
+				}
+				// Detect K8s polecats via label
+				if beads.HasLabel(issue, "execution_target:k8s") {
+					agent.Target = "k8s"
 				}
 			}
 

@@ -595,9 +595,11 @@ func spawnPolecatForK8sCMD(townRoot, rigName string, r *rig.Rig, opts SlingSpawn
 	fmt.Printf("Allocated polecat: %s (K8s)\n", polecatName)
 
 	// Create or reopen agent bead with spawning state and hook_bead set atomically.
+	// Use rig beads (mayor/rig) to match where local polecats store their agent beads.
 	prefix := beads.GetPrefixForRig(townRoot, rigName)
 	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
-	beadsClient := beads.New(townRoot)
+	rigBeadsPath := filepath.Join(r.Path, "mayor", "rig")
+	beadsClient := beads.New(rigBeadsPath)
 	_, err = beadsClient.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
 		RoleType:   "polecat",
 		Rig:        rigName,

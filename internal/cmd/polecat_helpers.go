@@ -17,6 +17,7 @@ type polecatTarget struct {
 	polecatName string
 	mgr         *polecat.Manager
 	r           *rig.Rig
+	isK8s       bool // True if this is a K8s polecat (no local worktree/session)
 }
 
 // resolvePolecatTargets builds a list of polecats from command args.
@@ -38,12 +39,16 @@ func resolvePolecatTargets(args []string, useAll bool) ([]polecatTarget, error) 
 			return nil, err
 		}
 
+		// Track local polecat names to avoid duplicates with K8s discovery
+		localNames := make(map[string]bool)
+
 		polecats, err := mgr.List()
 		if err != nil {
 			return nil, fmt.Errorf("listing polecats: %w", err)
 		}
 
 		for _, p := range polecats {
+			localNames[p.Name] = true
 			targets = append(targets, polecatTarget{
 				rigName:     rigName,
 				polecatName: p.Name,
@@ -51,6 +56,10 @@ func resolvePolecatTargets(args []string, useAll bool) ([]polecatTarget, error) 
 				r:           r,
 			})
 		}
+
+		// Also discover K8s polecats from agent beads
+		k8sTargets := discoverK8sPolecatTargets(r, rigName, mgr, localNames)
+		targets = append(targets, k8sTargets...)
 	} else {
 		// Multiple rig/polecat arguments - require explicit rig/polecat format
 		for _, arg := range args {
@@ -69,11 +78,15 @@ func resolvePolecatTargets(args []string, useAll bool) ([]polecatTarget, error) 
 				return nil, err
 			}
 
+			// Check if this is a K8s polecat
+			isK8s := isK8sPolecat(r, rigName, polecatName)
+
 			targets = append(targets, polecatTarget{
 				rigName:     rigName,
 				polecatName: polecatName,
 				mgr:         mgr,
 				r:           r,
+				isK8s:       isK8s,
 			})
 		}
 	}
@@ -109,8 +122,8 @@ func checkPolecatSafety(target polecatTarget) *SafetyCheckResult {
 	agentIssue, fields, err := bd.GetAgentBead(agentBeadID)
 
 	if err != nil || fields == nil {
-		// No agent bead - fall back to git check
-		if infoErr == nil && polecatInfo != nil {
+		// No agent bead - fall back to git check (skip for K8s — no local worktree)
+		if !target.isK8s && infoErr == nil && polecatInfo != nil {
 			gitState, gitErr := getGitState(polecatInfo.ClonePath)
 			result.GitState = gitState
 			if gitErr != nil {
@@ -127,20 +140,23 @@ func checkPolecatSafety(target polecatTarget) *SafetyCheckResult {
 		}
 	} else {
 		// Check cleanup_status from agent bead
-		result.CleanupStatus = polecat.CleanupStatus(fields.CleanupStatus)
-		switch result.CleanupStatus {
-		case polecat.CleanupClean:
-			// OK
-		case polecat.CleanupUnpushed:
-			result.Reasons = append(result.Reasons, "has unpushed commits")
-		case polecat.CleanupUncommitted:
-			result.Reasons = append(result.Reasons, "has uncommitted changes")
-		case polecat.CleanupStash:
-			result.Reasons = append(result.Reasons, "has stashed changes")
-		case polecat.CleanupUnknown, "":
-			result.Reasons = append(result.Reasons, "cleanup status unknown")
-		default:
-			result.Reasons = append(result.Reasons, fmt.Sprintf("cleanup status: %s", result.CleanupStatus))
+		// K8s polecats skip cleanup_status check — no local worktree to verify
+		if !target.isK8s {
+			result.CleanupStatus = polecat.CleanupStatus(fields.CleanupStatus)
+			switch result.CleanupStatus {
+			case polecat.CleanupClean:
+				// OK
+			case polecat.CleanupUnpushed:
+				result.Reasons = append(result.Reasons, "has unpushed commits")
+			case polecat.CleanupUncommitted:
+				result.Reasons = append(result.Reasons, "has uncommitted changes")
+			case polecat.CleanupStash:
+				result.Reasons = append(result.Reasons, "has stashed changes")
+			case polecat.CleanupUnknown, "":
+				result.Reasons = append(result.Reasons, "cleanup status unknown")
+			default:
+				result.Reasons = append(result.Reasons, fmt.Sprintf("cleanup status: %s", result.CleanupStatus))
+			}
 		}
 
 		// Check 3: Work on hook
@@ -175,6 +191,20 @@ func checkPolecatSafety(target polecatTarget) *SafetyCheckResult {
 
 	result.Blocked = len(result.Reasons) > 0
 	return result
+}
+
+// extractPolecatNameFromBead extracts the polecat name from an agent bead.
+// Agent bead IDs follow the pattern: prefix-polecat-NAME or prefix-rig-polecat-NAME.
+// We look for the "-polecat-" segment and take everything after it.
+func extractPolecatNameFromBead(issue *beads.Issue, _ string) string {
+	id := issue.ID
+	// Look for "-polecat-" in the bead ID
+	const marker = "-polecat-"
+	idx := strings.Index(id, marker)
+	if idx < 0 {
+		return ""
+	}
+	return id[idx+len(marker):]
 }
 
 func rigPrefix(r *rig.Rig) string {
@@ -269,4 +299,46 @@ func displayDryRunSafetyCheck(target polecatTarget) {
 	} else {
 		fmt.Printf("    - Open MR: %s\n", style.Dim.Render("unknown (no branch info)"))
 	}
+}
+
+// discoverK8sPolecatTargets finds K8s polecats from agent beads that don't have local worktrees.
+func discoverK8sPolecatTargets(r *rig.Rig, rigName string, mgr *polecat.Manager, localNames map[string]bool) []polecatTarget {
+	rigBeadsPath := filepath.Join(r.Path, "mayor", "rig")
+	rigBeads := beads.New(rigBeadsPath)
+	agentBeadMap, err := rigBeads.ListAgentBeads()
+	if err != nil {
+		return nil
+	}
+
+	var targets []polecatTarget
+	for _, issue := range agentBeadMap {
+		if !beads.HasLabel(issue, "execution_target:k8s") {
+			continue
+		}
+		name := extractPolecatNameFromBead(issue, rigName)
+		if name == "" || localNames[name] {
+			continue
+		}
+		targets = append(targets, polecatTarget{
+			rigName:     rigName,
+			polecatName: name,
+			mgr:         mgr,
+			r:           r,
+			isK8s:       true,
+		})
+	}
+	return targets
+}
+
+// isK8sPolecat checks if a specific polecat is a K8s polecat by checking its agent bead label.
+func isK8sPolecat(r *rig.Rig, rigName, polecatName string) bool {
+	rigBeadsPath := filepath.Join(r.Path, "mayor", "rig")
+	rigBeads := beads.New(rigBeadsPath)
+	prefix := rigPrefix(r)
+	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
+	issue, err := rigBeads.Show(agentBeadID)
+	if err != nil {
+		return false
+	}
+	return beads.HasLabel(issue, "execution_target:k8s")
 }
