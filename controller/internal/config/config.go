@@ -17,6 +17,12 @@ type Config struct {
 	// DaemonPort is the BD Daemon RPC port (env: BD_DAEMON_PORT).
 	DaemonPort int
 
+	// DaemonHTTPPort is the BD Daemon HTTP port for SSE events (env: BD_DAEMON_HTTP_PORT).
+	DaemonHTTPPort int
+
+	// DaemonToken is the BD Daemon auth token (env: BD_DAEMON_TOKEN).
+	DaemonToken string
+
 	// Namespace is the K8s namespace to operate in (env: NAMESPACE).
 	Namespace string
 
@@ -27,19 +33,15 @@ type Config struct {
 	// LogLevel controls log verbosity: debug, info, warn, error (env: LOG_LEVEL).
 	LogLevel string
 
-	// TownRoot is the Gas Town workspace root directory (env: GT_TOWN_ROOT).
-	// Used by the beads watcher to run bd commands in the correct context.
-	TownRoot string
-
-	// BdBinary is the path to the bd executable (env: BD_BINARY).
-	BdBinary string
-
 	// DefaultImage is the default container image for agent pods (env: AGENT_IMAGE).
 	DefaultImage string
 
 	// CoopImage is the Coop sidecar container image (env: COOP_IMAGE).
 	// When set, agent pods get a Coop sidecar for PTY-based management.
 	CoopImage string
+
+	// APIKeySecret is the K8s secret name containing ANTHROPIC_API_KEY (env: API_KEY_SECRET).
+	APIKeySecret string
 
 	// SyncInterval is how often to reconcile pod statuses with beads (env: SYNC_INTERVAL).
 	// Default: 60s.
@@ -50,27 +52,29 @@ type Config struct {
 // Environment variables override defaults; flags override everything.
 func Parse() *Config {
 	cfg := &Config{
-		DaemonHost:   envOr("BD_DAEMON_HOST", "localhost"),
-		DaemonPort:   envIntOr("BD_DAEMON_PORT", 9876),
-		Namespace:    envOr("NAMESPACE", "gastown"),
-		KubeConfig:   os.Getenv("KUBECONFIG"),
-		LogLevel:     envOr("LOG_LEVEL", "info"),
-		TownRoot:     os.Getenv("GT_TOWN_ROOT"),
-		BdBinary:     envOr("BD_BINARY", "bd"),
-		DefaultImage: os.Getenv("AGENT_IMAGE"),
-		CoopImage:    os.Getenv("COOP_IMAGE"),
-		SyncInterval: envDurationOr("SYNC_INTERVAL", 60*time.Second),
+		DaemonHost:     envOr("BD_DAEMON_HOST", "localhost"),
+		DaemonPort:     envIntOr("BD_DAEMON_PORT", 9876),
+		DaemonHTTPPort: envIntOr("BD_DAEMON_HTTP_PORT", 9080),
+		DaemonToken:    os.Getenv("BD_DAEMON_TOKEN"),
+		Namespace:      envOr("NAMESPACE", "gastown"),
+		KubeConfig:     os.Getenv("KUBECONFIG"),
+		LogLevel:       envOr("LOG_LEVEL", "info"),
+		DefaultImage:   os.Getenv("AGENT_IMAGE"),
+		CoopImage:      os.Getenv("COOP_IMAGE"),
+		APIKeySecret:   os.Getenv("API_KEY_SECRET"),
+		SyncInterval:   envDurationOr("SYNC_INTERVAL", 60*time.Second),
 	}
 
 	flag.StringVar(&cfg.DaemonHost, "daemon-host", cfg.DaemonHost, "BD Daemon hostname")
 	flag.IntVar(&cfg.DaemonPort, "daemon-port", cfg.DaemonPort, "BD Daemon RPC port")
+	flag.IntVar(&cfg.DaemonHTTPPort, "daemon-http-port", cfg.DaemonHTTPPort, "BD Daemon HTTP port for SSE events")
+	flag.StringVar(&cfg.DaemonToken, "daemon-token", cfg.DaemonToken, "BD Daemon auth token")
 	flag.StringVar(&cfg.Namespace, "namespace", cfg.Namespace, "Kubernetes namespace")
 	flag.StringVar(&cfg.KubeConfig, "kubeconfig", cfg.KubeConfig, "Path to kubeconfig (empty for in-cluster)")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "Log level: debug, info, warn, error")
-	flag.StringVar(&cfg.TownRoot, "town-root", cfg.TownRoot, "Gas Town workspace root directory")
-	flag.StringVar(&cfg.BdBinary, "bd-binary", cfg.BdBinary, "Path to bd executable")
 	flag.StringVar(&cfg.DefaultImage, "agent-image", cfg.DefaultImage, "Default container image for agent pods")
 	flag.StringVar(&cfg.CoopImage, "coop-image", cfg.CoopImage, "Coop sidecar container image")
+	flag.StringVar(&cfg.APIKeySecret, "api-key-secret", cfg.APIKeySecret, "K8s secret name containing ANTHROPIC_API_KEY")
 	flag.DurationVar(&cfg.SyncInterval, "sync-interval", cfg.SyncInterval, "Interval for periodic pod status sync")
 	flag.Parse()
 

@@ -41,20 +41,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	watcher := beadswatcher.NewActivityWatcher(beadswatcher.Config{
-		TownRoot:     cfg.TownRoot,
-		BdBinary:     cfg.BdBinary,
-		Namespace:    cfg.Namespace,
-		DefaultImage: cfg.DefaultImage,
-		DaemonHost:   cfg.DaemonHost,
-		DaemonPort:   fmt.Sprintf("%d", cfg.DaemonPort),
+	watcher := beadswatcher.NewSSEWatcher(beadswatcher.Config{
+		DaemonHTTPURL: fmt.Sprintf("http://%s:%d", cfg.DaemonHost, cfg.DaemonHTTPPort),
+		DaemonToken:   cfg.DaemonToken,
+		Namespace:     cfg.Namespace,
+		DefaultImage:  cfg.DefaultImage,
+		DaemonHost:    cfg.DaemonHost,
+		DaemonPort:    fmt.Sprintf("%d", cfg.DaemonPort),
 	}, logger)
 	pods := podmanager.New(k8sClient, logger)
-	status := statusreporter.NewBdReporter(statusreporter.BdConfig{
-		BdBinary:  cfg.BdBinary,
-		TownRoot:  cfg.TownRoot,
-		Namespace: cfg.Namespace,
-	}, k8sClient, logger)
+	// TODO: Replace StubReporter with RPC-based reporter that talks to daemon
+	// directly (no bd binary needed in distroless container).
+	status := statusreporter.NewStubReporter(logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
@@ -240,12 +238,16 @@ func buildAgentPodSpec(cfg *config.Config, event beadswatcher.Event) podmanager.
 		spec.ConfigMapName = cm
 	}
 
-	// Wire up secret env vars from metadata.
-	if secretName := event.Metadata["api_key_secret"]; secretName != "" {
+	// Wire up ANTHROPIC_API_KEY from event metadata or controller config.
+	apiKeySecret := event.Metadata["api_key_secret"]
+	if apiKeySecret == "" {
+		apiKeySecret = cfg.APIKeySecret
+	}
+	if apiKeySecret != "" {
 		secretKey := metadataOr(event, "api_key_secret_key", "ANTHROPIC_API_KEY")
 		spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
 			EnvName:    "ANTHROPIC_API_KEY",
-			SecretName: secretName,
+			SecretName: apiKeySecret,
 			SecretKey:  secretKey,
 		})
 	}
