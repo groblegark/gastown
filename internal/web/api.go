@@ -756,7 +756,7 @@ func (h *APIHandler) handleIssueShow(w http.ResponseWriter, r *http.Request) {
 	// Try structured JSON output first (preferred — no text parsing needed)
 	output, err := h.runBdCommand(r.Context(), 10*time.Second, []string{"show", issueID, "--json"})
 	if err == nil {
-		if resp, ok := parseIssueShowJSON(output, issueID); ok {
+		if resp, ok := parseIssueShowJSON(output); ok {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(resp)
 			return
@@ -900,7 +900,7 @@ func (h *APIHandler) runBdCommand(ctx context.Context, timeout time.Duration, ar
 
 // parseIssueShowJSON parses the JSON output from "bd show <id> --json".
 // Returns (response, true) on success, or (zero, false) if parsing fails.
-func parseIssueShowJSON(output string, issueID string) (IssueShowResponse, bool) {
+func parseIssueShowJSON(output string) (IssueShowResponse, bool) {
 	var items []struct {
 		ID          string   `json:"id"`
 		Title       string   `json:"title"`
