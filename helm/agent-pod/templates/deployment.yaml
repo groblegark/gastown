@@ -139,7 +139,7 @@ spec:
             - name: XDG_STATE_HOME
               value: "/home/agent/gt/.state"
             - name: GT_SESSION_RESUME
-              value: {{ ternary "1" "0" (and .Values.agent.persistence.enabled (default true .Values.agent.sessionResume.enabled)) | quote }}
+              value: {{ if and .Values.agent.persistence.enabled .Values.agent.sessionResume.enabled }}"1"{{ else }}"0"{{ end }}
             {{- with .Values.agent.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

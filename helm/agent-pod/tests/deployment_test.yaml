@@ -456,3 +456,181 @@ tests:
           path: spec.template.spec.containers[0].imagePullPolicy
           value: Always
         template: templates/deployment.yaml
+
+  # =========================================================================
+  # Credentials and session resume tests
+  # =========================================================================
+
+  - it: excludes init container when credentialsSecret not set
+    asserts:
+      - isNull:
+          path: spec.template.spec.initContainers
+        template: templates/deployment.yaml
+
+  - it: includes init container when credentialsSecret is set
+    set:
+      agent.credentialsSecret: "claude-credentials"
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: copy-credentials
+        template: templates/deployment.yaml
+      - equal:
+          path: spec.template.spec.initContainers[0].image
+          value: "busybox:1.36"
+        template: templates/deployment.yaml
+
+  - it: init container has resource limits (ResourceQuota compliance)
+    set:
+      agent.credentialsSecret: "claude-credentials"
+    asserts:
+      - isNotNull:
+          path: spec.template.spec.initContainers[0].resources.requests.cpu
+        template: templates/deployment.yaml
+      - isNotNull:
+          path: spec.template.spec.initContainers[0].resources.limits.cpu
+        template: templates/deployment.yaml
+      - isNotNull:
+          path: spec.template.spec.initContainers[0].resources.limits.memory
+        template: templates/deployment.yaml
+
+  - it: init container runs as UID 1000
+    set:
+      agent.credentialsSecret: "claude-credentials"
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.runAsUser
+          value: 1000
+        template: templates/deployment.yaml
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.runAsGroup
+          value: 1000
+        template: templates/deployment.yaml
+
+  - it: sets command override when credentialsSecret is set
+    set:
+      agent.credentialsSecret: "claude-credentials"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["sh", "-c"]
+        template: templates/deployment.yaml
+      - isNotNull:
+          path: spec.template.spec.containers[0].args
+        template: templates/deployment.yaml
+
+  - it: does not set command override without credentialsSecret
+    asserts:
+      - isNull:
+          path: spec.template.spec.containers[0].command
+        template: templates/deployment.yaml
+      - isNull:
+          path: spec.template.spec.containers[0].args
+        template: templates/deployment.yaml
+
+  - it: mounts claude-creds volume when credentialsSecret is set
+    set:
+      agent.credentialsSecret: "claude-credentials"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: claude-creds
+            mountPath: /tmp/claude-credentials
+            readOnly: true
+        template: templates/deployment.yaml
+
+  - it: mounts workspace subPath for .claude when credentialsSecret is set
+    set:
+      agent.credentialsSecret: "claude-credentials"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: workspace
+            mountPath: /home/agent/.claude
+            subPath: .state/claude
+        template: templates/deployment.yaml
+
+  - it: creates claude-creds volume from secret
+    set:
+      agent.credentialsSecret: "claude-credentials"
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: claude-creds
+            secret:
+              secretName: claude-credentials
+        template: templates/deployment.yaml
+
+  - it: excludes claude-creds volume without credentialsSecret
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: claude-creds
+          any: true
+        template: templates/deployment.yaml
+
+  - it: sets XDG_STATE_HOME environment variable
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: XDG_STATE_HOME
+            value: "/home/agent/gt/.state"
+        template: templates/deployment.yaml
+
+  - it: sets GT_SESSION_RESUME=1 when persistence and sessionResume enabled
+    set:
+      agent.persistence.enabled: true
+      agent.sessionResume.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GT_SESSION_RESUME
+            value: "1"
+        template: templates/deployment.yaml
+
+  - it: sets GT_SESSION_RESUME=0 when persistence disabled
+    set:
+      agent.persistence.enabled: false
+      agent.sessionResume.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GT_SESSION_RESUME
+            value: "0"
+        template: templates/deployment.yaml
+
+  - it: sets GT_SESSION_RESUME=0 when sessionResume disabled
+    set:
+      agent.persistence.enabled: true
+      agent.sessionResume.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GT_SESSION_RESUME
+            value: "0"
+        template: templates/deployment.yaml
+
+  - it: uses Recreate strategy when persistence enabled
+    set:
+      agent.persistence.enabled: true
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+        template: templates/deployment.yaml
+
+  - it: does not set Recreate strategy when persistence disabled
+    set:
+      agent.persistence.enabled: false
+    asserts:
+      - isNull:
+          path: spec.strategy
+        template: templates/deployment.yaml
