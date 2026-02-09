@@ -205,6 +205,10 @@ func DefaultPodDefaultsForRole(role string) *PodDefaults {
 			Size:             "10Gi",
 			StorageClassName: "gp3",
 		}
+		defaults.Env = map[string]string{
+			"GT_SCOPE": "town",
+			"BD_ACTOR": role,
+		}
 	}
 
 	return defaults

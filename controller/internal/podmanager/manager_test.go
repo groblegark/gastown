@@ -1137,6 +1137,106 @@ func TestBuildPod_AgentLivenessProbe(t *testing.T) {
 	}
 }
 
+func TestBuildPod_MayorEnvVars(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "mayor", AgentName: "m1",
+		Image: "agent:latest", Namespace: "gastown",
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-mayor-m1", metav1.GetOptions{})
+	envMap := make(map[string]string)
+	for _, e := range pod.Spec.Containers[0].Env {
+		envMap[e.Name] = e.Value
+	}
+
+	if envMap["GT_SCOPE"] != "town" {
+		t.Errorf("GT_SCOPE = %q, want %q", envMap["GT_SCOPE"], "town")
+	}
+	if envMap["BD_ACTOR"] != "mayor" {
+		t.Errorf("BD_ACTOR = %q, want %q", envMap["BD_ACTOR"], "mayor")
+	}
+	if envMap["GIT_AUTHOR_NAME"] != "mayor" {
+		t.Errorf("GIT_AUTHOR_NAME = %q, want %q", envMap["GIT_AUTHOR_NAME"], "mayor")
+	}
+	if envMap["GT_ROLE"] != "mayor" {
+		t.Errorf("GT_ROLE = %q, want %q", envMap["GT_ROLE"], "mayor")
+	}
+}
+
+func TestBuildPod_DeaconEnvVars(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "deacon", AgentName: "d1",
+		Image: "agent:latest", Namespace: "gastown",
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-deacon-d1", metav1.GetOptions{})
+	envMap := make(map[string]string)
+	for _, e := range pod.Spec.Containers[0].Env {
+		envMap[e.Name] = e.Value
+	}
+
+	if envMap["GT_SCOPE"] != "town" {
+		t.Errorf("GT_SCOPE = %q, want %q", envMap["GT_SCOPE"], "town")
+	}
+	if envMap["BD_ACTOR"] != "deacon" {
+		t.Errorf("BD_ACTOR = %q, want %q", envMap["BD_ACTOR"], "deacon")
+	}
+	if envMap["GIT_AUTHOR_NAME"] != "deacon" {
+		t.Errorf("GIT_AUTHOR_NAME = %q, want %q", envMap["GIT_AUTHOR_NAME"], "deacon")
+	}
+	if envMap["GT_ROLE"] != "deacon" {
+		t.Errorf("GT_ROLE = %q, want %q", envMap["GT_ROLE"], "deacon")
+	}
+}
+
+func TestBuildPod_MayorPersistentStorage(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "mayor", AgentName: "m1",
+		Image: "agent:latest", Namespace: "gastown",
+		WorkspaceStorage: &WorkspaceStorageSpec{
+			Size:             "10Gi",
+			StorageClassName: "gp3",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-mayor-m1", metav1.GetOptions{})
+
+	for _, v := range pod.Spec.Volumes {
+		if v.Name == VolumeWorkspace {
+			if v.PersistentVolumeClaim == nil {
+				t.Fatal("mayor workspace should be PVC, not EmptyDir")
+			}
+			want := "gt-gastown-mayor-m1-workspace"
+			if v.PersistentVolumeClaim.ClaimName != want {
+				t.Errorf("PVC claim name = %q, want %q", v.PersistentVolumeClaim.ClaimName, want)
+			}
+			return
+		}
+	}
+	t.Error("workspace volume not found")
+}
+
 func TestBuildPod_AgentStartupProbe(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	mgr := New(client, slog.Default())

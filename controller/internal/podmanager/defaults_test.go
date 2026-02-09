@@ -310,6 +310,12 @@ func TestDefaultPodDefaultsForRole_Mayor(t *testing.T) {
 	if d.Resources == nil {
 		t.Fatal("Resources should not be nil")
 	}
+	if d.Env["GT_SCOPE"] != "town" {
+		t.Errorf("GT_SCOPE = %q, want %q", d.Env["GT_SCOPE"], "town")
+	}
+	if d.Env["BD_ACTOR"] != "mayor" {
+		t.Errorf("BD_ACTOR = %q, want %q", d.Env["BD_ACTOR"], "mayor")
+	}
 }
 
 func TestDefaultPodDefaultsForRole_Deacon(t *testing.T) {
@@ -325,6 +331,25 @@ func TestDefaultPodDefaultsForRole_Deacon(t *testing.T) {
 	}
 	if d.Resources == nil {
 		t.Fatal("Resources should not be nil")
+	}
+	if d.Env["GT_SCOPE"] != "town" {
+		t.Errorf("GT_SCOPE = %q, want %q", d.Env["GT_SCOPE"], "town")
+	}
+	if d.Env["BD_ACTOR"] != "deacon" {
+		t.Errorf("BD_ACTOR = %q, want %q", d.Env["BD_ACTOR"], "deacon")
+	}
+}
+
+func TestDefaultPodDefaultsForRole_UnknownRole(t *testing.T) {
+	d := DefaultPodDefaultsForRole("unknown")
+	if d.WorkspaceStorage != nil {
+		t.Error("unknown role should not have workspace storage")
+	}
+	if len(d.Env) != 0 {
+		t.Errorf("unknown role should have no env, got %v", d.Env)
+	}
+	if d.Resources == nil {
+		t.Fatal("Resources should still be set for unknown roles")
 	}
 }
 
