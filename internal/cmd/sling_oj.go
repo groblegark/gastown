@@ -213,21 +213,31 @@ func getBeadInstructions(beadID string) string {
 	return issues[0].Title
 }
 
-// ensureOjRunbook ensures the gt-sling.hcl runbook exists in .oj/runbooks/.
-// For V1, the runbook is stored in library/gastown/sling.hcl and copied to .oj/runbooks/.
+// ensureOjRunbook ensures the gt-sling.hcl runbook exists in .oj/runbooks/
+// and is up-to-date with the library version.
+//
+// Version comparison uses the @gt-version header comment in the HCL file.
+// If the installed version is older than the library version, the runbook
+// is auto-updated (overwritten with the library copy).
 func ensureOjRunbook(townRoot string) error {
 	ojRunbookDir := filepath.Join(townRoot, ".oj", "runbooks")
 	targetPath := filepath.Join(ojRunbookDir, "gt-sling.hcl")
-
-	// Check if runbook already exists
-	if _, err := os.Stat(targetPath); err == nil {
-		return nil
-	}
-
-	// Try to find source from library path
 	sourcePath := filepath.Join(townRoot, "library", "gastown", "sling.hcl")
-	if _, err := os.Stat(sourcePath); err != nil {
+
+	// Read library source (authoritative)
+	sourceData, err := os.ReadFile(sourcePath)
+	if err != nil {
 		return fmt.Errorf("runbook source not found at %s", sourcePath)
+	}
+	sourceVersion := parseRunbookVersion(string(sourceData))
+
+	// Check if target already exists and is current
+	if targetData, err := os.ReadFile(targetPath); err == nil {
+		targetVersion := parseRunbookVersion(string(targetData))
+		if targetVersion == sourceVersion {
+			return nil // Already up-to-date
+		}
+		fmt.Printf("Updating gt-sling.hcl: %s → %s\n", targetVersion, sourceVersion)
 	}
 
 	// Ensure directory exists
@@ -235,16 +245,28 @@ func ensureOjRunbook(townRoot string) error {
 		return fmt.Errorf("creating runbook directory: %w", err)
 	}
 
-	// Copy the runbook
-	data, err := os.ReadFile(sourcePath)
-	if err != nil {
-		return fmt.Errorf("reading runbook: %w", err)
-	}
-	if err := os.WriteFile(targetPath, data, 0644); err != nil {
+	// Copy/overwrite with library version
+	if err := os.WriteFile(targetPath, sourceData, 0644); err != nil {
 		return fmt.Errorf("writing runbook: %w", err)
 	}
 
 	return nil
+}
+
+// parseRunbookVersion extracts the @gt-version value from an HCL file header.
+// Returns "" if no version header is found.
+func parseRunbookVersion(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "# @gt-version:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "# @gt-version:"))
+		}
+		// Stop scanning after the header block (first non-comment, non-empty line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			break
+		}
+	}
+	return ""
 }
 
 // GetBeadBase reads the base branch from a bead, defaulting to "main".
