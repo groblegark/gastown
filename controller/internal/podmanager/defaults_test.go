@@ -310,11 +310,9 @@ func TestDefaultPodDefaultsForRole_Mayor(t *testing.T) {
 	if d.Resources == nil {
 		t.Fatal("Resources should not be nil")
 	}
-	if d.Env["GT_SCOPE"] != "town" {
-		t.Errorf("GT_SCOPE = %q, want %q", d.Env["GT_SCOPE"], "town")
-	}
-	if d.Env["BD_ACTOR"] != "mayor" {
-		t.Errorf("BD_ACTOR = %q, want %q", d.Env["BD_ACTOR"], "mayor")
+	// GT_SCOPE and BD_ACTOR are set in buildEnvVars, not defaults.
+	if d.NodeSelector["kubernetes.io/arch"] != "amd64" {
+		t.Errorf("NodeSelector[arch] = %q, want %q", d.NodeSelector["kubernetes.io/arch"], "amd64")
 	}
 }
 
@@ -332,11 +330,9 @@ func TestDefaultPodDefaultsForRole_Deacon(t *testing.T) {
 	if d.Resources == nil {
 		t.Fatal("Resources should not be nil")
 	}
-	if d.Env["GT_SCOPE"] != "town" {
-		t.Errorf("GT_SCOPE = %q, want %q", d.Env["GT_SCOPE"], "town")
-	}
-	if d.Env["BD_ACTOR"] != "deacon" {
-		t.Errorf("BD_ACTOR = %q, want %q", d.Env["BD_ACTOR"], "deacon")
+	// GT_SCOPE and BD_ACTOR are set in buildEnvVars, not defaults.
+	if d.NodeSelector["kubernetes.io/arch"] != "amd64" {
+		t.Errorf("NodeSelector[arch] = %q, want %q", d.NodeSelector["kubernetes.io/arch"], "amd64")
 	}
 }
 

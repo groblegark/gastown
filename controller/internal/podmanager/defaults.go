@@ -182,6 +182,10 @@ func DefaultPodDefaultsForRole(role string) *PodDefaults {
 				corev1.ResourceMemory: resource.MustParse(DefaultMemoryLimit),
 			},
 		},
+		// Agent image is x86-only; pin to amd64 nodes.
+		NodeSelector: map[string]string{
+			"kubernetes.io/arch": "amd64",
+		},
 	}
 
 	switch role {
@@ -200,14 +204,12 @@ func DefaultPodDefaultsForRole(role string) *PodDefaults {
 			StorageClassName: "gp2",
 		}
 	case "mayor", "deacon":
-		// Town-level singletons get persistent storage and scope env.
+		// Town-level singletons get persistent storage.
+		// GT_SCOPE and BD_ACTOR are set in buildEnvVars (not here) to avoid
+		// duplicate env vars when ApplyDefaults merges the Env map.
 		defaults.WorkspaceStorage = &WorkspaceStorageSpec{
 			Size:             "10Gi",
 			StorageClassName: "gp2",
-		}
-		defaults.Env = map[string]string{
-			"GT_SCOPE": "town",
-			"BD_ACTOR": role,
 		}
 	}
 
