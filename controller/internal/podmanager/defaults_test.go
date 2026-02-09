@@ -296,6 +296,38 @@ func TestDefaultPodDefaultsForRole_Witness(t *testing.T) {
 	}
 }
 
+func TestDefaultPodDefaultsForRole_Mayor(t *testing.T) {
+	d := DefaultPodDefaultsForRole("mayor")
+	if d.WorkspaceStorage == nil {
+		t.Fatal("mayor should have workspace storage")
+	}
+	if d.WorkspaceStorage.Size != "10Gi" {
+		t.Errorf("workspace size = %q, want %q", d.WorkspaceStorage.Size, "10Gi")
+	}
+	if d.WorkspaceStorage.StorageClassName != "gp3" {
+		t.Errorf("storage class = %q, want %q", d.WorkspaceStorage.StorageClassName, "gp3")
+	}
+	if d.Resources == nil {
+		t.Fatal("Resources should not be nil")
+	}
+}
+
+func TestDefaultPodDefaultsForRole_Deacon(t *testing.T) {
+	d := DefaultPodDefaultsForRole("deacon")
+	if d.WorkspaceStorage == nil {
+		t.Fatal("deacon should have workspace storage")
+	}
+	if d.WorkspaceStorage.Size != "10Gi" {
+		t.Errorf("workspace size = %q, want %q", d.WorkspaceStorage.Size, "10Gi")
+	}
+	if d.WorkspaceStorage.StorageClassName != "gp3" {
+		t.Errorf("storage class = %q, want %q", d.WorkspaceStorage.StorageClassName, "gp3")
+	}
+	if d.Resources == nil {
+		t.Fatal("Resources should not be nil")
+	}
+}
+
 func TestMergePodDefaults_ThreeLayerHierarchy(t *testing.T) {
 	// Simulate: GasTown defaults < Rig overrides < Role overrides
 	town := &PodDefaults{

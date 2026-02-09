@@ -199,6 +199,12 @@ func DefaultPodDefaultsForRole(role string) *PodDefaults {
 			Size:             "5Gi",
 			StorageClassName: "gp3",
 		}
+	case "mayor", "deacon":
+		// Town-level singletons get persistent storage and scope env.
+		defaults.WorkspaceStorage = &WorkspaceStorageSpec{
+			Size:             "10Gi",
+			StorageClassName: "gp3",
+		}
 	}
 
 	return defaults

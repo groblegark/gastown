@@ -216,6 +216,72 @@ func TestK8sManager_CrewEnvVars(t *testing.T) {
 	}
 }
 
+func TestK8sManager_MayorEnvVars(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "mayor", AgentName: "hq",
+		Image: "agent:latest", Namespace: "gastown",
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-mayor-hq", metav1.GetOptions{})
+	envMap := make(map[string]string)
+	for _, e := range pod.Spec.Containers[0].Env {
+		envMap[e.Name] = e.Value
+	}
+
+	if envMap["GT_SCOPE"] != "town" {
+		t.Errorf("GT_SCOPE = %q, want %q", envMap["GT_SCOPE"], "town")
+	}
+	if envMap["BD_ACTOR"] != "mayor" {
+		t.Errorf("BD_ACTOR = %q, want %q", envMap["BD_ACTOR"], "mayor")
+	}
+	if envMap["GIT_AUTHOR_NAME"] != "mayor" {
+		t.Errorf("GIT_AUTHOR_NAME = %q, want %q", envMap["GIT_AUTHOR_NAME"], "mayor")
+	}
+	if envMap["GT_ROLE"] != "mayor" {
+		t.Errorf("GT_ROLE = %q, want %q", envMap["GT_ROLE"], "mayor")
+	}
+}
+
+func TestK8sManager_DeaconEnvVars(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "deacon", AgentName: "main",
+		Image: "agent:latest", Namespace: "gastown",
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-deacon-main", metav1.GetOptions{})
+	envMap := make(map[string]string)
+	for _, e := range pod.Spec.Containers[0].Env {
+		envMap[e.Name] = e.Value
+	}
+
+	if envMap["GT_SCOPE"] != "town" {
+		t.Errorf("GT_SCOPE = %q, want %q", envMap["GT_SCOPE"], "town")
+	}
+	if envMap["BD_ACTOR"] != "deacon" {
+		t.Errorf("BD_ACTOR = %q, want %q", envMap["BD_ACTOR"], "deacon")
+	}
+	if envMap["GIT_AUTHOR_NAME"] != "deacon" {
+		t.Errorf("GIT_AUTHOR_NAME = %q, want %q", envMap["GIT_AUTHOR_NAME"], "deacon")
+	}
+	if envMap["GT_ROLE"] != "deacon" {
+		t.Errorf("GT_ROLE = %q, want %q", envMap["GT_ROLE"], "deacon")
+	}
+}
+
 func TestK8sManager_SecretEnvVars(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	mgr := New(client, slog.Default())

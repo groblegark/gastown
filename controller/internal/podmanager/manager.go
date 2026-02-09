@@ -324,6 +324,18 @@ func (m *K8sManager) buildEnvVars(spec AgentPodSpec) []corev1.EnvVar {
 		envVars = append(envVars, corev1.EnvVar{Name: "GT_POLECAT", Value: spec.AgentName})
 	case "crew":
 		envVars = append(envVars, corev1.EnvVar{Name: "GT_CREW", Value: spec.AgentName})
+	case "mayor":
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "GT_SCOPE", Value: "town"},
+			corev1.EnvVar{Name: "BD_ACTOR", Value: "mayor"},
+			corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: "mayor"},
+		)
+	case "deacon":
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "GT_SCOPE", Value: "town"},
+			corev1.EnvVar{Name: "BD_ACTOR", Value: "deacon"},
+			corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: "deacon"},
+		)
 	}
 
 	// Add plain env vars from spec.

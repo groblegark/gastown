@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/mayor"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
@@ -33,6 +35,7 @@ Role shortcuts: "mayor" in mail/nudge addresses resolves to this agent.`,
 }
 
 var mayorAgentOverride string
+var mayorTarget string
 
 var mayorStartCmd = &cobra.Command{
 	Use:   "start",
@@ -88,6 +91,7 @@ func init() {
 	mayorCmd.AddCommand(mayorRestartCmd)
 
 	mayorStartCmd.Flags().StringVar(&mayorAgentOverride, "agent", "", "Agent alias to run the Mayor with (overrides town default)")
+	mayorStartCmd.Flags().StringVar(&mayorTarget, "target", "", "Execution target: 'k8s' to run in Kubernetes (default: local tmux)")
 	mayorAttachCmd.Flags().StringVar(&mayorAgentOverride, "agent", "", "Agent alias to run the Mayor with (overrides town default)")
 	mayorRestartCmd.Flags().StringVar(&mayorAgentOverride, "agent", "", "Agent alias to run the Mayor with (overrides town default)")
 
@@ -109,6 +113,10 @@ func getMayorSessionName() string {
 }
 
 func runMayorStart(cmd *cobra.Command, args []string) error {
+	if mayorTarget == "k8s" {
+		return runMayorStartK8s()
+	}
+
 	mgr, err := getMayorManager()
 	if err != nil {
 		return err
@@ -125,6 +133,51 @@ func runMayorStart(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%s Mayor session started. Attach with: %s\n",
 		style.Bold.Render("✓"),
 		style.Dim.Render("gt mayor attach"))
+
+	return nil
+}
+
+// runMayorStartK8s creates an agent bead for the mayor that the K8s controller
+// will detect and translate into a pod creation. The controller watches for
+// agent beads with agent_state=spawning and execution_target:k8s label.
+func runMayorStartK8s() error {
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	fmt.Println("Dispatching Mayor to Kubernetes...")
+
+	// Create or reopen the mayor agent bead with spawning state.
+	// Town-level beads live in the town root .beads directory.
+	beadsClient := beads.New(townRoot)
+	agentBeadID := beads.MayorBeadIDTown() // "hq-mayor"
+	_, err = beadsClient.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
+		RoleType:   "mayor",
+		AgentState: "spawning",
+	})
+	if err != nil {
+		return fmt.Errorf("creating mayor agent bead: %w", err)
+	}
+
+	// Label so the controller knows this is a K8s agent.
+	if err := beadsClient.AddLabel(agentBeadID, "execution_target:k8s"); err != nil {
+		fmt.Printf("Warning: could not add execution_target label: %v\n", err)
+	}
+
+	// Emit spawn event with payload fields the controller's watcher can parse.
+	// The watcher's extractAgentInfo reads payload["rig"], payload["role"],
+	// payload["agent"] when the actor field doesn't have 3 parts.
+	_ = events.LogFeed(events.TypeSpawn, "mayor", map[string]interface{}{
+		"rig":   "town",
+		"role":  "mayor",
+		"agent": "hq",
+	})
+
+	fmt.Printf("%s Mayor dispatched to K8s (agent_state=spawning, bead=%s)\n",
+		style.Bold.Render("✓"), agentBeadID)
+	fmt.Printf("  The controller will create a mayor pod when it detects this bead.\n")
+	fmt.Printf("  Attach with: %s\n", style.Dim.Render("gt mayor attach"))
 
 	return nil
 }
