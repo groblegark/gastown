@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -637,5 +638,403 @@ func TestK8sManager_VolumeMountPaths(t *testing.T) {
 	}
 	if mountMap[VolumeTmp] != MountTmp {
 		t.Errorf("tmp mount = %q, want %q", mountMap[VolumeTmp], MountTmp)
+	}
+}
+
+// --- Coop sidecar tests ---
+
+func TestK8sManager_CoopSidecarInjected(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "polecat", AgentName: "coop-test",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image: "ghcr.io/groblegark/coop:latest",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-coop-test", metav1.GetOptions{})
+
+	if len(pod.Spec.Containers) != 2 {
+		t.Fatalf("got %d containers, want 2", len(pod.Spec.Containers))
+	}
+
+	// First container should be agent, second should be coop.
+	if pod.Spec.Containers[0].Name != ContainerName {
+		t.Errorf("container[0] name = %q, want %q", pod.Spec.Containers[0].Name, ContainerName)
+	}
+	if pod.Spec.Containers[1].Name != CoopContainerName {
+		t.Errorf("container[1] name = %q, want %q", pod.Spec.Containers[1].Name, CoopContainerName)
+	}
+	if pod.Spec.Containers[1].Image != "ghcr.io/groblegark/coop:latest" {
+		t.Errorf("coop image = %q, want %q", pod.Spec.Containers[1].Image, "ghcr.io/groblegark/coop:latest")
+	}
+}
+
+func TestK8sManager_CoopShareProcessNamespace(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "crew", AgentName: "shared-ns",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image: "coop:latest",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-crew-shared-ns", metav1.GetOptions{})
+
+	if pod.Spec.ShareProcessNamespace == nil || !*pod.Spec.ShareProcessNamespace {
+		t.Error("ShareProcessNamespace should be true when Coop sidecar is configured")
+	}
+}
+
+func TestK8sManager_NoCoopNoShareProcessNamespace(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "polecat", AgentName: "no-coop",
+		Image: "agent:latest", Namespace: "gastown",
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-no-coop", metav1.GetOptions{})
+
+	if pod.Spec.ShareProcessNamespace != nil && *pod.Spec.ShareProcessNamespace {
+		t.Error("ShareProcessNamespace should not be set without Coop sidecar")
+	}
+}
+
+func TestK8sManager_CoopSidecarPorts(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "polecat", AgentName: "ports-test",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image: "coop:latest",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-ports-test", metav1.GetOptions{})
+	coop := pod.Spec.Containers[1]
+
+	portMap := make(map[string]int32)
+	for _, p := range coop.Ports {
+		portMap[p.Name] = p.ContainerPort
+	}
+
+	if portMap["api"] != CoopDefaultPort {
+		t.Errorf("api port = %d, want %d", portMap["api"], CoopDefaultPort)
+	}
+	if portMap["health"] != CoopDefaultHealthPort {
+		t.Errorf("health port = %d, want %d", portMap["health"], CoopDefaultHealthPort)
+	}
+}
+
+func TestK8sManager_CoopSidecarCustomPorts(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "polecat", AgentName: "custom-ports",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image:      "coop:latest",
+			Port:       9000,
+			HealthPort: 9091,
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-custom-ports", metav1.GetOptions{})
+	coop := pod.Spec.Containers[1]
+
+	portMap := make(map[string]int32)
+	for _, p := range coop.Ports {
+		portMap[p.Name] = p.ContainerPort
+	}
+
+	if portMap["api"] != 9000 {
+		t.Errorf("api port = %d, want 9000", portMap["api"])
+	}
+	if portMap["health"] != 9091 {
+		t.Errorf("health port = %d, want 9091", portMap["health"])
+	}
+}
+
+func TestK8sManager_CoopSidecarHealthProbes(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "crew", AgentName: "probes-test",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image: "coop:latest",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-crew-probes-test", metav1.GetOptions{})
+	coop := pod.Spec.Containers[1]
+
+	// Liveness probe
+	if coop.LivenessProbe == nil {
+		t.Fatal("liveness probe is nil")
+	}
+	if coop.LivenessProbe.HTTPGet == nil {
+		t.Fatal("liveness probe HTTPGet is nil")
+	}
+	if coop.LivenessProbe.HTTPGet.Path != "/api/v1/health" {
+		t.Errorf("liveness path = %q, want %q", coop.LivenessProbe.HTTPGet.Path, "/api/v1/health")
+	}
+	if coop.LivenessProbe.HTTPGet.Port != intstr.FromString("health") {
+		t.Errorf("liveness port = %v, want health", coop.LivenessProbe.HTTPGet.Port)
+	}
+
+	// Readiness probe
+	if coop.ReadinessProbe == nil {
+		t.Fatal("readiness probe is nil")
+	}
+	if coop.ReadinessProbe.HTTPGet.Path != "/api/v1/agent/state" {
+		t.Errorf("readiness path = %q, want %q", coop.ReadinessProbe.HTTPGet.Path, "/api/v1/agent/state")
+	}
+
+	// Startup probe
+	if coop.StartupProbe == nil {
+		t.Fatal("startup probe is nil")
+	}
+	if coop.StartupProbe.FailureThreshold != 30 {
+		t.Errorf("startup failure threshold = %d, want 30", coop.StartupProbe.FailureThreshold)
+	}
+	if coop.StartupProbe.PeriodSeconds != 2 {
+		t.Errorf("startup period = %d, want 2", coop.StartupProbe.PeriodSeconds)
+	}
+}
+
+func TestK8sManager_CoopSidecarDefaultResources(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "polecat", AgentName: "res-test",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image: "coop:latest",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-res-test", metav1.GetOptions{})
+	resources := pod.Spec.Containers[1].Resources
+
+	cpuReq := resources.Requests[corev1.ResourceCPU]
+	if cpuReq.String() != CoopDefaultCPURequest {
+		t.Errorf("coop CPU request = %s, want %s", cpuReq.String(), CoopDefaultCPURequest)
+	}
+	memLimit := resources.Limits[corev1.ResourceMemory]
+	if memLimit.String() != CoopDefaultMemLimit {
+		t.Errorf("coop memory limit = %s, want %s", memLimit.String(), CoopDefaultMemLimit)
+	}
+}
+
+func TestK8sManager_CoopSidecarCustomResources(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	customResources := &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("64Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("500m"),
+			corev1.ResourceMemory: resource.MustParse("128Mi"),
+		},
+	}
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "crew", AgentName: "custom-res",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image:     "coop:latest",
+			Resources: customResources,
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-crew-custom-res", metav1.GetOptions{})
+	resources := pod.Spec.Containers[1].Resources
+
+	cpuReq := resources.Requests[corev1.ResourceCPU]
+	if cpuReq.String() != "100m" {
+		t.Errorf("coop CPU request = %s, want 100m", cpuReq.String())
+	}
+	memLimit := resources.Limits[corev1.ResourceMemory]
+	if memLimit.String() != "128Mi" {
+		t.Errorf("coop memory limit = %s, want 128Mi", memLimit.String())
+	}
+}
+
+func TestK8sManager_CoopSidecarNatsEnvVars(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "polecat", AgentName: "nats-test",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image:           "coop:latest",
+			NatsURL:         "nats://daemon.svc:4222",
+			NatsTokenSecret: "daemon-auth",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-nats-test", metav1.GetOptions{})
+	coop := pod.Spec.Containers[1]
+
+	envMap := make(map[string]corev1.EnvVar)
+	for _, e := range coop.Env {
+		envMap[e.Name] = e
+	}
+
+	if env, ok := envMap["COOP_NATS_URL"]; !ok {
+		t.Error("missing COOP_NATS_URL env var")
+	} else if env.Value != "nats://daemon.svc:4222" {
+		t.Errorf("COOP_NATS_URL = %q, want %q", env.Value, "nats://daemon.svc:4222")
+	}
+
+	if env, ok := envMap["COOP_NATS_TOKEN"]; !ok {
+		t.Error("missing COOP_NATS_TOKEN env var")
+	} else if env.ValueFrom == nil || env.ValueFrom.SecretKeyRef == nil {
+		t.Error("COOP_NATS_TOKEN should be from secret")
+	} else if env.ValueFrom.SecretKeyRef.Name != "daemon-auth" {
+		t.Errorf("COOP_NATS_TOKEN secret name = %q, want %q", env.ValueFrom.SecretKeyRef.Name, "daemon-auth")
+	}
+}
+
+func TestK8sManager_CoopSidecarAuthToken(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "polecat", AgentName: "auth-test",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image:           "coop:latest",
+			AuthTokenSecret: "coop-auth",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-auth-test", metav1.GetOptions{})
+	coop := pod.Spec.Containers[1]
+
+	envMap := make(map[string]corev1.EnvVar)
+	for _, e := range coop.Env {
+		envMap[e.Name] = e
+	}
+
+	if env, ok := envMap["COOP_AUTH_TOKEN"]; !ok {
+		t.Error("missing COOP_AUTH_TOKEN env var")
+	} else if env.ValueFrom == nil || env.ValueFrom.SecretKeyRef == nil {
+		t.Error("COOP_AUTH_TOKEN should be from secret")
+	} else if env.ValueFrom.SecretKeyRef.Name != "coop-auth" {
+		t.Errorf("COOP_AUTH_TOKEN secret = %q, want %q", env.ValueFrom.SecretKeyRef.Name, "coop-auth")
+	}
+}
+
+func TestK8sManager_CoopSidecarSecurityContext(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "crew", AgentName: "sec-test",
+		Image: "agent:latest", Namespace: "gastown",
+		CoopSidecar: &CoopSidecarSpec{
+			Image: "coop:latest",
+		},
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-crew-sec-test", metav1.GetOptions{})
+	csc := pod.Spec.Containers[1].SecurityContext
+	if csc == nil {
+		t.Fatal("coop container security context is nil")
+	}
+	if *csc.AllowPrivilegeEscalation {
+		t.Error("AllowPrivilegeEscalation should be false")
+	}
+	if !*csc.ReadOnlyRootFilesystem {
+		t.Error("ReadOnlyRootFilesystem should be true for coop")
+	}
+	if csc.Capabilities == nil || len(csc.Capabilities.Drop) == 0 {
+		t.Error("should drop ALL capabilities")
+	}
+}
+
+func TestK8sManager_SingleContainerWithoutCoop(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+	ctx := context.Background()
+
+	spec := AgentPodSpec{
+		Rig: "gastown", Role: "polecat", AgentName: "solo",
+		Image: "agent:latest", Namespace: "gastown",
+	}
+	if err := mgr.CreateAgentPod(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-solo", metav1.GetOptions{})
+
+	if len(pod.Spec.Containers) != 1 {
+		t.Errorf("got %d containers, want 1 (no coop sidecar)", len(pod.Spec.Containers))
+	}
+	if pod.Spec.Containers[0].Name != ContainerName {
+		t.Errorf("container name = %q, want %q", pod.Spec.Containers[0].Name, ContainerName)
 	}
 }

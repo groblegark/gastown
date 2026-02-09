@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -32,8 +33,8 @@ const (
 	DefaultMemoryLimit   = "4Gi"
 
 	// Volume names.
-	VolumeWorkspace  = "workspace"
-	VolumeTmp        = "tmp"
+	VolumeWorkspace   = "workspace"
+	VolumeTmp         = "tmp"
 	VolumeBeadsConfig = "beads-config"
 
 	// Mount paths.
@@ -45,6 +46,15 @@ const (
 	ContainerName = "agent"
 	AgentUID      = int64(1000)
 	AgentGID      = int64(1000)
+
+	// Coop sidecar constants.
+	CoopContainerName       = "coop"
+	CoopDefaultPort         = 8080
+	CoopDefaultHealthPort   = 9090
+	CoopDefaultCPURequest   = "50m"
+	CoopDefaultCPULimit     = "200m"
+	CoopDefaultMemRequest   = "32Mi"
+	CoopDefaultMemLimit     = "64Mi"
 )
 
 // SecretEnvSource maps a K8s Secret key to a pod environment variable.
@@ -86,6 +96,39 @@ type AgentPodSpec struct {
 	// WorkspaceStorage configures a PVC for persistent workspace.
 	// Used by crew pods. If nil, an EmptyDir is used for polecat pods.
 	WorkspaceStorage *WorkspaceStorageSpec
+
+	// CoopSidecar configures a Coop sidecar container for PTY-based agent
+	// management. When set, the pod gets a coop container with health probes,
+	// shareProcessNamespace is enabled, and backend metadata is set to "coop".
+	CoopSidecar *CoopSidecarSpec
+}
+
+// CoopSidecarSpec configures the Coop sidecar container.
+type CoopSidecarSpec struct {
+	// Image is the Coop container image (e.g., "ghcr.io/groblegark/coop:latest").
+	Image string
+
+	// Port is the Coop HTTP API port (default: 8080).
+	Port int32
+
+	// HealthPort is the Coop health probe port (default: 9090).
+	HealthPort int32
+
+	// AuthTokenSecret is the K8s Secret name containing the Coop auth token.
+	// The "token" key within the Secret is used. Optional.
+	AuthTokenSecret string
+
+	// NatsURL is the NATS server URL for event bus integration.
+	// Typically "nats://<daemon-service>:4222".
+	NatsURL string
+
+	// NatsTokenSecret is the K8s Secret name for NATS auth token.
+	// The "token" key within the Secret is used. Optional.
+	NatsTokenSecret string
+
+	// Resources sets compute requests/limits for the sidecar.
+	// If nil, defaults (50m/32Mi → 200m/64Mi) are used.
+	Resources *corev1.ResourceRequirements
 }
 
 // WorkspaceStorageSpec configures a PVC-backed workspace volume.
@@ -174,8 +217,15 @@ func (m *K8sManager) buildPod(spec AgentPodSpec) *corev1.Pod {
 	container := m.buildContainer(spec)
 	volumes := m.buildVolumes(spec)
 
+	containers := []corev1.Container{container}
+
+	// Add Coop sidecar if configured.
+	if spec.CoopSidecar != nil {
+		containers = append(containers, m.buildCoopSidecar(spec))
+	}
+
 	podSpec := corev1.PodSpec{
-		Containers:    []corev1.Container{container},
+		Containers:    containers,
 		Volumes:       volumes,
 		RestartPolicy: restartPolicyForRole(spec.Role),
 		SecurityContext: &corev1.PodSecurityContext{
@@ -184,6 +234,11 @@ func (m *K8sManager) buildPod(spec AgentPodSpec) *corev1.Pod {
 			RunAsNonRoot: boolPtr(true),
 			FSGroup:      intPtr(AgentGID),
 		},
+	}
+
+	// Coop needs shareProcessNamespace to observe the agent process.
+	if spec.CoopSidecar != nil {
+		podSpec.ShareProcessNamespace = boolPtr(true)
 	}
 
 	if spec.ServiceAccountName != "" {
@@ -357,6 +412,134 @@ func (m *K8sManager) buildVolumeMounts(spec AgentPodSpec) []corev1.VolumeMount {
 	}
 
 	return mounts
+}
+
+// buildCoopSidecar constructs the Coop sidecar container with health probes,
+// NATS env vars, and auth token injection.
+func (m *K8sManager) buildCoopSidecar(spec AgentPodSpec) corev1.Container {
+	coop := spec.CoopSidecar
+
+	port := coop.Port
+	if port == 0 {
+		port = CoopDefaultPort
+	}
+	healthPort := coop.HealthPort
+	if healthPort == 0 {
+		healthPort = CoopDefaultHealthPort
+	}
+
+	args := []string{
+		"--agent=claude",
+		fmt.Sprintf("--port=%d", port),
+		fmt.Sprintf("--health-port=%d", healthPort),
+		"--cols=200",
+		"--rows=50",
+		"--", "claude", "--dangerously-skip-permissions",
+	}
+
+	envVars := []corev1.EnvVar{}
+
+	// Auth token from secret.
+	if coop.AuthTokenSecret != "" {
+		args = append([]string{fmt.Sprintf("--auth-token=$(%s)", "COOP_AUTH_TOKEN")}, args...)
+		envVars = append(envVars, corev1.EnvVar{
+			Name: "COOP_AUTH_TOKEN",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: coop.AuthTokenSecret},
+					Key:                  "token",
+				},
+			},
+		})
+	}
+
+	// NATS event bus integration.
+	if coop.NatsURL != "" {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "COOP_NATS_URL",
+			Value: coop.NatsURL,
+		})
+	}
+	if coop.NatsTokenSecret != "" {
+		envVars = append(envVars, corev1.EnvVar{
+			Name: "COOP_NATS_TOKEN",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: coop.NatsTokenSecret},
+					Key:                  "token",
+				},
+			},
+		})
+	}
+
+	resources := m.buildCoopResources(coop)
+
+	return corev1.Container{
+		Name:  CoopContainerName,
+		Image: coop.Image,
+		Args:  args,
+		Env:   envVars,
+		Ports: []corev1.ContainerPort{
+			{Name: "api", ContainerPort: port},
+			{Name: "health", ContainerPort: healthPort},
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/api/v1/health",
+					Port: intstr.FromString("health"),
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       10,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/api/v1/agent/state",
+					Port: intstr.FromString("health"),
+				},
+			},
+			InitialDelaySeconds: 3,
+			PeriodSeconds:       5,
+		},
+		StartupProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/api/v1/health",
+					Port: intstr.FromString("health"),
+				},
+			},
+			FailureThreshold: 30,
+			PeriodSeconds:    2,
+		},
+		Resources:       resources,
+		ImagePullPolicy: corev1.PullAlways,
+		SecurityContext: &corev1.SecurityContext{
+			AllowPrivilegeEscalation: boolPtr(false),
+			ReadOnlyRootFilesystem:   boolPtr(true),
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+			},
+		},
+	}
+}
+
+// buildCoopResources returns resource requirements for the Coop sidecar.
+func (m *K8sManager) buildCoopResources(coop *CoopSidecarSpec) corev1.ResourceRequirements {
+	if coop.Resources != nil {
+		return *coop.Resources
+	}
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(CoopDefaultCPURequest),
+			corev1.ResourceMemory: resource.MustParse(CoopDefaultMemRequest),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(CoopDefaultCPULimit),
+			corev1.ResourceMemory: resource.MustParse(CoopDefaultMemLimit),
+		},
+	}
 }
 
 // restartPolicyForRole returns the appropriate restart policy.

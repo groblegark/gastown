@@ -18,6 +18,7 @@ type PodDefaults struct {
 	SecretEnv          []SecretEnvSource
 	ConfigMapName      string
 	WorkspaceStorage   *WorkspaceStorageSpec
+	CoopSidecar        *CoopSidecarSpec
 }
 
 // MergePodDefaults merges an override layer onto a base, returning a new PodDefaults.
@@ -64,6 +65,9 @@ func MergePodDefaults(base, override *PodDefaults) *PodDefaults {
 	if override.WorkspaceStorage != nil {
 		result.WorkspaceStorage = override.WorkspaceStorage
 	}
+	if override.CoopSidecar != nil {
+		result.CoopSidecar = override.CoopSidecar
+	}
 
 	return &result
 }
@@ -95,6 +99,9 @@ func ApplyDefaults(spec *AgentPodSpec, defaults *PodDefaults) {
 	}
 	if spec.WorkspaceStorage == nil && defaults.WorkspaceStorage != nil {
 		spec.WorkspaceStorage = defaults.WorkspaceStorage
+	}
+	if spec.CoopSidecar == nil && defaults.CoopSidecar != nil {
+		spec.CoopSidecar = defaults.CoopSidecar
 	}
 
 	// Merge env maps (spec values take precedence over defaults).
