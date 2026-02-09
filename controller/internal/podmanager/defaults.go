@@ -189,7 +189,7 @@ func DefaultPodDefaultsForRole(role string) *PodDefaults {
 		// Crew pods get persistent workspace storage.
 		defaults.WorkspaceStorage = &WorkspaceStorageSpec{
 			Size:             "10Gi",
-			StorageClassName: "gp3",
+			StorageClassName: "gp2",
 		}
 	case "polecat":
 		// Polecats use EmptyDir (no WorkspaceStorage).
@@ -197,13 +197,13 @@ func DefaultPodDefaultsForRole(role string) *PodDefaults {
 		// Singletons get persistent storage for state.
 		defaults.WorkspaceStorage = &WorkspaceStorageSpec{
 			Size:             "5Gi",
-			StorageClassName: "gp3",
+			StorageClassName: "gp2",
 		}
 	case "mayor", "deacon":
 		// Town-level singletons get persistent storage and scope env.
 		defaults.WorkspaceStorage = &WorkspaceStorageSpec{
 			Size:             "10Gi",
-			StorageClassName: "gp3",
+			StorageClassName: "gp2",
 		}
 		defaults.Env = map[string]string{
 			"GT_SCOPE": "town",

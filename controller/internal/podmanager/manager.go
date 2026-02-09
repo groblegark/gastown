@@ -9,6 +9,7 @@ import (
 	"log/slog"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -189,7 +190,15 @@ func New(client kubernetes.Interface, logger *slog.Logger) *K8sManager {
 }
 
 // CreateAgentPod creates a pod for the given agent spec.
+// If the spec includes WorkspaceStorage, a PVC is created first (idempotent).
 func (m *K8sManager) CreateAgentPod(ctx context.Context, spec AgentPodSpec) error {
+	// Ensure PVC exists before creating the pod.
+	if spec.WorkspaceStorage != nil {
+		if err := m.ensurePVC(ctx, spec); err != nil {
+			return fmt.Errorf("ensuring workspace PVC: %w", err)
+		}
+	}
+
 	pod := m.buildPod(spec)
 	m.logger.Info("creating agent pod",
 		"pod", pod.Name, "rig", spec.Rig, "role", spec.Role, "agent", spec.AgentName)
@@ -198,6 +207,52 @@ func (m *K8sManager) CreateAgentPod(ctx context.Context, spec AgentPodSpec) erro
 	if err != nil {
 		return fmt.Errorf("creating pod %s: %w", pod.Name, err)
 	}
+	return nil
+}
+
+// ensurePVC creates the workspace PVC if it does not already exist.
+func (m *K8sManager) ensurePVC(ctx context.Context, spec AgentPodSpec) error {
+	ws := spec.WorkspaceStorage
+	claimName := ws.ClaimName
+	if claimName == "" {
+		claimName = spec.PodName() + "-workspace"
+	}
+
+	size := ws.Size
+	if size == "" {
+		size = "10Gi"
+	}
+	storageClass := ws.StorageClassName
+	if storageClass == "" {
+		storageClass = "gp2"
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      claimName,
+			Namespace: spec.Namespace,
+			Labels:    spec.Labels(),
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			StorageClassName: &storageClass,
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse(size),
+				},
+			},
+		},
+	}
+
+	_, err := m.client.CoreV1().PersistentVolumeClaims(spec.Namespace).Create(ctx, pvc, metav1.CreateOptions{})
+	if apierrors.IsAlreadyExists(err) {
+		m.logger.Info("workspace PVC already exists", "pvc", claimName)
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("creating PVC %s: %w", claimName, err)
+	}
+	m.logger.Info("created workspace PVC", "pvc", claimName, "size", size, "storageClass", storageClass)
 	return nil
 }
 
@@ -560,6 +615,9 @@ func (m *K8sManager) buildCoopSidecar(spec AgentPodSpec) corev1.Container {
 			{Name: "api", ContainerPort: port},
 			{Name: "health", ContainerPort: healthPort},
 		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: VolumeTmp, MountPath: "/tmp"},
+		},
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -594,7 +652,7 @@ func (m *K8sManager) buildCoopSidecar(spec AgentPodSpec) corev1.Container {
 		ImagePullPolicy: corev1.PullAlways,
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: boolPtr(false),
-			ReadOnlyRootFilesystem:   boolPtr(true),
+			ReadOnlyRootFilesystem:   boolPtr(false),
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 			},
