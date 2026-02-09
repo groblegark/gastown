@@ -40,14 +40,16 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
-              cp /tmp/claude-credentials/credentials.json /claude-home/.credentials.json
-              chmod 600 /claude-home/.credentials.json
+              # Create persistent claude state dir on workspace PVC
+              mkdir -p /workspace/.state/claude /workspace/.state/coop
+              cp /tmp/claude-credentials/credentials.json /workspace/.state/claude/.credentials.json
+              chmod 600 /workspace/.state/claude/.credentials.json
           volumeMounts:
             - name: claude-creds
               mountPath: /tmp/claude-credentials
               readOnly: true
-            - name: claude-home
-              mountPath: /claude-home
+            - name: workspace
+              mountPath: /workspace
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
@@ -67,8 +69,30 @@ spec:
           command: ["sh", "-c"]
           args:
             - |
+              # Skip Claude onboarding wizard
               printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.37","preferredTheme":"dark"}\n' > "$HOME/.claude.json"
-              exec coop --agent=claude --port 8080 --health-port {{ .Values.agent.coop.healthPort }} --cols 200 --rows 50 -- claude --dangerously-skip-permissions
+              # Write permissions settings
+              cat > "$HOME/.claude/settings.json" <<'SETTINGS'
+              {"permissions":{"allow":["Bash(*)","Read(*)","Write(*)","Edit(*)","Glob(*)","Grep(*)","WebFetch(*)","WebSearch(*)"],"deny":[]}}
+              SETTINGS
+              # Session resume: find previous conversation and pass --resume
+              RESUME_ARGS=""
+              if [ "$GT_SESSION_RESUME" = "1" ]; then
+                LATEST_LOG=$(find "$HOME/.claude/projects" -name '*.jsonl' -type f 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
+                if [ -n "$LATEST_LOG" ]; then
+                  CONV_ID=$(head -1 "$LATEST_LOG" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sessionId',d.get('conversationId','')))" 2>/dev/null || true)
+                  if [ -n "$CONV_ID" ]; then
+                    RESUME_ARGS="--resume $CONV_ID"
+                    echo "[session] Resuming previous session: $CONV_ID"
+                  else
+                    RESUME_ARGS="--continue"
+                    echo "[session] Resuming most recent session"
+                  fi
+                else
+                  echo "[session] No previous session — starting fresh"
+                fi
+              fi
+              exec coop --agent=claude --port 8080 --health-port {{ .Values.agent.coop.healthPort }} --cols 200 --rows 50 -- claude --dangerously-skip-permissions $RESUME_ARGS
           {{- end }}
           securityContext:
             {{- toYaml .Values.agent.securityContext | nindent 12 }}
@@ -131,8 +155,9 @@ spec:
             - name: claude-creds
               mountPath: /tmp/claude-credentials
               readOnly: true
-            - name: claude-home
+            - name: workspace
               mountPath: /home/agent/.claude
+              subPath: .state/claude
             {{- end }}
           {{- if .Values.agent.startupProbe.enabled }}
           startupProbe:
@@ -199,8 +224,6 @@ spec:
         - name: claude-creds
           secret:
             secretName: {{ .Values.agent.credentialsSecret }}
-        - name: claude-home
-          emptyDir: {}
         {{- end }}
       {{- with .Values.agent.nodeSelector }}
       nodeSelector:
