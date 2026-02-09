@@ -438,22 +438,34 @@ func TestIntegration_TerminalServer(t *testing.T) {
 		// Simulate pod deregistration by removing it from the source
 		source.setPods([]*PodInfo{})
 
-		// Wait for discovery to detect removal and clean up
-		time.Sleep(3 * time.Second)
+		// Wait for discovery to detect removal and clean up.
+		// The server removes the connection from its map quickly, but the
+		// underlying Close() (killing kubectl exec + tmux session) is async,
+		// so we poll for the tmux session to disappear.
+		time.Sleep(2 * time.Second)
 
 		status := srv.Status()
 		if len(status.Connections) != 0 {
 			t.Errorf("expected 0 connections after deregistration, got %d", len(status.Connections))
 		}
 
-		// Verify tmux session cleaned up
+		// Poll for tmux session cleanup (Close() kills kubectl exec then tmux).
 		tm := tmux.NewTmux()
-		has, err := tm.HasSession(testSessionName)
-		if err != nil {
-			t.Fatalf("HasSession after deregistration: %v", err)
-		}
-		if has {
-			t.Error("tmux session should be cleaned up after pod deregistration")
+		deadline := time.After(15 * time.Second)
+		for {
+			has, err := tm.HasSession(testSessionName)
+			if err != nil {
+				t.Fatalf("HasSession after deregistration: %v", err)
+			}
+			if !has {
+				break
+			}
+			select {
+			case <-deadline:
+				t.Fatal("tmux session should be cleaned up after pod deregistration")
+			default:
+			}
+			time.Sleep(500 * time.Millisecond)
 		}
 		t.Log("Connection and tmux session cleaned up after deregistration")
 	})
