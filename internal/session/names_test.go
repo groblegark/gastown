@@ -13,6 +13,15 @@ func TestMayorSessionName(t *testing.T) {
 	}
 }
 
+func TestMayorK8sSessionName(t *testing.T) {
+	// K8s mayor session matches terminal server's agentIDToSessionName("town/mayor/hq")
+	want := "gt-town-mayor-hq"
+	got := MayorK8sSessionName()
+	if got != want {
+		t.Errorf("MayorK8sSessionName() = %q, want %q", got, want)
+	}
+}
+
 func TestDeaconSessionName(t *testing.T) {
 	// Deacon session name is now fixed (one per machine), uses HQ prefix
 	want := "hq-deacon"

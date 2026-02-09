@@ -22,7 +22,10 @@ var terminalServerCmd = &cobra.Command{
 It discovers agent pods via beads polling, creates local tmux sessions that
 pipe to each pod's screen session via kubectl exec, and monitors connection
 health. Existing gt commands (nudge, peek) work unchanged because the
-terminal server creates tmux sessions with the expected naming convention.`,
+terminal server creates tmux sessions with the expected naming convention.
+
+By default, discovers all agent pods across all rigs and town-level agents
+(mayor, deacon). Use --rig to filter to a single rig.`,
 	RunE: runTerminalServer,
 }
 
@@ -36,22 +39,24 @@ var (
 )
 
 func init() {
-	terminalServerCmd.Flags().StringVar(&tsRig, "rig", "", "Rig name (required)")
+	terminalServerCmd.Flags().StringVar(&tsRig, "rig", "", "Filter to a single rig (default: all rigs + town-level agents)")
 	terminalServerCmd.Flags().StringVar(&tsNamespace, "namespace", "gastown-test", "K8s namespace")
 	terminalServerCmd.Flags().StringVar(&tsKubeConfig, "kubeconfig", "", "Path to kubeconfig (default: ~/.kube/config)")
 	terminalServerCmd.Flags().DurationVar(&tsPollInterval, "poll-interval", 10*time.Second, "Beads discovery poll interval")
 	terminalServerCmd.Flags().DurationVar(&tsHealthInterval, "health-interval", 5*time.Second, "Connection health check interval")
 	terminalServerCmd.Flags().StringVar(&tsScreenSession, "screen-session", "agent", "Screen session name inside pods")
 
-	_ = terminalServerCmd.MarkFlagRequired("rig")
-
 	rootCmd.AddCommand(terminalServerCmd)
 }
 
 func runTerminalServer(cmd *cobra.Command, args []string) error {
-	fmt.Printf("%s Terminal server starting for rig %s (namespace: %s)\n",
+	scope := "all rigs"
+	if tsRig != "" {
+		scope = "rig " + tsRig
+	}
+	fmt.Printf("%s Terminal server starting for %s (namespace: %s)\n",
 		style.Bold.Render("●"),
-		style.Bold.Render(tsRig),
+		style.Bold.Render(scope),
 		tsNamespace,
 	)
 	fmt.Printf("  Poll interval: %s, Health interval: %s\n", tsPollInterval, tsHealthInterval)

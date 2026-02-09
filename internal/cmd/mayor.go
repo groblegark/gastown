@@ -219,7 +219,17 @@ func runMayorAttach(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checking session: %w", err)
 	}
 	if !running {
-		// Auto-start if not running
+		// Check for K8s terminal server session before auto-starting local.
+		// The terminal server creates a tmux session named "gt-town-mayor-hq"
+		// when bridging to a K8s mayor pod.
+		k8sSession := session.MayorK8sSessionName()
+		if hasK8s, _ := t.HasSession(k8sSession); hasK8s {
+			fmt.Printf("%s Attaching to K8s Mayor (terminal server session: %s)\n",
+				style.Bold.Render("☸"), k8sSession)
+			return attachToTmuxSession(k8sSession)
+		}
+
+		// No local or K8s session — auto-start local
 		fmt.Println("Mayor session not running, starting...")
 		if err := mgr.Start(mayorAgentOverride); err != nil {
 			return err
@@ -288,6 +298,18 @@ func runMayorStatus(cmd *cobra.Command, args []string) error {
 	info, err := mgr.Status()
 	if err != nil {
 		if err == mayor.ErrNotRunning {
+			// Check for K8s terminal server session
+			t := tmux.NewTmux()
+			k8sSession := session.MayorK8sSessionName()
+			if hasK8s, _ := t.HasSession(k8sSession); hasK8s {
+				fmt.Printf("%s Mayor is running in %s\n",
+					style.Bold.Render("☸"),
+					style.Bold.Render("Kubernetes"))
+				fmt.Printf("  Session: %s (terminal server bridge)\n", k8sSession)
+				fmt.Printf("\nAttach with: %s\n", style.Dim.Render("gt mayor attach"))
+				return nil
+			}
+
 			fmt.Printf("%s Mayor session is %s\n",
 				style.Dim.Render("○"),
 				"not running")
