@@ -57,6 +57,7 @@ type AgentFields struct {
 	ActiveMR          string   // Currently active merge request bead ID (for traceability)
 	NotificationLevel string   // DND mode: verbose, normal, muted (default: normal)
 	OwnedFormulas     []string // Formulas this agent owns/maintains (crew workers)
+	OJJobID           string   // OddJobs job ID managing this agent's lifecycle (if OJ-dispatched)
 	// Note: RoleBead field removed - role definitions are now config-based.
 	// See internal/config/roles/*.toml and config-based-roles.md.
 }
@@ -120,6 +121,10 @@ func FormatAgentDescription(title string, fields *AgentFields) string {
 		lines = append(lines, "owned_formulas: null")
 	}
 
+	if fields.OJJobID != "" {
+		lines = append(lines, fmt.Sprintf("oj_job_id: %s", fields.OJJobID))
+	}
+
 	return strings.Join(lines, "\n")
 }
 
@@ -170,6 +175,8 @@ func ParseAgentFields(description string) *AgentFields {
 				}
 				fields.OwnedFormulas = formulas
 			}
+		case "oj_job_id":
+			fields.OJJobID = value
 		}
 	}
 
