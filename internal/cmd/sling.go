@@ -66,6 +66,7 @@ Spawning Options (when target is a rig):
   gt sling gp-abc greenplace --create               # Create polecat if missing
   gt sling gp-abc greenplace --force                # Ignore unread mail
   gt sling gp-abc greenplace --account work         # Use specific Claude account
+  gt sling gp-abc greenplace --target=k8s           # Dispatch to K8s (no local tmux)
 
 Natural Language Args:
   gt sling gt-abc --args "patch release"
@@ -120,9 +121,10 @@ var (
 	slingAgent         string // --agent: override runtime agent for this sling/spawn
 	slingNoConvoy      bool   // --no-convoy: skip auto-convoy creation
 	slingConvoy        string // --convoy: add to existing convoy instead of creating new one
-	slingNoMerge       bool   // --no-merge: skip merge queue on completion (for upstream PRs/human review)
-	slingMergeStrategy string // --merge: merge strategy (direct/mr/local)
-	slingOwned         bool   // --owned: caller-owned convoy (no witness/refinery)
+	slingNoMerge        bool   // --no-merge: skip merge queue on completion (for upstream PRs/human review)
+	slingMergeStrategy  string // --merge: merge strategy (direct/mr/local)
+	slingOwned          bool   // --owned: caller-owned convoy (no witness/refinery)
+	slingExecutionTarget string // --target: execution target (local/k8s)
 )
 
 func init() {
@@ -144,6 +146,7 @@ func init() {
 	slingCmd.Flags().BoolVar(&slingNoMerge, "no-merge", false, "Skip merge queue on completion (keep work on feature branch for review)")
 	slingCmd.Flags().StringVar(&slingMergeStrategy, "merge", "", "Merge strategy: direct (push to main), mr (refinery), local (merge locally)")
 	slingCmd.Flags().BoolVar(&slingOwned, "owned", false, "Create caller-owned convoy (caller manages lifecycle via gt convoy land)")
+	slingCmd.Flags().StringVar(&slingExecutionTarget, "target", "", "Execution target: local (default) or k8s (override rig config)")
 
 	rootCmd.AddCommand(slingCmd)
 }
@@ -303,11 +306,12 @@ func runSling(cmd *cobra.Command, args []string) error {
 				fmt.Printf("Target is rig '%s', will spawn polecat after validation...\n", rigName)
 				deferredRigName = rigName
 				deferredSpawnOpts = SlingSpawnOptions{
-					Force:   slingForce,
-					Account: slingAccount,
-					Create:  slingCreate,
+					Force:           slingForce,
+					Account:         slingAccount,
+					Create:          slingCreate,
 					// HookBead: NOT set - we'll hook via bd update after spawn
-					Agent: slingAgent,
+					Agent:           slingAgent,
+					ExecutionTarget: slingExecutionTarget,
 				}
 				// Use placeholder values until spawn
 				targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)
@@ -332,11 +336,12 @@ func runSling(cmd *cobra.Command, args []string) error {
 						fmt.Printf("Target polecat has no active session, will spawn fresh polecat after validation...\n")
 						deferredRigName = rigName
 						deferredSpawnOpts = SlingSpawnOptions{
-							Force:   slingForce,
-							Account: slingAccount,
-							Create:  slingCreate,
+							Force:           slingForce,
+							Account:         slingAccount,
+							Create:          slingCreate,
 							// HookBead: NOT set - we'll hook via bd update after spawn
-							Agent: slingAgent,
+							Agent:           slingAgent,
+							ExecutionTarget: slingExecutionTarget,
 						}
 						// Use placeholder values until spawn
 						targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)

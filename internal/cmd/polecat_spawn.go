@@ -31,6 +31,7 @@ type SpawnedPolecatInfo struct {
 	ClonePath   string // Path to polecat's git worktree
 	SessionName string // Tmux session name (e.g., "gt-gastown-p-Toast")
 	Pane        string // Tmux pane ID (empty until StartSession is called)
+	K8sSpawn    bool   // True when dispatched to K8s (no local worktree/session)
 
 	// Internal fields for deferred session start
 	account string
@@ -49,11 +50,12 @@ func (s *SpawnedPolecatInfo) SessionStarted() bool {
 
 // SlingSpawnOptions contains options for spawning a polecat via sling.
 type SlingSpawnOptions struct {
-	Force    bool   // Force spawn even if polecat has uncommitted work
-	Account  string // Claude Code account handle to use
-	Create   bool   // Create polecat if it doesn't exist (currently always true for sling)
-	HookBead string // Bead ID to set as hook_bead at spawn time (atomic assignment)
-	Agent    string // Agent override for this spawn (e.g., "gemini", "codex", "claude-haiku")
+	Force           bool   // Force spawn even if polecat has uncommitted work
+	Account         string // Claude Code account handle to use
+	Create          bool   // Create polecat if it doesn't exist (currently always true for sling)
+	HookBead        string // Bead ID to set as hook_bead at spawn time (atomic assignment)
+	Agent           string // Agent override for this spawn (e.g., "gemini", "codex", "claude-haiku")
+	ExecutionTarget string // "local" (default) or "k8s" — overrides rig config
 }
 
 // SpawnPolecatForSling creates a fresh polecat and optionally starts its session.
@@ -78,6 +80,12 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 	r, err := rigMgr.GetRig(rigName)
 	if err != nil {
 		return nil, fmt.Errorf("rig '%s' not found", rigName)
+	}
+
+	// Resolve execution target: explicit override > rig settings > "local"
+	execTarget := resolveExecutionTarget(r.Path, opts.ExecutionTarget)
+	if execTarget == config.ExecutionTargetK8s {
+		return spawnPolecatForK8sCMD(townRoot, rigName, r, opts)
 	}
 
 	// Check for rate limit backoff before spawning
@@ -553,6 +561,72 @@ func verifyAndSetHookBead(townRoot, rigName, polecatName, hookBead string) error
 	}
 
 	return nil
+}
+
+// resolveExecutionTarget determines the execution target for a rig.
+// It checks the explicit override first, then falls back to rig settings config,
+// and finally defaults to "local".
+func resolveExecutionTarget(rigPath, override string) config.ExecutionTarget {
+	if override != "" {
+		return config.ExecutionTarget(override)
+	}
+
+	settingsPath := filepath.Join(rigPath, "settings", "config.json")
+	settings, err := config.LoadRigSettings(settingsPath)
+	if err == nil && settings.Execution != nil && settings.Execution.Target != "" {
+		return settings.Execution.Target
+	}
+
+	return config.ExecutionTargetLocal
+}
+
+// spawnPolecatForK8sCMD creates an agent bead for a K8s polecat without creating
+// a local worktree or tmux session. The K8s controller watches for agent beads
+// with agent_state=spawning and execution_target:k8s label, then creates pods.
+func spawnPolecatForK8sCMD(townRoot, rigName string, r *rig.Rig, opts SlingSpawnOptions) (*SpawnedPolecatInfo, error) {
+	polecatGit := git.NewGit(r.Path)
+	t := tmux.NewTmux()
+	polecatMgr := polecat.NewManager(r, polecatGit, t)
+
+	polecatName, err := polecatMgr.AllocateName()
+	if err != nil {
+		return nil, fmt.Errorf("allocating polecat name: %w", err)
+	}
+	fmt.Printf("Allocated polecat: %s (K8s)\n", polecatName)
+
+	// Create or reopen agent bead with spawning state and hook_bead set atomically.
+	prefix := beads.GetPrefixForRig(townRoot, rigName)
+	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
+	beadsClient := beads.New(townRoot)
+	_, err = beadsClient.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
+		RoleType:   "polecat",
+		Rig:        rigName,
+		AgentState: "spawning",
+		HookBead:   opts.HookBead,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating agent bead for K8s polecat: %w", err)
+	}
+
+	// Label the agent bead so the controller knows this is a K8s polecat.
+	if err := beadsClient.AddLabel(agentBeadID, "execution_target:k8s"); err != nil {
+		fmt.Printf("Warning: could not add execution_target label: %v\n", err)
+	}
+
+	fmt.Printf("✓ Polecat %s dispatched to K8s (agent_state=spawning)\n", polecatName)
+
+	_ = events.LogFeed(events.TypeSpawn, "gt", events.SpawnPayload(rigName, polecatName))
+
+	return &SpawnedPolecatInfo{
+		RigName:     rigName,
+		PolecatName: polecatName,
+		ClonePath:   "", // No local worktree for K8s polecats
+		SessionName: "", // No local tmux session
+		Pane:        "",
+		K8sSpawn:    true,
+		account:     opts.Account,
+		agent:       opts.Agent,
+	}, nil
 }
 
 // notifyWitnessRateLimit sends a rate limit notification to the rig's witness.

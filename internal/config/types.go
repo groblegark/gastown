@@ -243,6 +243,36 @@ type RigSettings struct {
 	// Overrides TownSettings.RoleAgents for this specific rig.
 	// Example: {"witness": "claude-haiku", "polecat": "claude-sonnet"}
 	RoleAgents map[string]string `json:"role_agents,omitempty"`
+
+	// Execution configures where polecats run for this rig.
+	// Default is local (tmux sessions). Set target to "k8s" for Kubernetes pods.
+	Execution *ExecutionConfig `json:"execution,omitempty"`
+}
+
+// ExecutionTarget represents where a polecat runs.
+type ExecutionTarget string
+
+const (
+	// ExecutionTargetLocal runs polecats as local tmux sessions (default).
+	ExecutionTargetLocal ExecutionTarget = "local"
+	// ExecutionTargetK8s runs polecats as Kubernetes pods via the controller.
+	ExecutionTargetK8s ExecutionTarget = "k8s"
+)
+
+// ExecutionConfig configures polecat execution target for a rig.
+type ExecutionConfig struct {
+	// Target is "local" (default) or "k8s".
+	Target ExecutionTarget `json:"target,omitempty"`
+
+	// K8s contains Kubernetes-specific configuration.
+	// Only used when Target is "k8s".
+	K8s *K8sExecutionConfig `json:"k8s,omitempty"`
+}
+
+// K8sExecutionConfig holds Kubernetes execution parameters.
+type K8sExecutionConfig struct {
+	// Namespace is the K8s namespace for polecat pods (e.g., "gastown-test").
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // CrewConfig represents crew workspace settings for a rig.

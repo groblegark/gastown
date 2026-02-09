@@ -145,10 +145,11 @@ func runSlingFormula(args []string) error {
 				fmt.Printf("Target is rig '%s', spawning fresh polecat...\n", rigName)
 				deferredRigName = rigName
 				deferredSpawnOpts = SlingSpawnOptions{
-					Force:   slingForce,
-					Account: slingAccount,
-					Create:  slingCreate,
-					Agent:   slingAgent,
+					Force:           slingForce,
+					Account:         slingAccount,
+					Create:          slingCreate,
+					Agent:           slingAgent,
+					ExecutionTarget: slingExecutionTarget,
 				}
 				// Use placeholder values - will be updated after spawn
 				targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)

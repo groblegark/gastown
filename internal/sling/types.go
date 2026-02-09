@@ -29,6 +29,10 @@ type SlingOptions struct {
 	DryRun        bool
 	Vars          []string // extra formula variables
 
+	// ExecutionTarget overrides the rig's default execution target.
+	// Empty means use rig config default (which defaults to "local").
+	ExecutionTarget string
+
 	// Dependencies (injected by caller)
 	// ResolveTarget resolves a target string to (agentID, pane, workDir).
 	// Required for targets that are existing agents (not rigs, dogs, or crew).
@@ -53,6 +57,8 @@ type SlingResult struct {
 	ConvoyCreated  bool
 	// TargetPane is set when the target has a tmux pane (for CLI nudging).
 	TargetPane string
+	// K8sSpawn is true when the polecat was dispatched to K8s (no local session).
+	K8sSpawn bool
 }
 
 // FormulaOptions contains parameters for formula slinging.
@@ -99,18 +105,19 @@ type BatchOptions struct {
 	TownRoot string
 
 	// Optional
-	Args          string
-	Message       string
-	Force         bool
-	Account       string
-	Agent         string
-	Create        bool
-	NoConvoy      bool
-	Convoy        string
-	MergeStrategy string
-	Owned         bool
-	Vars          []string
-	DryRun        bool
+	Args            string
+	Message         string
+	Force           bool
+	Account         string
+	Agent           string
+	Create          bool
+	NoConvoy        bool
+	Convoy          string
+	MergeStrategy   string
+	Owned           bool
+	Vars            []string
+	DryRun          bool
+	ExecutionTarget string
 
 	// Dependencies
 	Output io.Writer
@@ -154,6 +161,10 @@ type SpawnOptions struct {
 	Create   bool
 	HookBead string
 	Agent    string
+
+	// ExecutionTarget is "local" (default) or "k8s".
+	// When "k8s", skip worktree/tmux and set agent_state=spawning for the controller.
+	ExecutionTarget string
 }
 
 // SpawnResult contains info about a spawned polecat.
@@ -166,6 +177,8 @@ type SpawnResult struct {
 	// Internal fields for deferred session start
 	Account string
 	Agent   string
+	// K8sSpawn is true when the polecat was dispatched to K8s (no local worktree/session).
+	K8sSpawn bool
 }
 
 // AgentID returns the agent identifier (e.g., "gastown/polecats/Toast").

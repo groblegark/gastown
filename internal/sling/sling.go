@@ -83,10 +83,11 @@ func Sling(opts SlingOptions) (*SlingResult, error) {
 			fmt.Fprintf(out, "Target is rig '%s', will spawn polecat after validation...\n", rigName)
 			deferredRigName = rigName
 			deferredSpawnOpts = SpawnOptions{
-				Force:   opts.Force,
-				Account: opts.Account,
-				Create:  opts.Create,
-				Agent:   opts.Agent,
+				Force:           opts.Force,
+				Account:         opts.Account,
+				Create:          opts.Create,
+				Agent:           opts.Agent,
+				ExecutionTarget: opts.ExecutionTarget,
 			}
 			targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)
 		} else if _, isDog := IsDogTarget(target); isDog {
@@ -114,10 +115,11 @@ func Sling(opts SlingOptions) (*SlingResult, error) {
 						rigName := parts[0]
 						deferredRigName = rigName
 						deferredSpawnOpts = SpawnOptions{
-							Force:   opts.Force,
-							Account: opts.Account,
-							Create:  opts.Create,
-							Agent:   opts.Agent,
+							Force:           opts.Force,
+							Account:         opts.Account,
+							Create:          opts.Create,
+							Agent:           opts.Agent,
+							ExecutionTarget: opts.ExecutionTarget,
 						}
 						targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)
 					} else {
@@ -189,6 +191,10 @@ func Sling(opts SlingOptions) (*SlingResult, error) {
 		hookSetAtomically = true
 		polecatSpawned = true
 		polecatName = spawnInfo.PolecatName
+
+		if spawnInfo.K8sSpawn {
+			result.K8sSpawn = true
+		}
 
 		WakeRigAgents(deferredRigName)
 	}
