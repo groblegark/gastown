@@ -75,24 +75,29 @@ spec:
               cat > "$HOME/.claude/settings.json" <<'SETTINGS'
               {"permissions":{"allow":["Bash(*)","Read(*)","Write(*)","Edit(*)","Glob(*)","Grep(*)","WebFetch(*)","WebSearch(*)"],"deny":[]}}
               SETTINGS
-              # Session resume: find previous conversation and pass --resume
+              # Session resume: try --continue, fall back to fresh start on failure
               RESUME_ARGS=""
               if [ "$GT_SESSION_RESUME" = "1" ]; then
                 LATEST_LOG=$(find "$HOME/.claude/projects" -name '*.jsonl' -type f 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
                 if [ -n "$LATEST_LOG" ]; then
-                  CONV_ID=$(head -1 "$LATEST_LOG" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sessionId',d.get('conversationId','')))" 2>/dev/null || true)
-                  if [ -n "$CONV_ID" ]; then
-                    RESUME_ARGS="--resume $CONV_ID"
-                    echo "[session] Resuming previous session: $CONV_ID"
-                  else
-                    RESUME_ARGS="--continue"
-                    echo "[session] Resuming most recent session"
-                  fi
+                  RESUME_ARGS="--continue"
+                  echo "[session] Will attempt to resume most recent session"
                 else
                   echo "[session] No previous session — starting fresh"
                 fi
               fi
-              exec coop --agent=claude --port 8080 --health-port {{ .Values.agent.coop.healthPort }} --cols 200 --rows 50 -- claude --dangerously-skip-permissions $RESUME_ARGS
+              COOP_CMD="coop --agent=claude --port 8080 --health-port {{ .Values.agent.coop.healthPort }} --cols 200 --rows 50"
+              if [ -n "$RESUME_ARGS" ]; then
+                echo "[session] Trying resume..."
+                $COOP_CMD -- claude --dangerously-skip-permissions $RESUME_ARGS
+                RC=$?
+                if [ $RC -ne 0 ]; then
+                  echo "[session] Resume failed (exit $RC), starting fresh"
+                  exec $COOP_CMD -- claude --dangerously-skip-permissions
+                fi
+              else
+                exec $COOP_CMD -- claude --dangerously-skip-permissions
+              fi
           {{- end }}
           securityContext:
             {{- toYaml .Values.agent.securityContext | nindent 12 }}
