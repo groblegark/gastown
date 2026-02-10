@@ -150,7 +150,10 @@ echo "[entrypoint] XDG_STATE_HOME=${XDG_STATE_HOME}"
 
 # ── Claude settings ──────────────────────────────────────────────────────
 
-# Write minimal settings.json for bypass permissions (idempotent).
+# Write settings.json with permissions and hooks.
+# SessionStart: gt prime injects role context; bd prime injects beads workflow.
+# PreCompact: bd prime ensures context survives compaction.
+# Stop: gt handoff preserves session state for continuity.
 cat > "${CLAUDE_DIR}/settings.json" <<'SETTINGS'
 {
   "permissions": {
@@ -165,6 +168,50 @@ cat > "${CLAUDE_DIR}/settings.json" <<'SETTINGS'
       "WebSearch(*)"
     ],
     "deny": []
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "gt prime --hook"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bd prime"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bd prime"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "gt handoff --hook 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
   }
 }
 SETTINGS
