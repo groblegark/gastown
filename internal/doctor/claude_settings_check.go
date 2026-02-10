@@ -14,6 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/templates"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -630,6 +631,7 @@ func (c *ClaudeSettingsCheck) Fix(ctx *CheckContext) error {
 	var errors []string
 	var renamed []string
 	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(t)
 
 	for _, sf := range c.staleSettings {
 		wasRenamed := false
@@ -713,7 +715,7 @@ func (c *ClaudeSettingsCheck) Fix(ctx *CheckContext) error {
 		if ctx.RestartSessions {
 			if sf.agentType == "witness" || sf.agentType == "refinery" ||
 				sf.agentType == "deacon" || sf.agentType == "mayor" {
-				running, _ := t.HasSession(sf.sessionName)
+				running, _ := backend.HasSession(sf.sessionName)
 				if running {
 					// Cycle the agent by killing and letting gt up restart it.
 					// Use KillSessionWithProcesses to ensure all descendant processes are killed.

@@ -10,6 +10,63 @@ import (
 	"testing"
 )
 
+// TestReadDaemonConfig verifies that readDaemonConfig reads daemon-host and
+// daemon-token from a .beads/config.yaml file. (bd-512j)
+func TestReadDaemonConfig(t *testing.T) {
+	t.Run("valid config", func(t *testing.T) {
+		dir := t.TempDir()
+		configContent := "daemon-host: http://localhost:9080\ndaemon-token: secret123\n"
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(configContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+		host, token := readDaemonConfig(dir)
+		if host != "http://localhost:9080" {
+			t.Errorf("host = %q, want http://localhost:9080", host)
+		}
+		if token != "secret123" {
+			t.Errorf("token = %q, want secret123", token)
+		}
+	})
+
+	t.Run("missing file", func(t *testing.T) {
+		dir := t.TempDir()
+		host, token := readDaemonConfig(dir)
+		if host != "" || token != "" {
+			t.Errorf("expected empty strings for missing file, got host=%q token=%q", host, token)
+		}
+	})
+
+	t.Run("partial config", func(t *testing.T) {
+		dir := t.TempDir()
+		configContent := "daemon-host: http://remote:9080\nprefix: beads\n"
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(configContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+		host, token := readDaemonConfig(dir)
+		if host != "http://remote:9080" {
+			t.Errorf("host = %q, want http://remote:9080", host)
+		}
+		if token != "" {
+			t.Errorf("token = %q, want empty", token)
+		}
+	})
+
+	t.Run("extra keys ignored", func(t *testing.T) {
+		dir := t.TempDir()
+		configContent := "prefix: beads\ndaemon-host: http://host:9080\ndaemon-token: tok\nsync-mode: dolt-native\n"
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(configContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+		host, token := readDaemonConfig(dir)
+		if host != "http://host:9080" {
+			t.Errorf("host = %q, want http://host:9080", host)
+		}
+		if token != "tok" {
+			t.Errorf("token = %q, want tok", token)
+		}
+	})
+}
+
 // TestNew verifies the constructor.
 func TestNew(t *testing.T) {
 	b := New("/some/path")

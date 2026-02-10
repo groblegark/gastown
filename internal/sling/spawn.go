@@ -18,6 +18,7 @@ import (
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/ratelimit"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -223,7 +224,7 @@ func SpawnPolecatForSling(rigName string, opts SpawnOptions) (*SpawnResult, erro
 
 	sessionName := polecatSessMgr.SessionName(polecatName)
 
-	if err := verifySpawnedPolecat(polecatObj.ClonePath, sessionName, t); err != nil {
+	if err := verifySpawnedPolecat(polecatObj.ClonePath, sessionName, t, terminal.NewTmuxBackend(t)); err != nil {
 		return nil, fmt.Errorf("spawn verification failed for %s: %w", polecatName, err)
 	}
 
@@ -298,7 +299,7 @@ func verifyWorktreeExists(clonePath string) error {
 	return nil
 }
 
-func verifySpawnedPolecat(clonePath, sessionName string, t *tmux.Tmux) error {
+func verifySpawnedPolecat(clonePath, sessionName string, t *tmux.Tmux, backend terminal.Backend) error {
 	gitPath := filepath.Join(clonePath, ".git")
 	if _, err := os.Stat(gitPath); err != nil {
 		if os.IsNotExist(err) {
@@ -307,7 +308,13 @@ func verifySpawnedPolecat(clonePath, sessionName string, t *tmux.Tmux) error {
 		return fmt.Errorf("checking worktree: %w", err)
 	}
 
-	hasSession, err := t.HasSession(sessionName)
+	var hasSession bool
+	var err error
+	if backend != nil {
+		hasSession, err = backend.HasSession(sessionName)
+	} else {
+		hasSession, err = t.HasSession(sessionName)
+	}
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}

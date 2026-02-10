@@ -9,6 +9,7 @@ import (
 
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/mail"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -115,14 +116,15 @@ func TriggerPendingSpawns(townRoot string, timeout time.Duration) ([]TriggerResu
 		return nil, nil
 	}
 
+	backend := terminal.LocalBackend()
 	t := tmux.NewTmux()
 	var results []TriggerResult
 
 	for _, ps := range pending {
 		result := TriggerResult{Spawn: ps}
 
-		// Check if session still exists (ZFC: query tmux directly)
-		running, err := t.HasSession(ps.Session)
+		// Check if session still exists (routes through backend for coop support)
+		running, err := backend.HasSession(ps.Session)
 		if err != nil {
 			result.Error = fmt.Errorf("checking session: %w", err)
 			results = append(results, result)
@@ -150,7 +152,7 @@ func TriggerPendingSpawns(townRoot string, timeout time.Duration) ([]TriggerResu
 
 		// Runtime is ready - send trigger
 		triggerMsg := "Begin."
-		if err := t.NudgeSession(ps.Session, triggerMsg); err != nil {
+		if err := backend.NudgeSession(ps.Session, triggerMsg); err != nil {
 			result.Error = fmt.Errorf("nudging session: %w", err)
 			results = append(results, result)
 			continue

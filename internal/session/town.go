@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/events"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -26,11 +27,18 @@ func TownSessions() []TownSession {
 	}
 }
 
-// StopTownSession stops a single town-level tmux session.
+// StopTownSession stops a single town-level session.
 // If force is true, skips graceful shutdown (Ctrl-C) and kills immediately.
 // Returns true if the session was running and stopped, false if not running.
-func StopTownSession(t *tmux.Tmux, ts TownSession, force bool) (bool, error) {
-	running, err := t.HasSession(ts.SessionID)
+// Uses the provided backend for session liveness checks (supports coop/SSH/tmux).
+func StopTownSession(t *tmux.Tmux, ts TownSession, force bool, backend ...terminal.Backend) (bool, error) {
+	var running bool
+	var err error
+	if len(backend) > 0 && backend[0] != nil {
+		running, err = backend[0].HasSession(ts.SessionID)
+	} else {
+		running, err = t.HasSession(ts.SessionID)
+	}
 	if err != nil {
 		return false, err
 	}

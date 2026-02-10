@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -79,6 +80,7 @@ func ScanStaleHooks(townRoot string, cfg *StaleHookConfig) (*StaleHookScanResult
 	// Filter to stale ones (older than threshold)
 	threshold := time.Now().Add(-cfg.MaxAge)
 	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(t)
 
 	for _, bead := range hookedBeads {
 		// Skip if updated recently (not stale)
@@ -99,7 +101,7 @@ func ScanStaleHooks(townRoot string, cfg *StaleHookConfig) (*StaleHookScanResult
 		if bead.Assignee != "" {
 			sessionName := assigneeToSessionName(bead.Assignee)
 			if sessionName != "" {
-				alive, _ := t.HasSession(sessionName)
+				alive, _ := backend.HasSession(sessionName)
 				hookResult.AgentAlive = alive
 			}
 		}

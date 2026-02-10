@@ -15,6 +15,7 @@ import (
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -130,6 +131,7 @@ func runMailSend(cmd *cobra.Command, args []string) error {
 		}
 		_ = events.LogFeed(events.TypeMail, from, events.MailPayload(to, mailSubject))
 		emitMailBusEvent(events.BusMailSent, from, to, mailSubject)
+		nudgeMailRecipient(to, from, mailSubject)
 		fmt.Printf("%s Message sent to %s\n", style.Bold.Render("✓"), to)
 		fmt.Printf("  Subject: %s\n", mailSubject)
 		return nil
@@ -173,6 +175,12 @@ func runMailSend(cmd *cobra.Command, args []string) error {
 
 	// Emit MailSent event on bd bus for instant delivery (bd-h59f)
 	emitMailBusEvent(events.BusMailSent, from, to, mailSubject)
+
+	// Nudge each recipient directly via their coop backend (bd-cdp8).
+	// Belt-and-suspenders: daemon handler also nudges via bus event.
+	for _, addr := range recipientAddrs {
+		nudgeMailRecipient(addr, from, mailSubject)
+	}
 
 	fmt.Printf("%s Message sent to %s\n", style.Bold.Render("✓"), to)
 	fmt.Printf("  Subject: %s\n", mailSubject)
@@ -221,6 +229,32 @@ func emitMailBusEvent(eventType, from, to, subject string) {
 		fallback.Stdin = strings.NewReader(string(payloadJSON))
 		fallback.Stderr = io.Discard
 		_ = fallback.Run()
+	}
+}
+
+// nudgeMailRecipient attempts to nudge a mail recipient via their coop backend (bd-cdp8).
+// This is best-effort: failures are logged to stderr but never block the caller.
+// Uses terminal.ResolveBackend to discover whether the recipient has a coop sidecar.
+func nudgeMailRecipient(recipientAddr, from, subject string) {
+	// Convert mail address to the format ResolveBackend expects.
+	// ResolveBackend accepts "rig/polecat" or role shortcuts like "mayor".
+	target := mail.AddressToIdentity(recipientAddr)
+	if target == "" {
+		return
+	}
+
+	backend := terminal.ResolveBackend(target)
+	switch b := backend.(type) {
+	case *terminal.CoopBackend:
+		// Coop agent: nudge with mail notification message.
+		// Session name is always "claude" for coop agents.
+		message := fmt.Sprintf("[mail from %s] %s", from, subject)
+		if err := b.NudgeSession("claude", message); err != nil {
+			fmt.Fprintf(os.Stderr, "mail-nudge: %s: %v\n", target, err)
+		}
+	default:
+		// Local tmux or SSH — skip direct nudge (daemon handler covers these
+		// via the bus event, or they'll pick up mail on next poll).
 	}
 }
 

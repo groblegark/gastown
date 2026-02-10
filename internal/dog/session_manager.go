@@ -12,6 +12,7 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -25,6 +26,7 @@ var (
 // SessionManager handles dog session lifecycle.
 type SessionManager struct {
 	tmux     *tmux.Tmux
+	backend  terminal.Backend
 	townRoot string
 	townName string
 }
@@ -32,11 +34,32 @@ type SessionManager struct {
 // NewSessionManager creates a new dog session manager.
 func NewSessionManager(t *tmux.Tmux, townRoot string) *SessionManager {
 	townName, _ := workspace.GetTownName(townRoot)
+	var backend terminal.Backend
+	if t != nil {
+		backend = terminal.NewTmuxBackend(t)
+	}
 	return &SessionManager{
 		tmux:     t,
+		backend:  backend,
 		townRoot: townRoot,
 		townName: townName,
 	}
+}
+
+// SetBackend overrides the terminal backend used for session liveness checks.
+func (m *SessionManager) SetBackend(b terminal.Backend) {
+	m.backend = b
+}
+
+// hasSession checks if a terminal session exists, routing through the backend.
+func (m *SessionManager) hasSession(sessionID string) (bool, error) {
+	if m.backend != nil {
+		return m.backend.HasSession(sessionID)
+	}
+	if m.tmux != nil {
+		return m.tmux.HasSession(sessionID)
+	}
+	return false, fmt.Errorf("no terminal backend available")
 }
 
 // SessionStartOptions configures dog session startup.
@@ -88,7 +111,7 @@ func (m *SessionManager) Start(dogName string, opts SessionStartOptions) error {
 	sessionID := m.SessionName(dogName)
 
 	// Check if session already exists
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -158,7 +181,7 @@ func (m *SessionManager) Start(dogName string, opts SessionStartOptions) error {
 	time.Sleep(constants.ShutdownNotifyDelay)
 
 	// Verify session survived startup
-	running, err = m.tmux.HasSession(sessionID)
+	running, err = m.hasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("verifying session: %w", err)
 	}
@@ -173,7 +196,7 @@ func (m *SessionManager) Start(dogName string, opts SessionStartOptions) error {
 func (m *SessionManager) Stop(dogName string, force bool) error {
 	sessionID := m.SessionName(dogName)
 
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -197,14 +220,14 @@ func (m *SessionManager) Stop(dogName string, force bool) error {
 // IsRunning checks if a dog session is active.
 func (m *SessionManager) IsRunning(dogName string) (bool, error) {
 	sessionID := m.SessionName(dogName)
-	return m.tmux.HasSession(sessionID)
+	return m.hasSession(sessionID)
 }
 
 // Status returns detailed status for a dog session.
 func (m *SessionManager) Status(dogName string) (*SessionInfo, error) {
 	sessionID := m.SessionName(dogName)
 
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("checking session: %w", err)
 	}
@@ -233,7 +256,7 @@ func (m *SessionManager) Status(dogName string) (*SessionInfo, error) {
 func (m *SessionManager) GetPane(dogName string) (string, error) {
 	sessionID := m.SessionName(dogName)
 
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return "", fmt.Errorf("checking session: %w", err)
 	}

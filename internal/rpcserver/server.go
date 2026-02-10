@@ -35,6 +35,7 @@ import (
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/notify"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 
 	"google.golang.org/protobuf/types/known/structpb"
@@ -2727,13 +2728,27 @@ func mapToStruct(m map[string]interface{}) *structpb.Struct {
 // TerminalServer implements the TerminalService.
 type TerminalServer struct {
 	tmuxClient *tmux.Tmux
+	backend    terminal.Backend
 }
 
 var _ gastownv1connect.TerminalServiceHandler = (*TerminalServer)(nil)
 
 // NewTerminalServer creates a new TerminalServer.
 func NewTerminalServer() *TerminalServer {
-	return &TerminalServer{tmuxClient: tmux.NewTmux()}
+	t := tmux.NewTmux()
+	return &TerminalServer{
+		tmuxClient: t,
+		backend:    terminal.NewTmuxBackend(t),
+	}
+}
+
+// NewTerminalServerWithBackend creates a TerminalServer with a custom terminal backend.
+// Use this when the daemon runs in K8s with a coop backend.
+func NewTerminalServerWithBackend(backend terminal.Backend) *TerminalServer {
+	return &TerminalServer{
+		tmuxClient: tmux.NewTmux(),
+		backend:    backend,
+	}
 }
 
 func (s *TerminalServer) PeekSession(
@@ -2745,9 +2760,9 @@ func (s *TerminalServer) PeekSession(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session name is required"))
 	}
 
-	exists, err := s.tmuxClient.HasSession(session)
+	exists, err := s.backend.HasSession(session)
 	if err != nil {
-		return nil, unavailableErr("checking tmux session", err, 2)
+		return nil, unavailableErr("checking terminal session", err, 2)
 	}
 
 	if !exists {
@@ -2766,9 +2781,9 @@ func (s *TerminalServer) PeekSession(
 
 	var output string
 	if req.Msg.All {
-		output, err = s.tmuxClient.CapturePaneAll(session)
+		output, err = s.backend.CapturePaneAll(session)
 	} else {
-		output, err = s.tmuxClient.CapturePane(session, lines)
+		output, err = s.backend.CapturePane(session, lines)
 	}
 
 	if err != nil {
@@ -2819,9 +2834,9 @@ func (s *TerminalServer) HasSession(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session name is required"))
 	}
 
-	exists, err := s.tmuxClient.HasSession(req.Msg.Session)
+	exists, err := s.backend.HasSession(req.Msg.Session)
 	if err != nil {
-		return nil, unavailableErr("checking tmux session", err, 2)
+		return nil, unavailableErr("checking terminal session", err, 2)
 	}
 
 	return connect.NewResponse(&gastownv1.HasSessionResponse{
@@ -2860,7 +2875,7 @@ func (s *TerminalServer) WatchSession(
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			exists, err := s.tmuxClient.HasSession(session)
+			exists, err := s.backend.HasSession(session)
 			if err != nil {
 				if err := stream.Send(&gastownv1.TerminalUpdate{
 					Exists:    false,
@@ -2881,7 +2896,7 @@ func (s *TerminalServer) WatchSession(
 				return nil
 			}
 
-			output, err := s.tmuxClient.CapturePane(session, lines)
+			output, err := s.backend.CapturePane(session, lines)
 			if err != nil {
 				continue
 			}
@@ -2922,8 +2937,8 @@ func (s *TerminalServer) SendInput(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("input text is required"))
 	}
 
-	// Check session exists
-	exists, err := s.tmuxClient.HasSession(session)
+	// Check session exists (routes through backend for coop support)
+	exists, err := s.backend.HasSession(session)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to check session existence: %w", err))
 	}

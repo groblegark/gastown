@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -223,21 +224,27 @@ unknown_field: ignored`
 
 // mockLocalTmux is a test implementation of localTmux.
 type mockLocalTmux struct {
-	hasSessionResult bool
-	hasSessionErr    error
-	capturePaneResult string
-	capturePaneErr   error
-	nudgeErr         error
-	sendKeysRawErr   error
+	hasSessionResult    bool
+	hasSessionErr       error
+	capturePaneResult   string
+	capturePaneErr      error
+	nudgeErr            error
+	sendKeysRawErr      error
+	isPaneDeadResult    bool
+	isPaneDeadErr       error
+	setPaneDiedHookErr  error
 
 	// Recorded calls
-	hasSessionCalled   string
-	capturedSession    string
-	capturedLines      int
-	nudgedSession      string
-	nudgedMessage      string
-	sentKeysSession    string
-	sentKeys           string
+	hasSessionCalled       string
+	capturedSession        string
+	capturedLines          int
+	nudgedSession          string
+	nudgedMessage          string
+	sentKeysSession        string
+	sentKeys               string
+	isPaneDeadSession      string
+	setPaneDiedHookSession string
+	setPaneDiedHookAgentID string
 }
 
 func (m *mockLocalTmux) HasSession(name string) (bool, error) {
@@ -251,6 +258,20 @@ func (m *mockLocalTmux) CapturePane(session string, lines int) (string, error) {
 	return m.capturePaneResult, m.capturePaneErr
 }
 
+func (m *mockLocalTmux) CapturePaneAll(session string) (string, error) {
+	return m.capturePaneResult, m.capturePaneErr
+}
+
+func (m *mockLocalTmux) CapturePaneLines(session string, lines int) ([]string, error) {
+	if m.capturePaneErr != nil {
+		return nil, m.capturePaneErr
+	}
+	if m.capturePaneResult == "" {
+		return nil, nil
+	}
+	return strings.Split(m.capturePaneResult, "\n"), nil
+}
+
 func (m *mockLocalTmux) NudgeSession(session, message string) error {
 	m.nudgedSession = session
 	m.nudgedMessage = message
@@ -261,6 +282,17 @@ func (m *mockLocalTmux) SendKeysRaw(session, keys string) error {
 	m.sentKeysSession = session
 	m.sentKeys = keys
 	return m.sendKeysRawErr
+}
+
+func (m *mockLocalTmux) IsPaneDead(session string) (bool, error) {
+	m.isPaneDeadSession = session
+	return m.isPaneDeadResult, m.isPaneDeadErr
+}
+
+func (m *mockLocalTmux) SetPaneDiedHook(session, agentID string) error {
+	m.setPaneDiedHookSession = session
+	m.setPaneDiedHookAgentID = agentID
+	return m.setPaneDiedHookErr
 }
 
 func TestTmuxBackend_HasSession(t *testing.T) {

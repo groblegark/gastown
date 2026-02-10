@@ -17,6 +17,7 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
@@ -51,6 +52,7 @@ type Manager struct {
 	beads    *beads.Beads // Rig-level beads for issue and agent bead operations
 	namePool *NamePool
 	tmux     *tmux.Tmux
+	backend  terminal.Backend
 
 	// allocMu protects name allocation within a single process.
 	// File locking (in AllocateName) handles cross-process synchronization.
@@ -85,13 +87,35 @@ func NewManager(r *rig.Rig, g *git.Git, t *tmux.Tmux) *Manager {
 	}
 	_ = pool.Load() // non-fatal: state file may not exist for new rigs
 
+	var backend terminal.Backend
+	if t != nil {
+		backend = terminal.NewTmuxBackend(t)
+	}
+
 	return &Manager{
 		rig:      r,
 		git:      g,
 		beads:    beads.NewWithBeadsDir(beadsPath, resolvedBeads),
 		namePool: pool,
 		tmux:     t,
+		backend:  backend,
 	}
+}
+
+// SetBackend overrides the terminal backend used for session liveness checks.
+func (m *Manager) SetBackend(b terminal.Backend) {
+	m.backend = b
+}
+
+// hasSession checks if a terminal session exists, routing through the backend.
+func (m *Manager) hasSession(sessionName string) (bool, error) {
+	if m.backend != nil {
+		return m.backend.HasSession(sessionName)
+	}
+	if m.tmux != nil {
+		return m.tmux.HasSession(sessionName)
+	}
+	return false, fmt.Errorf("no terminal backend available")
 }
 
 // assigneeID returns the beads assignee identifier for a polecat.
@@ -986,14 +1010,14 @@ func (m *Manager) ReconcilePool() {
 		namesWithDirs = append(namesWithDirs, p.Name)
 	}
 
-	// Get names with tmux sessions
+	// Get names with active sessions (tmux or coop)
 	var namesWithSessions []string
-	if m.tmux != nil {
+	if m.backend != nil || m.tmux != nil {
 		poolNames := m.namePool.getNames()
 		for _, name := range poolNames {
 			sessionName := fmt.Sprintf("gt-%s-%s", m.rig.Name, name)
-			hasSession, _ := m.tmux.HasSession(sessionName)
-			if hasSession {
+			has, _ := m.hasSession(sessionName)
+			if has {
 				namesWithSessions = append(namesWithSessions, name)
 			}
 		}

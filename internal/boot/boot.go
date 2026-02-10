@@ -14,6 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/claude"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -49,18 +50,34 @@ type Boot struct {
 	bootDir   string // ~/gt/deacon/dogs/boot/
 	deaconDir string // ~/gt/deacon/
 	tmux      *tmux.Tmux
+	backend   terminal.Backend
 	degraded  bool
 }
 
 // New creates a new Boot manager.
 func New(townRoot string) *Boot {
+	t := tmux.NewTmux()
 	return &Boot{
 		townRoot:  townRoot,
 		bootDir:   filepath.Join(townRoot, "deacon", "dogs", "boot"),
 		deaconDir: filepath.Join(townRoot, "deacon"),
-		tmux:      tmux.NewTmux(),
+		tmux:      t,
+		backend:   terminal.NewTmuxBackend(t),
 		degraded:  os.Getenv("GT_DEGRADED") == "true",
 	}
+}
+
+// SetBackend overrides the terminal backend used for session liveness checks.
+func (b *Boot) SetBackend(be terminal.Backend) {
+	b.backend = be
+}
+
+// hasSession checks if a terminal session exists, routing through the backend.
+func (b *Boot) hasSession(sessionID string) (bool, error) {
+	if b.backend != nil {
+		return b.backend.HasSession(sessionID)
+	}
+	return b.tmux.HasSession(sessionID)
 }
 
 // EnsureDir ensures the Boot directory exists.
@@ -84,9 +101,9 @@ func (b *Boot) IsRunning() bool {
 	return b.IsSessionAlive()
 }
 
-// IsSessionAlive checks if the Boot tmux session exists.
+// IsSessionAlive checks if the Boot session exists.
 func (b *Boot) IsSessionAlive() bool {
-	has, err := b.tmux.HasSession(session.BootSessionName())
+	has, err := b.hasSession(session.BootSessionName())
 	return err == nil && has
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
@@ -94,8 +95,9 @@ func validateCrewName(name string) error {
 
 // Manager handles crew worker lifecycle.
 type Manager struct {
-	rig *rig.Rig
-	git *git.Git
+	rig     *rig.Rig
+	git     *git.Git
+	backend terminal.Backend
 }
 
 // NewManager creates a new crew manager.
@@ -104,6 +106,20 @@ func NewManager(r *rig.Rig, g *git.Git) *Manager {
 		rig: r,
 		git: g,
 	}
+}
+
+// SetBackend overrides the terminal backend used for session liveness checks.
+func (m *Manager) SetBackend(b terminal.Backend) {
+	m.backend = b
+}
+
+// hasSession checks if a terminal session exists, routing through the backend.
+func (m *Manager) hasSession(sessionID string) (bool, error) {
+	if m.backend != nil {
+		return m.backend.HasSession(sessionID)
+	}
+	t := tmux.NewTmux()
+	return t.HasSession(sessionID)
 }
 
 // crewDir returns the directory for a crew worker.
@@ -552,7 +568,7 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 	sessionID := m.SessionName(name)
 
 	// Check if session already exists
-	running, err := t.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -737,7 +753,7 @@ func (m *Manager) setCrewHookBead(name, hookBead string) error {
 	return nil
 }
 
-// Stop terminates a crew member's tmux session.
+// Stop terminates a crew member's session.
 func (m *Manager) Stop(name string) error {
 	if err := validateCrewName(name); err != nil {
 		return err
@@ -747,7 +763,7 @@ func (m *Manager) Stop(name string) error {
 	sessionID := m.SessionName(name)
 
 	// Check if session exists
-	running, err := t.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -767,9 +783,8 @@ func (m *Manager) Stop(name string) error {
 
 // IsRunning checks if a crew member's session is active.
 func (m *Manager) IsRunning(name string) (bool, error) {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName(name)
-	return t.HasSession(sessionID)
+	return m.hasSession(sessionID)
 }
 
 // materializeOrEnsureSettings tries to materialize Claude hooks from config beads.

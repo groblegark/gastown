@@ -14,6 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -25,9 +26,10 @@ var (
 )
 
 // Manager handles witness lifecycle and monitoring operations.
-// ZFC-compliant: tmux session is the source of truth for running state.
+// ZFC-compliant: session existence is the source of truth (tmux or coop).
 type Manager struct {
-	rig *rig.Rig
+	rig     *rig.Rig
+	backend terminal.Backend
 }
 
 // NewManager creates a new witness manager for a rig.
@@ -37,11 +39,24 @@ func NewManager(r *rig.Rig) *Manager {
 	}
 }
 
-// IsRunning checks if the witness session is active.
-// ZFC: tmux session existence is the source of truth.
-func (m *Manager) IsRunning() (bool, error) {
+// SetBackend overrides the terminal backend used for session liveness checks.
+func (m *Manager) SetBackend(b terminal.Backend) {
+	m.backend = b
+}
+
+// hasSession checks if a terminal session exists, routing through the backend.
+func (m *Manager) hasSession(sessionID string) (bool, error) {
+	if m.backend != nil {
+		return m.backend.HasSession(sessionID)
+	}
 	t := tmux.NewTmux()
-	return t.HasSession(m.SessionName())
+	return t.HasSession(sessionID)
+}
+
+// IsRunning checks if the witness session is active.
+// ZFC: session existence is the source of truth (tmux or coop).
+func (m *Manager) IsRunning() (bool, error) {
+	return m.hasSession(m.SessionName())
 }
 
 // SessionName returns the tmux session name for this witness.
@@ -50,12 +65,12 @@ func (m *Manager) SessionName() string {
 }
 
 // Status returns information about the witness session.
-// ZFC-compliant: tmux session is the source of truth.
+// ZFC-compliant: session existence is the source of truth (tmux or coop).
 func (m *Manager) Status() (*tmux.SessionInfo, error) {
 	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
-	running, err := t.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("checking session: %w", err)
 	}
@@ -98,7 +113,7 @@ func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []st
 	}
 
 	// Check if session already exists
-	running, _ := t.HasSession(sessionID)
+	running, _ := m.hasSession(sessionID)
 	if running {
 		// Session exists - check if Claude is actually running (healthy vs zombie)
 		if t.IsAgentAlive(sessionID) {
@@ -236,13 +251,13 @@ func buildWitnessStartCommand(rigPath, rigName, townRoot, agentOverride string, 
 }
 
 // Stop stops the witness.
-// ZFC-compliant: tmux session is the source of truth.
+// ZFC-compliant: session existence is the source of truth (tmux or coop).
 func (m *Manager) Stop() error {
 	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
-	// Check if tmux session exists
-	running, _ := t.HasSession(sessionID)
+	// Check if session exists
+	running, _ := m.hasSession(sessionID)
 	if !running {
 		return ErrNotRunning
 	}

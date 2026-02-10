@@ -11,6 +11,7 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/configbeads"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -32,6 +33,7 @@ type Router struct {
 	workDir  string // fallback directory to run bd commands in
 	townRoot string // town root directory (e.g., ~/gt)
 	tmux     *tmux.Tmux
+	backend  terminal.Backend
 }
 
 // NewRouter creates a new mail router.
@@ -40,21 +42,30 @@ type Router struct {
 func NewRouter(workDir string) *Router {
 	// Try to detect town root from workDir
 	townRoot := detectTownRoot(workDir)
+	t := tmux.NewTmux()
 
 	return &Router{
 		workDir:  workDir,
 		townRoot: townRoot,
-		tmux:     tmux.NewTmux(),
+		tmux:     t,
+		backend:  terminal.NewTmuxBackend(t),
 	}
 }
 
 // NewRouterWithTownRoot creates a router with an explicit town root.
 func NewRouterWithTownRoot(workDir, townRoot string) *Router {
+	t := tmux.NewTmux()
 	return &Router{
 		workDir:  workDir,
 		townRoot: townRoot,
-		tmux:     tmux.NewTmux(),
+		tmux:     t,
+		backend:  terminal.NewTmuxBackend(t),
 	}
+}
+
+// SetBackend overrides the terminal backend used for session liveness checks.
+func (r *Router) SetBackend(b terminal.Backend) {
+	r.backend = b
 }
 
 // isListAddress returns true if the address uses list:name syntax.
@@ -1205,7 +1216,7 @@ func (r *Router) notifyRecipient(msg *Message) error {
 	// This handles the ambiguity where canonical addresses (rig/name) don't
 	// distinguish between crew workers (gt-rig-crew-name) and polecats (gt-rig-name).
 	for _, sessionID := range sessionIDs {
-		hasSession, err := r.tmux.HasSession(sessionID)
+		hasSession, err := r.backend.HasSession(sessionID)
 		if err != nil || !hasSession {
 			continue
 		}

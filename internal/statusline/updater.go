@@ -9,6 +9,7 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/mail"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -16,13 +17,16 @@ import (
 type Updater struct {
 	townRoot string
 	tmux     *tmux.Tmux
+	backend  terminal.Backend
 }
 
 // NewUpdater creates a new status line data updater.
 func NewUpdater(townRoot string) *Updater {
+	t := tmux.NewTmux()
 	return &Updater{
 		townRoot: townRoot,
-		tmux:     tmux.NewTmux(),
+		tmux:     t,
+		backend:  terminal.NewTmuxBackend(t),
 	}
 }
 
@@ -328,7 +332,7 @@ func (u *Updater) updateSessionHealth(cache *Cache, rigs map[string]bool) {
 
 // isSessionWorking checks if a Claude session is actively working.
 func (u *Updater) isSessionWorking(session string) bool {
-	lines, err := u.tmux.CapturePaneLines(session, 10)
+	lines, err := u.backend.CapturePaneLines(session, 10)
 	if err != nil || len(lines) == 0 {
 		return false
 	}

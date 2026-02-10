@@ -173,8 +173,8 @@ func (d *Daemon) executeLifecycleAction(request *LifecycleRequest) error {
 		}
 	}
 
-	// Check if session exists (tmux detection still needed for lifecycle actions)
-	running, err := d.tmux.HasSession(sessionName)
+	// Check if session exists (routes through backend for coop/SSH support)
+	running, err := d.hasSession(sessionName)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -640,6 +640,7 @@ type AgentBeadInfo struct {
 	HookBead   string // Parsed from description: hook_bead
 	RoleType   string // Parsed from description: role_type
 	Rig        string // Parsed from description: rig
+	Notes      string // Backend metadata (backend, coop_url, ssh_host, etc.)
 	LastUpdate string `json:"updated_at"`
 	// Note: RoleBead field removed - role definitions are now config-based
 }
@@ -672,6 +673,7 @@ func (d *Daemon) getAgentBeadInfo(agentBeadID string) (*AgentBeadInfo, error) {
 		ID          string `json:"id"`
 		Type        string `json:"issue_type"`
 		Description string `json:"description"`
+		Notes       string `json:"notes"`
 		UpdatedAt   string `json:"updated_at"`
 		HookBead    string `json:"hook_bead"`   // Read from database column
 		AgentState  string `json:"agent_state"` // Read from database column
@@ -696,6 +698,7 @@ func (d *Daemon) getAgentBeadInfo(agentBeadID string) (*AgentBeadInfo, error) {
 	info := &AgentBeadInfo{
 		ID:         issue.ID,
 		Type:       issue.Type,
+		Notes:      issue.Notes,
 		LastUpdate: issue.UpdatedAt,
 	}
 

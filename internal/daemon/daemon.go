@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -28,6 +30,7 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/statusline"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/wisp"
@@ -43,6 +46,7 @@ type Daemon struct {
 	config       *Config
 	patrolConfig *DaemonPatrolConfig
 	tmux         *tmux.Tmux
+	backend      terminal.Backend
 	logger       *log.Logger
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -107,15 +111,30 @@ func New(config *Config) (*Daemon, error) {
 		}
 	}
 
+	t := tmux.NewTmux()
 	return &Daemon{
 		config:       config,
 		patrolConfig: patrolConfig,
-		tmux:         tmux.NewTmux(),
+		tmux:         t,
+		backend:      terminal.NewTmuxBackend(t),
 		logger:       logger,
 		ctx:          ctx,
 		cancel:       cancel,
 		doltServer:   doltServer,
 	}, nil
+}
+
+// SetBackend overrides the terminal backend used for session liveness checks.
+func (d *Daemon) SetBackend(b terminal.Backend) {
+	d.backend = b
+}
+
+// hasSession checks if a terminal session exists, routing through the backend.
+func (d *Daemon) hasSession(sessionName string) (bool, error) {
+	if d.backend != nil {
+		return d.backend.HasSession(sessionName)
+	}
+	return d.tmux.HasSession(sessionName)
 }
 
 // Run starts the daemon main loop.
@@ -381,7 +400,7 @@ func (d *Daemon) runDegradedBootTriage(b *boot.Boot) {
 	deaconSession := d.getDeaconSessionName()
 
 	// Step 1: Check if Deacon session exists
-	hasDeacon, err := d.tmux.HasSession(deaconSession)
+	hasDeacon, err := d.hasSession(deaconSession)
 	if err != nil {
 		d.logger.Printf("Error checking Deacon session: %v", err)
 		status.LastAction = "error"
@@ -498,7 +517,7 @@ func (d *Daemon) checkDeaconHeartbeat() {
 	sessionName := d.getDeaconSessionName()
 
 	// Check if session exists
-	hasSession, err := d.tmux.HasSession(sessionName)
+	hasSession, err := d.hasSession(sessionName)
 	if err != nil {
 		d.logger.Printf("Error checking Deacon session: %v", err)
 		return
@@ -1025,10 +1044,11 @@ func listPolecatWorktrees(polecatsDir string) ([]string, error) {
 }
 
 // checkPolecatHealth checks a single polecat's session health.
-// If the polecat has work-on-hook but the tmux session is dead, it's restarted.
+// If the polecat has work-on-hook but the session is dead, it's restarted.
 //
-// Two paths based on whether the polecat is managed by OJ or tmux:
+// Three paths based on how the polecat is managed:
 // - OJ-managed (oj_job_id set): query oj job show, map states
+// - Coop-managed (backend=coop in notes): query coop HTTP health/agent API
 // - Legacy tmux: check tmux session existence
 func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 	// Get agent bead info to check for hooked work
@@ -1054,9 +1074,16 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 		return
 	}
 
+	// Check if this polecat is Coop-managed (K8s pod with coop sidecar)
+	coopURL := getCoopURLFromNotes(info.Notes)
+	if coopURL != "" {
+		d.checkCoopPolecatHealth(rigName, polecatName, info.HookBead, coopURL)
+		return
+	}
+
 	// Legacy tmux path: check tmux session existence
 	sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
-	sessionAlive, err := d.tmux.HasSession(sessionName)
+	sessionAlive, err := d.hasSession(sessionName)
 	if err != nil {
 		d.logger.Printf("Error checking session %s: %v", sessionName, err)
 		return
@@ -1159,6 +1186,86 @@ func (d *Daemon) queryOjJobState(jobID string) (string, error) {
 		return result.State, nil
 	}
 	return result.Status, nil
+}
+
+// getCoopURLFromNotes extracts a coop_url from agent bead notes.
+// Notes contain key: value pairs, one per line. Returns empty if not a coop agent.
+func getCoopURLFromNotes(notes string) string {
+	if notes == "" || !strings.Contains(notes, "coop") {
+		return ""
+	}
+	for _, line := range strings.Split(notes, "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if strings.TrimSpace(parts[0]) == "coop_url" {
+			return strings.TrimSpace(parts[1])
+		}
+	}
+	return ""
+}
+
+// checkCoopPolecatHealth checks health of a Coop-managed polecat (K8s pod with coop sidecar).
+// Queries the coop HTTP API at the agent's coop_url to determine agent state.
+func (d *Daemon) checkCoopPolecatHealth(rigName, polecatName, hookBead, coopURL string) {
+	state, err := d.queryCoopAgentState(coopURL)
+	if err != nil {
+		// Can't reach coop — might be network issue or pod restarting.
+		// Log but don't treat as crash (could be transient).
+		d.logger.Printf("Cannot reach coop for %s/%s at %s: %v", rigName, polecatName, coopURL, err)
+		return
+	}
+
+	switch state {
+	case "working", "idle", "waiting_for_input":
+		// Agent is alive - nothing to do
+		return
+	case "exited":
+		// Agent exited — this is the coop equivalent of a dead pane
+		d.logger.Printf("COOP AGENT EXITED: polecat %s/%s (hook_bead=%s, coop=%s)",
+			rigName, polecatName, hookBead, coopURL)
+		d.notifyWitnessOfCrashedPolecat(rigName, polecatName, hookBead,
+			fmt.Errorf("coop agent exited at %s", coopURL))
+	case "crashed":
+		d.logger.Printf("COOP AGENT CRASHED: polecat %s/%s (hook_bead=%s, coop=%s)",
+			rigName, polecatName, hookBead, coopURL)
+		d.recordSessionDeath(fmt.Sprintf("coop-%s-%s", rigName, polecatName))
+		d.notifyWitnessOfCrashedPolecat(rigName, polecatName, hookBead,
+			fmt.Errorf("coop agent crashed at %s", coopURL))
+	default:
+		// Unknown state — log for investigation
+		d.logger.Printf("Unknown coop agent state %q for %s/%s at %s", state, rigName, polecatName, coopURL)
+	}
+}
+
+// queryCoopAgentState queries the coop HTTP API for the agent's current state.
+// Returns the state string (working, idle, waiting_for_input, exited, crashed).
+func (d *Daemon) queryCoopAgentState(coopURL string) (string, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(coopURL + "/api/v1/agent")
+	if err != nil {
+		return "", fmt.Errorf("GET %s/api/v1/agent: %w", coopURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("coop agent API returned %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading coop response: %w", err)
+	}
+
+	var result struct {
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("parsing coop agent response: %w", err)
+	}
+
+	return result.State, nil
 }
 
 // recordSessionDeath records a session death and checks for mass death pattern.

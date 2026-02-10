@@ -20,6 +20,7 @@ import (
 	"github.com/steveyegge/gastown/internal/ratelimit"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -309,7 +310,7 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 	// Final verification: confirm worktree and session both still exist.
 	// Issue: gt sling reports success but worktree never created (hq-yh8icr).
 	// This catches any race conditions or cleanup that might have occurred.
-	if err := verifySpawnedPolecat(polecatObj.ClonePath, sessionName, t); err != nil {
+	if err := verifySpawnedPolecat(polecatObj.ClonePath, sessionName, t, terminal.NewTmuxBackend(t)); err != nil {
 		return nil, fmt.Errorf("spawn verification failed for %s: %w", polecatName, err)
 	}
 
@@ -510,10 +511,10 @@ func verifyWorktreeExists(clonePath string) error {
 //
 // Checks:
 // 1. Worktree directory exists and has .git
-// 2. Tmux session exists
+// 2. Session exists (via backend for coop/SSH, or tmux directly)
 //
 // Issue: gt sling reports success but worktree never created (hq-yh8icr).
-func verifySpawnedPolecat(clonePath, sessionName string, t *tmux.Tmux) error {
+func verifySpawnedPolecat(clonePath, sessionName string, t *tmux.Tmux, backend terminal.Backend) error {
 	// Check 1: Worktree exists and has .git
 	gitPath := filepath.Join(clonePath, ".git")
 	if _, err := os.Stat(gitPath); err != nil {
@@ -523,8 +524,14 @@ func verifySpawnedPolecat(clonePath, sessionName string, t *tmux.Tmux) error {
 		return fmt.Errorf("checking worktree: %w", err)
 	}
 
-	// Check 2: Tmux session exists
-	hasSession, err := t.HasSession(sessionName)
+	// Check 2: Session exists
+	var hasSession bool
+	var err error
+	if backend != nil {
+		hasSession, err = backend.HasSession(sessionName)
+	} else {
+		hasSession, err = t.HasSession(sessionName)
+	}
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}

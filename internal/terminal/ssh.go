@@ -112,6 +112,22 @@ func (b *SSHBackend) CapturePane(session string, lines int) (string, error) {
 	return b.runRemote(10*time.Second, cmd)
 }
 
+func (b *SSHBackend) CapturePaneAll(session string) (string, error) {
+	cmd := fmt.Sprintf("tmux capture-pane -p -t '=%s' -S -", session)
+	return b.runRemote(10*time.Second, cmd)
+}
+
+func (b *SSHBackend) CapturePaneLines(session string, lines int) ([]string, error) {
+	out, err := b.CapturePane(session, lines)
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
 func (b *SSHBackend) NudgeSession(session string, message string) error {
 	// Serialize nudges to the same session
 	lockI, _ := b.nudgeLocks.LoadOrStore(session, &sync.Mutex{})
@@ -149,5 +165,23 @@ func (b *SSHBackend) SendKeys(session string, keys string) error {
 	escaped := strings.ReplaceAll(keys, "'", "'\\''")
 	cmd := fmt.Sprintf("tmux send-keys -t '=%s' '%s'", session, escaped)
 	_, err := b.runRemote(10*time.Second, cmd)
+	return err
+}
+
+func (b *SSHBackend) IsPaneDead(session string) (bool, error) {
+	cmd := fmt.Sprintf("tmux display-message -t '=%s' -p '#{pane_dead}'", session)
+	out, err := b.runRemote(10*time.Second, cmd)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) == "1", nil
+}
+
+func (b *SSHBackend) SetPaneDiedHook(session, agentID string) error {
+	escaped := strings.ReplaceAll(agentID, "'", "'\\''")
+	sessionEscaped := strings.ReplaceAll(session, "'", "'\\''")
+	hookCmd := fmt.Sprintf(`tmux set-hook -t '=%s' pane-died "run-shell \"gt log crash --agent '%s' --session '%s' --exit-code #{pane_dead_status}\""`,
+		sessionEscaped, escaped, sessionEscaped)
+	_, err := b.runRemote(10*time.Second, hookCmd)
 	return err
 }

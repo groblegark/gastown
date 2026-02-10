@@ -12,6 +12,7 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/statusline"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -164,6 +165,8 @@ func runWorkerStatusLine(t *tmux.Tmux, session, rigName, polecat, crew, issue st
 }
 
 func runMayorStatusLine(t *tmux.Tmux) error {
+	backend := terminal.NewTmuxBackend(t)
+
 	// Count active sessions by listing tmux sessions
 	sessions, err := t.ListSessions()
 	if err != nil {
@@ -240,7 +243,7 @@ func runMayorStatusLine(t *tmux.Tmux) error {
 		if health := healthByType[agent.Type]; health != nil {
 			health.total++
 			// Detect working state via ✻ symbol
-			if isSessionWorking(t, s) {
+			if isSessionWorking(backend, s) {
 				health.working++
 			}
 		}
@@ -640,9 +643,9 @@ func runRefineryStatusLine(t *tmux.Tmux, rigName string) error {
 //
 // We check for ✶ to detect active work, and optionally ✻ as a fallback for
 // sessions that just completed work (still considered "working" for display purposes).
-func isSessionWorking(t *tmux.Tmux, session string) bool {
+func isSessionWorking(b terminal.Backend, session string) bool {
 	// Capture last few lines of the pane (increased from 5 to 10 for reliability)
-	lines, err := t.CapturePaneLines(session, 10)
+	lines, err := b.CapturePaneLines(session, 10)
 	if err != nil || len(lines) == 0 {
 		return false
 	}

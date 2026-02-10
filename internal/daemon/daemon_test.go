@@ -2,6 +2,10 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -236,6 +240,75 @@ func TestListPolecatWorktrees_SkipsHiddenDirs(t *testing.T) {
 
 // NOTE: TestIsWitnessSession removed - isWitnessSession function was deleted
 // as part of ZFC cleanup. Witness poking is now Deacon's responsibility.
+
+func TestGetCoopURLFromNotes(t *testing.T) {
+	tests := []struct {
+		name     string
+		notes    string
+		expected string
+	}{
+		{"empty notes", "", ""},
+		{"no coop", "backend: tmux\nssh_host: 10.0.0.1", ""},
+		{"coop with url", "backend: coop\ncoop_url: http://10.0.0.5:8080", "http://10.0.0.5:8080"},
+		{"coop url only", "coop_url: http://localhost:8080", "http://localhost:8080"},
+		{"coop with token", "backend: coop\ncoop_url: http://10.0.0.5:8080\ncoop_token: secret", "http://10.0.0.5:8080"},
+		{"multiline with extra whitespace", "backend: coop\n  coop_url:  http://host:8080  \nother: val", "http://host:8080"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getCoopURLFromNotes(tt.notes)
+			if got != tt.expected {
+				t.Errorf("getCoopURLFromNotes(%q) = %q, want %q", tt.notes, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestQueryCoopAgentState(t *testing.T) {
+	tests := []struct {
+		name       string
+		response   string
+		statusCode int
+		wantState  string
+		wantErr    bool
+	}{
+		{"working agent", `{"state":"working"}`, 200, "working", false},
+		{"idle agent", `{"state":"idle"}`, 200, "idle", false},
+		{"exited agent", `{"state":"exited"}`, 200, "exited", false},
+		{"server error", ``, 500, "", true},
+		{"invalid json", `not json`, 200, "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v1/agent" {
+					http.NotFound(w, r)
+					return
+				}
+				w.WriteHeader(tt.statusCode)
+				fmt.Fprint(w, tt.response)
+			}))
+			defer srv.Close()
+
+			d := &Daemon{logger: log.New(os.Stderr, "", 0)}
+			state, err := d.queryCoopAgentState(srv.URL)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if state != tt.wantState {
+				t.Errorf("state = %q, want %q", state, tt.wantState)
+			}
+		})
+	}
+}
 
 func TestLifecycleAction_Constants(t *testing.T) {
 	// Verify constants have expected string values

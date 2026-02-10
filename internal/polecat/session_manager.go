@@ -19,6 +19,7 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -39,16 +40,42 @@ var (
 
 // SessionManager handles polecat session lifecycle.
 type SessionManager struct {
-	tmux *tmux.Tmux
-	rig  *rig.Rig
+	tmux    *tmux.Tmux
+	rig     *rig.Rig
+	backend terminal.Backend
 }
 
 // NewSessionManager creates a new polecat session manager for a rig.
+// The backend defaults to local tmux; use SetBackend to override for coop/SSH.
 func NewSessionManager(t *tmux.Tmux, r *rig.Rig) *SessionManager {
-	return &SessionManager{
-		tmux: t,
-		rig:  r,
+	var backend terminal.Backend
+	if t != nil {
+		backend = terminal.NewTmuxBackend(t)
 	}
+	return &SessionManager{
+		tmux:    t,
+		rig:     r,
+		backend: backend,
+	}
+}
+
+// SetBackend overrides the terminal backend used for session liveness checks.
+// This enables coop or SSH backends for K8s-hosted agents.
+func (m *SessionManager) SetBackend(b terminal.Backend) {
+	m.backend = b
+}
+
+// hasSession checks if a terminal session exists, routing through the
+// configured backend (coop, SSH, or local tmux).
+func (m *SessionManager) hasSession(sessionID string) (bool, error) {
+	if m.backend != nil {
+		return m.backend.HasSession(sessionID)
+	}
+	// Fallback to direct tmux if no backend configured
+	if m.tmux != nil {
+		return m.tmux.HasSession(sessionID)
+	}
+	return false, fmt.Errorf("no terminal backend available")
 }
 
 // SessionStartOptions configures polecat session startup.
@@ -170,7 +197,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	// Check if session already exists
 	// Note: Orphan sessions are cleaned up by ReconcilePool during AllocateName,
 	// so by this point, any existing session should be legitimately in use.
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -320,7 +347,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 	//
 	// With remain-on-exit enabled, if the command crashes the pane stays around, allowing
 	// us to capture diagnostic output. We check for this "zombie pane" state specifically.
-	running, err = m.tmux.HasSession(sessionID)
+	running, err = m.hasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("verifying session: %w", err)
 	}
@@ -362,7 +389,7 @@ func (m *SessionManager) Start(polecat string, opts SessionStartOptions) error {
 func (m *SessionManager) Stop(polecat string, force bool) error {
 	sessionID := m.SessionName(polecat)
 
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -388,14 +415,14 @@ func (m *SessionManager) Stop(polecat string, force bool) error {
 // IsRunning checks if a polecat session is active.
 func (m *SessionManager) IsRunning(polecat string) (bool, error) {
 	sessionID := m.SessionName(polecat)
-	return m.tmux.HasSession(sessionID)
+	return m.hasSession(sessionID)
 }
 
 // Status returns detailed status for a polecat session.
 func (m *SessionManager) Status(polecat string) (*SessionInfo, error) {
 	sessionID := m.SessionName(polecat)
 
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("checking session: %w", err)
 	}
@@ -475,7 +502,7 @@ func (m *SessionManager) List() ([]SessionInfo, error) {
 func (m *SessionManager) Attach(polecat string) error {
 	sessionID := m.SessionName(polecat)
 
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -490,7 +517,7 @@ func (m *SessionManager) Attach(polecat string) error {
 func (m *SessionManager) Capture(polecat string, lines int) (string, error) {
 	sessionID := m.SessionName(polecat)
 
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return "", fmt.Errorf("checking session: %w", err)
 	}
@@ -498,12 +525,15 @@ func (m *SessionManager) Capture(polecat string, lines int) (string, error) {
 		return "", ErrSessionNotFound
 	}
 
+	if m.backend != nil {
+		return m.backend.CapturePane(sessionID, lines)
+	}
 	return m.tmux.CapturePane(sessionID, lines)
 }
 
 // CaptureSession returns the recent output from a session by raw session ID.
 func (m *SessionManager) CaptureSession(sessionID string, lines int) (string, error) {
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return "", fmt.Errorf("checking session: %w", err)
 	}
@@ -511,6 +541,9 @@ func (m *SessionManager) CaptureSession(sessionID string, lines int) (string, er
 		return "", ErrSessionNotFound
 	}
 
+	if m.backend != nil {
+		return m.backend.CapturePane(sessionID, lines)
+	}
 	return m.tmux.CapturePane(sessionID, lines)
 }
 
@@ -518,7 +551,7 @@ func (m *SessionManager) CaptureSession(sessionID string, lines int) (string, er
 func (m *SessionManager) Inject(polecat, message string) error {
 	sessionID := m.SessionName(polecat)
 
-	running, err := m.tmux.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}

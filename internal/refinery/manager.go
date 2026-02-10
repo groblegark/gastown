@@ -18,6 +18,7 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
@@ -35,6 +36,7 @@ type Manager struct {
 	workDir string
 	output  io.Writer          // Output destination for user-facing messages
 	config  *MergeQueueConfig  // Merge queue configuration (lazy-loaded)
+	backend terminal.Backend   // Terminal backend for session liveness checks
 }
 
 // NewManager creates a new refinery manager for a rig.
@@ -45,6 +47,20 @@ func NewManager(r *rig.Rig) *Manager {
 		output:  os.Stdout,
 		config:  DefaultMergeQueueConfig(), // Use defaults until LoadConfig is called
 	}
+}
+
+// SetBackend overrides the terminal backend used for session liveness checks.
+func (m *Manager) SetBackend(b terminal.Backend) {
+	m.backend = b
+}
+
+// hasSession checks if a terminal session exists, routing through the backend.
+func (m *Manager) hasSession(sessionID string) (bool, error) {
+	if m.backend != nil {
+		return m.backend.HasSession(sessionID)
+	}
+	t := tmux.NewTmux()
+	return t.HasSession(sessionID)
 }
 
 // LoadConfig loads merge queue configuration from the rig's config.json.
@@ -78,19 +94,18 @@ func (m *Manager) SessionName() string {
 }
 
 // IsRunning checks if the refinery session is active.
-// ZFC: tmux session existence is the source of truth.
+// ZFC: session existence is the source of truth (tmux or coop).
 func (m *Manager) IsRunning() (bool, error) {
-	t := tmux.NewTmux()
-	return t.HasSession(m.SessionName())
+	return m.hasSession(m.SessionName())
 }
 
 // Status returns information about the refinery session.
-// ZFC-compliant: tmux session is the source of truth.
+// ZFC-compliant: session existence is the source of truth (tmux or coop).
 func (m *Manager) Status() (*tmux.SessionInfo, error) {
 	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
-	running, err := t.HasSession(sessionID)
+	running, err := m.hasSession(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("checking session: %w", err)
 	}
@@ -116,7 +131,7 @@ func (m *Manager) Start(foreground bool, agentOverride string) error {
 	}
 
 	// Check if session already exists
-	running, _ := t.HasSession(sessionID)
+	running, _ := m.hasSession(sessionID)
 	if running {
 		// Session exists - check if agent is actually running (healthy vs zombie)
 		if t.IsAgentAlive(sessionID) {
@@ -216,13 +231,13 @@ func (m *Manager) Start(foreground bool, agentOverride string) error {
 }
 
 // Stop stops the refinery.
-// ZFC-compliant: tmux session is the source of truth.
+// ZFC-compliant: session existence is the source of truth (tmux or coop).
 func (m *Manager) Stop() error {
 	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
-	// Check if tmux session exists
-	running, _ := t.HasSession(sessionID)
+	// Check if session exists
+	running, _ := m.hasSession(sessionID)
 	if !running {
 		return ErrNotRunning
 	}

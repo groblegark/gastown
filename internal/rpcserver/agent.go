@@ -16,6 +16,7 @@ import (
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -25,15 +26,28 @@ import (
 type AgentServer struct {
 	townRoot string
 	tmux     *tmux.Tmux
+	backend  terminal.Backend
 }
 
 var _ gastownv1connect.AgentServiceHandler = (*AgentServer)(nil)
 
 // NewAgentServer creates a new AgentServer.
 func NewAgentServer(townRoot string) *AgentServer {
+	t := tmux.NewTmux()
+	return &AgentServer{
+		townRoot: townRoot,
+		tmux:     t,
+		backend:  terminal.NewTmuxBackend(t),
+	}
+}
+
+// NewAgentServerWithBackend creates an AgentServer with a custom terminal backend.
+// Use this when the daemon runs in K8s with a coop backend.
+func NewAgentServerWithBackend(townRoot string, backend terminal.Backend) *AgentServer {
 	return &AgentServer{
 		townRoot: townRoot,
 		tmux:     tmux.NewTmux(),
+		backend:  backend,
 	}
 }
 
@@ -285,7 +299,7 @@ func (s *AgentServer) GetAgent(
 	}
 
 	// Check if session exists
-	exists, _ := s.tmux.HasSession(session)
+	exists, _ := s.backend.HasSession(session)
 	if exists {
 		agent.State = gastownv1.AgentState_AGENT_STATE_RUNNING
 	} else {
@@ -295,7 +309,7 @@ func (s *AgentServer) GetAgent(
 	// Get recent output
 	var recentOutput []string
 	if exists {
-		output, err := s.tmux.CapturePane(session, 20)
+		output, err := s.backend.CapturePane(session, 20)
 		if err == nil && output != "" {
 			recentOutput = strings.Split(output, "\n")
 		}
@@ -537,7 +551,7 @@ func (s *AgentServer) PeekAgent(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("invalid agent address: %s", req.Msg.Agent))
 	}
 
-	exists, _ := s.tmux.HasSession(session)
+	exists, _ := s.backend.HasSession(session)
 	if !exists {
 		return connect.NewResponse(&gastownv1.PeekAgentResponse{
 			Exists: false,
@@ -555,9 +569,9 @@ func (s *AgentServer) PeekAgent(
 	var output string
 	var err error
 	if req.Msg.All {
-		output, err = s.tmux.CapturePaneAll(session)
+		output, err = s.backend.CapturePaneAll(session)
 	} else {
-		output, err = s.tmux.CapturePane(session, lines)
+		output, err = s.backend.CapturePane(session, lines)
 	}
 	if err != nil {
 		return nil, unavailableErr("capturing terminal output", err, 2)

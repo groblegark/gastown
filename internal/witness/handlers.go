@@ -15,6 +15,7 @@ import (
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -716,9 +717,10 @@ func NukePolecat(workDir, rigName, polecatName string) error {
 	// See: gt-g9ft5 - sessions were piling up because nuke wasn't killing them.
 	sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
 	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(t)
 
 	// Check if session exists and kill it
-	if running, _ := t.HasSession(sessionName); running {
+	if running, _ := backend.HasSession(sessionName); running {
 		// Try graceful shutdown first (Ctrl-C), then force kill
 		_ = t.SendKeysRaw(sessionName, "C-c")
 		// Brief delay for graceful handling
@@ -918,6 +920,7 @@ func FindPolecatsWithHookedWork(workDir, rigName string) ([]*PolecatsWithHookedW
 	rigPath := filepath.Join(townRoot, rigName)
 	bd := beads.New(rigPath)
 	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(t)
 
 	var result []*PolecatsWithHookedWork
 
@@ -970,9 +973,9 @@ func FindPolecatsWithHookedWork(workDir, rigName string) ([]*PolecatsWithHookedW
 			continue
 		}
 
-		// Check if polecat has an active tmux session
+		// Check if polecat has an active session (tmux or coop)
 		sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
-		hasSession, _ := t.HasSession(sessionName)
+		hasSession, _ := backend.HasSession(sessionName)
 
 		if hasSession {
 			// Session is active - polecat is already working
@@ -1101,6 +1104,7 @@ func FindResolvedDecisionsForCrew(workDir, rigName string, lookback time.Duratio
 
 	var results []*ResolvedDecisionInfo
 	t := tmux.NewTmux()
+	decBackend := terminal.NewTmuxBackend(t)
 
 	for _, issue := range decisions {
 		// Parse decision fields to get requestor
@@ -1132,7 +1136,7 @@ func FindResolvedDecisionsForCrew(workDir, rigName string, lookback time.Duratio
 		}
 
 		// Only nudge if session exists and agent is running
-		hasSession, _ := t.HasSession(sessionName)
+		hasSession, _ := decBackend.HasSession(sessionName)
 		if !hasSession {
 			continue
 		}

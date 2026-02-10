@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	yaml "go.yaml.in/yaml/v2"
+
 	"github.com/steveyegge/gastown/internal/runtime"
 )
 
@@ -251,6 +253,24 @@ func (b *Beads) run(args ...string) ([]byte, error) {
 	}
 	cmd.Env = append(env, "BEADS_DIR="+beadsDir)
 
+	// Propagate daemon connection from .beads/config.yaml as env vars so the
+	// bd subprocess can reach the daemon without relying on CWD-based config
+	// discovery. Env vars take priority in bd's GetDaemonHost/GetDaemonToken,
+	// so only set them if not already present in the environment. (bd-512j)
+	if !b.isolated {
+		hasDaemonHost := os.Getenv("BD_DAEMON_HOST") != ""
+		hasDaemonToken := os.Getenv("BD_DAEMON_TOKEN") != ""
+		if !hasDaemonHost || !hasDaemonToken {
+			host, token := readDaemonConfig(beadsDir)
+			if host != "" && !hasDaemonHost {
+				cmd.Env = append(cmd.Env, "BD_DAEMON_HOST="+host)
+			}
+			if token != "" && !hasDaemonToken {
+				cmd.Env = append(cmd.Env, "BD_DAEMON_TOKEN="+token)
+			}
+		}
+	}
+
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -310,6 +330,36 @@ func (b *Beads) wrapError(err error, stderr string, args []string) error {
 		return fmt.Errorf("bd %s: %s", strings.Join(args, " "), stderr)
 	}
 	return fmt.Errorf("bd %s: %w", strings.Join(args, " "), err)
+}
+
+// readDaemonConfig reads daemon-host and daemon-token from a .beads/config.yaml.
+// Returns empty strings if the file doesn't exist or doesn't contain the keys.
+// This is used by run() to propagate daemon connection info to bd subprocesses
+// via env vars, ensuring commands like "bd list" can reach the daemon even when
+// the subprocess CWD walk wouldn't find the config file. (bd-512j)
+func readDaemonConfig(beadsDir string) (host, token string) {
+	configPath := filepath.Join(beadsDir, "config.yaml")
+	data, err := os.ReadFile(configPath) //nolint:gosec // G304: path is constructed internally
+	if err != nil {
+		return "", ""
+	}
+	var config yaml.MapSlice
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return "", ""
+	}
+	for _, item := range config {
+		switch item.Key {
+		case "daemon-host":
+			if s, ok := item.Value.(string); ok {
+				host = s
+			}
+		case "daemon-token":
+			if s, ok := item.Value.(string); ok {
+				token = s
+			}
+		}
+	}
+	return host, token
 }
 
 // filterBeadsEnv removes beads-related environment variables from the given

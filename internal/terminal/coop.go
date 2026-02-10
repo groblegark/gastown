@@ -159,6 +159,22 @@ func (b *CoopBackend) CapturePane(session string, lines int) (string, error) {
 	return text, nil
 }
 
+func (b *CoopBackend) CapturePaneAll(session string) (string, error) {
+	// Coop returns the full screen content; lines=0 means no truncation.
+	return b.CapturePane(session, 0)
+}
+
+func (b *CoopBackend) CapturePaneLines(session string, lines int) ([]string, error) {
+	out, err := b.CapturePane(session, lines)
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
 // coopNudgeRequest mirrors Coop's NudgeRequest.
 type coopNudgeRequest struct {
 	Message string `json:"message"`
@@ -243,6 +259,21 @@ func (b *CoopBackend) SendKeys(session string, keys string) error {
 		return fmt.Errorf("coop: input/keys returned %d: %s", resp.StatusCode, string(body))
 	}
 
+	return nil
+}
+
+func (b *CoopBackend) IsPaneDead(session string) (bool, error) {
+	state, err := b.AgentState(session)
+	if err != nil {
+		return false, err
+	}
+	// In coop, "exited" or "crashed" agent states are equivalent to a dead pane.
+	return state.State == "exited" || state.State == "crashed", nil
+}
+
+func (b *CoopBackend) SetPaneDiedHook(session, agentID string) error {
+	// No-op for coop: coop manages agent lifecycle internally.
+	// Crash detection is handled by polling AgentState via IsPaneDead.
 	return nil
 }
 

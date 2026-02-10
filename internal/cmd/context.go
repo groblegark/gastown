@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/state"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
@@ -93,6 +94,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 	}
 	// Create tmux instance
 	tmuxClient := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(tmuxClient)
 
 	if session == "" {
 		// Auto-detect session
@@ -113,7 +115,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 		return runContextUsage(session, tmuxClient)
 	}
 	if contextErrors {
-		return runContextErrors(session, tmuxClient)
+		return runContextErrors(session, backend)
 	}
 	if contextCircuitStatus {
 		return runCircuitBreakerStatus()
@@ -122,7 +124,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 		return runCircuitBreakerReset()
 	}
 	if contextCheck {
-		return runContextCheck(session, tmuxClient)
+		return runContextCheck(session, backend)
 	}
 
 	return nil
@@ -297,9 +299,9 @@ func triggerHandoff() {
 }
 
 // runContextErrors detects context limit errors in session output
-func runContextErrors(session string, tmuxClient *tmux.Tmux) error {
+func runContextErrors(session string, backend terminal.Backend) error {
 	// Capture session output
-	output, err := tmuxClient.CapturePane(session, contextLines)
+	output, err := backend.CapturePane(session, contextLines)
 	if err != nil {
 		return fmt.Errorf("capturing session output: %w", err)
 	}
@@ -429,9 +431,9 @@ func runCircuitBreakerReset() error {
 }
 
 // runContextCheck performs comprehensive context check
-func runContextCheck(session string, tmuxClient *tmux.Tmux) error {
+func runContextCheck(session string, backend terminal.Backend) error {
 	// Check for errors first
-	if err := runContextErrors(session, tmuxClient); err != nil {
+	if err := runContextErrors(session, backend); err != nil {
 		return err
 	}
 
