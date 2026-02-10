@@ -76,21 +76,16 @@ spec:
               cat > "$HOME/.claude/settings.json" <<'SETTINGS'
               {"permissions":{"allow":["Bash(*)","Read(*)","Write(*)","Edit(*)","Glob(*)","Grep(*)","WebFetch(*)","WebSearch(*)"],"deny":[]}}
               SETTINGS
-              # Session resume: try --continue, fall back to fresh start on failure
-              RESUME_ARGS=""
+              # Session resume: use coop --resume to let coop handle session
+              # discovery and pass the right args to Claude (avoids --session-id conflict).
+              COOP_CMD="coop --agent=claude --port 8080 --health-port {{ .Values.agent.coop.healthPort }} --cols 200 --rows 50"
+              LATEST_LOG=""
               if [ "$GT_SESSION_RESUME" = "1" ]; then
                 LATEST_LOG=$(find "$HOME/.claude/projects" -name '*.jsonl' -type f 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
-                if [ -n "$LATEST_LOG" ]; then
-                  RESUME_ARGS="--continue"
-                  echo "[session] Will attempt to resume most recent session"
-                else
-                  echo "[session] No previous session — starting fresh"
-                fi
               fi
-              COOP_CMD="coop --agent=claude --port 8080 --health-port {{ .Values.agent.coop.healthPort }} --cols 200 --rows 50"
-              if [ -n "$RESUME_ARGS" ]; then
-                echo "[session] Trying resume..."
-                $COOP_CMD -- claude --dangerously-skip-permissions $RESUME_ARGS
+              if [ -n "$LATEST_LOG" ]; then
+                echo "[session] Resuming from: $LATEST_LOG"
+                $COOP_CMD --resume "$LATEST_LOG" -- claude --dangerously-skip-permissions
                 RC=$?
                 if [ $RC -ne 0 ]; then
                   echo "[session] Resume failed (exit $RC), starting fresh"
