@@ -12,6 +12,7 @@ on:
     paths:
       - 'deploy/agent/**'
       - '.github/workflows/docker-agent.yml'
+  workflow_dispatch: {}
 
 concurrency:
   group: docker-agent-${{ github.ref }}

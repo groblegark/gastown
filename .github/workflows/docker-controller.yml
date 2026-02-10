@@ -12,6 +12,7 @@ on:
     paths:
       - 'controller/**'
       - '.github/workflows/docker-controller.yml'
+  workflow_dispatch: {}
 
 concurrency:
   group: docker-controller-${{ github.ref }}
