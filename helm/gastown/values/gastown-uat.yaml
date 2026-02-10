@@ -13,7 +13,13 @@ global:
   security:
     allowInsecureImages: true
 
+imagePullSecrets:
+  - name: docker-hub-registry
+
 bd-daemon:
+  imagePullSecrets:
+    - name: docker-hub-registry
+
   # =============================================================================
   # Dolt — branched from gastown prod
   # =============================================================================
