@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
@@ -219,9 +222,14 @@ func runMayorAttach(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checking session: %w", err)
 	}
 	if !running {
-		// Check for K8s terminal server session before auto-starting local.
-		// The terminal server creates a tmux session named "gt-town-mayor-hq"
-		// when bridging to a K8s mayor pod.
+		// Check for K8s mayor pod (coop-based).
+		if podName, ns := detectMayorK8sPod(townRoot); podName != "" {
+			fmt.Printf("%s Attaching to K8s Mayor pod via coop...\n",
+				style.Bold.Render("☸"))
+			return attachToCoopPod(podName, ns)
+		}
+
+		// Legacy: check for K8s terminal server session (screen-based).
 		k8sSession := session.MayorK8sSessionName()
 		if hasK8s, _ := t.HasSession(k8sSession); hasK8s {
 			fmt.Printf("%s Attaching to K8s Mayor (terminal server session: %s)\n",
@@ -298,7 +306,18 @@ func runMayorStatus(cmd *cobra.Command, args []string) error {
 	info, err := mgr.Status()
 	if err != nil {
 		if err == mayor.ErrNotRunning {
-			// Check for K8s terminal server session
+			// Check for K8s coop pod.
+			townRoot, _ := workspace.FindFromCwdOrError()
+			if podName, ns := detectMayorK8sPod(townRoot); podName != "" {
+				fmt.Printf("%s Mayor is running in %s\n",
+					style.Bold.Render("☸"),
+					style.Bold.Render("Kubernetes"))
+				fmt.Printf("  Pod: %s (namespace: %s, coop)\n", podName, ns)
+				fmt.Printf("\nAttach with: %s\n", style.Dim.Render("gt mayor attach"))
+				return nil
+			}
+
+			// Legacy: check for K8s terminal server session.
 			t := tmux.NewTmux()
 			k8sSession := session.MayorK8sSessionName()
 			if hasK8s, _ := t.HasSession(k8sSession); hasK8s {
@@ -346,4 +365,29 @@ func runMayorRestart(cmd *cobra.Command, args []string) error {
 
 	// Start fresh
 	return runMayorStart(cmd, args)
+}
+
+// detectMayorK8sPod checks if the mayor is running as a K8s pod.
+// Returns (podName, namespace) if found, or ("", "") if not.
+//
+// Detection is simple: check if the well-known pod name exists and is Running.
+// The pod name follows the controller convention: gt-town-mayor-hq.
+func detectMayorK8sPod(_ string) (string, string) {
+	podName := "gt-town-mayor-hq"
+
+	ns := os.Getenv("GT_K8S_NAMESPACE")
+	if ns == "" {
+		ns = "gastown-uat"
+	}
+
+	out, err := exec.Command("kubectl", "get", "pod", podName, "-n", ns,
+		"-o", "jsonpath={.status.phase}").Output()
+	if err != nil {
+		return "", ""
+	}
+	if strings.TrimSpace(string(out)) != "Running" {
+		return "", ""
+	}
+
+	return podName, ns
 }

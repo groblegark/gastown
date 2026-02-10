@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
@@ -14,6 +16,7 @@ import (
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -234,6 +237,66 @@ func attachToTmuxSession(sessionID string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// attachToCoopPod attaches to a K8s pod running coop via port-forward.
+// It starts kubectl port-forward in the background, waits for coop to respond,
+// then execs into `coop attach` which takes over the terminal.
+func attachToCoopPod(podName, namespace string) error {
+	coopPath, err := findCoopBinary()
+	if err != nil {
+		return err
+	}
+
+	// Create and open the coop connection (port-forward).
+	conn := terminal.NewCoopPodConnection(terminal.CoopPodConnectionConfig{
+		PodName:   podName,
+		Namespace: namespace,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := conn.Open(ctx); err != nil {
+		return fmt.Errorf("connecting to pod: %w", err)
+	}
+
+	// On interrupt/exit, clean up port-forward.
+	// We register cleanup before exec because exec replaces the process,
+	// so this only fires if exec fails.
+	defer conn.Close()
+
+	localURL := conn.LocalURL()
+
+	fmt.Printf("  Port-forward: localhost:%d → %s:8080\n", conn.LocalPort(), podName)
+	fmt.Printf("  Detach: Ctrl+]\n\n")
+
+	// Exec into coop attach — replaces this process.
+	return syscall.Exec(coopPath, []string{"coop", "attach", localURL}, os.Environ())
+}
+
+// findCoopBinary locates the coop binary on the system.
+func findCoopBinary() (string, error) {
+	// Check PATH first.
+	if p, err := exec.LookPath("coop"); err == nil {
+		return p, nil
+	}
+
+	// Check common build locations.
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		for _, rel := range []string{
+			"coop/target/release/coop",
+			"coop/target/debug/coop",
+		} {
+			p := filepath.Join(home, rel)
+			if _, err := os.Stat(p); err == nil {
+				return p, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("coop binary not found. Install from ~/coop with: cargo build --release")
 }
 
 // ensureDefaultBranch checks if a git directory is on the default branch.
