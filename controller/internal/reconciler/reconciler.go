@@ -78,6 +78,12 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 	actualMap := make(map[string]corev1.Pod)
 	for _, p := range actual {
+		// Only consider pods with the gastown.io/agent label — this
+		// excludes the controller itself and other infrastructure pods
+		// that share the app.kubernetes.io/name=gastown label.
+		if _, ok := p.Labels[podmanager.LabelAgent]; !ok {
+			continue
+		}
 		actualMap[p.Name] = p
 	}
 

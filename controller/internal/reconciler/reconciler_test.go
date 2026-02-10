@@ -396,6 +396,40 @@ func TestReconcile_MultipleBeadsAndPods(t *testing.T) {
 	}
 }
 
+func TestReconcile_IgnoresPodsWithoutAgentLabel(t *testing.T) {
+	// A pod with the gastown app label but no gastown.io/agent label should
+	// NOT be treated as an agent pod (e.g., the controller itself).
+	client := fake.NewSimpleClientset()
+
+	// Create a pod that looks like the controller — has app label but no agent label.
+	controllerPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "gastown-uat-agent-controller-abc123",
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				podmanager.LabelApp: podmanager.LabelAppValue,
+				// No LabelAgent, LabelRig, or LabelRole
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	_, err := client.CoreV1().Pods(testNamespace).Create(context.Background(), controllerPod, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No desired beads -> reconciler should NOT delete the controller pod.
+	r := newReconciler(client, nil, nil)
+	if err := r.Reconcile(context.Background()); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	names := listPodNames(t, client, testNamespace)
+	if len(names) != 1 || names[0] != "gastown-uat-agent-controller-abc123" {
+		t.Errorf("controller pod should be preserved, got pods: %v", names)
+	}
+}
+
 func TestReconcile_Idempotent(t *testing.T) {
 	// Call Reconcile twice with same state -> second call produces no extra operations.
 	client := fake.NewSimpleClientset()
