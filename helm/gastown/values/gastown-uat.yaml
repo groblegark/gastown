@@ -253,7 +253,7 @@ agentController:
   credentialsSecret: "claude-credentials"
   coopBuiltin: true
   townName: "gastown-uat"
-  natsURL: "nats://localhost:4222"
+  natsURL: ""               # Disabled: daemon NATS is pod-local, not accessible from agent pods
   natsTokenSecret: ""       # Uses BD_DAEMON_TOKEN via daemon token secret
 
   nodeSelector:

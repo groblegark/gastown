@@ -42,6 +42,11 @@ else
     cd "${WORKSPACE}"
 fi
 
+# Set global git config so commands using -C or running from other dirs work.
+git config --global user.name "${GIT_AUTHOR_NAME:-${ROLE}}"
+git config --global user.email "${ROLE}@gastown.local"
+git config --global --add safe.directory "${WORKSPACE}"
+
 # ── Gas Town workspace structure ───────────────────────────────────────
 #
 # gt prime detects the agent role from directory structure.
