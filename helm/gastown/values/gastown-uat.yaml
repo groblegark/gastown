@@ -8,6 +8,11 @@
 #   helm upgrade --install gastown-uat ./ -n gastown-uat --create-namespace \
 #     --values values.yaml --values values/gastown-uat.yaml
 
+# Allow ECR images (bitnami subchart blocks non-Docker Hub by default)
+global:
+  security:
+    allowInsecureImages: true
+
 bd-daemon:
   # =============================================================================
   # Dolt — branched from gastown prod
@@ -163,7 +168,9 @@ bd-daemon:
     auth:
       enabled: false
     image:
-      tag: "latest"
+      registry: public.ecr.aws
+      repository: bitnami/redis
+      tag: "7.4.2"
     master:
       persistence:
         enabled: false
