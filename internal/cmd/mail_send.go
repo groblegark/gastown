@@ -3,8 +3,11 @@ package cmd
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -126,6 +129,7 @@ func runMailSend(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("sending message: %w", err)
 		}
 		_ = events.LogFeed(events.TypeMail, from, events.MailPayload(to, mailSubject))
+		emitMailBusEvent(events.BusMailSent, from, to, mailSubject)
 		fmt.Printf("%s Message sent to %s\n", style.Bold.Render("✓"), to)
 		fmt.Printf("  Subject: %s\n", mailSubject)
 		return nil
@@ -167,6 +171,9 @@ func runMailSend(cmd *cobra.Command, args []string) error {
 	// Log mail event to activity feed
 	_ = events.LogFeed(events.TypeMail, from, events.MailPayload(to, mailSubject))
 
+	// Emit MailSent event on bd bus for instant delivery (bd-h59f)
+	emitMailBusEvent(events.BusMailSent, from, to, mailSubject)
+
 	fmt.Printf("%s Message sent to %s\n", style.Bold.Render("✓"), to)
 	fmt.Printf("  Subject: %s\n", mailSubject)
 
@@ -190,6 +197,31 @@ func generateThreadID() string {
 	b := make([]byte, 6)
 	_, _ = rand.Read(b) // crypto/rand.Read only fails on broken system
 	return "thread-" + hex.EncodeToString(b)
+}
+
+// emitMailBusEvent emits a mail lifecycle event on the bd bus (bd-h59f).
+// This is best-effort: failures are logged but never block the caller.
+// Events flow through bd bus emit --event → daemon RPC → NATS JetStream.
+// Subscribers can react to these events for instant mail delivery.
+func emitMailBusEvent(eventType, from, to, subject string) {
+	payload := map[string]interface{}{
+		"from":    from,
+		"to":      to,
+		"subject": subject,
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	cmd := exec.Command("bd", "bus", "emit", "--event", eventType, "--payload", string(payloadJSON)) //nolint:gosec // trusted internal command
+	cmd.Stderr = io.Discard
+	if err := cmd.Run(); err != nil {
+		fallback := exec.Command("bd", "bus", "emit", "--hook", eventType) //nolint:gosec // trusted internal command
+		fallback.Stdin = strings.NewReader(string(payloadJSON))
+		fallback.Stderr = io.Discard
+		_ = fallback.Run()
+	}
 }
 
 // expandMailShortcut expands role shortcuts to full mail addresses.

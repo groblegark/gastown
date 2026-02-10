@@ -81,6 +81,11 @@ const (
 	BusDecisionExpired   = "DecisionExpired"
 	BusDecisionCanceled  = "DecisionCanceled"
 
+	// Mail bus event types (bd bus emit --event=<type>)
+	// These flow through the bd bus event system for instant mail delivery (bd-h59f).
+	BusMailSent = "MailSent"
+	BusMailRead = "MailRead"
+
 	// Hook error events
 	TypeHookError = "hook_error"
 )

@@ -44,14 +44,33 @@ func main() {
 		os.Exit(1)
 	}
 
-	watcher := beadswatcher.NewSSEWatcher(beadswatcher.Config{
+	watcherCfg := beadswatcher.Config{
 		DaemonHTTPURL: fmt.Sprintf("http://%s:%d", cfg.DaemonHost, cfg.DaemonHTTPPort),
 		DaemonToken:   cfg.DaemonToken,
 		Namespace:     cfg.Namespace,
 		DefaultImage:  cfg.DefaultImage,
 		DaemonHost:    cfg.DaemonHost,
 		DaemonPort:    fmt.Sprintf("%d", cfg.DaemonPort),
-	}, logger)
+	}
+
+	var watcher beadswatcher.Watcher
+	switch cfg.Transport {
+	case "nats":
+		consumerName := cfg.NatsConsumerName
+		if consumerName == "" {
+			consumerName = "controller-" + cfg.Namespace
+		}
+		watcher = beadswatcher.NewNATSWatcher(beadswatcher.NATSConfig{
+			NatsURL:      cfg.NatsURL,
+			ConsumerName: consumerName,
+			Config:       watcherCfg,
+		}, logger)
+		logger.Info("using JetStream transport for beads events",
+			"nats_url", cfg.NatsURL, "consumer", consumerName)
+	default:
+		watcher = beadswatcher.NewSSEWatcher(watcherCfg, logger)
+		logger.Info("using SSE transport for beads events")
+	}
 	pods := podmanager.New(k8sClient, logger)
 
 	// Daemon client for HTTP API access (used by reconciler and status reporter).

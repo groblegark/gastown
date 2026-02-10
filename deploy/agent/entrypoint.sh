@@ -383,9 +383,10 @@ auto_bypass_startup() {
         subtype=$(echo "${state}" | jq -r '.prompt.subtype // empty' 2>/dev/null)
         if [ "${prompt_type}" = "setup" ]; then
             echo "[entrypoint] Auto-accepting setup prompt (subtype: ${subtype})"
+            # Option 2 = "Yes, I accept" for bypass; option 1 = "No, exit"
             curl -sf -X POST http://localhost:8080/api/v1/agent/respond \
                 -H 'Content-Type: application/json' \
-                -d '{"option":1}' 2>&1 || true
+                -d '{"option":2}' 2>&1 || true
             # Keep looping — there may be multiple setup prompts in sequence
             continue
         fi

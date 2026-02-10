@@ -69,6 +69,14 @@ type Config struct {
 	// Injected as COOP_NATS_TOKEN in agent pods.
 	NatsTokenSecret string
 
+	// Transport selects the event transport: "sse" or "nats" (env: WATCHER_TRANSPORT).
+	// Default: "sse".
+	Transport string
+
+	// NatsConsumerName is the durable consumer name for JetStream (env: NATS_CONSUMER_NAME).
+	// Default: "controller-<namespace>".
+	NatsConsumerName string
+
 	// SyncInterval is how often to reconcile pod statuses with beads (env: SYNC_INTERVAL).
 	// Default: 60s.
 	SyncInterval time.Duration
@@ -110,6 +118,8 @@ func Parse() *Config {
 		TownName:          envOr("GT_TOWN_NAME", "town"),
 		NatsURL:           os.Getenv("NATS_URL"),
 		NatsTokenSecret:   os.Getenv("NATS_TOKEN_SECRET"),
+		Transport:         envOr("WATCHER_TRANSPORT", "sse"),
+		NatsConsumerName:  os.Getenv("NATS_CONSUMER_NAME"),
 		SyncInterval:      envDurationOr("SYNC_INTERVAL", 60*time.Second),
 	}
 
@@ -129,6 +139,8 @@ func Parse() *Config {
 	flag.StringVar(&cfg.TownName, "town-name", cfg.TownName, "Gas Town deployment name")
 	flag.StringVar(&cfg.NatsURL, "nats-url", cfg.NatsURL, "NATS server URL for event bus")
 	flag.StringVar(&cfg.NatsTokenSecret, "nats-token-secret", cfg.NatsTokenSecret, "K8s secret with NATS auth token")
+	flag.StringVar(&cfg.Transport, "transport", cfg.Transport, "Event transport: sse or nats")
+	flag.StringVar(&cfg.NatsConsumerName, "nats-consumer-name", cfg.NatsConsumerName, "Durable consumer name for JetStream")
 	flag.DurationVar(&cfg.SyncInterval, "sync-interval", cfg.SyncInterval, "Interval for periodic pod status sync")
 	flag.Parse()
 
