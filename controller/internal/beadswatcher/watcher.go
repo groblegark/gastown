@@ -341,10 +341,16 @@ func (w *SSEWatcher) buildEvent(eventType EventType, raw mutationEvent) (Event, 
 // extractAgentInfo extracts rig, role, and agent name from a mutation event.
 //
 // Strategy (in priority order):
-//  1. Actor field: "gastown/polecats/rictus" or "gastown/mayor/hq"
-//  2. Issue title: usually matches the agent ID like "hq-mayor"
+//  1. Labels: "rig:X", "role:Y", "agent:Z" — most reliable for structured IDs
+//  2. Actor field: "gastown/polecats/rictus" or "gastown/mayor/hq"
 //  3. IssueID: e.g., "hq-mayor", "gastown-polecats-toast"
 func extractAgentInfo(raw mutationEvent) (rig, role, name string) {
+	// Try labels first — these are explicit and unambiguous.
+	rig, role, name = extractFromLabels(raw.Labels)
+	if rig != "" && role != "" && name != "" {
+		return rig, normalizeRole(role), name
+	}
+
 	// Try actor field: "gastown/polecats/rictus" or "gastown/crew/k8s"
 	if raw.Actor != "" {
 		parts := strings.Split(raw.Actor, "/")
@@ -359,6 +365,25 @@ func extractAgentInfo(raw mutationEvent) (rig, role, name string) {
 	//   "hq-deacon"          → rig=town, role=deacon, name=hq
 	//   "{rig}-{role}-{name}" → e.g., "gastown-polecats-toast"
 	return parseAgentBeadID(raw.IssueID)
+}
+
+// extractFromLabels extracts rig, role, and agent name from bead labels.
+func extractFromLabels(labels []string) (rig, role, name string) {
+	for _, label := range labels {
+		parts := strings.SplitN(label, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		switch parts[0] {
+		case "rig":
+			rig = parts[1]
+		case "role":
+			role = parts[1]
+		case "agent":
+			name = parts[1]
+		}
+	}
+	return rig, role, name
 }
 
 // parseAgentBeadID parses an agent bead ID into rig, role, and name.

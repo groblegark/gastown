@@ -122,7 +122,14 @@ func (c *DaemonClient) ListAgentBeads(ctx context.Context) ([]AgentBead, error) 
 		if !hasLabel(issue.Labels, "execution_target:k8s") {
 			continue
 		}
-		rig, role, name := parseAgentBeadID(issue.ID)
+		// Prefer explicit labels (rig:X, role:Y, agent:Z) over ID parsing.
+		rig, role, name := extractFromLabels(issue.Labels)
+		if rig == "" || role == "" || name == "" {
+			// Fall back to parsing the structured ID.
+			rig, role, name = parseAgentBeadID(issue.ID)
+		} else {
+			role = normalizeRole(role)
+		}
 		if role == "" || name == "" {
 			continue
 		}
@@ -249,6 +256,25 @@ func (c *DaemonClient) UpdateBeadNotes(ctx context.Context, beadID, notes string
 		return fmt.Errorf("daemon returned status %d for update %s", resp.StatusCode, beadID)
 	}
 	return nil
+}
+
+// extractFromLabels extracts rig, role, and agent name from bead labels.
+func extractFromLabels(labels []string) (rig, role, name string) {
+	for _, label := range labels {
+		parts := strings.SplitN(label, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		switch parts[0] {
+		case "rig":
+			rig = parts[1]
+		case "role":
+			role = parts[1]
+		case "agent":
+			name = parts[1]
+		}
+	}
+	return rig, role, name
 }
 
 // hasLabel checks if a label exists in the list.

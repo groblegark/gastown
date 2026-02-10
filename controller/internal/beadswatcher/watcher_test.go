@@ -84,6 +84,53 @@ func TestNormalizeRole(t *testing.T) {
 	}
 }
 
+func TestExtractAgentInfo_Labels(t *testing.T) {
+	// Labels should take priority over actor and ID parsing.
+	raw := mutationEvent{
+		IssueID: "bd-beads-polecat-coral",
+		Labels:  []string{"rig:beads", "role:polecat", "agent:coral", "gt:agent"},
+	}
+	rig, role, name := extractAgentInfo(raw)
+	if rig != "beads" || role != "polecat" || name != "coral" {
+		t.Errorf("got (%q, %q, %q), want (beads, polecat, coral)", rig, role, name)
+	}
+}
+
+func TestExtractAgentInfo_LabelsPluralRole(t *testing.T) {
+	raw := mutationEvent{
+		IssueID: "bd-beads-polecats-coral",
+		Labels:  []string{"rig:beads", "role:polecats", "agent:coral"},
+	}
+	rig, role, name := extractAgentInfo(raw)
+	if rig != "beads" || role != "polecat" || name != "coral" {
+		t.Errorf("got (%q, %q, %q), want (beads, polecat, coral)", rig, role, name)
+	}
+}
+
+func TestExtractAgentInfo_LabelsOverrideActor(t *testing.T) {
+	// When both labels and actor are present, labels win.
+	raw := mutationEvent{
+		Actor:  "wrong/polecats/wrong",
+		Labels: []string{"rig:beads", "role:polecat", "agent:coral"},
+	}
+	rig, role, name := extractAgentInfo(raw)
+	if rig != "beads" || role != "polecat" || name != "coral" {
+		t.Errorf("got (%q, %q, %q), want (beads, polecat, coral)", rig, role, name)
+	}
+}
+
+func TestExtractAgentInfo_PartialLabels_FallsThrough(t *testing.T) {
+	// Incomplete labels should fall through to actor/ID parsing.
+	raw := mutationEvent{
+		Actor:  "gastown/polecats/rictus",
+		Labels: []string{"rig:beads"}, // missing role and agent
+	}
+	rig, role, name := extractAgentInfo(raw)
+	if rig != "gastown" || role != "polecat" || name != "rictus" {
+		t.Errorf("got (%q, %q, %q), want (gastown, polecat, rictus)", rig, role, name)
+	}
+}
+
 func TestExtractAgentInfo_Actor(t *testing.T) {
 	raw := mutationEvent{Actor: "gastown/polecats/rictus"}
 	rig, role, name := extractAgentInfo(raw)
@@ -327,6 +374,34 @@ func TestProcessSSEData_AgentBead(t *testing.T) {
 		}
 		if event.AgentName != "rictus" {
 			t.Errorf("AgentName = %q, want %q", event.AgentName, "rictus")
+		}
+	default:
+		t.Fatal("expected event to be emitted")
+	}
+}
+
+func TestProcessSSEData_AgentBeadWithLabels(t *testing.T) {
+	w := NewSSEWatcher(Config{Namespace: "test-ns"}, slog.Default())
+
+	// This is the exact scenario that was broken: bd-beads-polecat-coral
+	// with rig/role/agent labels. Without the fix, it would parse as
+	// rig=bd, role=beads, agent=polecat-coral.
+	data := `{"Type":"create","IssueID":"bd-beads-polecat-coral","issue_type":"agent","labels":["rig:beads","role:polecat","agent:coral","execution_target:k8s","gt:agent"]}`
+	w.processSSEData(data)
+
+	select {
+	case event := <-w.events:
+		if event.Type != AgentSpawn {
+			t.Errorf("Type = %q, want %q", event.Type, AgentSpawn)
+		}
+		if event.Rig != "beads" {
+			t.Errorf("Rig = %q, want %q", event.Rig, "beads")
+		}
+		if event.Role != "polecat" {
+			t.Errorf("Role = %q, want %q", event.Role, "polecat")
+		}
+		if event.AgentName != "coral" {
+			t.Errorf("AgentName = %q, want %q", event.AgentName, "coral")
 		}
 	default:
 		t.Fatal("expected event to be emitted")
