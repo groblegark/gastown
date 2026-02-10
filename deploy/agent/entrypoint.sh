@@ -42,19 +42,35 @@ else
     cd "${WORKSPACE}"
 fi
 
-# Initialize beads if not already present and bd binary exists.
-if [ ! -d "${WORKSPACE}/.beads" ] && command -v bd &>/dev/null; then
-    echo "[entrypoint] Initializing beads in ${WORKSPACE}"
-    bd init --non-interactive 2>/dev/null || true
+# ── Gas Town workspace structure ───────────────────────────────────────
+#
+# gt prime detects the agent role from directory structure.
+# The minimal required layout for a town-level workspace:
+#
+#   /home/agent/gt/              ← town root (WORKSPACE)
+#   ├── mayor/town.json          ← primary workspace marker
+#   ├── mayor/rigs.json          ← rig registry
+#   ├── CLAUDE.md                ← town root identity anchor
+#   └── .beads/config.yaml       ← daemon connection config
+
+TOWN_NAME="${GT_TOWN_NAME:-town}"
+
+# Create workspace marker (idempotent — skip if already exists on PVC).
+if [ ! -f "${WORKSPACE}/mayor/town.json" ]; then
+    echo "[entrypoint] Creating Gas Town workspace structure"
+    mkdir -p "${WORKSPACE}/mayor"
+    cat > "${WORKSPACE}/mayor/town.json" <<TOWNJSON
+{"type":"town","version":2,"name":"${TOWN_NAME}","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+TOWNJSON
+    cat > "${WORKSPACE}/mayor/rigs.json" <<RIGSJSON
+{"version":1,"rigs":{}}
+RIGSJSON
 fi
 
-# ── Role-specific setup ──────────────────────────────────────────────────
-
+# Create role-specific directories.
 case "${ROLE}" in
     mayor|deacon)
         echo "[entrypoint] Town-level singleton: ${ROLE}"
-        # Mayor/deacon maintain persistent state in the PVC workspace.
-        # Create role-specific working directory.
         mkdir -p "${WORKSPACE}/${ROLE}"
         ;;
     crew)
@@ -63,7 +79,6 @@ case "${ROLE}" in
         ;;
     polecat)
         echo "[entrypoint] Polecat: ${AGENT} (ephemeral)"
-        # Polecats use EmptyDir — no persistent state.
         ;;
     witness|refinery)
         echo "[entrypoint] Singleton: ${ROLE}"
@@ -74,12 +89,25 @@ case "${ROLE}" in
         ;;
 esac
 
-# ── Read agent config from ConfigMap mount if present ────────────────────
+# ── Daemon connection via gt connect ────────────────────────────────────
+#
+# If BD_DAEMON_HOST is set and .beads/config.yaml doesn't exist yet,
+# use gt connect --url to persist the daemon connection config.
+# This lets bd and gt commands talk to the remote daemon.
 
-CONFIG_DIR="/etc/agent-pod"
-if [ -f "${CONFIG_DIR}/prompt" ]; then
-    STARTUP_PROMPT="$(cat "${CONFIG_DIR}/prompt")"
-    echo "[entrypoint] Loaded startup prompt from ConfigMap"
+if [ -n "${BD_DAEMON_HOST:-}" ] && [ ! -f "${WORKSPACE}/.beads/config.yaml" ]; then
+    DAEMON_URL="http://${BD_DAEMON_HOST}:${BD_DAEMON_PORT:-9080}"
+    echo "[entrypoint] Connecting to daemon at ${DAEMON_URL}"
+    # gt connect needs to be in the workspace dir
+    cd "${WORKSPACE}"
+    gt connect --url "${DAEMON_URL}" --token "${BD_DAEMON_TOKEN:-}" 2>&1 || {
+        echo "[entrypoint] WARNING: gt connect failed, creating config manually"
+        mkdir -p "${WORKSPACE}/.beads"
+        cat > "${WORKSPACE}/.beads/config.yaml" <<BEADSCFG
+daemon-host: "${DAEMON_URL}"
+daemon-token: "${BD_DAEMON_TOKEN:-}"
+BEADSCFG
+    }
 fi
 
 # ── Session persistence ──────────────────────────────────────────────────

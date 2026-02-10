@@ -20,8 +20,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
+ARG VERSION=dev
+ARG BUILD_COMMIT=unknown
+
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w" \
+    -ldflags="-s -w \
+      -X github.com/steveyegge/gastown/internal/cmd.Version=${VERSION} \
+      -X github.com/steveyegge/gastown/internal/cmd.Commit=${BUILD_COMMIT} \
+      -X github.com/steveyegge/gastown/internal/cmd.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+      -X github.com/steveyegge/gastown/internal/cmd.BuiltProperly=1" \
     -o /gt ./cmd/gt
 
 # ── Stage 2: Download external binaries ─────────────────────────────────
