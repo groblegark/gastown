@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	gitMirrorImage = "alpine/git:latest"
+	gitMirrorImage = "alpine:3.20"
 	gitDaemonPort  = 9418
 )
 
@@ -99,23 +99,27 @@ func createGitMirrorPVC(ctx context.Context, client kubernetes.Interface, namesp
 
 func createGitMirrorDeployment(ctx context.Context, client kubernetes.Interface, namespace, deployName, rigName, gitURL string) error {
 	replicas := int32(1)
-	uid := int64(65534)
 	gid := int64(65534)
 
 	cloneScript := fmt.Sprintf(`set -e
+apk add --no-cache git >/dev/null 2>&1
 REPO_DIR="/data/%s.git"
 if [ -d "$REPO_DIR/HEAD" ]; then
   echo "Repo already cloned, fetching updates..."
   cd "$REPO_DIR"
   git fetch --all --prune
 else
+  rm -rf "$REPO_DIR"
   echo "Cloning %s ..."
   git clone --bare --mirror %s "$REPO_DIR"
 fi
 touch "$REPO_DIR/git-daemon-export-ok"
+chown -R 65534:65534 /data
 `, rigName, gitURL, gitURL)
 
-	daemonScript := fmt.Sprintf(`git daemon \
+	daemonScript := fmt.Sprintf(`apk add --no-cache git git-daemon >/dev/null 2>&1
+git config --global --add safe.directory '*'
+git daemon \
   --base-path=/data \
   --export-all \
   --reuseaddr \
@@ -163,9 +167,7 @@ done
 				},
 				Spec: corev1.PodSpec{
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: boolPtrHelper(true),
-						RunAsUser:    &uid,
-						FSGroup:      &gid,
+						FSGroup: &gid,
 					},
 					InitContainers: []corev1.Container{
 						{

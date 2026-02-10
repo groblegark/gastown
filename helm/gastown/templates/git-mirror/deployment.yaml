@@ -31,29 +31,32 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65534
         fsGroup: 65534
       initContainers:
         - name: clone
-          image: {{ $mirror.image | default "alpine/git:latest" }}
+          image: {{ $mirror.image | default "alpine:3.20" }}
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
             - -c
             - |
               set -e
+              apk add --no-cache git >/dev/null 2>&1
               REPO_DIR="/data/{{ $name }}.git"
               if [ -d "$REPO_DIR/HEAD" ]; then
                 echo "Repo already cloned, fetching updates..."
                 cd "$REPO_DIR"
                 git fetch --all --prune
               else
+                # Remove partial clone if it exists
+                rm -rf "$REPO_DIR"
                 echo "Cloning {{ $mirror.url }} ..."
                 git clone --bare --mirror {{ $mirror.url }} "$REPO_DIR"
               fi
               # Enable git daemon export
               touch "$REPO_DIR/git-daemon-export-ok"
+              # Fix ownership for non-root daemon
+              chown -R 65534:65534 /data
           volumeMounts:
             - name: repo-data
               mountPath: /data
@@ -89,12 +92,14 @@ spec:
               memory: 512Mi
       containers:
         - name: git-daemon
-          image: {{ $mirror.image | default "alpine/git:latest" }}
+          image: {{ $mirror.image | default "alpine:3.20" }}
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
             - -c
             - |
+              apk add --no-cache git git-daemon >/dev/null 2>&1
+              git config --global --add safe.directory '*'
               # Start git daemon in background
               git daemon \
                 --base-path=/data \
