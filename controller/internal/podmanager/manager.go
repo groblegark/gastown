@@ -445,11 +445,28 @@ func (m *K8sManager) buildEnvVars(spec AgentPodSpec) []corev1.EnvVar {
 	}
 
 	// Add role-specific env vars.
+	// All roles get BD_ACTOR and GIT_AUTHOR_NAME for beads attribution.
 	switch spec.Role {
 	case "polecat":
-		envVars = append(envVars, corev1.EnvVar{Name: "GT_POLECAT", Value: spec.AgentName})
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "GT_POLECAT", Value: spec.AgentName},
+			corev1.EnvVar{Name: "GT_SCOPE", Value: "rig"},
+			corev1.EnvVar{Name: "BD_ACTOR", Value: spec.AgentName},
+			corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: spec.AgentName},
+		)
 	case "crew":
-		envVars = append(envVars, corev1.EnvVar{Name: "GT_CREW", Value: spec.AgentName})
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "GT_CREW", Value: spec.AgentName},
+			corev1.EnvVar{Name: "GT_SCOPE", Value: "rig"},
+			corev1.EnvVar{Name: "BD_ACTOR", Value: spec.AgentName},
+			corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: spec.AgentName},
+		)
+	case "witness", "refinery":
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "GT_SCOPE", Value: "rig"},
+			corev1.EnvVar{Name: "BD_ACTOR", Value: spec.Role},
+			corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: spec.Role},
+		)
 	case "mayor":
 		envVars = append(envVars,
 			corev1.EnvVar{Name: "GT_SCOPE", Value: "town"},

@@ -248,33 +248,14 @@ func BuildSpecFromBeadInfo(cfg *config.Config, rig, role, agentName string) podm
 			"BD_DAEMON_HTTP_URL":      fmt.Sprintf("http://%s:%d", cfg.DaemonHost, cfg.DaemonHTTPPort),
 			"BEADS_AUTO_START_DAEMON": "false",
 			"BEADS_DOLT_SERVER_MODE":  "1",
+			"GT_TOWN_NAME":            cfg.TownName,
 		},
 	}
 
 	defaults := podmanager.DefaultPodDefaultsForRole(role)
 	podmanager.ApplyDefaults(&spec, defaults)
 
-	if cfg.APIKeySecret != "" {
-		spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
-			EnvName:    "ANTHROPIC_API_KEY",
-			SecretName: cfg.APIKeySecret,
-			SecretKey:  "ANTHROPIC_API_KEY",
-		})
-	}
-	if cfg.CredentialsSecret != "" {
-		spec.CredentialsSecret = cfg.CredentialsSecret
-	}
-	if cfg.DaemonTokenSecret != "" {
-		spec.DaemonTokenSecret = cfg.DaemonTokenSecret
-	}
-	if cfg.CoopBuiltin {
-		spec.CoopBuiltin = true
-	}
-	if cfg.CoopImage != "" && !cfg.CoopBuiltin {
-		spec.CoopSidecar = &podmanager.CoopSidecarSpec{
-			Image: cfg.CoopImage,
-		}
-	}
+	applyCommonConfig(cfg, &spec)
 
 	return spec
 }
@@ -297,6 +278,7 @@ func buildAgentPodSpec(cfg *config.Config, event beadswatcher.Event) podmanager.
 			"BD_DAEMON_HTTP_URL":      fmt.Sprintf("http://%s:%d", metadataOr(event, "daemon_host", cfg.DaemonHost), cfg.DaemonHTTPPort),
 			"BEADS_AUTO_START_DAEMON": "false",
 			"BEADS_DOLT_SERVER_MODE":  "1",
+			"GT_TOWN_NAME":            cfg.TownName,
 		},
 	}
 
@@ -326,31 +308,14 @@ func buildAgentPodSpec(cfg *config.Config, event beadswatcher.Event) podmanager.
 		})
 	}
 
-	// Wire Claude OAuth credentials (Max/Corp accounts) from config.
-	if cfg.CredentialsSecret != "" {
-		spec.CredentialsSecret = cfg.CredentialsSecret
-	}
+	// Apply common config (credentials, daemon token, coop, NATS).
+	applyCommonConfig(cfg, &spec)
 
-	// Wire daemon token so agent pods can authenticate to the daemon.
-	if cfg.DaemonTokenSecret != "" {
-		spec.DaemonTokenSecret = cfg.DaemonTokenSecret
-	}
-
-	// Agent image has coop built-in: use HTTP probes on agent container.
-	if cfg.CoopBuiltin {
-		spec.CoopBuiltin = true
-	}
-
-	// Wire Coop sidecar when image is configured (mutually exclusive with CoopBuiltin).
-	if cfg.CoopImage != "" && !cfg.CoopBuiltin {
-		spec.CoopSidecar = &podmanager.CoopSidecarSpec{
-			Image: cfg.CoopImage,
-		}
-		// Wire NATS integration from event metadata.
+	// Wire Coop sidecar NATS overrides from event metadata.
+	if spec.CoopSidecar != nil {
 		if natsURL := event.Metadata["nats_url"]; natsURL != "" {
 			spec.CoopSidecar.NatsURL = natsURL
 		}
-		// Wire auth token secret if provided in event metadata.
 		if authSecret := event.Metadata["coop_auth_secret"]; authSecret != "" {
 			spec.CoopSidecar.AuthTokenSecret = authSecret
 		}
@@ -360,6 +325,47 @@ func buildAgentPodSpec(cfg *config.Config, event beadswatcher.Event) podmanager.
 	}
 
 	return spec
+}
+
+// applyCommonConfig wires controller-level config into an AgentPodSpec.
+// Shared by both BuildSpecFromBeadInfo (reconciler) and buildAgentPodSpec (events).
+func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
+	if cfg.CredentialsSecret != "" {
+		spec.CredentialsSecret = cfg.CredentialsSecret
+	}
+	if cfg.DaemonTokenSecret != "" {
+		spec.DaemonTokenSecret = cfg.DaemonTokenSecret
+	}
+
+	// Coop: either built-in (HTTP probes on agent) or sidecar (separate container).
+	if cfg.CoopBuiltin {
+		spec.CoopBuiltin = true
+	}
+	if cfg.CoopImage != "" && !cfg.CoopBuiltin {
+		spec.CoopSidecar = &podmanager.CoopSidecarSpec{
+			Image: cfg.CoopImage,
+		}
+	}
+
+	// Wire NATS config: sidecar gets dedicated env vars, built-in gets plain env.
+	if cfg.NatsURL != "" {
+		if spec.CoopSidecar != nil {
+			spec.CoopSidecar.NatsURL = cfg.NatsURL
+		} else {
+			spec.Env["COOP_NATS_URL"] = cfg.NatsURL
+		}
+	}
+	if cfg.NatsTokenSecret != "" {
+		if spec.CoopSidecar != nil {
+			spec.CoopSidecar.NatsTokenSecret = cfg.NatsTokenSecret
+		} else {
+			spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
+				EnvName:    "COOP_NATS_TOKEN",
+				SecretName: cfg.NatsTokenSecret,
+				SecretKey:  "token",
+			})
+		}
+	}
 }
 
 // namespaceFromEvent returns the namespace from event metadata or a default.

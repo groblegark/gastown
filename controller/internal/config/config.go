@@ -57,6 +57,18 @@ type Config struct {
 	// Injected as BD_DAEMON_TOKEN in agent pods.
 	DaemonTokenSecret string
 
+	// TownName is the Gas Town deployment name (env: GT_TOWN_NAME).
+	// Used to set GT_TOWN_NAME in agent pods for workspace + materialization scope.
+	TownName string
+
+	// NatsURL is the NATS server URL for event bus (env: NATS_URL).
+	// Passed to agent pods as COOP_NATS_URL for real-time events.
+	NatsURL string
+
+	// NatsTokenSecret is the K8s secret containing the NATS auth token (env: NATS_TOKEN_SECRET).
+	// Injected as COOP_NATS_TOKEN in agent pods.
+	NatsTokenSecret string
+
 	// SyncInterval is how often to reconcile pod statuses with beads (env: SYNC_INTERVAL).
 	// Default: 60s.
 	SyncInterval time.Duration
@@ -79,6 +91,9 @@ func Parse() *Config {
 		APIKeySecret:      os.Getenv("API_KEY_SECRET"),
 		CredentialsSecret: os.Getenv("CLAUDE_CREDENTIALS_SECRET"),
 		DaemonTokenSecret: os.Getenv("DAEMON_TOKEN_SECRET"),
+		TownName:          envOr("GT_TOWN_NAME", "town"),
+		NatsURL:           os.Getenv("NATS_URL"),
+		NatsTokenSecret:   os.Getenv("NATS_TOKEN_SECRET"),
 		SyncInterval:      envDurationOr("SYNC_INTERVAL", 60*time.Second),
 	}
 
@@ -95,6 +110,9 @@ func Parse() *Config {
 	flag.StringVar(&cfg.APIKeySecret, "api-key-secret", cfg.APIKeySecret, "K8s secret name containing ANTHROPIC_API_KEY")
 	flag.StringVar(&cfg.CredentialsSecret, "credentials-secret", cfg.CredentialsSecret, "K8s secret with Claude OAuth credentials")
 	flag.StringVar(&cfg.DaemonTokenSecret, "daemon-token-secret", cfg.DaemonTokenSecret, "K8s secret with daemon auth token for agent pods")
+	flag.StringVar(&cfg.TownName, "town-name", cfg.TownName, "Gas Town deployment name")
+	flag.StringVar(&cfg.NatsURL, "nats-url", cfg.NatsURL, "NATS server URL for event bus")
+	flag.StringVar(&cfg.NatsTokenSecret, "nats-token-secret", cfg.NatsTokenSecret, "K8s secret with NATS auth token")
 	flag.DurationVar(&cfg.SyncInterval, "sync-interval", cfg.SyncInterval, "Interval for periodic pod status sync")
 	flag.Parse()
 
