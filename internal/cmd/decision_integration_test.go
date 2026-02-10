@@ -44,8 +44,10 @@ func setupDecisionTestTown(t *testing.T) string {
 func initDecisionBeadsDB(t *testing.T, dir, prefix string) {
 	t.Helper()
 
-	cmd := exec.Command("bd", "--no-daemon", "init", "--quiet", "--prefix", prefix)
+	beadsDir := filepath.Join(dir, ".beads")
+	cmd := exec.Command("bd", "--sandbox", "init", "--quiet", "--prefix", prefix)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("bd init failed in %s: %v\n%s", dir, err, output)
 	}
@@ -61,7 +63,6 @@ func initDecisionBeadsDB(t *testing.T, dir, prefix string) {
 func createTestDecision(t *testing.T, dir, question, requestedBy string) string {
 	t.Helper()
 
-	// Create decision using beads API directly
 	bd := beads.New(beads.ResolveBeadsDir(dir))
 
 	fields := &beads.DecisionFields{
@@ -71,7 +72,9 @@ func createTestDecision(t *testing.T, dir, question, requestedBy string) string 
 		RequestedBy: requestedBy,
 	}
 
-	issue, err := bd.CreateBdDecision(fields)
+	// Use CreateDecisionBead (direct issue creation) instead of CreateBdDecision
+	// (which shells out to `bd decision create` and requires registered types).
+	issue, err := bd.CreateDecisionBead(question, fields)
 	if err != nil {
 		t.Fatalf("create decision in %s: %v", dir, err)
 	}
@@ -1059,4 +1062,111 @@ func TestDecisionLifecycleEndToEnd(t *testing.T) {
 	}
 
 	t.Log("Lifecycle test complete: create -> supersede -> resolve -> auto-close")
+}
+
+// TestTurnCheckPendingDecisionBreaksLoop tests the fix for bd-qq0p:
+// When the agent has a pending decision from a prior turn, turn-check should
+// NOT block. This prevents the infinite loop where:
+//   Stop blocks → agent creates decision → next turn clears marker →
+//   Stop blocks again → agent creates another decision → repeat
+func TestTurnCheckPendingDecisionBreaksLoop(t *testing.T) {
+	// Skip if bd is not available
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not installed, skipping integration test")
+	}
+
+	townRoot := setupDecisionTestTown(t)
+	initDecisionBeadsDB(t, townRoot, "hq")
+
+	agentID := "gastown/polecats/loop-fix-test"
+	sessionID := "test-session-loop-fix"
+
+	// Change to townRoot
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer os.Chdir(oldCwd)
+	if err := os.Chdir(townRoot); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	os.Setenv("GT_ROLE", agentID)
+	defer os.Unsetenv("GT_ROLE")
+
+	clearTurnMarker(sessionID)
+	defer clearTurnMarker(sessionID)
+
+	bd := beads.New(beads.ResolveBeadsDir(townRoot))
+
+	// --- Simulate turn 1: agent creates a decision ---
+
+	// No marker, no pending decisions → strict mode blocks
+	if result := checkTurnMarker(sessionID, false); result == nil {
+		t.Fatal("should block: no marker, no pending decisions")
+	}
+
+	// Agent creates a decision (this sets the turn marker)
+	decisionID := createTestDecision(t, townRoot, "Loop fix: turn 1 decision?", agentID)
+	_ = createTurnMarker(sessionID)
+	t.Logf("Turn 1: created decision %s, marker set", decisionID)
+
+	// turn-check now allows (marker exists)
+	if result := checkTurnMarker(sessionID, false); result != nil {
+		t.Fatalf("should allow: marker exists. got %+v", result)
+	}
+
+	// --- Simulate turn 2: marker cleared, decision still pending ---
+
+	// UserPromptSubmit hook clears marker
+	clearTurnMarker(sessionID)
+	t.Log("Turn 2: marker cleared (simulating UserPromptSubmit hook)")
+
+	// Verify the decision is still pending
+	pending, err := bd.ListPendingDecisionsForRequester(agentID)
+	if err != nil {
+		t.Fatalf("ListPendingDecisionsForRequester: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected 1 pending decision, got %d", len(pending))
+	}
+
+	// THE FIX: checkAgentHasPendingDecisions returns true → should NOT block.
+	// This is what runDecisionTurnCheck now does before falling through to block.
+	hasPending := checkAgentHasPendingDecisions()
+	if !hasPending {
+		t.Fatal("checkAgentHasPendingDecisions should return true")
+	}
+
+	// The combined check (marker OR pending decision) should allow.
+	// This simulates the full runDecisionTurnCheck logic:
+	//   1. Check marker → not found
+	//   2. Check pending decisions → found → allow (the fix)
+	markerResult := checkTurnMarker(sessionID, false)
+	if markerResult == nil {
+		t.Fatal("marker-only check should still block (marker was cleared)")
+	}
+	// But the pending decision check overrides the block:
+	if hasPending {
+		t.Log("Turn 2: pending decision exists → allowing stop (loop broken!)")
+	} else {
+		t.Fatal("Turn 2: no pending decision → would block → loop continues!")
+	}
+
+	// --- Simulate turn 3: decision responded, no pending decisions ---
+
+	// Resolve the decision (human responds)
+	if err := bd.ResolveDecision(decisionID, 1, "Approved", "human"); err != nil {
+		t.Fatalf("ResolveDecision: %v", err)
+	}
+	t.Logf("Turn 3: decision %s resolved", decisionID)
+
+	// No marker, no pending decisions → should block again
+	clearTurnMarker(sessionID)
+	if !checkAgentHasPendingDecisions() {
+		// Correct: no pending decisions, turn-check should block
+		t.Log("Turn 3: no pending decisions → turn-check blocks (correct)")
+	} else {
+		t.Error("Turn 3: should not have pending decisions after resolve")
+	}
 }
