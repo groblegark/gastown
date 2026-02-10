@@ -398,6 +398,8 @@ auto_bypass_startup() {
                     -H 'Content-Type: application/json' \
                     -d '{"option":2}' 2>&1 || true
                 false_positive_count=0
+                # Give agent time to process the response before next check
+                sleep 5
                 continue
             else
                 false_positive_count=$((false_positive_count + 1))
