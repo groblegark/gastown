@@ -1410,6 +1410,17 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// If the agent already has a pending decision, don't block.
+	// This prevents an infinite loop where: Stop blocks → agent creates
+	// decision → next turn clears marker → Stop blocks again → new decision
+	// (auto-closes previous). One pending decision at a time is enough.
+	if checkAgentHasPendingDecisions() {
+		if decisionTurnCheckVerbose {
+			fmt.Fprintf(os.Stderr, "[turn-check] OK: Agent already has pending decision\n")
+		}
+		return nil
+	}
+
 	// Soft mode doesn't block
 	if decisionTurnCheckSoft {
 		if decisionTurnCheckVerbose {
