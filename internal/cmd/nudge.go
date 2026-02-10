@@ -165,11 +165,26 @@ func runNudge(cmd *cobra.Command, args []string) error {
 
 	t := tmux.NewTmux()
 
-	// Expand role shortcuts to session names
-	// These shortcuts let users type "mayor" instead of "gt-mayor"
+	// Expand role shortcuts to session names and resolve backend.
+	// These shortcuts let users type "mayor" instead of "gt-mayor".
 	switch target {
 	case "mayor", "mayor/":
-		target = session.MayorSessionName()
+		backend := terminal.ResolveBackend("mayor")
+		sessionName := session.MayorSessionName()
+		exists, err := backend.HasSession(sessionName)
+		if err != nil || !exists {
+			fmt.Printf("%s Mayor not running, nudge skipped\n", style.Dim.Render("○"))
+			return nil
+		}
+		if err := backend.NudgeSession(sessionName, message); err != nil {
+			return fmt.Errorf("nudging mayor: %w", err)
+		}
+		fmt.Printf("%s Nudged mayor\n", style.Bold.Render("✓"))
+		if townRoot != "" {
+			_ = LogNudge(townRoot, "mayor", message)
+		}
+		_ = events.LogFeed(events.TypeNudge, sender, events.NudgePayload("", "mayor", message))
+		return nil
 	case "witness", "refinery":
 		// These need the current rig
 		roleInfo, err := GetRole()
@@ -179,28 +194,44 @@ func runNudge(cmd *cobra.Command, args []string) error {
 		if roleInfo.Rig == "" {
 			return fmt.Errorf("cannot determine rig for %s shortcut (not in a rig context)", target)
 		}
+		var sessionName string
 		if target == "witness" {
-			target = session.WitnessSessionName(roleInfo.Rig)
+			sessionName = session.WitnessSessionName(roleInfo.Rig)
 		} else {
-			target = session.RefinerySessionName(roleInfo.Rig)
+			sessionName = session.RefinerySessionName(roleInfo.Rig)
 		}
+		backend := terminal.ResolveBackend(target)
+		exists, bErr := backend.HasSession(sessionName)
+		if bErr != nil || !exists {
+			fmt.Printf("%s %s not running, nudge skipped\n", style.Dim.Render("○"), target)
+			return nil
+		}
+		if err := backend.NudgeSession(sessionName, message); err != nil {
+			return fmt.Errorf("nudging %s: %w", target, err)
+		}
+		fmt.Printf("%s Nudged %s\n", style.Bold.Render("✓"), target)
+		if townRoot != "" {
+			_ = LogNudge(townRoot, target, message)
+		}
+		_ = events.LogFeed(events.TypeNudge, sender, events.NudgePayload("", target, message))
+		return nil
 	}
 
-	// Special case: "deacon" target maps to the Deacon session
+	// Special case: "deacon" target maps to the Deacon session.
+	// Uses ResolveBackend to support Coop (K8s), SSH, and local tmux.
 	if target == "deacon" || target == "deacon/" {
 		deaconSession := session.DeaconSessionName()
-		// Check if Deacon session exists
-		exists, err := t.HasSession(deaconSession)
-		if err != nil {
-			return fmt.Errorf("checking deacon session: %w", err)
-		}
-		if !exists {
-			// Deacon not running - this is not an error, just log and return
+
+		backend := terminal.ResolveBackend("deacon")
+		exists, err := backend.HasSession(deaconSession)
+		if err != nil || !exists {
+			// Deacon not running - this is not an error, just log and return.
+			// Common in K8s where deacon may not be deployed.
 			fmt.Printf("%s Deacon not running, nudge skipped\n", style.Dim.Render("○"))
 			return nil
 		}
 
-		if err := sendOrQueueNudge(t, townRoot, deaconSession, message, "deacon"); err != nil {
+		if err := backend.NudgeSession(deaconSession, message); err != nil {
 			return fmt.Errorf("nudging deacon: %w", err)
 		}
 
@@ -643,14 +674,16 @@ Examples:
 }
 
 func runNudgeDrain(cmd *cobra.Command, args []string) error {
-	// Get tmux session name via tmux display-message
+	// Determine our session name. In tmux this comes from tmux display-message;
+	// in Coop/K8s agents the session is always "claude".
+	var sessionName string
 	t := tmux.NewTmux()
-	sessionName, err := t.GetCurrentSessionName()
+	sn, err := t.GetCurrentSessionName()
 	if err != nil {
-		if nudgeDrainQuiet {
-			return nil
-		}
-		return fmt.Errorf("cannot determine session name: %w", err)
+		// Not in a tmux session — use "claude" (Coop/K8s default)
+		sessionName = "claude"
+	} else {
+		sessionName = sn
 	}
 
 	// Find town root
