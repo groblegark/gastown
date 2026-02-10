@@ -36,35 +36,29 @@ func TestEventTypes(t *testing.T) {
 	}
 }
 
-func TestActivityWatcher_Events(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
+func TestSSEWatcher_Events(t *testing.T) {
+	w := NewSSEWatcher(Config{}, slog.Default())
 	ch := w.Events()
 	if ch == nil {
 		t.Fatal("Events() returned nil channel")
 	}
 }
 
-func TestActivityWatcher_DefaultConfig(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	if w.cfg.BdBinary != "bd" {
-		t.Errorf("BdBinary = %q, want %q", w.cfg.BdBinary, "bd")
+func TestSSEWatcher_ConfigFields(t *testing.T) {
+	cfg := Config{
+		DaemonHTTPURL: "http://localhost:9080",
+		DaemonToken:   "test-token",
+		Namespace:     "gastown-uat",
+		DefaultImage:  "agent:latest",
+		DaemonHost:    "bd-daemon",
+		DaemonPort:    "9876",
 	}
-	if w.cfg.Namespace != "gastown" {
-		t.Errorf("Namespace = %q, want %q", w.cfg.Namespace, "gastown")
+	w := NewSSEWatcher(cfg, slog.Default())
+	if w.cfg.DaemonHTTPURL != "http://localhost:9080" {
+		t.Errorf("DaemonHTTPURL = %q, want %q", w.cfg.DaemonHTTPURL, "http://localhost:9080")
 	}
-}
-
-func TestActivityWatcher_CustomConfig(t *testing.T) {
-	w := NewActivityWatcher(Config{
-		BdBinary:  "/usr/local/bin/bd",
-		Namespace: "custom-ns",
-		TownRoot:  "/opt/gastown",
-	}, slog.Default())
-	if w.cfg.BdBinary != "/usr/local/bin/bd" {
-		t.Errorf("BdBinary = %q, want %q", w.cfg.BdBinary, "/usr/local/bin/bd")
-	}
-	if w.cfg.Namespace != "custom-ns" {
-		t.Errorf("Namespace = %q, want %q", w.cfg.Namespace, "custom-ns")
+	if w.cfg.Namespace != "gastown-uat" {
+		t.Errorf("Namespace = %q, want %q", w.cfg.Namespace, "gastown-uat")
 	}
 }
 
@@ -91,7 +85,7 @@ func TestNormalizeRole(t *testing.T) {
 }
 
 func TestExtractAgentInfo_Actor(t *testing.T) {
-	raw := bdActivityEvent{Actor: "gastown/polecats/rictus"}
+	raw := mutationEvent{Actor: "gastown/polecats/rictus"}
 	rig, role, name := extractAgentInfo(raw)
 	if rig != "gastown" || role != "polecat" || name != "rictus" {
 		t.Errorf("got (%q, %q, %q), want (gastown, polecat, rictus)", rig, role, name)
@@ -99,55 +93,23 @@ func TestExtractAgentInfo_Actor(t *testing.T) {
 }
 
 func TestExtractAgentInfo_ActorCrew(t *testing.T) {
-	raw := bdActivityEvent{Actor: "gastown/crew/k8s"}
+	raw := mutationEvent{Actor: "gastown/crew/k8s"}
 	rig, role, name := extractAgentInfo(raw)
 	if rig != "gastown" || role != "crew" || name != "k8s" {
 		t.Errorf("got (%q, %q, %q), want (gastown, crew, k8s)", rig, role, name)
 	}
 }
 
-func TestExtractAgentInfo_Payload(t *testing.T) {
-	raw := bdActivityEvent{
-		Payload: map[string]interface{}{
-			"rig":   "beads",
-			"role":  "polecat",
-			"agent": "worker1",
-		},
-	}
+func TestExtractAgentInfo_IssueIDFallback(t *testing.T) {
+	raw := mutationEvent{IssueID: "gastown-polecats-furiosa"}
 	rig, role, name := extractAgentInfo(raw)
-	if rig != "beads" || role != "polecat" || name != "worker1" {
-		t.Errorf("got (%q, %q, %q), want (beads, polecat, worker1)", rig, role, name)
-	}
-}
-
-func TestExtractAgentInfo_PayloadAgentName(t *testing.T) {
-	raw := bdActivityEvent{
-		Payload: map[string]interface{}{
-			"rig":        "gastown",
-			"role":       "crews",
-			"agent_name": "mobile",
-		},
-	}
-	rig, role, name := extractAgentInfo(raw)
-	if rig != "gastown" || role != "crew" || name != "mobile" {
-		t.Errorf("got (%q, %q, %q), want (gastown, crew, mobile)", rig, role, name)
-	}
-}
-
-func TestExtractAgentInfo_PayloadTarget(t *testing.T) {
-	raw := bdActivityEvent{
-		Payload: map[string]interface{}{
-			"target": "gastown/polecats/slit",
-		},
-	}
-	rig, role, name := extractAgentInfo(raw)
-	if rig != "gastown" || role != "polecat" || name != "slit" {
-		t.Errorf("got (%q, %q, %q), want (gastown, polecat, slit)", rig, role, name)
+	if rig != "gastown" || role != "polecat" || name != "furiosa" {
+		t.Errorf("got (%q, %q, %q), want (gastown, polecat, furiosa)", rig, role, name)
 	}
 }
 
 func TestExtractAgentInfo_Empty(t *testing.T) {
-	raw := bdActivityEvent{}
+	raw := mutationEvent{}
 	rig, role, name := extractAgentInfo(raw)
 	if rig != "" || role != "" || name != "" {
 		t.Errorf("got (%q, %q, %q), want empty strings", rig, role, name)
@@ -155,284 +117,245 @@ func TestExtractAgentInfo_Empty(t *testing.T) {
 }
 
 func TestExtractAgentInfo_ShortActor(t *testing.T) {
-	raw := bdActivityEvent{Actor: "gastown/witness"}
+	raw := mutationEvent{Actor: "gastown/witness"}
 	rig, role, name := extractAgentInfo(raw)
-	// Only 2 parts, not enough for full agent info
+	// Only 2 parts, not enough for full agent info — falls through to IssueID
 	if rig != "" || role != "" || name != "" {
 		t.Errorf("got (%q, %q, %q), want empty strings for short actor", rig, role, name)
 	}
 }
 
-func TestParseLine_SlingEvent(t *testing.T) {
-	w := NewActivityWatcher(Config{Namespace: "test-ns"}, slog.Default())
-	line := `{"type":"sling","actor":"gastown/polecats/rictus","issue_id":"gt-abc123","message":"sling work"}`
-	event, ok := w.parseLine(line)
+func TestParseAgentBeadID_Mayor(t *testing.T) {
+	rig, role, name := parseAgentBeadID("hq-mayor")
+	if rig != "town" || role != "mayor" || name != "hq" {
+		t.Errorf("got (%q, %q, %q), want (town, mayor, hq)", rig, role, name)
+	}
+}
+
+func TestParseAgentBeadID_Deacon(t *testing.T) {
+	rig, role, name := parseAgentBeadID("hq-deacon")
+	if rig != "town" || role != "deacon" || name != "hq" {
+		t.Errorf("got (%q, %q, %q), want (town, deacon, hq)", rig, role, name)
+	}
+}
+
+func TestParseAgentBeadID_ThreeParts(t *testing.T) {
+	rig, role, name := parseAgentBeadID("gastown-polecats-rictus")
+	if rig != "gastown" || role != "polecat" || name != "rictus" {
+		t.Errorf("got (%q, %q, %q), want (gastown, polecat, rictus)", rig, role, name)
+	}
+}
+
+func TestParseAgentBeadID_TwoParts(t *testing.T) {
+	rig, role, name := parseAgentBeadID("unknown-thing")
+	// Only 2 parts — can't split into rig/role/name
+	if name != "unknown-thing" {
+		t.Errorf("expected name=%q for 2-part ID, got (%q, %q, %q)", "unknown-thing", rig, role, name)
+	}
+}
+
+func TestIsAgentBead_ByType(t *testing.T) {
+	raw := mutationEvent{IssueType: "agent"}
+	if !isAgentBead(raw) {
+		t.Error("should return true for IssueType=agent")
+	}
+}
+
+func TestIsAgentBead_ByLabel(t *testing.T) {
+	raw := mutationEvent{Labels: []string{"some-label", "gt:agent"}}
+	if !isAgentBead(raw) {
+		t.Error("should return true for gt:agent label")
+	}
+}
+
+func TestIsAgentBead_NotAgent(t *testing.T) {
+	raw := mutationEvent{IssueType: "task", Labels: []string{"some-label"}}
+	if isAgentBead(raw) {
+		t.Error("should return false for non-agent bead")
+	}
+}
+
+func TestMapMutation_Create(t *testing.T) {
+	w := NewSSEWatcher(Config{Namespace: "test-ns"}, slog.Default())
+	raw := mutationEvent{Type: "create", Actor: "gastown/polecats/rictus", IssueID: "gt-abc"}
+	event, ok := w.mapMutation(raw)
 	if !ok {
-		t.Fatal("parseLine should return true for sling event")
+		t.Fatal("mapMutation should return true for create")
 	}
 	if event.Type != AgentSpawn {
 		t.Errorf("Type = %q, want %q", event.Type, AgentSpawn)
 	}
-	if event.Rig != "gastown" {
-		t.Errorf("Rig = %q, want %q", event.Rig, "gastown")
-	}
-	if event.Role != "polecat" {
-		t.Errorf("Role = %q, want %q", event.Role, "polecat")
-	}
-	if event.AgentName != "rictus" {
-		t.Errorf("AgentName = %q, want %q", event.AgentName, "rictus")
-	}
-	if event.BeadID != "gt-abc123" {
-		t.Errorf("BeadID = %q, want %q", event.BeadID, "gt-abc123")
-	}
-	if event.Metadata["namespace"] != "test-ns" {
-		t.Errorf("namespace = %q, want %q", event.Metadata["namespace"], "test-ns")
-	}
 }
 
-func TestParseLine_HookEvent(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	line := `{"type":"hook","actor":"gastown/polecats/slit","issue_id":"gt-xyz"}`
-	event, ok := w.parseLine(line)
+func TestMapMutation_StatusClosed(t *testing.T) {
+	w := NewSSEWatcher(Config{}, slog.Default())
+	raw := mutationEvent{
+		Type:      "status",
+		Actor:     "gastown/polecats/rictus",
+		IssueID:   "gt-abc",
+		NewStatus: "closed",
+	}
+	event, ok := w.mapMutation(raw)
 	if !ok {
-		t.Fatal("parseLine should return true for hook event")
-	}
-	if event.Type != AgentSpawn {
-		t.Errorf("Type = %q, want %q", event.Type, AgentSpawn)
-	}
-	if event.AgentName != "slit" {
-		t.Errorf("AgentName = %q, want %q", event.AgentName, "slit")
-	}
-}
-
-func TestParseLine_DoneEvent(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	line := `{"type":"done","actor":"gastown/polecats/rictus","issue_id":"gt-abc123"}`
-	event, ok := w.parseLine(line)
-	if !ok {
-		t.Fatal("parseLine should return true for done event")
+		t.Fatal("mapMutation should return true for status→closed")
 	}
 	if event.Type != AgentDone {
 		t.Errorf("Type = %q, want %q", event.Type, AgentDone)
 	}
 }
 
-func TestParseLine_KillEvent(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	line := `{"type":"kill","actor":"gastown/polecats/rictus","issue_id":"gt-abc123"}`
-	event, ok := w.parseLine(line)
+func TestMapMutation_StatusInProgress(t *testing.T) {
+	w := NewSSEWatcher(Config{}, slog.Default())
+	raw := mutationEvent{
+		Type:      "status",
+		Actor:     "gastown/polecats/rictus",
+		IssueID:   "gt-abc",
+		NewStatus: "in_progress",
+	}
+	event, ok := w.mapMutation(raw)
 	if !ok {
-		t.Fatal("parseLine should return true for kill event")
+		t.Fatal("mapMutation should return true for status→in_progress")
+	}
+	if event.Type != AgentSpawn {
+		t.Errorf("Type = %q, want %q", event.Type, AgentSpawn)
+	}
+}
+
+func TestMapMutation_StatusOpen(t *testing.T) {
+	w := NewSSEWatcher(Config{}, slog.Default())
+	raw := mutationEvent{
+		Type:      "status",
+		Actor:     "gastown/polecats/rictus",
+		NewStatus: "open",
+	}
+	_, ok := w.mapMutation(raw)
+	if ok {
+		t.Error("mapMutation should return false for status→open")
+	}
+}
+
+func TestMapMutation_Delete(t *testing.T) {
+	w := NewSSEWatcher(Config{}, slog.Default())
+	raw := mutationEvent{Type: "delete", Actor: "gastown/polecats/rictus", IssueID: "gt-abc"}
+	event, ok := w.mapMutation(raw)
+	if !ok {
+		t.Fatal("mapMutation should return true for delete")
 	}
 	if event.Type != AgentKill {
 		t.Errorf("Type = %q, want %q", event.Type, AgentKill)
 	}
 }
 
-func TestParseLine_EscalationEvent(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	line := `{"type":"escalation_sent","actor":"gastown/polecats/rictus","issue_id":"gt-esc1"}`
-	event, ok := w.parseLine(line)
-	if !ok {
-		t.Fatal("parseLine should return true for escalation_sent event")
-	}
-	if event.Type != AgentStuck {
-		t.Errorf("Type = %q, want %q", event.Type, AgentStuck)
-	}
-}
-
-func TestParseLine_StatusClosed(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	line := `{"type":"status","actor":"gastown/polecats/rictus","issue_id":"gt-abc","old_status":"in_progress","new_status":"closed"}`
-	event, ok := w.parseLine(line)
-	if !ok {
-		t.Fatal("parseLine should return true for status closed event")
-	}
-	if event.Type != AgentDone {
-		t.Errorf("Type = %q, want %q", event.Type, AgentDone)
-	}
-}
-
-func TestParseLine_StatusInProgress(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	line := `{"type":"status","actor":"gastown/polecats/rictus","issue_id":"gt-abc","old_status":"open","new_status":"in_progress"}`
-	event, ok := w.parseLine(line)
-	if !ok {
-		t.Fatal("parseLine should return true for status in_progress event")
-	}
-	if event.Type != AgentSpawn {
-		t.Errorf("Type = %q, want %q", event.Type, AgentSpawn)
-	}
-}
-
-func TestParseLine_StatusOpen(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	line := `{"type":"status","actor":"gastown/polecats/rictus","issue_id":"gt-abc","old_status":"closed","new_status":"open"}`
-	_, ok := w.parseLine(line)
+func TestMapMutation_Update(t *testing.T) {
+	w := NewSSEWatcher(Config{}, slog.Default())
+	raw := mutationEvent{Type: "update", Actor: "gastown/polecats/rictus"}
+	_, ok := w.mapMutation(raw)
 	if ok {
-		t.Error("parseLine should return false for status→open (not a lifecycle event)")
+		t.Error("mapMutation should return false for update (not a lifecycle event)")
 	}
 }
 
-func TestParseLine_IrrelevantType(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	irrelevant := []string{
-		`{"type":"mail","actor":"gastown/polecats/rictus","issue_id":"gt-abc"}`,
-		`{"type":"handoff","actor":"gastown/polecats/rictus","issue_id":"gt-abc"}`,
-		`{"type":"patrol_started","actor":"gastown/witness/wit","issue_id":"gt-abc"}`,
-		`{"type":"merged","actor":"gastown/refinery/ref","issue_id":"gt-abc"}`,
-	}
-	for _, line := range irrelevant {
-		_, ok := w.parseLine(line)
-		if ok {
-			t.Errorf("parseLine should return false for irrelevant line: %s", line)
-		}
-	}
-}
-
-func TestParseLine_Empty(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	_, ok := w.parseLine("")
-	if ok {
-		t.Error("parseLine should return false for empty line")
-	}
-	_, ok = w.parseLine("   ")
-	if ok {
-		t.Error("parseLine should return false for whitespace line")
-	}
-}
-
-func TestParseLine_MalformedJSON(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	_, ok := w.parseLine("not json at all")
-	if ok {
-		t.Error("parseLine should return false for malformed JSON")
-	}
-}
-
-func TestParseLine_IncompleteAgentInfo(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	// Event with no actor or payload - can't extract agent info
-	_, ok := w.parseLine(`{"type":"sling","issue_id":"gt-abc123"}`)
-	if ok {
-		t.Error("parseLine should return false when agent info is incomplete")
-	}
-}
-
-func TestBuildMetadata_Defaults(t *testing.T) {
-	w := NewActivityWatcher(Config{
+func TestBuildEvent_Metadata(t *testing.T) {
+	w := NewSSEWatcher(Config{
 		Namespace:    "test-ns",
 		DefaultImage: "ghcr.io/gastown:latest",
 		DaemonHost:   "bd-daemon",
 		DaemonPort:   "9876",
 	}, slog.Default())
 
-	raw := bdActivityEvent{}
-	meta := w.buildMetadata(raw)
+	raw := mutationEvent{Actor: "gastown/polecats/rictus", IssueID: "gt-abc"}
+	event, ok := w.buildEvent(AgentSpawn, raw)
+	if !ok {
+		t.Fatal("buildEvent should return true")
+	}
 
-	if meta["namespace"] != "test-ns" {
-		t.Errorf("namespace = %q, want %q", meta["namespace"], "test-ns")
+	if event.Metadata["namespace"] != "test-ns" {
+		t.Errorf("namespace = %q, want %q", event.Metadata["namespace"], "test-ns")
 	}
-	if meta["image"] != "ghcr.io/gastown:latest" {
-		t.Errorf("image = %q, want %q", meta["image"], "ghcr.io/gastown:latest")
+	if event.Metadata["image"] != "ghcr.io/gastown:latest" {
+		t.Errorf("image = %q, want %q", event.Metadata["image"], "ghcr.io/gastown:latest")
 	}
-	if meta["daemon_host"] != "bd-daemon" {
-		t.Errorf("daemon_host = %q, want %q", meta["daemon_host"], "bd-daemon")
+	if event.Metadata["daemon_host"] != "bd-daemon" {
+		t.Errorf("daemon_host = %q, want %q", event.Metadata["daemon_host"], "bd-daemon")
 	}
-	if meta["daemon_port"] != "9876" {
-		t.Errorf("daemon_port = %q, want %q", meta["daemon_port"], "9876")
+	if event.Metadata["daemon_port"] != "9876" {
+		t.Errorf("daemon_port = %q, want %q", event.Metadata["daemon_port"], "9876")
 	}
 }
 
-func TestBuildMetadata_PayloadOverrides(t *testing.T) {
-	w := NewActivityWatcher(Config{
-		Namespace:    "default",
-		DefaultImage: "default-image",
-	}, slog.Default())
-
-	raw := bdActivityEvent{
-		Payload: map[string]interface{}{
-			"image":     "custom-image:v2",
-			"namespace": "custom-ns",
-		},
+func TestBuildEvent_EmptyConfig(t *testing.T) {
+	w := NewSSEWatcher(Config{}, slog.Default())
+	raw := mutationEvent{Actor: "gastown/polecats/rictus", IssueID: "gt-abc"}
+	event, ok := w.buildEvent(AgentSpawn, raw)
+	if !ok {
+		t.Fatal("buildEvent should return true")
 	}
-	meta := w.buildMetadata(raw)
-
-	if meta["namespace"] != "custom-ns" {
-		t.Errorf("namespace = %q, want %q", meta["namespace"], "custom-ns")
-	}
-	if meta["image"] != "custom-image:v2" {
-		t.Errorf("image = %q, want %q", meta["image"], "custom-image:v2")
-	}
-}
-
-func TestBuildMetadata_EmptyConfig(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	raw := bdActivityEvent{}
-	meta := w.buildMetadata(raw)
-
-	if meta["namespace"] != "gastown" {
-		t.Errorf("namespace = %q, want %q", meta["namespace"], "gastown")
-	}
-	if _, ok := meta["image"]; ok {
+	if _, hasImage := event.Metadata["image"]; hasImage {
 		t.Error("image should not be set with empty DefaultImage")
 	}
-	if _, ok := meta["daemon_host"]; ok {
+	if _, hasDaemonHost := event.Metadata["daemon_host"]; hasDaemonHost {
 		t.Error("daemon_host should not be set with empty DaemonHost")
 	}
 }
 
-func TestMapEvent_AllTypes(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	actor := "gastown/polecats/rictus"
-
-	tests := []struct {
-		eventType string
-		wantType  EventType
-	}{
-		{"sling", AgentSpawn},
-		{"hook", AgentSpawn},
-		{"spawn", AgentSpawn},
-		{"done", AgentDone},
-		{"unhook", AgentDone},
-		{"kill", AgentKill},
-		{"session_death", AgentKill},
-		{"escalation_sent", AgentStuck},
-		{"polecat_nudged", AgentStuck},
-	}
-
-	for _, tc := range tests {
-		raw := bdActivityEvent{Type: tc.eventType, Actor: actor, IssueID: "test-1"}
-		event, ok := w.mapEvent(raw)
-		if !ok {
-			t.Errorf("mapEvent(%q) returned false, want true", tc.eventType)
-			continue
-		}
-		if event.Type != tc.wantType {
-			t.Errorf("mapEvent(%q).Type = %q, want %q", tc.eventType, event.Type, tc.wantType)
-		}
-	}
-}
-
-func TestMapEvent_UnknownType(t *testing.T) {
-	w := NewActivityWatcher(Config{}, slog.Default())
-	raw := bdActivityEvent{Type: "unknown_event", Actor: "gastown/polecats/rictus"}
-	_, ok := w.mapEvent(raw)
+func TestBuildEvent_IncompleteAgentInfo(t *testing.T) {
+	w := NewSSEWatcher(Config{}, slog.Default())
+	// No actor, no parseable IssueID
+	raw := mutationEvent{IssueID: "x"}
+	_, ok := w.buildEvent(AgentSpawn, raw)
 	if ok {
-		t.Error("mapEvent should return false for unknown event type")
+		t.Error("buildEvent should return false when agent info is incomplete")
 	}
 }
 
-func TestActivityWatcher_Start_CancelledContext(t *testing.T) {
-	w := NewActivityWatcher(Config{
-		BdBinary: "false", // Binary that exits immediately with error
-	}, slog.Default())
+func TestProcessSSEData_AgentBead(t *testing.T) {
+	w := NewSSEWatcher(Config{Namespace: "test-ns"}, slog.Default())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
+	data := `{"Type":"create","IssueID":"gt-abc123","Actor":"gastown/polecats/rictus","issue_type":"agent"}`
+	w.processSSEData(data)
 
-	err := w.Start(ctx)
-	if err == nil {
-		t.Fatal("Start() should return error when context canceled")
+	select {
+	case event := <-w.events:
+		if event.Type != AgentSpawn {
+			t.Errorf("Type = %q, want %q", event.Type, AgentSpawn)
+		}
+		if event.Rig != "gastown" {
+			t.Errorf("Rig = %q, want %q", event.Rig, "gastown")
+		}
+		if event.Role != "polecat" {
+			t.Errorf("Role = %q, want %q", event.Role, "polecat")
+		}
+		if event.AgentName != "rictus" {
+			t.Errorf("AgentName = %q, want %q", event.AgentName, "rictus")
+		}
+	default:
+		t.Fatal("expected event to be emitted")
+	}
+}
+
+func TestProcessSSEData_NonAgentBead(t *testing.T) {
+	w := NewSSEWatcher(Config{}, slog.Default())
+
+	data := `{"Type":"create","IssueID":"task-123","Actor":"user","issue_type":"task"}`
+	w.processSSEData(data)
+
+	select {
+	case <-w.events:
+		t.Fatal("should not emit event for non-agent bead")
+	default:
+		// good
+	}
+}
+
+func TestProcessSSEData_MalformedJSON(t *testing.T) {
+	w := NewSSEWatcher(Config{}, slog.Default())
+
+	w.processSSEData("not json at all")
+
+	select {
+	case <-w.events:
+		t.Fatal("should not emit event for malformed JSON")
+	default:
+		// good
 	}
 }

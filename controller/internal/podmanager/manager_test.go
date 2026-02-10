@@ -1172,8 +1172,8 @@ func TestK8sManager_CoopSidecarSecurityContext(t *testing.T) {
 	if *csc.AllowPrivilegeEscalation {
 		t.Error("AllowPrivilegeEscalation should be false")
 	}
-	if !*csc.ReadOnlyRootFilesystem {
-		t.Error("ReadOnlyRootFilesystem should be true for coop")
+	if *csc.ReadOnlyRootFilesystem {
+		t.Error("ReadOnlyRootFilesystem should be false for coop (needs writable root)")
 	}
 	if csc.Capabilities == nil || len(csc.Capabilities.Drop) == 0 {
 		t.Error("should drop ALL capabilities")
