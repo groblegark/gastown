@@ -238,7 +238,10 @@ agentController:
     tag: "latest"
 
   credentialsSecret: "claude-credentials"
-  # coopImage: ""           # Set to enable coop sidecar
+  coopBuiltin: true
+  townName: "gastown-uat"
+  natsURL: "nats://localhost:4222"
+  natsTokenSecret: ""       # Uses BD_DAEMON_TOKEN via daemon token secret
 
   nodeSelector:
     kubernetes.io/arch: amd64

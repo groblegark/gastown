@@ -67,6 +67,16 @@ spec:
             - name: DAEMON_TOKEN_SECRET
               value: {{ include "gastown.daemon.tokenSecretName" . }}
             {{- end }}
+            - name: GT_TOWN_NAME
+              value: {{ .Values.agentController.townName | default .Release.Name }}
+            {{- if .Values.agentController.natsURL }}
+            - name: NATS_URL
+              value: {{ .Values.agentController.natsURL }}
+            {{- end }}
+            {{- if .Values.agentController.natsTokenSecret }}
+            - name: NATS_TOKEN_SECRET
+              value: {{ .Values.agentController.natsTokenSecret }}
+            {{- end }}
           resources:
             {{- toYaml .Values.agentController.resources | nindent 12 }}
       {{- with .Values.agentController.nodeSelector }}

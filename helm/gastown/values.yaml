@@ -347,6 +347,15 @@ agentController:
   # K8s secret with daemon auth token for agent pods (defaults to daemon token secret)
   daemonTokenSecret: ""
 
+  # Gas Town deployment name (defaults to release name)
+  townName: ""
+
+  # NATS server URL for event bus integration (e.g., "nats://daemon-svc:4222")
+  natsURL: ""
+
+  # K8s secret with NATS auth token for agent pods
+  natsTokenSecret: ""
+
   serviceAccount:
     create: true
     name: ""
