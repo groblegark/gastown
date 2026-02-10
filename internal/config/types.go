@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -901,9 +902,12 @@ type Account struct {
 const CurrentAccountsVersion = 1
 
 // DefaultAccountsConfigDir returns the default base directory for account configs.
-func DefaultAccountsConfigDir() string {
-	home, _ := os.UserHomeDir()
-	return home + "/.claude-accounts"
+func DefaultAccountsConfigDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	return home + "/.claude-accounts", nil
 }
 
 // MessagingConfig represents the messaging configuration (config/messaging.json).
