@@ -52,6 +52,10 @@ spec:
             - name: COOP_IMAGE
               value: {{ .Values.agentController.coopImage }}
             {{- end }}
+            {{- if .Values.agentController.coopBuiltin }}
+            - name: COOP_BUILTIN
+              value: "true"
+            {{- end }}
             {{- if .Values.agentController.credentialsSecret }}
             - name: CLAUDE_CREDENTIALS_SECRET
               value: {{ .Values.agentController.credentialsSecret }}

@@ -337,6 +337,9 @@ agentController:
   # Coop sidecar image for agent pods (optional, enables PTY-based management)
   coopImage: ""
 
+  # Use built-in coop binary instead of sidecar (requires coop compiled into agent image)
+  coopBuiltin: false
+
   # K8s secret with Claude OAuth credentials for agent pods (Max/Corp accounts)
   # Mount as ~/.claude/.credentials.json. See scripts/sync-claude-credentials.sh
   credentialsSecret: ""
