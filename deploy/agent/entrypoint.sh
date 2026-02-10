@@ -381,7 +381,8 @@ export COOP_LOG_LEVEL="${COOP_LOG_LEVEL:-info}"
 # during the first ~20s of startup, and verify the screen actually shows the
 # bypass dialog (contains "No, exit" which is unique to the real prompt).
 auto_bypass_startup() {
-    for i in $(seq 1 10); do
+    false_positive_count=0
+    for i in $(seq 1 30); do
         sleep 2
         state=$(curl -sf http://localhost:8080/api/v1/agent 2>/dev/null) || continue
         prompt_type=$(echo "${state}" | jq -r '.prompt.type // empty' 2>/dev/null)
@@ -390,17 +391,23 @@ auto_bypass_startup() {
             # Verify this is a real setup prompt by checking the screen for
             # the actual dialog text, not just the status bar mention.
             screen=$(curl -sf http://localhost:8080/api/v1/screen 2>/dev/null)
-            if echo "${screen}" | jq -r '.lines[]' 2>/dev/null | grep -q "No, exit"; then
+            if echo "${screen}" | grep -q "No, exit"; then
                 echo "[entrypoint] Auto-accepting setup prompt (subtype: ${subtype})"
                 # Option 2 = "Yes, I accept" for bypass; option 1 = "No, exit"
                 curl -sf -X POST http://localhost:8080/api/v1/agent/respond \
                     -H 'Content-Type: application/json' \
                     -d '{"option":2}' 2>&1 || true
-                # Keep looping — there may be multiple setup prompts in sequence
+                false_positive_count=0
                 continue
             else
-                echo "[entrypoint] Skipping false-positive setup prompt (screen lacks dialog)"
-                return 0
+                false_positive_count=$((false_positive_count + 1))
+                # If we see setup state without dialog 5+ times, it's a false positive
+                # from the status bar text on a resumed session
+                if [ "${false_positive_count}" -ge 5 ]; then
+                    echo "[entrypoint] Skipping false-positive setup prompt (no dialog after ${false_positive_count} checks)"
+                    return 0
+                fi
+                continue
             fi
         fi
         # If agent is past setup prompts, we're done
@@ -409,7 +416,7 @@ auto_bypass_startup() {
             return 0
         fi
     done
-    echo "[entrypoint] WARNING: auto-bypass timed out after 20s"
+    echo "[entrypoint] WARNING: auto-bypass timed out after 60s"
 }
 
 # ── Monitor agent exit and shut down coop ──────────────────────────────
