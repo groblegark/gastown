@@ -55,8 +55,9 @@ func (c *RoutesCheck) Run(ctx *CheckContext) *CheckResult {
 		}
 	}
 
-	// Load existing routes
-	routes, err := beads.LoadRoutes(beadsDir)
+	// Load routes from file directly (not via daemon) since we're validating
+	// the specific routes.jsonl in this directory
+	routes, err := beads.LoadRoutesFromFile(beadsDir)
 	if err != nil {
 		return &CheckResult{
 			Name:    c.Name(),
@@ -242,8 +243,9 @@ func (c *RoutesCheck) Fix(ctx *CheckContext) error {
 		return fmt.Errorf(".beads directory does not exist; run 'bd init' first")
 	}
 
-	// Load existing routes
-	routes, err := beads.LoadRoutes(beadsDir)
+	// Load routes from file directly (not via daemon) since we're fixing
+	// the specific routes.jsonl in this directory
+	routes, err := beads.LoadRoutesFromFile(beadsDir)
 	if err != nil {
 		routes = []beads.Route{} // Start fresh if can't load
 	}
