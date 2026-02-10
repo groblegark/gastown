@@ -371,6 +371,33 @@ COOP_CMD="coop --agent=claude --port 8080 --port-health 9090 --cols 200 --rows 5
 # Coop log level (overridable via pod env).
 export COOP_LOG_LEVEL="${COOP_LOG_LEVEL:-info}"
 
+# ── Auto-bypass startup prompts ────────────────────────────────────────
+# Coop v0.4.0 no longer auto-dismisses setup prompts (bypass, trust, etc).
+# This background function polls the coop /api/v1/agent endpoint and uses
+# the high-level /api/v1/agent/respond API to accept setup prompts.
+auto_bypass_startup() {
+    for i in $(seq 1 30); do
+        sleep 2
+        state=$(curl -sf http://localhost:8080/api/v1/agent 2>/dev/null) || continue
+        prompt_type=$(echo "${state}" | jq -r '.prompt.type // empty' 2>/dev/null)
+        subtype=$(echo "${state}" | jq -r '.prompt.subtype // empty' 2>/dev/null)
+        if [ "${prompt_type}" = "setup" ]; then
+            echo "[entrypoint] Auto-accepting setup prompt (subtype: ${subtype})"
+            curl -sf -X POST http://localhost:8080/api/v1/agent/respond \
+                -H 'Content-Type: application/json' \
+                -d '{"option":1}' 2>&1 || true
+            # Keep looping — there may be multiple setup prompts in sequence
+            continue
+        fi
+        # If agent is past setup prompts, we're done
+        agent_state=$(echo "${state}" | jq -r '.state // empty' 2>/dev/null)
+        if [ "${agent_state}" = "waiting_for_input" ] || [ "${agent_state}" = "working" ]; then
+            return 0
+        fi
+    done
+    echo "[entrypoint] WARNING: auto-bypass timed out after 60s"
+}
+
 # ── Signal forwarding ─────────────────────────────────────────────────────
 # Forward SIGTERM from K8s to coop so it can do graceful shutdown.
 COOP_PID=""
@@ -418,6 +445,7 @@ while true; do
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT}) with resume"
         ${COOP_CMD} ${RESUME_FLAG} -- claude --dangerously-skip-permissions &
         COOP_PID=$!
+        auto_bypass_startup &
         wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
         COOP_PID=""
 
@@ -427,6 +455,7 @@ while true; do
             echo "[entrypoint] Resume failed (exit ${exit_code}), trying fresh start"
             ${COOP_CMD} -- claude --dangerously-skip-permissions &
             COOP_PID=$!
+            auto_bypass_startup &
             start_time=$(date +%s)
             wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
             COOP_PID=""
@@ -435,6 +464,7 @@ while true; do
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT})"
         ${COOP_CMD} -- claude --dangerously-skip-permissions &
         COOP_PID=$!
+        auto_bypass_startup &
         wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
         COOP_PID=""
     fi
