@@ -350,44 +350,12 @@ fi
 
 printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.37","preferredTheme":"dark"}\n' > "${HOME}/.claude.json"
 
-# ── Session resume detection ─────────────────────────────────────────────
-#
-# If this is a restart (PVC already has Claude session logs from a previous
-# run), use coop --resume to let coop discover and resume the session.
-# Coop handles extracting the conversation ID from the log and passing
-# --resume <id> or --continue to Claude (avoids --session-id conflict).
-
-COOP_RESUME_FLAG=""
-if [ "${SESSION_RESUME}" = "1" ]; then
-    # Find the most recent session log. Use -print0/sort to avoid issues
-    # when find returns no results (plain xargs runs ls with no args → bad).
-    LATEST_LOG=""
-    if [ -d "${CLAUDE_STATE}/projects" ]; then
-        LATEST_LOG=$(find "${CLAUDE_STATE}/projects" -name '*.jsonl' -type f -printf '%T@ %p\n' 2>/dev/null \
-            | sort -rn | head -1 | cut -d' ' -f2-)
-    fi
-
-    if [ -n "${LATEST_LOG}" ]; then
-        COOP_RESUME_FLAG="--resume ${LATEST_LOG}"
-        echo "[entrypoint] Will attempt to resume from: ${LATEST_LOG}"
-    else
-        echo "[entrypoint] No previous session logs found — starting fresh"
-    fi
-fi
-
-# ── Clean up stale coop state ─────────────────────────────────────────────
-#
-# Coop creates FIFO pipes (hook.pipe) in session directories under
-# XDG_STATE_HOME/coop/sessions/<id>/. If the pod crashes or is killed,
-# the Drop handler never runs and the pipe persists on the PVC.
-# mkfifo() fails with EEXIST on restart, so we clean up before starting.
-
-if [ -d "${COOP_STATE}/sessions" ]; then
-    echo "[entrypoint] Cleaning up stale coop session artifacts"
-    find "${COOP_STATE}/sessions" -name 'hook.pipe' -delete 2>/dev/null || true
-fi
-
 # ── Start coop + Claude ──────────────────────────────────────────────────
+#
+# We keep bash as PID 1 (no exec) so the pod survives if Claude/coop exit
+# (e.g. user sends Ctrl+C which delivers SIGINT to Claude via the PTY).
+# On child exit we clean up FIFO pipes and restart with --resume.
+# SIGTERM from K8s is forwarded to coop for graceful shutdown.
 
 cd "${WORKSPACE}"
 
@@ -396,15 +364,86 @@ COOP_CMD="coop --agent=claude --port 8080 --health-port 9090 --cols 200 --rows 5
 # Coop log level (overridable via pod env).
 export COOP_LOG_LEVEL="${COOP_LOG_LEVEL:-info}"
 
-echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT})"
+# ── Signal forwarding ─────────────────────────────────────────────────────
+# Forward SIGTERM from K8s to coop so it can do graceful shutdown.
+COOP_PID=""
+forward_signal() {
+    if [ -n "${COOP_PID}" ]; then
+        echo "[entrypoint] Forwarding $1 to coop (pid ${COOP_PID})"
+        kill -"$1" "${COOP_PID}" 2>/dev/null || true
+        wait "${COOP_PID}" 2>/dev/null || true
+    fi
+    exit 0
+}
+trap 'forward_signal TERM' TERM
+trap 'forward_signal INT' INT
 
-if [ -n "${COOP_RESUME_FLAG}" ]; then
-    echo "[entrypoint] Trying resume..."
-    # Use || to prevent set -e from killing the script on resume failure
-    ${COOP_CMD} ${COOP_RESUME_FLAG} -- claude --dangerously-skip-permissions || {
-        echo "[entrypoint] Resume failed (exit $?), starting fresh"
-        exec ${COOP_CMD} -- claude --dangerously-skip-permissions
-    }
-else
-    exec ${COOP_CMD} -- claude --dangerously-skip-permissions
-fi
+# ── Restart loop ──────────────────────────────────────────────────────────
+# Max restarts to avoid infinite crash loop. Reset on successful long-lived run.
+MAX_RESTARTS="${COOP_MAX_RESTARTS:-10}"
+restart_count=0
+MIN_RUNTIME_SECS=30  # If coop runs longer than this, reset the restart counter.
+
+while true; do
+    if [ "${restart_count}" -ge "${MAX_RESTARTS}" ]; then
+        echo "[entrypoint] Max restarts (${MAX_RESTARTS}) reached, exiting"
+        exit 1
+    fi
+
+    # Clean up stale FIFO pipes before each start (coop creates them per session).
+    if [ -d "${COOP_STATE}/sessions" ]; then
+        find "${COOP_STATE}/sessions" -name 'hook.pipe' -delete 2>/dev/null || true
+    fi
+
+    # Find latest session log for resume (respects GT_SESSION_RESUME=0 to disable).
+    RESUME_FLAG=""
+    if [ "${SESSION_RESUME}" = "1" ] && [ -d "${CLAUDE_STATE}/projects" ]; then
+        LATEST_LOG=$(find "${CLAUDE_STATE}/projects" -name '*.jsonl' -type f -printf '%T@ %p\n' 2>/dev/null \
+            | sort -rn | head -1 | cut -d' ' -f2-)
+        if [ -n "${LATEST_LOG}" ]; then
+            RESUME_FLAG="--resume ${LATEST_LOG}"
+        fi
+    fi
+
+    start_time=$(date +%s)
+
+    if [ -n "${RESUME_FLAG}" ]; then
+        echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT}) with resume"
+        ${COOP_CMD} ${RESUME_FLAG} -- claude --dangerously-skip-permissions &
+        COOP_PID=$!
+        wait "${COOP_PID}" 2>/dev/null
+        exit_code=$?
+        COOP_PID=""
+
+        # If resume failed quickly, try fresh start instead.
+        elapsed=$(( $(date +%s) - start_time ))
+        if [ "${elapsed}" -lt 5 ] && [ "${exit_code}" -ne 0 ]; then
+            echo "[entrypoint] Resume failed (exit ${exit_code}), trying fresh start"
+            ${COOP_CMD} -- claude --dangerously-skip-permissions &
+            COOP_PID=$!
+            start_time=$(date +%s)
+            wait "${COOP_PID}" 2>/dev/null
+            exit_code=$?
+            COOP_PID=""
+        fi
+    else
+        echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT})"
+        ${COOP_CMD} -- claude --dangerously-skip-permissions &
+        COOP_PID=$!
+        wait "${COOP_PID}" 2>/dev/null
+        exit_code=$?
+        COOP_PID=""
+    fi
+
+    elapsed=$(( $(date +%s) - start_time ))
+    echo "[entrypoint] Coop exited with code ${exit_code} after ${elapsed}s"
+
+    # If coop ran long enough, reset the restart counter.
+    if [ "${elapsed}" -ge "${MIN_RUNTIME_SECS}" ]; then
+        restart_count=0
+    fi
+
+    restart_count=$((restart_count + 1))
+    echo "[entrypoint] Restarting (attempt ${restart_count}/${MAX_RESTARTS}) in 2s..."
+    sleep 2
+done
