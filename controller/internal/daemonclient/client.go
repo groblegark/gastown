@@ -79,9 +79,11 @@ type issueJSON struct {
 func (c *DaemonClient) ListAgentBeads(ctx context.Context) ([]AgentBead, error) {
 	// Build request body matching the daemon's List RPC (ListArgs).
 	// Uses labels (AND semantics) to match agent beads with k8s target.
+	// exclude_status=closed filters out completed agents; pinned and
+	// in_progress beads both represent active agents that need pods.
 	body := map[string]interface{}{
-		"status": "in_progress",
-		"labels": []string{"gt:agent", "execution_target:k8s"},
+		"exclude_status": []string{"closed"},
+		"labels":         []string{"gt:agent", "execution_target:k8s"},
 	}
 
 	jsonBody, err := json.Marshal(body)
