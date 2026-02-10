@@ -13,7 +13,7 @@
 # Run:   docker run -e GT_ROLE=mayor -e GT_AGENT=hq gastown-agent
 
 # ── Stage 1: Build gt ───────────────────────────────────────────────────
-FROM golang:1.24 AS gt-builder
+FROM golang:1.25 AS gt-builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
