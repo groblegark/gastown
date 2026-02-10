@@ -584,23 +584,45 @@ func resolveExecutionTarget(rigPath, override string) config.ExecutionTarget {
 // a local worktree or tmux session. The K8s controller watches for agent beads
 // with agent_state=spawning and execution_target:k8s label, then creates pods.
 func spawnPolecatForK8sCMD(townRoot, rigName string, r *rig.Rig, opts SlingSpawnOptions) (*SpawnedPolecatInfo, error) {
-	polecatGit := git.NewGit(r.Path)
-	t := tmux.NewTmux()
-	polecatMgr := polecat.NewManager(r, polecatGit, t)
-
-	polecatName, err := polecatMgr.AllocateName()
-	if err != nil {
-		return nil, fmt.Errorf("allocating polecat name: %w", err)
+	// Allocate polecat name. Try the full polecat Manager first (works when
+	// the rig has a full local clone with .beads/). Fall back to a simple
+	// name pool when the rig was created via gt rig register (K8s-only, no clone).
+	var polecatName string
+	rigBeadsDir := beads.ResolveBeadsDir(r.Path)
+	if _, err := os.Stat(rigBeadsDir); err == nil {
+		// Full rig: use polecat Manager for proper pool + reconciliation.
+		polecatGit := git.NewGit(r.Path)
+		t := tmux.NewTmux()
+		polecatMgr := polecat.NewManager(r, polecatGit, t)
+		name, err := polecatMgr.AllocateName()
+		if err != nil {
+			return nil, fmt.Errorf("allocating polecat name: %w", err)
+		}
+		polecatName = name
+	} else {
+		// K8s-only rig (gt rig register): use lightweight name pool.
+		pool := polecat.NewNamePool(r.Path, r.Name)
+		_ = pool.Load()
+		name, err := pool.Allocate()
+		if err != nil {
+			return nil, fmt.Errorf("allocating polecat name: %w", err)
+		}
+		_ = pool.Save()
+		polecatName = name
 	}
 	fmt.Printf("Allocated polecat: %s (K8s)\n", polecatName)
 
 	// Create or reopen agent bead with spawning state and hook_bead set atomically.
-	// Use rig beads (mayor/rig) to match where local polecats store their agent beads.
+	// In K8s mode, use the town root (which has daemon connection via .beads/config.yaml)
+	// instead of the rig's local mayor/rig path (which may not exist).
 	prefix := beads.GetPrefixForRig(townRoot, rigName)
 	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
 	rigBeadsPath := filepath.Join(r.Path, "mayor", "rig")
+	if _, err := os.Stat(rigBeadsPath); os.IsNotExist(err) {
+		rigBeadsPath = townRoot
+	}
 	beadsClient := beads.New(rigBeadsPath)
-	_, err = beadsClient.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
+	_, err := beadsClient.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
 		RoleType:   "polecat",
 		Rig:        rigName,
 		AgentState: "spawning",
