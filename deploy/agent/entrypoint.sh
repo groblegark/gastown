@@ -399,6 +399,25 @@ auto_bypass_startup() {
     echo "[entrypoint] WARNING: auto-bypass timed out after 60s"
 }
 
+# ── Monitor agent exit and shut down coop ──────────────────────────────
+# Coop v0.4.0 stays alive in "awaiting shutdown" after the agent exits.
+# This monitor polls the agent state and sends a shutdown request when
+# the agent is in "exited" state, so the entrypoint's `wait` can return.
+monitor_agent_exit() {
+    # Wait for agent to start first
+    sleep 10
+    while true; do
+        sleep 5
+        state=$(curl -sf http://localhost:8080/api/v1/agent 2>/dev/null) || break
+        agent_state=$(echo "${state}" | jq -r '.state // empty' 2>/dev/null)
+        if [ "${agent_state}" = "exited" ]; then
+            echo "[entrypoint] Agent exited, requesting coop shutdown"
+            curl -sf -X POST http://localhost:8080/api/v1/shutdown 2>/dev/null || true
+            return 0
+        fi
+    done
+}
+
 # ── Signal forwarding ─────────────────────────────────────────────────────
 # Forward SIGTERM from K8s to coop so it can do graceful shutdown.
 COOP_PID=""
@@ -447,6 +466,7 @@ while true; do
         ${COOP_CMD} ${RESUME_FLAG} -- claude --dangerously-skip-permissions &
         COOP_PID=$!
         auto_bypass_startup &
+        monitor_agent_exit &
         wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
         COOP_PID=""
 
@@ -457,6 +477,7 @@ while true; do
             ${COOP_CMD} -- claude --dangerously-skip-permissions &
             COOP_PID=$!
             auto_bypass_startup &
+            monitor_agent_exit &
             start_time=$(date +%s)
             wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
             COOP_PID=""
@@ -466,6 +487,7 @@ while true; do
         ${COOP_CMD} -- claude --dangerously-skip-permissions &
         COOP_PID=$!
         auto_bypass_startup &
+        monitor_agent_exit &
         wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
         COOP_PID=""
     fi
