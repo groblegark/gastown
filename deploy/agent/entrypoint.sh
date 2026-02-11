@@ -341,16 +341,111 @@ HOOKS
     fi
 fi
 
-# Write CLAUDE.md with role context if not already present
+# Write CLAUDE.md with role-specific context if not already present.
+# This is the static identity anchor — gt prime (via SessionStart hook) adds
+# dynamic context (hooked work, advice, mail) on top of this.
 if [ ! -f "${WORKSPACE}/CLAUDE.md" ]; then
-    cat > "${WORKSPACE}/CLAUDE.md" <<CLAUDEMD
+    case "${ROLE}" in
+        polecat)
+            cat > "${WORKSPACE}/CLAUDE.md" <<CLAUDEMD
+# Polecat Context
+
+> **Recovery**: Run \`gt prime\` after compaction, clear, or new session
+
+## Your Role: POLECAT (Worker: ${AGENT} in ${RIG:-unknown})
+
+You are polecat **${AGENT}** — a worker agent in the ${RIG:-unknown} rig.
+You work on assigned issues and submit completed work to the merge queue.
+
+## Polecat Lifecycle (EPHEMERAL)
+
+\`\`\`
+SPAWN → WORK → gt done → DEATH
+\`\`\`
+
+**Key insight**: You are born with work. You do ONE task. Then you die.
+There is no "next assignment." When \`gt done\` runs, you cease to exist.
+
+## Key Commands
+
+### Session & Context
+- \`gt prime\` — Load full context after compaction/clear/new session
+- \`gt hook\` — Check your hooked molecule (primary work source)
+
+### Your Work
+- \`bd show <issue>\` — View specific issue details
+- \`bd ready\` — See your workflow steps
+
+### Progress
+- \`bd update <id> --status=in_progress\` — Claim work
+- \`bd close <step-id>\` — Mark molecule STEP complete (NOT your main issue!)
+
+### Completion
+- \`gt done\` — Signal work ready for merge queue
+
+## Work Protocol
+
+Your work follows the **mol-polecat-work** molecule.
+
+**FIRST: Check your steps with \`bd ready\`.** Do NOT use Claude's internal task tools.
+
+\`\`\`bash
+bd ready                   # See your workflow steps — DO THIS FIRST
+# ... work on current step ...
+bd close <step-id>         # Mark step complete
+bd ready                   # See next step
+\`\`\`
+
+When all steps are done, run \`gt done\`.
+
+## Communication
+
+\`\`\`bash
+# To your Witness
+gt mail send ${RIG:-unknown}/witness -s "Question" -m "..."
+
+# To the Mayor (cross-rig issues)
+gt mail send mayor/ -s "Need coordination" -m "..."
+\`\`\`
+
+---
+Polecat: ${AGENT} | Rig: ${RIG:-unknown} | Working directory: ${WORKSPACE}
+CLAUDEMD
+            ;;
+        mayor)
+            cat > "${WORKSPACE}/CLAUDE.md" <<CLAUDEMD
+# Mayor Context
+
+> **Recovery**: Run \`gt prime\` after compaction, clear, or new session
+
+Full context is injected by \`gt prime\` at session start.
+
+## Quick Reference
+
+- Check mail: \`gt mail inbox\`
+- Check rigs: \`gt rig list\`
+- Start patrol: \`gt patrol start\`
+CLAUDEMD
+            ;;
+        *)
+            cat > "${WORKSPACE}/CLAUDE.md" <<CLAUDEMD
 # Gas Town Agent: ${ROLE}
+
+> **Recovery**: Run \`gt prime\` after compaction, clear, or new session
 
 You are the **${ROLE}** agent in a Gas Town rig${RIG:+ (rig: ${RIG})}.
 Agent name: ${AGENT}
 
-Run \`gt prime\` for full context.
+Full context is injected by \`gt prime\` at session start.
+
+## Quick Reference
+
+- \`gt prime\` — Load full context
+- \`gt hook\` — Check hooked work
+- \`gt mail inbox\` — Check messages
 CLAUDEMD
+            ;;
+    esac
 fi
 
 # ── Skip Claude onboarding wizard ─────────────────────────────────────────
@@ -421,6 +516,66 @@ auto_bypass_startup() {
     echo "[entrypoint] WARNING: auto-bypass timed out after 60s"
 }
 
+# ── Inject initial work prompt ────────────────────────────────────────
+# After auto-bypass completes and Claude is idle, send the initial work
+# prompt via coop's nudge API. This is the coop equivalent of the tmux
+# NudgeSession() call in session_manager.go:310-340.
+#
+# The nudge tells Claude to check its hook and begin working. Without this,
+# K8s-spawned polecats boot to an empty welcome screen and sit idle.
+#
+# Uses POST /api/v1/agent/nudge (reliable delivery — coop queues the message
+# and injects it when Claude is ready for input, unlike raw /api/v1/input).
+inject_initial_prompt() {
+    # Wait for agent to be past setup and idle
+    for i in $(seq 1 60); do
+        sleep 2
+        state=$(curl -sf http://localhost:8080/api/v1/agent 2>/dev/null) || continue
+        agent_state=$(echo "${state}" | jq -r '.state // empty' 2>/dev/null)
+        if [ "${agent_state}" = "idle" ]; then
+            break
+        fi
+        # If agent is already working (hook triggered it), no nudge needed
+        if [ "${agent_state}" = "working" ]; then
+            echo "[entrypoint] Agent already working, skipping initial prompt"
+            return 0
+        fi
+    done
+
+    # Build nudge message based on role
+    local nudge_msg=""
+    case "${ROLE}" in
+        polecat)
+            nudge_msg="Work is on your hook. Run \`gt hook\` now and begin immediately. If no hook is set, run \`bd ready\` to find available work."
+            ;;
+        mayor)
+            nudge_msg="Run \`gt prime\` to load context, then check \`gt mail inbox\` and \`gt rig list\` to begin your patrol."
+            ;;
+        witness|refinery|deacon)
+            nudge_msg="Run \`gt prime\` to load context, then check \`gt mail inbox\` for pending work."
+            ;;
+        *)
+            nudge_msg="Run \`gt prime\` to load your context and begin working."
+            ;;
+    esac
+
+    echo "[entrypoint] Injecting initial work prompt (role: ${ROLE})"
+    response=$(curl -sf -X POST http://localhost:8080/api/v1/agent/nudge \
+        -H 'Content-Type: application/json' \
+        -d "{\"message\": \"${nudge_msg}\"}" 2>&1) || {
+        echo "[entrypoint] WARNING: nudge failed: ${response}"
+        return 0
+    }
+
+    delivered=$(echo "${response}" | jq -r '.delivered // false' 2>/dev/null)
+    if [ "${delivered}" = "true" ]; then
+        echo "[entrypoint] Initial prompt delivered successfully"
+    else
+        reason=$(echo "${response}" | jq -r '.reason // "unknown"' 2>/dev/null)
+        echo "[entrypoint] WARNING: nudge not delivered: ${reason}"
+    fi
+}
+
 # ── Monitor agent exit and shut down coop ──────────────────────────────
 # Coop v0.4.0 stays alive in "awaiting shutdown" after the agent exits.
 # This monitor polls the agent state and sends a shutdown request when
@@ -487,7 +642,7 @@ while true; do
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT}) with resume"
         ${COOP_CMD} ${RESUME_FLAG} -- claude --dangerously-skip-permissions &
         COOP_PID=$!
-        auto_bypass_startup &
+        (auto_bypass_startup && inject_initial_prompt) &
         monitor_agent_exit &
         wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
         COOP_PID=""
@@ -498,7 +653,7 @@ while true; do
             echo "[entrypoint] Resume failed (exit ${exit_code}), trying fresh start"
             ${COOP_CMD} -- claude --dangerously-skip-permissions &
             COOP_PID=$!
-            auto_bypass_startup &
+            (auto_bypass_startup && inject_initial_prompt) &
             monitor_agent_exit &
             start_time=$(date +%s)
             wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
@@ -508,7 +663,7 @@ while true; do
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT})"
         ${COOP_CMD} -- claude --dangerously-skip-permissions &
         COOP_PID=$!
-        auto_bypass_startup &
+        (auto_bypass_startup && inject_initial_prompt) &
         monitor_agent_exit &
         wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
         COOP_PID=""
