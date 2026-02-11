@@ -346,33 +346,52 @@ func TestGetIssueFromAgentHook(t *testing.T) {
 // polecat actors vs other roles based on the BD_ACTOR format.
 func TestIsPolecatActor(t *testing.T) {
 	tests := []struct {
-		actor string
-		want  bool
+		actor  string
+		gtRole string // GT_ROLE env var value (empty = unset)
+		want   bool
 	}{
-		// Polecats: rigname/polecats/polecatname
-		{"testrig/polecats/furiosa", true},
-		{"testrig/polecats/nux", true},
-		{"myrig/polecats/witness", true}, // even if named "witness", still a polecat
+		// Polecats: rigname/polecats/polecatname (full path format)
+		{"testrig/polecats/furiosa", "", true},
+		{"testrig/polecats/nux", "", true},
+		{"myrig/polecats/witness", "", true}, // even if named "witness", still a polecat
 
-		// Non-polecats
-		{"gastown/crew/george", false},
-		{"gastown/crew/max", false},
-		{"testrig/witness", false},
-		{"testrig/deacon", false},
-		{"testrig/mayor", false},
-		{"gastown/refinery", false},
+		// Non-polecats (full path format)
+		{"gastown/crew/george", "", false},
+		{"gastown/crew/max", "", false},
+		{"testrig/witness", "", false},
+		{"testrig/deacon", "", false},
+		{"testrig/mayor", "", false},
+		{"gastown/refinery", "", false},
 
-		// Edge cases
-		{"", false},
-		{"single", false},
-		{"polecats/name", false}, // needs rig prefix
+		// Edge cases without GT_ROLE
+		{"", "", false},
+		{"single", "", false},
+		{"polecats/name", "", false}, // needs rig prefix
+
+		// BUG FIX (hq-29v): Bare name with GT_ROLE=polecat fallback
+		{"furiosa", "polecat", true},   // K8s env: BD_ACTOR=furiosa, GT_ROLE=polecat
+		{"nux", "polecat", true},       // bare name + polecat role
+		{"furiosa", "witness", false},  // bare name but not a polecat role
+		{"furiosa", "crew", false},     // bare name but crew role
+		{"single", "", false},          // bare name, no GT_ROLE set
+
+		// Full path format ignores GT_ROLE (path takes precedence)
+		{"gastown/crew/max", "polecat", false}, // path says crew, not polecat
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.actor, func(t *testing.T) {
+		t.Run(tt.actor+"_role_"+tt.gtRole, func(t *testing.T) {
+			// Set GT_ROLE for this test case
+			if tt.gtRole != "" {
+				os.Setenv("GT_ROLE", tt.gtRole)
+				defer os.Unsetenv("GT_ROLE")
+			} else {
+				os.Unsetenv("GT_ROLE")
+			}
+
 			got := isPolecatActor(tt.actor)
 			if got != tt.want {
-				t.Errorf("isPolecatActor(%q) = %v, want %v", tt.actor, got, tt.want)
+				t.Errorf("isPolecatActor(%q) with GT_ROLE=%q = %v, want %v", tt.actor, tt.gtRole, got, tt.want)
 			}
 		})
 	}

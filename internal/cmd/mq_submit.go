@@ -170,8 +170,12 @@ func runMqSubmit(cmd *cobra.Command, args []string) error {
 	existingMR, err := bd.FindMRForBranch(branch)
 	if err != nil {
 		style.PrintWarning("could not check for existing MR: %v", err)
-		// Continue with creation attempt - Create will fail if duplicate
-	} else if existingMR != nil {
+		// BUG FIX (hq-rlb): Fall through to creation. Previously the if-else
+		// chain skipped creation when FindMRForBranch errored, leaving mrIssue
+		// nil and causing a panic at the fmt.Printf below.
+	}
+
+	if err == nil && existingMR != nil {
 		mrIssue = existingMR
 		fmt.Printf("%s MR already exists (idempotent)\n", style.Bold.Render("✓"))
 	} else {

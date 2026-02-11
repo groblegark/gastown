@@ -869,9 +869,17 @@ func selfNukePolecat(roleInfo RoleInfo, _ string) error {
 // isPolecatActor checks if a BD_ACTOR value represents a polecat.
 // Polecat actors have format: rigname/polecats/polecatname
 // Non-polecat actors have formats like: gastown/crew/name, rigname/witness, etc.
+//
+// BUG FIX (hq-29v): In K8s environments, BD_ACTOR may be set to just the agent
+// name (e.g., "furiosa") without the full path. When BD_ACTOR lacks path segments,
+// fall back to GT_ROLE env var to determine if this is a polecat.
 func isPolecatActor(actor string) bool {
 	parts := strings.Split(actor, "/")
-	return len(parts) >= 2 && parts[1] == "polecats"
+	if len(parts) >= 2 {
+		return parts[1] == "polecats"
+	}
+	// BD_ACTOR is a bare name (no slashes) - check GT_ROLE as fallback
+	return os.Getenv("GT_ROLE") == "polecat"
 }
 
 // selfKillSession terminates the polecat's own tmux session after logging the event.
