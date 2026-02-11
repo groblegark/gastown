@@ -1580,8 +1580,7 @@ func (d *Daemon) restartPolecatSession(rigName, polecatName, sessionName string)
 		Role:          "polecat",
 		Rig:           rigName,
 		AgentName:     polecatName,
-		TownRoot:      d.config.TownRoot,
-		BeadsNoDaemon: true,
+		TownRoot: d.config.TownRoot,
 	})
 
 	// Set all env vars in tmux session (for debugging) and they'll also be exported to Claude

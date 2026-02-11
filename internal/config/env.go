@@ -32,9 +32,6 @@ type AgentEnvConfig struct {
 	// Sets GT_SESSION_ID_ENV so the runtime knows where to find the session ID.
 	SessionIDEnv string
 
-	// BeadsNoDaemon sets BEADS_NO_DAEMON=1 if true
-	// Used for polecats that should bypass the beads daemon
-	BeadsNoDaemon bool
 }
 
 // AgentEnv returns all environment variables for an agent based on the config.
@@ -106,10 +103,6 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 	// Set BEADS_AGENT_NAME for polecat/crew (uses same format as BD_ACTOR)
 	if cfg.Role == "polecat" || cfg.Role == "crew" {
 		env["BEADS_AGENT_NAME"] = fmt.Sprintf("%s/%s", cfg.Rig, cfg.AgentName)
-	}
-
-	if cfg.BeadsNoDaemon {
-		env["BEADS_NO_DAEMON"] = "1"
 	}
 
 	// Add optional runtime config directory

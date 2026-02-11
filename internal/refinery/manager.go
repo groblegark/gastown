@@ -156,8 +156,7 @@ func (m *Manager) Start(foreground bool, agentOverride string) error {
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:          "refinery",
 		Rig:           m.rig.Name,
-		TownRoot:      townRoot,
-		BeadsNoDaemon: true,
+		TownRoot: townRoot,
 	})
 
 	// Add refinery-specific flag

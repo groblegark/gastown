@@ -279,7 +279,6 @@ These are set in tmux session environment when agents are spawned.
 | `GT_POLECAT` | Polecat worker name | polecat only |
 | `GT_CREW` | Crew worker name | crew only |
 | `BEADS_AGENT_NAME` | Agent name for beads operations | polecat, crew |
-| `BEADS_NO_DAEMON` | Disable beads daemon (isolated context) | polecat, crew |
 
 ### Other Variables
 
@@ -710,7 +709,7 @@ bd formula list          # Lists formulas by type
 |---------|----------|
 | Agent in wrong directory | Check cwd, `gt doctor` |
 | Beads prefix mismatch | Check `bd show` vs rig config |
-| Worktree conflicts | Ensure `BEADS_NO_DAEMON=1` for polecats |
+| Worktree conflicts | Check worktree state, `gt doctor` |
 | Stuck worker | `gt nudge`, then `gt peek` |
 | Dirty git state | Commit or discard, then `gt handoff` |
 

@@ -17,7 +17,6 @@ func TestAgentEnv_Mayor(t *testing.T) {
 	assertEnv(t, env, "GT_ROOT", "/town")
 	assertEnv(t, env, "GIT_CEILING_DIRECTORIES", "/town") // prevents git walking to umbrella
 	assertNotSet(t, env, "GT_RIG")
-	assertNotSet(t, env, "BEADS_NO_DAEMON")
 }
 
 func TestAgentEnv_Witness(t *testing.T) {
@@ -38,11 +37,10 @@ func TestAgentEnv_Witness(t *testing.T) {
 func TestAgentEnv_Polecat(t *testing.T) {
 	t.Parallel()
 	env := AgentEnv(AgentEnvConfig{
-		Role:          "polecat",
-		Rig:           "myrig",
-		AgentName:     "Toast",
-		TownRoot:      "/town",
-		BeadsNoDaemon: true,
+		Role:      "polecat",
+		Rig:       "myrig",
+		AgentName: "Toast",
+		TownRoot:  "/town",
 	})
 
 	assertEnv(t, env, "GT_ROLE", "myrig/polecats/Toast") // compound format
@@ -51,18 +49,16 @@ func TestAgentEnv_Polecat(t *testing.T) {
 	assertEnv(t, env, "BD_ACTOR", "myrig/polecats/Toast")
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "Toast")
 	assertEnv(t, env, "BEADS_AGENT_NAME", "myrig/Toast")
-	assertEnv(t, env, "BEADS_NO_DAEMON", "1")
 	assertEnv(t, env, "BD_DOLT_AUTO_COMMIT", "off") // gt-5cc2p: prevent manifest contention
 }
 
 func TestAgentEnv_Crew(t *testing.T) {
 	t.Parallel()
 	env := AgentEnv(AgentEnvConfig{
-		Role:          "crew",
-		Rig:           "myrig",
-		AgentName:     "emma",
-		TownRoot:      "/town",
-		BeadsNoDaemon: true,
+		Role:      "crew",
+		Rig:       "myrig",
+		AgentName: "emma",
+		TownRoot:  "/town",
 	})
 
 	assertEnv(t, env, "GT_ROLE", "myrig/crew/emma") // compound format
@@ -71,23 +67,20 @@ func TestAgentEnv_Crew(t *testing.T) {
 	assertEnv(t, env, "BD_ACTOR", "myrig/crew/emma")
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "emma")
 	assertEnv(t, env, "BEADS_AGENT_NAME", "myrig/emma")
-	assertEnv(t, env, "BEADS_NO_DAEMON", "1")
 }
 
 func TestAgentEnv_Refinery(t *testing.T) {
 	t.Parallel()
 	env := AgentEnv(AgentEnvConfig{
-		Role:          "refinery",
-		Rig:           "myrig",
-		TownRoot:      "/town",
-		BeadsNoDaemon: true,
+		Role:     "refinery",
+		Rig:      "myrig",
+		TownRoot: "/town",
 	})
 
 	assertEnv(t, env, "GT_ROLE", "myrig/refinery") // compound format
 	assertEnv(t, env, "GT_RIG", "myrig")
 	assertEnv(t, env, "BD_ACTOR", "myrig/refinery")
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "myrig/refinery")
-	assertEnv(t, env, "BEADS_NO_DAEMON", "1")
 }
 
 func TestAgentEnv_Deacon(t *testing.T) {
@@ -102,7 +95,6 @@ func TestAgentEnv_Deacon(t *testing.T) {
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "deacon")
 	assertEnv(t, env, "GT_ROOT", "/town")
 	assertNotSet(t, env, "GT_RIG")
-	assertNotSet(t, env, "BEADS_NO_DAEMON")
 }
 
 func TestAgentEnv_Boot(t *testing.T) {
@@ -117,7 +109,6 @@ func TestAgentEnv_Boot(t *testing.T) {
 	assertEnv(t, env, "GIT_AUTHOR_NAME", "boot")
 	assertEnv(t, env, "GT_ROOT", "/town")
 	assertNotSet(t, env, "GT_RIG")
-	assertNotSet(t, env, "BEADS_NO_DAEMON")
 }
 
 func TestAgentEnv_WithRuntimeConfigDir(t *testing.T) {

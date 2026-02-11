@@ -645,7 +645,6 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 		AgentName:        name,
 		TownRoot:         townRoot,
 		RuntimeConfigDir: opts.ClaudeConfigDir,
-		BeadsNoDaemon:    true,
 	})
 	for k, v := range envVars {
 		_ = t.SetEnvironment(sessionID, k, v)
