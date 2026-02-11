@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ARG TARGETARCH=amd64
 ARG COOP_VERSION=v0.7.2
-ARG BD_VERSION=v0.57.13
+ARG BD_VERSION=v0.57.16
 
 # Download coop from groblegark/coop releases
 RUN set -e; \
