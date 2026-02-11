@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/steveyegge/gastown/internal/rpcclient"
+	"github.com/steveyegge/gastown/internal/terminal"
 	crewTUI "github.com/steveyegge/gastown/internal/tui/crew"
 	"github.com/steveyegge/gastown/internal/util"
 )
@@ -633,26 +634,21 @@ func getSessionName(requestedBy string) (string, error) {
 // captureTerminal captures the content of an agent's terminal
 func (m *Model) captureTerminal(sessionName string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		backend := terminal.ResolveBackend(sessionName)
 
 		// First check if session exists
-		checkCmd := exec.CommandContext(ctx, "tmux", "has-session", "-t", sessionName)
-		if err := checkCmd.Run(); err != nil {
+		exists, err := backend.HasSession(sessionName)
+		if err != nil || !exists {
 			return peekMsg{sessionName: sessionName, err: fmt.Errorf("session '%s' not found", sessionName)}
 		}
 
 		// Capture pane content with scrollback
-		cmd := exec.CommandContext(ctx, "tmux", "capture-pane", "-t", sessionName, "-p", "-S", "-100")
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		if err := cmd.Run(); err != nil {
-			return peekMsg{sessionName: sessionName, err: fmt.Errorf("capture failed: %s", stderr.String())}
+		content, err := backend.CapturePane(sessionName, 100)
+		if err != nil {
+			return peekMsg{sessionName: sessionName, err: fmt.Errorf("capture failed: %v", err)}
 		}
 
-		return peekMsg{sessionName: sessionName, content: stdout.String()}
+		return peekMsg{sessionName: sessionName, content: content}
 	}
 }
 
