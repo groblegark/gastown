@@ -100,13 +100,11 @@ func (c *ThemeCheck) Fix(ctx *CheckContext) error {
 
 // getSessionStatusLeft retrieves the status-left setting for a tmux session.
 func getSessionStatusLeft(session string) (string, error) {
-	cmd := exec.Command("tmux", "show-options", "-t", session, "status-left")
-	output, err := cmd.Output()
+	line, err := tmux.NewTmux().GetOption(session, "status-left")
 	if err != nil {
 		return "", err
 	}
 	// Parse: status-left "value"
-	line := strings.TrimSpace(string(output))
 	if idx := strings.Index(line, "\""); idx != -1 {
 		end := strings.LastIndex(line, "\"")
 		if end > idx {
