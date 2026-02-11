@@ -17,6 +17,7 @@ import (
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -259,7 +260,15 @@ func runHandoff(cmd *cobra.Command, args []string) error {
 }
 
 // getCurrentTmuxSession returns the current tmux session name.
+// On K8s pods (no tmux), falls back to GT_SESSION or TMUX_SESSION env vars.
 func getCurrentTmuxSession() (string, error) {
+	// Try env vars first — these are set on K8s pods where tmux is unavailable
+	if s := os.Getenv("GT_SESSION"); s != "" {
+		return s, nil
+	}
+	if s := os.Getenv("TMUX_SESSION"); s != "" {
+		return s, nil
+	}
 	out, err := exec.Command("tmux", "display-message", "-p", "#{session_name}").Output()
 	if err != nil {
 		return "", err
@@ -667,8 +676,8 @@ func handoffRemoteSession(t *tmux.Tmux, targetSession, restartCmd string) error 
 		return fmt.Errorf("respawning pane: %w", respawnErr)
 	}
 
-	// If --watch, switch to that session
-	if handoffWatch {
+	// If --watch, switch to that session (tmux-only UI operation)
+	if handoffWatch && os.Getenv("TMUX") != "" {
 		fmt.Printf("Switching to %s...\n", targetSession)
 		// Use tmux switch-client to move our view to the target session
 		if err := exec.Command("tmux", "switch-client", "-t", targetSession).Run(); err != nil {
@@ -688,7 +697,14 @@ func handoffRemoteSession(t *tmux.Tmux, targetSession, restartCmd string) error 
 // is fully initialized and queryable via list-panes. This is especially common
 // on slower systems or under load. We use 30 retries at 100ms intervals (3 seconds
 // total) which provides ample time for tmux to initialize.
+//
+// This is a tmux-only operation (pane IDs are a tmux concept). On K8s pods
+// where tmux is not installed, returns an error immediately.
 func getSessionPane(sessionName string) (string, error) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		return "", fmt.Errorf("tmux not available (K8s pod?): %w", err)
+	}
+
 	const maxRetries = 30
 	const retryDelay = 100 * time.Millisecond
 	debug := os.Getenv("GT_DEBUG_SLING") != ""
@@ -715,10 +731,10 @@ func getSessionPane(sessionName string) (string, error) {
 				lastErr = err
 			}
 			if debug && i%5 == 0 {
-				// Check if session exists at all
-				hasCmd := exec.Command("tmux", "has-session", "-t", "="+sessionName)
-				hasErr := hasCmd.Run()
-				fmt.Fprintf(os.Stderr, "[sling-debug] retry %d: list-panes failed: %v, has-session: %v\n", i, lastErr, hasErr)
+				// Check if session exists using Backend abstraction
+				b := terminal.LocalBackend()
+				has, _ := b.HasSession(sessionName)
+				fmt.Fprintf(os.Stderr, "[sling-debug] retry %d: list-panes failed: %v, has-session: %v\n", i, lastErr, has)
 			}
 			time.Sleep(retryDelay)
 			continue
