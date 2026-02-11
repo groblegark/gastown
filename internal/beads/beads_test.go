@@ -170,6 +170,66 @@ func TestWrapError(t *testing.T) {
 	}
 }
 
+// TestStripNonJSONPrefix verifies that warning lines with unicode characters
+// before JSON output are stripped correctly. (gt-ln3)
+func TestStripNonJSONPrefix(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "clean JSON object",
+			input: `{"id":"abc"}`,
+			want:  `{"id":"abc"}`,
+		},
+		{
+			name:  "clean JSON array",
+			input: `[{"id":"abc"}]`,
+			want:  `[{"id":"abc"}]`,
+		},
+		{
+			name:  "unicode warning before JSON",
+			input: "⚠ RPC fallback: using HTTP\n{\"id\":\"abc\"}",
+			want:  "{\"id\":\"abc\"}",
+		},
+		{
+			name:  "multiple warning lines",
+			input: "⚠ warning 1\nwarning 2\n{\"id\":\"abc\"}\n",
+			want:  "{\"id\":\"abc\"}\n",
+		},
+		{
+			name:  "whitespace before JSON",
+			input: "  {\"id\":\"abc\"}",
+			want:  "  {\"id\":\"abc\"}",
+		},
+		{
+			name:  "empty input",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "no JSON at all",
+			input: "just a warning message",
+			want:  "just a warning message",
+		},
+		{
+			name:  "JSON array after warning",
+			input: "⚠ fallback\n[{\"id\":\"abc\"}]",
+			want:  "[{\"id\":\"abc\"}]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := string(stripNonJSONPrefix([]byte(tt.input)))
+			if got != tt.want {
+				t.Errorf("stripNonJSONPrefix(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 // Integration test that runs against real bd if available
 func TestIntegration(t *testing.T) {
 	if testing.Short() {

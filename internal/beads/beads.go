@@ -302,7 +302,33 @@ func (b *Beads) run(args ...string) ([]byte, error) {
 		return nil, b.wrapError(fmt.Errorf("command produced no output"), stderr.String(), args)
 	}
 
-	return stdout.Bytes(), nil
+	return stripNonJSONPrefix(stdout.Bytes()), nil
+}
+
+// stripNonJSONPrefix removes non-JSON warning lines that bd may emit to stdout
+// before the actual JSON payload. bd sometimes emits unicode warning characters
+// (e.g., ⚠) to stdout which causes json.Unmarshal to fail with "invalid
+// character" errors. This strips everything before the first line starting
+// with '{' or '['. (gt-ln3)
+func stripNonJSONPrefix(data []byte) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	// If output already starts with JSON, return as-is (fast path).
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
+		return data
+	}
+	// Scan line by line to find the first JSON line.
+	lines := bytes.SplitN(data, []byte("\n"), -1)
+	for i, line := range lines {
+		trimLine := bytes.TrimSpace(line)
+		if len(trimLine) > 0 && (trimLine[0] == '{' || trimLine[0] == '[') {
+			return bytes.Join(lines[i:], []byte("\n"))
+		}
+	}
+	// No JSON found; return original data so callers get a clear parse error.
+	return data
 }
 
 // Run executes a bd command and returns stdout.
