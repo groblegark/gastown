@@ -849,12 +849,7 @@ func extractCostFromWorkDir(workDir string) (float64, error) {
 
 // getTmuxSessionWorkDir gets the current working directory of a tmux session.
 func getTmuxSessionWorkDir(session string) (string, error) {
-	cmd := exec.Command("tmux", "display-message", "-t", session, "-p", "#{pane_current_path}")
-	output, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+	return tmux.NewTmux().GetPaneWorkDir(session)
 }
 
 func outputCostsJSON(output CostsOutput) error {
@@ -1108,13 +1103,11 @@ func deriveSessionName() string {
 // Note: We don't check TMUX env var because it may not be inherited when Claude Code
 // runs bash commands, even though we are inside a tmux session.
 func detectCurrentTmuxSession() string {
-	cmd := exec.Command("tmux", "display-message", "-p", "#S")
-	output, err := cmd.Output()
+	session, err := tmux.NewTmux().GetCurrentSessionName()
 	if err != nil {
 		return ""
 	}
 
-	session := strings.TrimSpace(string(output))
 	// Only return if it looks like a Gas Town session
 	// Accept both gt- (rig sessions) and hq- (town-level sessions like hq-mayor)
 	if strings.HasPrefix(session, constants.SessionPrefix) || strings.HasPrefix(session, constants.HQSessionPrefix) {
