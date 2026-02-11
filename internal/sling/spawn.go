@@ -23,8 +23,9 @@ import (
 )
 
 // ResolveExecutionTarget determines the execution target for a rig.
-// It checks the explicit override first, then falls back to rig settings,
-// and finally defaults to "local".
+// Priority: explicit override > rig settings > K8s auto-detect > "local".
+// When running inside a K8s pod (KUBERNETES_SERVICE_HOST is set), defaults
+// to "k8s" instead of "local" so agents don't require tmux.
 func ResolveExecutionTarget(rigPath, override string) config.ExecutionTarget {
 	if override != "" {
 		return config.ExecutionTarget(override)
@@ -34,6 +35,11 @@ func ResolveExecutionTarget(rigPath, override string) config.ExecutionTarget {
 	settings, err := config.LoadRigSettings(settingsPath)
 	if err == nil && settings.Execution != nil && settings.Execution.Target != "" {
 		return settings.Execution.Target
+	}
+
+	// Auto-detect K8s: every pod gets KUBERNETES_SERVICE_HOST injected by kubelet.
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return config.ExecutionTargetK8s
 	}
 
 	return config.ExecutionTargetLocal
@@ -246,6 +252,12 @@ func SpawnPolecatForSling(rigName string, opts SpawnOptions) (*SpawnResult, erro
 func WakeRigAgents(rigName string) {
 	bootCmd := exec.Command("gt", "rig", "boot", rigName)
 	_ = bootCmd.Run()
+
+	// On K8s pods, tmux is not available — skip the local nudge.
+	// The witness on K8s is reached via coop, not local tmux.
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return
+	}
 
 	t := tmux.NewTmux()
 	witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
