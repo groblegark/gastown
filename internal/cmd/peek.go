@@ -70,7 +70,7 @@ func runPeek(cmd *cobra.Command, args []string) error {
 		return peekViaBackend(backend, "claude", lines)
 	}
 
-	// Handle town-level agents (no rig prefix needed)
+	// Resolve session name from address
 	var sessionName string
 	switch address {
 	case "mayor":
@@ -78,44 +78,24 @@ func runPeek(cmd *cobra.Command, args []string) error {
 	case "deacon":
 		sessionName = session.DeaconSessionName()
 	case "boot":
-		sessionName = "gt-boot" // Boot watchdog session
+		sessionName = "gt-boot"
+	default:
+		// Standard rig/polecat or rig/crew/name format
+		rigName, polecatName, err := parseAddress(address)
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(polecatName, "crew/") {
+			crewName := strings.TrimPrefix(polecatName, "crew/")
+			sessionName = session.CrewSessionName(rigName, crewName)
+		} else {
+			sessionName = fmt.Sprintf("gt-%s-%s", rigName, polecatName)
+		}
 	}
 
-	if sessionName != "" {
-		// Town-level agent - local tmux
-		return peekViaBackend(terminal.LocalBackend(), sessionName, lines)
-	}
-
-	// Standard rig/polecat format
-	rigName, polecatName, err := parseAddress(address)
-	if err != nil {
-		return err
-	}
-
-	// Local agent: use SessionManager (resolves session names, validates state)
-	mgr, _, err := getSessionManager(rigName)
-	if err != nil {
-		return err
-	}
-
-	var output string
-
-	// Handle crew/ prefix for cross-rig crew workers
-	// e.g., "beads/crew/dave" -> session name "gt-beads-crew-dave"
-	if strings.HasPrefix(polecatName, "crew/") {
-		crewName := strings.TrimPrefix(polecatName, "crew/")
-		sessionID := session.CrewSessionName(rigName, crewName)
-		output, err = mgr.CaptureSession(sessionID, lines)
-	} else {
-		output, err = mgr.Capture(polecatName, lines)
-	}
-
-	if err != nil {
-		return fmt.Errorf("capturing output: %w", err)
-	}
-
-	fmt.Print(output)
-	return nil
+	// Resolve backend for this session — routes to coop for remote agents, tmux for local
+	resolvedBackend, sessionKey := resolveBackendForSession(sessionName)
+	return peekViaBackend(resolvedBackend, sessionKey, lines)
 }
 
 // peekViaBackend captures terminal output using a terminal.Backend.
@@ -125,7 +105,7 @@ func peekViaBackend(backend terminal.Backend, sessionName string, lines int) err
 		return fmt.Errorf("checking session: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("session %q not running on remote host", sessionName)
+		return fmt.Errorf("session %q not running", sessionName)
 	}
 	output, err := backend.CapturePane(sessionName, lines)
 	if err != nil {

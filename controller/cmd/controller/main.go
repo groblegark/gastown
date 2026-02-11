@@ -194,10 +194,10 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 			return err
 		}
 		// Report backend metadata so ResolveBackend() can find this agent.
-		if spec.CoopSidecar != nil {
-			coopPort := spec.CoopSidecar.Port
-			if coopPort == 0 {
-				coopPort = podmanager.CoopDefaultPort
+		if spec.CoopSidecar != nil || spec.CoopBuiltin {
+			var coopPort int32 = podmanager.CoopDefaultPort
+			if spec.CoopSidecar != nil && spec.CoopSidecar.Port != 0 {
+				coopPort = spec.CoopSidecar.Port
 			}
 			_ = status.ReportBackendMetadata(ctx, agentBeadID, statusreporter.BackendMetadata{
 				PodName:   spec.PodName(),
