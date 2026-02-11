@@ -10,19 +10,42 @@ import (
 	"strings"
 )
 
+// buildSlotEnv builds the environment for bd slot commands.
+// Sets BEADS_DIR and propagates daemon connection from config files,
+// mirroring Beads.run() behavior. Without daemon propagation, slot
+// commands fail to find beads that live on the remote daemon. (bd-puds.8)
+func buildSlotEnv(workDir string) []string {
+	env := os.Environ()
+	beadsDir := ResolveBeadsDir(workDir)
+	if beadsDir != "" {
+		env = append(env, "BEADS_DIR="+beadsDir)
+	}
+	// Propagate daemon connection if not already in environment.
+	hasDaemonHost := os.Getenv("BD_DAEMON_HOST") != ""
+	hasDaemonToken := os.Getenv("BD_DAEMON_TOKEN") != ""
+	if !hasDaemonHost || !hasDaemonToken {
+		host, token := readDaemonConfig(beadsDir)
+		if host == "" {
+			host, token = readGlobalDaemonConfig()
+		}
+		if host != "" && !hasDaemonHost {
+			env = append(env, "BD_DAEMON_HOST="+host)
+		}
+		if token != "" && !hasDaemonToken {
+			env = append(env, "BD_DAEMON_TOKEN="+token)
+		}
+	}
+	return env
+}
+
 // runSlotSet runs `bd slot set` from a specific directory.
 // This is needed when the agent bead was created via routing to a different
 // database than the Beads wrapper's default directory.
-// Explicitly sets BEADS_DIR to prevent inherited env vars from causing routing issues.
+// Explicitly sets BEADS_DIR and propagates daemon env vars.
 func runSlotSet(workDir, beadID, slotName, slotValue string) error {
 	cmd := exec.Command(resolvedBdPath, "slot", "set", beadID, slotName, slotValue)
 	cmd.Dir = workDir
-	// Resolve beads directory and set explicitly to prevent inherited BEADS_DIR from
-	// causing routing issues (fix: hq-aee961.18)
-	beadsDir := ResolveBeadsDir(workDir)
-	if beadsDir != "" {
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-	}
+	cmd.Env = buildSlotEnv(workDir)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
 	}
@@ -30,16 +53,11 @@ func runSlotSet(workDir, beadID, slotName, slotValue string) error {
 }
 
 // runSlotClear runs `bd slot clear` from a specific directory.
-// Explicitly sets BEADS_DIR to prevent inherited env vars from causing routing issues.
+// Explicitly sets BEADS_DIR and propagates daemon env vars.
 func runSlotClear(workDir, beadID, slotName string) error {
 	cmd := exec.Command(resolvedBdPath, "slot", "clear", beadID, slotName)
 	cmd.Dir = workDir
-	// Resolve beads directory and set explicitly to prevent inherited BEADS_DIR from
-	// causing routing issues (fix: hq-aee961.18)
-	beadsDir := ResolveBeadsDir(workDir)
-	if beadsDir != "" {
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
-	}
+	cmd.Env = buildSlotEnv(workDir)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
 	}

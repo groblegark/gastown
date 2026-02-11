@@ -194,6 +194,9 @@ func GetRoleWithContext(cwd, townRoot string) (RoleInfo, error) {
 				info.Polecat = envCrew
 			} else if envPolecat := os.Getenv("GT_POLECAT"); envPolecat != "" {
 				info.Polecat = envPolecat
+			} else if envAgent := os.Getenv("GT_AGENT"); envAgent != "" {
+				// K8s controller sets GT_AGENT (not GT_POLECAT/GT_CREW)
+				info.Polecat = envAgent
 			}
 		}
 
