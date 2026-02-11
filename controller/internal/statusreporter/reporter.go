@@ -316,9 +316,10 @@ func detectCoopPort(pod *corev1.Pod) int32 {
 	return 0
 }
 
-// BeadUpdater is the interface for updating bead notes via the daemon HTTP API.
+// BeadUpdater is the interface for updating beads via the daemon HTTP API.
 type BeadUpdater interface {
 	UpdateBeadNotes(ctx context.Context, beadID, notes string) error
+	UpdateAgentState(ctx context.Context, beadID, state string) error
 }
 
 // HTTPReporter reports backend metadata to beads via the daemon HTTP API.
@@ -346,13 +347,27 @@ func NewHTTPReporter(daemon BeadUpdater, client kubernetes.Interface, namespace 
 	}
 }
 
-// ReportPodStatus logs the pod status. Agent state updates are deferred
-// to a future daemon RPC endpoint.
-func (r *HTTPReporter) ReportPodStatus(_ context.Context, agentName string, status PodStatus) error {
+// ReportPodStatus updates the agent's state in beads based on pod phase.
+func (r *HTTPReporter) ReportPodStatus(ctx context.Context, agentName string, status PodStatus) error {
 	r.reportsTotal.Add(1)
-	r.logger.Info("pod status",
+
+	state := PhaseToAgentState(status.Phase)
+	if state == "" {
+		r.logger.Debug("skipping status report for unknown phase",
+			"agent", agentName, "phase", status.Phase)
+		return nil
+	}
+
+	r.logger.Info("reporting pod status to beads",
 		"agent", agentName, "pod", status.PodName,
-		"phase", status.Phase, "ready", status.Ready)
+		"phase", status.Phase, "state", state, "ready", status.Ready)
+
+	if err := r.daemon.UpdateAgentState(ctx, agentName, state); err != nil {
+		r.reportErrors.Add(1)
+		r.logger.Warn("failed to report pod status to beads",
+			"agent", agentName, "state", state, "error", err)
+		return fmt.Errorf("reporting status for %s: %w", agentName, err)
+	}
 	return nil
 }
 

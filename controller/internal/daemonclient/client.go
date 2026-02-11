@@ -258,6 +258,41 @@ func (c *DaemonClient) UpdateBeadNotes(ctx context.Context, beadID, notes string
 	return nil
 }
 
+// UpdateAgentState updates the agent_state field of an agent bead via the
+// daemon HTTP API. This transitions agent beads through lifecycle states
+// (e.g., spawning → working) based on K8s pod phase.
+func (c *DaemonClient) UpdateAgentState(ctx context.Context, beadID, state string) error {
+	body := map[string]interface{}{
+		"id":          beadID,
+		"agent_state": state,
+	}
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("encoding request: %w", err)
+	}
+
+	url := c.baseURL + "/bd.v1.BeadsService/Update"
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("daemon request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("daemon returned status %d for agent state update %s", resp.StatusCode, beadID)
+	}
+	return nil
+}
+
 // extractFromLabels extracts rig, role, and agent name from bead labels.
 func extractFromLabels(labels []string) (rig, role, name string) {
 	for _, label := range labels {
