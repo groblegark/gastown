@@ -565,8 +565,9 @@ func verifyAndSetHookBead(townRoot, rigName, polecatName, hookBead string) error
 }
 
 // resolveExecutionTarget determines the execution target for a rig.
-// It checks the explicit override first, then falls back to rig settings config,
-// and finally defaults to "local".
+// Priority: explicit override > rig settings > K8s auto-detect > "local".
+// When running inside a K8s pod (KUBERNETES_SERVICE_HOST is set), defaults
+// to "k8s" instead of "local" so agents spawn as pods, not tmux sessions.
 func resolveExecutionTarget(rigPath, override string) config.ExecutionTarget {
 	if override != "" {
 		return config.ExecutionTarget(override)
@@ -576,6 +577,11 @@ func resolveExecutionTarget(rigPath, override string) config.ExecutionTarget {
 	settings, err := config.LoadRigSettings(settingsPath)
 	if err == nil && settings.Execution != nil && settings.Execution.Target != "" {
 		return settings.Execution.Target
+	}
+
+	// Auto-detect K8s: every pod gets KUBERNETES_SERVICE_HOST injected by kubelet.
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return config.ExecutionTargetK8s
 	}
 
 	return config.ExecutionTargetLocal
