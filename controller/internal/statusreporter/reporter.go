@@ -206,6 +206,17 @@ func (r *BdReporter) SyncAll(ctx context.Context) error {
 		if err := r.ReportPodStatus(ctx, agentBeadID, status); err != nil {
 			errs = append(errs, err.Error())
 		}
+
+		// Write backend metadata for coop-enabled pods so ResolveBackend() works
+		// after controller restarts.
+		if coopPort := detectCoopPort(&pod); coopPort > 0 {
+			_ = r.ReportBackendMetadata(ctx, agentBeadID, BackendMetadata{
+				PodName:   pod.Name,
+				Namespace: pod.Namespace,
+				Backend:   "coop",
+				CoopURL:   fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", pod.Name, pod.Namespace, coopPort),
+			})
+		}
 	}
 
 	if len(errs) > 0 {
@@ -281,6 +292,28 @@ func isPodReady(pod *corev1.Pod) bool {
 		}
 	}
 	return false
+}
+
+// detectCoopPort returns the coop API port if the pod has a container
+// exposing port 8080 (CoopDefaultPort) or a container named "coop".
+// Returns 0 if no coop capability detected.
+func detectCoopPort(pod *corev1.Pod) int32 {
+	for _, c := range pod.Spec.Containers {
+		if c.Name == "coop" {
+			for _, p := range c.Ports {
+				if p.ContainerPort == 8080 {
+					return p.ContainerPort
+				}
+			}
+			return 8080 // coop sidecar default
+		}
+		for _, p := range c.Ports {
+			if p.ContainerPort == 8080 {
+				return p.ContainerPort
+			}
+		}
+	}
+	return 0
 }
 
 // BeadUpdater is the interface for updating bead notes via the daemon HTTP API.
@@ -392,6 +425,17 @@ func (r *HTTPReporter) SyncAll(ctx context.Context) error {
 		}
 
 		_ = r.ReportPodStatus(ctx, agentBeadID, status)
+
+		// Write backend metadata for coop-enabled pods so ResolveBackend() works
+		// after controller restarts. Detect coop by checking for port 8080 on any container.
+		if coopPort := detectCoopPort(&pod); coopPort > 0 {
+			_ = r.ReportBackendMetadata(ctx, agentBeadID, BackendMetadata{
+				PodName:   pod.Name,
+				Namespace: pod.Namespace,
+				Backend:   "coop",
+				CoopURL:   fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", pod.Name, pod.Namespace, coopPort),
+			})
+		}
 	}
 
 	r.logger.Info("sync completed", "pods", len(pods.Items))
