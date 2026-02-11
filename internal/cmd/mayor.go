@@ -381,7 +381,7 @@ func detectMayorK8sPod(_ string) (string, string) {
 
 	ns := os.Getenv("GT_K8S_NAMESPACE")
 	if ns == "" {
-		ns = "gastown-uat"
+		return "", ""
 	}
 
 	out, err := exec.Command("kubectl", "get", "pod", podName, "-n", ns,

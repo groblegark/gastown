@@ -51,7 +51,10 @@ func runCoop(cmd *cobra.Command, args []string) error {
 	// Resolve target to pod name.
 	podName, ns := resolveCoopTarget(target)
 	if podName == "" {
-		return fmt.Errorf("could not find running K8s pod for %q", target)
+		if os.Getenv("GT_K8S_NAMESPACE") == "" {
+			return fmt.Errorf("GT_K8S_NAMESPACE not set — required for K8s pod discovery")
+		}
+		return fmt.Errorf("could not find running K8s pod for %q in namespace %q", target, os.Getenv("GT_K8S_NAMESPACE"))
 	}
 
 	fmt.Printf("%s Connecting to %s in %s...\n",
@@ -125,7 +128,7 @@ func runCoop(cmd *cobra.Command, args []string) error {
 func resolveCoopTarget(target string) (string, string) {
 	ns := os.Getenv("GT_K8S_NAMESPACE")
 	if ns == "" {
-		ns = "gastown-uat"
+		return "", ""
 	}
 
 	var podName string
