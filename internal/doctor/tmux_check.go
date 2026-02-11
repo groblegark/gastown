@@ -2,7 +2,6 @@ package doctor
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/session"
@@ -134,20 +133,5 @@ func (c *LinkedPaneCheck) Fix(ctx *CheckContext) error {
 
 // getSessionPanes returns all pane IDs for a session.
 func (c *LinkedPaneCheck) getSessionPanes(session string) ([]string, error) {
-	// Get pane IDs using tmux list-panes with format
-	// Using #{pane_id} which gives us the unique pane identifier like %123
-	// Note: -s flag lists all panes in all windows of this session (not -a which is global)
-	out, err := exec.Command("tmux", "list-panes", "-t", session, "-s", "-F", "#{pane_id}").Output()
-	if err != nil {
-		return nil, err
-	}
-
-	var panes []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line != "" {
-			panes = append(panes, line)
-		}
-	}
-
-	return panes, nil
+	return tmux.NewTmux().ListAllPaneIDs(session)
 }
