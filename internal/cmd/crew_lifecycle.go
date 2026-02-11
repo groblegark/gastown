@@ -18,6 +18,7 @@ import (
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/townlog"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -49,10 +50,10 @@ func runCrewRemove(cmd *cobra.Command, args []string) error {
 		}
 
 		// Check for running session (unless forced)
+		backend := terminal.NewTmuxBackend(tmux.NewTmux())
+		sessionID := crewSessionName(r.Name, name)
 		if !forceRemove {
-			t := tmux.NewTmux()
-			sessionID := crewSessionName(r.Name, name)
-			hasSession, _ := t.HasSession(sessionID)
+			hasSession, _ := backend.HasSession(sessionID)
 			if hasSession {
 				fmt.Printf("Error removing %s: session '%s' is running (use --force to kill and remove)\n", arg, sessionID)
 				lastErr = fmt.Errorf("session running")
@@ -61,10 +62,8 @@ func runCrewRemove(cmd *cobra.Command, args []string) error {
 		}
 
 		// Kill session if it exists (with proper process cleanup to avoid orphans)
-		t := tmux.NewTmux()
-		sessionID := crewSessionName(r.Name, name)
-		if hasSession, _ := t.HasSession(sessionID); hasSession {
-			if err := t.KillSessionWithProcesses(sessionID); err != nil {
+		if hasSession, _ := backend.HasSession(sessionID); hasSession {
+			if err := backend.KillSession(sessionID); err != nil {
 				fmt.Printf("Error killing session for %s: %v\n", arg, err)
 				lastErr = err
 				continue
@@ -591,7 +590,7 @@ func runCrewStop(cmd *cobra.Command, args []string) error {
 	}
 
 	var lastErr error
-	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(tmux.NewTmux())
 
 	for _, arg := range args {
 		name := arg
@@ -615,7 +614,7 @@ func runCrewStop(cmd *cobra.Command, args []string) error {
 		sessionID := crewSessionName(r.Name, name)
 
 		// Check if session exists
-		hasSession, err := t.HasSession(sessionID)
+		hasSession, err := backend.HasSession(sessionID)
 		if err != nil {
 			fmt.Printf("Error checking session %s: %v\n", sessionID, err)
 			lastErr = err
@@ -635,11 +634,11 @@ func runCrewStop(cmd *cobra.Command, args []string) error {
 		// Capture output before stopping (best effort)
 		var output string
 		if !crewForce {
-			output, _ = t.CapturePane(sessionID, 50)
+			output, _ = backend.CapturePane(sessionID, 50)
 		}
 
 		// Kill the session (with proper process cleanup to avoid orphans)
-		if err := t.KillSessionWithProcesses(sessionID); err != nil {
+		if err := backend.KillSession(sessionID); err != nil {
 			fmt.Printf("  %s [%s] %s: %s\n",
 				style.ErrorPrefix,
 				r.Name, name,
@@ -714,7 +713,7 @@ func runCrewStopAll() error {
 	fmt.Printf("%s Stopping %d crew session(s)...\n\n",
 		style.Bold.Render("🛑"), len(targets))
 
-	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(tmux.NewTmux())
 	var succeeded, failed int
 	var failures []string
 
@@ -725,11 +724,11 @@ func runCrewStopAll() error {
 		// Capture output before stopping (best effort)
 		var output string
 		if !crewForce {
-			output, _ = t.CapturePane(sessionID, 50)
+			output, _ = backend.CapturePane(sessionID, 50)
 		}
 
 		// Kill the session (with proper process cleanup to avoid orphans)
-		if err := t.KillSessionWithProcesses(sessionID); err != nil {
+		if err := backend.KillSession(sessionID); err != nil {
 			failed++
 			failures = append(failures, fmt.Sprintf("%s: %v", agentName, err))
 			fmt.Printf("  %s %s\n", style.ErrorPrefix, agentName)
