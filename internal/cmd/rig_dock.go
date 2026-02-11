@@ -123,11 +123,10 @@ func runRigDock(cmd *cobra.Command, args []string) error {
 
 	var stoppedAgents []string
 
-	t := tmux.NewTmux()
-
 	// Stop witness if running
 	witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
-	witnessRunning, _ := t.HasSession(witnessSession)
+	witBackend, witKey := resolveBackendForSession(witnessSession)
+	witnessRunning, _ := witBackend.HasSession(witKey)
 	if witnessRunning {
 		fmt.Printf("  Stopping witness...\n")
 		witMgr := witness.NewManager(r)
@@ -140,7 +139,8 @@ func runRigDock(cmd *cobra.Command, args []string) error {
 
 	// Stop refinery if running
 	refinerySession := fmt.Sprintf("gt-%s-refinery", rigName)
-	refineryRunning, _ := t.HasSession(refinerySession)
+	refBackend, refKey := resolveBackendForSession(refinerySession)
+	refineryRunning, _ := refBackend.HasSession(refKey)
 	if refineryRunning {
 		fmt.Printf("  Stopping refinery...\n")
 		refMgr := refinery.NewManager(r)
@@ -151,7 +151,8 @@ func runRigDock(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Stop polecat sessions if any
+	// Stop polecat sessions if any (polecat is inherently local/tmux)
+	t := tmux.NewTmux()
 	polecatMgr := polecat.NewSessionManager(t, r)
 	polecatInfos, err := polecatMgr.List()
 	if err == nil && len(polecatInfos) > 0 {

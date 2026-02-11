@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/wisp"
 	"github.com/steveyegge/gastown/internal/witness"
 )
@@ -92,11 +91,10 @@ func parkOneRig(rigName string) error {
 
 	var stoppedAgents []string
 
-	t := tmux.NewTmux()
-
 	// Stop witness if running
 	witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
-	witnessRunning, _ := t.HasSession(witnessSession)
+	witBackend, witKey := resolveBackendForSession(witnessSession)
+	witnessRunning, _ := witBackend.HasSession(witKey)
 	if witnessRunning {
 		fmt.Printf("  Stopping witness...\n")
 		witMgr := witness.NewManager(r)
@@ -109,7 +107,8 @@ func parkOneRig(rigName string) error {
 
 	// Stop refinery if running
 	refinerySession := fmt.Sprintf("gt-%s-refinery", rigName)
-	refineryRunning, _ := t.HasSession(refinerySession)
+	refBackend, refKey := resolveBackendForSession(refinerySession)
+	refineryRunning, _ := refBackend.HasSession(refKey)
 	if refineryRunning {
 		fmt.Printf("  Stopping refinery...\n")
 		refMgr := refinery.NewManager(r)

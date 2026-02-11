@@ -20,7 +20,6 @@ import (
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -368,13 +367,11 @@ func init() {
 }
 
 func runDeaconStart(cmd *cobra.Command, args []string) error {
-	t := tmux.NewTmux()
-	backend := terminal.NewTmuxBackend(t)
-
 	sessionName := getDeaconSessionName()
+	backend, sessionKey := resolveBackendForSession(sessionName)
 
 	// Check if session already exists
-	running, err := backend.HasSession(sessionName)
+	running, err := backend.HasSession(sessionKey)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -384,6 +381,7 @@ func runDeaconStart(cmd *cobra.Command, args []string) error {
 
 	// tmux-only: startDeaconSession uses NewSessionWithCommand, SetEnvironment,
 	// ConfigureGasTownSession, WaitForCommand which are tmux-specific
+	t := tmux.NewTmux()
 	if err := startDeaconSession(t, sessionName, deaconAgentOverride); err != nil {
 		return err
 	}
@@ -490,13 +488,11 @@ func runDeaconStop(cmd *cobra.Command, args []string) error {
 }
 
 func runDeaconAttach(cmd *cobra.Command, args []string) error {
-	t := tmux.NewTmux()
-	backend := terminal.NewTmuxBackend(t)
-
 	sessionName := getDeaconSessionName()
+	backend, sessionKey := resolveBackendForSession(sessionName)
 
 	// Check if session exists
-	running, err := backend.HasSession(sessionName)
+	running, err := backend.HasSession(sessionKey)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -504,21 +500,20 @@ func runDeaconAttach(cmd *cobra.Command, args []string) error {
 		// Auto-start if not running
 		// tmux-only: startDeaconSession uses NewSessionWithCommand, SetEnvironment, etc.
 		fmt.Println("Deacon session not running, starting...")
+		t := tmux.NewTmux()
 		if err := startDeaconSession(t, sessionName, deaconAgentOverride); err != nil {
 			return err
 		}
 	}
 	// Session uses a respawn loop, so Claude restarts automatically if it exits
 
-	// Use shared attach helper (smart: links if inside tmux, attaches if outside)
-	return attachToTmuxSession(sessionName)
+	// Attach via Backend (supports tmux switch-client and coop attach)
+	return backend.AttachSession(sessionKey)
 }
 
 func runDeaconStatus(cmd *cobra.Command, args []string) error {
-	t := tmux.NewTmux()
-	backend := terminal.NewTmuxBackend(t)
-
 	sessionName := getDeaconSessionName()
+	backend, sessionKey := resolveBackendForSession(sessionName)
 
 	// Check pause state first (most important)
 	townRoot, _ := workspace.FindFromCwdOrError()
@@ -537,13 +532,14 @@ func runDeaconStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	running, err := backend.HasSession(sessionName)
+	running, err := backend.HasSession(sessionKey)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
 
 	if running {
-		// Get session info for more details
+		// Get session info for more details (tmux-specific, best effort)
+		t := tmux.NewTmux()
 		info, err := t.GetSessionInfo(sessionName)
 		if err == nil {
 			status := "detached"
