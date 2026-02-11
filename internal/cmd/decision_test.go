@@ -1738,3 +1738,59 @@ func TestEmitDecisionBusEventRespondedPayload(t *testing.T) {
 		t.Errorf("resolved_by = %v, want human", parsed["resolved_by"])
 	}
 }
+
+// --- Stop loop detection tests ---
+
+func TestStopLoopCounterPath(t *testing.T) {
+	path := stopLoopCounterPath("sess-abc")
+	if path != "/tmp/.stop-loop-counter-sess-abc" {
+		t.Errorf("stopLoopCounterPath() = %q, want '/tmp/.stop-loop-counter-sess-abc'", path)
+	}
+}
+
+func TestStopLoopCounter_StartsAtZero(t *testing.T) {
+	clearStopLoopCounter("test-stop-loop-zero")
+	n := readStopLoopCounter("test-stop-loop-zero")
+	if n != 0 {
+		t.Errorf("readStopLoopCounter() = %d, want 0", n)
+	}
+}
+
+func TestStopLoopCounter_Increments(t *testing.T) {
+	sessionID := "test-stop-loop-inc"
+	clearStopLoopCounter(sessionID)
+	defer clearStopLoopCounter(sessionID)
+
+	n1 := incrementStopLoopCounter(sessionID)
+	if n1 != 1 {
+		t.Errorf("first increment = %d, want 1", n1)
+	}
+	n2 := incrementStopLoopCounter(sessionID)
+	if n2 != 2 {
+		t.Errorf("second increment = %d, want 2", n2)
+	}
+	n3 := incrementStopLoopCounter(sessionID)
+	if n3 != 3 {
+		t.Errorf("third increment = %d, want 3", n3)
+	}
+}
+
+func TestStopLoopCounter_ClearResetsToZero(t *testing.T) {
+	sessionID := "test-stop-loop-clear"
+	defer clearStopLoopCounter(sessionID)
+
+	incrementStopLoopCounter(sessionID)
+	incrementStopLoopCounter(sessionID)
+	clearStopLoopCounter(sessionID)
+
+	n := readStopLoopCounter(sessionID)
+	if n != 0 {
+		t.Errorf("after clear, readStopLoopCounter() = %d, want 0", n)
+	}
+}
+
+func TestStopLoopThreshold(t *testing.T) {
+	if stopLoopThreshold < 2 {
+		t.Errorf("stopLoopThreshold = %d, should be >= 2", stopLoopThreshold)
+	}
+}

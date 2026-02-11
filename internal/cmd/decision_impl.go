@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1240,6 +1241,44 @@ func clearTurnMarker(sessionID string) {
 	_ = os.Remove(turnMarkerPath(sessionID))
 }
 
+// --- Stop loop detection ---
+//
+// When auth is expired or the agent can't create a decision, the stop hook
+// blocks → agent retries → stop hook blocks again → infinite loop.
+// We track re-entries per session using a counter file. After a threshold
+// is exceeded, we allow the stop to pass through (fail-open).
+
+const stopLoopThreshold = 3
+
+func stopLoopCounterPath(sessionID string) string {
+	return fmt.Sprintf("/tmp/.stop-loop-counter-%s", sessionID)
+}
+
+// readStopLoopCounter returns the current re-entry count for a session.
+func readStopLoopCounter(sessionID string) int {
+	data, err := os.ReadFile(stopLoopCounterPath(sessionID))
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// incrementStopLoopCounter increments the re-entry count for a session.
+func incrementStopLoopCounter(sessionID string) int {
+	n := readStopLoopCounter(sessionID) + 1
+	_ = os.WriteFile(stopLoopCounterPath(sessionID), []byte(strconv.Itoa(n)), 0644)
+	return n
+}
+
+// clearStopLoopCounter resets the stop loop counter for a session.
+func clearStopLoopCounter(sessionID string) {
+	_ = os.Remove(stopLoopCounterPath(sessionID))
+}
+
 // isDecisionCommand checks if a command creates a decision.
 func isDecisionCommand(command string) bool {
 	return strings.Contains(command, "gt decision request") ||
@@ -1281,8 +1320,9 @@ When the decision is created, it will be assigned a semantic slug (e.g., gt-dec-
 
 // turnHookInput represents the JSON input from Claude Code hooks for turn enforcement.
 type turnHookInput struct {
-	SessionID string `json:"session_id"`
-	ToolInput struct {
+	SessionID      string `json:"session_id"`
+	StopHookActive bool   `json:"stop_hook_active"`
+	ToolInput      struct {
 		Command string `json:"command"`
 	} `json:"tool_input"`
 }
@@ -1402,11 +1442,31 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "[turn-check] Soft mode: %v\n", decisionTurnCheckSoft)
 	}
 
+	// Stop loop detection: when the agent can't create a decision (e.g. expired
+	// auth), the stop hook blocks repeatedly. Track re-entries and break the
+	// loop after a threshold to avoid burning context and tokens.
+	if input.StopHookActive {
+		count := incrementStopLoopCounter(input.SessionID)
+		if decisionTurnCheckVerbose {
+			fmt.Fprintf(os.Stderr, "[turn-check] Stop re-entry #%d (threshold: %d)\n", count, stopLoopThreshold)
+		}
+		if count >= stopLoopThreshold {
+			clearStopLoopCounter(input.SessionID)
+			fmt.Fprintf(os.Stderr, "[turn-check] STOP LOOP DETECTED: %d re-entries, allowing stop to break loop\n", count)
+			return nil
+		}
+	} else {
+		// Fresh stop (not re-entry) — reset the counter
+		clearStopLoopCounter(input.SessionID)
+	}
+
 	// Check turn marker file first (fast, local) - created by gt decision request
 	if turnMarkerExists(input.SessionID) {
 		if decisionTurnCheckVerbose {
 			fmt.Fprintf(os.Stderr, "[turn-check] OK: Turn marker file exists\n")
 		}
+		// Decision was offered, reset stop loop counter
+		clearStopLoopCounter(input.SessionID)
 		return nil
 	}
 
@@ -1418,6 +1478,7 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		if decisionTurnCheckVerbose {
 			fmt.Fprintf(os.Stderr, "[turn-check] OK: Agent already has pending decision\n")
 		}
+		clearStopLoopCounter(input.SessionID)
 		return nil
 	}
 
