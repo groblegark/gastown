@@ -419,12 +419,11 @@ func injectStartPrompt(pane, beadID, subject, args string) error {
 func getSessionFromPane(pane string) string {
 	if strings.HasPrefix(pane, "%") {
 		// Pane ID format - query tmux for the session
-		cmd := exec.Command("tmux", "display-message", "-t", pane, "-p", "#{session_name}")
-		out, err := cmd.Output()
+		name, err := tmux.NewTmux().GetSessionName(pane)
 		if err != nil {
 			return ""
 		}
-		return strings.TrimSpace(string(out))
+		return name
 	}
 	// Session:window.pane format - extract session name
 	if idx := strings.Index(pane, ":"); idx > 0 {
