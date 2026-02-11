@@ -2609,3 +2609,64 @@ func TestCloseAndClearAgentBead_ReasonVariations(t *testing.T) {
 		})
 	}
 }
+
+// TestSanitizeJSONOutput verifies that sanitizeJSONOutput strips non-JSON
+// warning lines (e.g., unicode ⚠ from RPC fallback) before JSON content.
+// (gt-ln3: invalid character U+00E2 looking for beginning of value)
+func TestSanitizeJSONOutput(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "clean JSON object",
+			input: `{"id":"abc-123"}`,
+			want:  `{"id":"abc-123"}`,
+		},
+		{
+			name:  "clean JSON array",
+			input: `[{"id":"abc"}]`,
+			want:  `[{"id":"abc"}]`,
+		},
+		{
+			name:  "warning before JSON object",
+			input: "⚠ RPC fallback: using local\n{\"id\":\"abc-123\"}",
+			want:  `{"id":"abc-123"}`,
+		},
+		{
+			name:  "warning before JSON array",
+			input: "⚠ RPC fallback: using local\n[{\"id\":\"abc\"}]",
+			want:  `[{"id":"abc"}]`,
+		},
+		{
+			name:  "multiple warning lines",
+			input: "⚠ warning 1\n⚠ warning 2\n{\"id\":\"abc\"}",
+			want:  `{"id":"abc"}`,
+		},
+		{
+			name:  "empty input",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "no JSON at all",
+			input: "just a plain string",
+			want:  "just a plain string",
+		},
+		{
+			name:  "whitespace before JSON",
+			input: "  {\"id\":\"abc\"}",
+			want:  "  {\"id\":\"abc\"}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := string(sanitizeJSONOutput([]byte(tt.input)))
+			if got != tt.want {
+				t.Errorf("sanitizeJSONOutput(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

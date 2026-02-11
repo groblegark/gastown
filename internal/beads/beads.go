@@ -302,7 +302,36 @@ func (b *Beads) run(args ...string) ([]byte, error) {
 		return nil, b.wrapError(fmt.Errorf("command produced no output"), stderr.String(), args)
 	}
 
-	return stdout.Bytes(), nil
+	// Strip non-JSON warning lines that bd may emit before JSON output.
+	// bd can emit unicode warning lines (e.g., ⚠ RPC fallback) to stdout
+	// before the actual JSON, which breaks json.Unmarshal in callers.
+	// (gt-ln3: invalid character U+00E2 looking for beginning of value)
+	return sanitizeJSONOutput(stdout.Bytes()), nil
+}
+
+// sanitizeJSONOutput strips non-JSON prefix lines from bd output.
+// When bd emits warnings to stdout before JSON (e.g., unicode warning
+// triangles from RPC fallback), the raw output breaks json.Unmarshal.
+// This finds the first line starting with '{' or '[' and returns from there.
+func sanitizeJSONOutput(out []byte) []byte {
+	if len(out) == 0 {
+		return out
+	}
+	// Fast path: output already starts with JSON
+	trimmed := bytes.TrimSpace(out)
+	if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') {
+		return out
+	}
+	// Scan for first line that starts with JSON
+	lines := bytes.SplitN(out, []byte("\n"), -1)
+	for i, line := range lines {
+		trimLine := bytes.TrimSpace(line)
+		if len(trimLine) > 0 && (trimLine[0] == '{' || trimLine[0] == '[') {
+			return bytes.Join(lines[i:], []byte("\n"))
+		}
+	}
+	// No JSON found; return original output (caller will handle the error)
+	return out
 }
 
 // Run executes a bd command and returns stdout.
