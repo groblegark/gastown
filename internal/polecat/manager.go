@@ -1549,10 +1549,11 @@ func (m *Manager) DetectStalePolecats(threshold int) ([]*StalenessInfo, error) {
 			Name: p.Name,
 		}
 
-		// Check for active tmux session
+		// Check for active session (supports K8s/Coop agents via Backend)
 		// Session name follows pattern: gt-<rig>-<polecat>
 		sessionName := fmt.Sprintf("gt-%s-%s", m.rig.Name, p.Name)
-		info.HasActiveSession = checkTmuxSession(sessionName)
+		agentPath := fmt.Sprintf("%s/%s", m.rig.Name, p.Name)
+		info.HasActiveSession = checkAgentSession(agentPath, sessionName)
 
 		// Check how far behind main
 		polecatGit := git.NewGit(p.ClonePath)
@@ -1579,11 +1580,12 @@ func (m *Manager) DetectStalePolecats(threshold int) ([]*StalenessInfo, error) {
 	return results, nil
 }
 
-// checkTmuxSession checks if a tmux session exists.
-func checkTmuxSession(sessionName string) bool {
-	// Use has-session command which returns 0 if session exists
-	cmd := exec.Command("tmux", "has-session", "-t", sessionName) //nolint:gosec // G204: sessionName is constructed internally
-	return cmd.Run() == nil
+// checkAgentSession checks if an agent session exists via the appropriate Backend.
+// agentID is used to resolve the backend (e.g., "rig/polecatName").
+func checkAgentSession(agentID, sessionName string) bool {
+	backend := terminal.ResolveBackend(agentID)
+	exists, err := backend.HasSession(sessionName)
+	return err == nil && exists
 }
 
 // countCommitsBehind counts how many commits a worktree is behind origin/<defaultBranch>.
