@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"os/exec"
 	"sort"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // crewCycleSession is the --session flag for crew next/prev commands.
@@ -79,8 +79,7 @@ func cycleCrewSession(direction int, sessionOverride string) error {
 	targetSession := sessions[targetIdx]
 
 	// Switch to target session
-	cmd := exec.Command("tmux", "switch-client", "-t", targetSession)
-	if err := cmd.Run(); err != nil {
+	if err := tmux.NewTmux().SwitchClient(targetSession); err != nil {
 		return fmt.Errorf("switching to %s: %w", targetSession, err)
 	}
 
