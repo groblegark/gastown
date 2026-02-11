@@ -415,7 +415,13 @@ func spawnPolecatForK8s(townRoot, rigName string, r *rig.Rig, opts SpawnOptions)
 }
 
 // GetSessionPane returns the pane identifier for a session's main pane.
+// This is a tmux-only operation (pane IDs are a tmux concept). On K8s
+// pods where tmux is not installed, this returns an error immediately.
 func GetSessionPane(sessionName string) (string, error) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		return "", fmt.Errorf("tmux not available (K8s pod?): %w", err)
+	}
+
 	const maxRetries = 30
 	const retryDelay = 100 * time.Millisecond
 
