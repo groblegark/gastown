@@ -21,6 +21,7 @@ import (
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/wisp"
 	"github.com/steveyegge/gastown/internal/witness"
@@ -967,7 +968,7 @@ func runRigReset(cmd *cobra.Command, args []string) error {
 
 // runResetStale resets in_progress issues whose assigned agent no longer has a session.
 func runResetStale(bd *beads.Beads, dryRun bool) error {
-	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(tmux.NewTmux())
 
 	// Get all in_progress issues
 	issues, err := bd.List(beads.ListOptions{
@@ -998,9 +999,9 @@ func runResetStale(bd *beads.Beads, dryRun bool) error {
 		}
 
 		// Check if session exists
-		hasSession, err := t.HasSession(sessionName)
+		hasSession, err := backend.HasSession(sessionName)
 		if err != nil {
-			// tmux error, skip this one
+			// backend error, skip this one
 			continue
 		}
 
@@ -1122,12 +1123,12 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 	var started []string
 	var skipped []string
 
-	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(tmux.NewTmux())
 
 	// 1. Start the witness
 	// Check actual tmux session, not state file (may be stale)
 	witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
-	witnessRunning, _ := t.HasSession(witnessSession)
+	witnessRunning, _ := backend.HasSession(witnessSession)
 	if witnessRunning {
 		skipped = append(skipped, "witness (already running)")
 	} else {
@@ -1145,9 +1146,9 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 	}
 
 	// 2. Start the refinery
-	// Check actual tmux session, not state file (may be stale)
+	// Check actual session, not state file (may be stale)
 	refinerySession := fmt.Sprintf("gt-%s-refinery", rigName)
-	refineryRunning, _ := t.HasSession(refinerySession)
+	refineryRunning, _ := backend.HasSession(refinerySession)
 	if refineryRunning {
 		skipped = append(skipped, "refinery (already running)")
 	} else {
@@ -1186,7 +1187,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 
 	g := git.NewGit(townRoot)
 	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
-	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(tmux.NewTmux())
 
 	var successRigs []string
 	var failedRigs []string
@@ -1216,7 +1217,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 
 		// 1. Start the witness
 		witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
-		witnessRunning, _ := t.HasSession(witnessSession)
+		witnessRunning, _ := backend.HasSession(witnessSession)
 		if witnessRunning {
 			skipped = append(skipped, "witness")
 		} else {
@@ -1236,7 +1237,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 
 		// 2. Start the refinery
 		refinerySession := fmt.Sprintf("gt-%s-refinery", rigName)
-		refineryRunning, _ := t.HasSession(refinerySession)
+		refineryRunning, _ := backend.HasSession(refinerySession)
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
 		} else {
@@ -1425,6 +1426,7 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(t)
 
 	// Header
 	fmt.Printf("%s\n", style.Bold.Render(rigName))
@@ -1483,7 +1485,7 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf(" (%d)\n", len(polecats))
 		for _, p := range polecats {
 			sessionName := fmt.Sprintf("gt-%s-%s", rigName, p.Name)
-			hasSession, _ := t.HasSession(sessionName)
+			hasSession, _ := backend.HasSession(sessionName)
 
 			sessionIcon := style.Dim.Render("○")
 			if hasSession {
@@ -1510,7 +1512,7 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf(" (%d)\n", len(crewWorkers))
 		for _, w := range crewWorkers {
 			sessionName := crewSessionName(rigName, w.Name)
-			hasSession, _ := t.HasSession(sessionName)
+			hasSession, _ := backend.HasSession(sessionName)
 
 			sessionIcon := style.Dim.Render("○")
 			if hasSession {
@@ -1675,9 +1677,10 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
 	}
 
+	t := tmux.NewTmux()
 	g := git.NewGit(townRoot)
 	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
-	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(t)
 
 	// Track results
 	var succeeded []string
@@ -1778,7 +1781,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 
 		// 1. Start the witness
 		witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
-		witnessRunning, _ := t.HasSession(witnessSession)
+		witnessRunning, _ := backend.HasSession(witnessSession)
 		if witnessRunning {
 			skipped = append(skipped, "witness")
 		} else {
@@ -1797,7 +1800,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 
 		// 2. Start the refinery
 		refinerySession := fmt.Sprintf("gt-%s-refinery", rigName)
-		refineryRunning, _ := t.HasSession(refinerySession)
+		refineryRunning, _ := backend.HasSession(refinerySession)
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
 		} else {
