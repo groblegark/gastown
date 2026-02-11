@@ -79,7 +79,7 @@ func (c *K8sConnection) kubectlExec(cmd string, args ...string) ([]byte, error) 
 	kubectlArgs = append(kubectlArgs, cmd)
 	kubectlArgs = append(kubectlArgs, args...)
 
-	command := exec.Command("kubectl", kubectlArgs...) //nolint:gosec
+	command := exec.Command("kubectl", kubectlArgs...) //nolint:gosec // args are constructed internally
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
@@ -124,7 +124,7 @@ func (c *K8sConnection) kubectlExecStdin(stdin []byte, cmd string, args ...strin
 	kubectlArgs = append(kubectlArgs, cmd)
 	kubectlArgs = append(kubectlArgs, args...)
 
-	command := exec.Command("kubectl", kubectlArgs...) //nolint:gosec
+	command := exec.Command("kubectl", kubectlArgs...) //nolint:gosec // args are constructed internally
 	command.Stdin = bytes.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout

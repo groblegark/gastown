@@ -1,0 +1,58 @@
+# Quench configuration for gastown
+# Run `quench config` for reference documentation
+version = 1
+
+[git]
+baseline = "notes"
+
+[git.commit]
+check = "error"
+
+[ratchet]
+check = "error"
+coverage = true
+escapes = true
+
+# --- Checks ---
+
+[check.cloc]
+check = "error"
+# Baseline: grandfather current large files, ratchet prevents new ones
+max_lines = 3600        # slackbot/bot.go is 3586
+max_lines_test = 4200   # config/loader_test.go is 4163
+max_tokens = 30000      # config/loader_test.go is 29377
+exclude = [
+  "gen/**",             # protobuf generated code
+  "mobile/gen/**",      # protobuf generated code
+  "docs/**",            # documentation
+  "mayor/**",           # local dev artifacts
+]
+
+[check.escapes]
+check = "error"
+
+[check.agents]
+check = "off"           # TODO: sync CLAUDE.md/AGENTS.md then enable
+required = ["CLAUDE.md"]
+
+[check.docs]
+check = "off"           # TODO: fix ASCII art false positives in design docs then enable
+
+[check.tests]
+check = "off"
+auto = false
+
+[check.license]
+check = "off"
+
+# --- Languages ---
+
+[golang]
+cloc.check = "error"
+policy.check = "error"
+suppress.check = "comment"
+
+[shell]
+cloc.check = "error"
+policy.check = "error"
+suppress.check = "forbid"

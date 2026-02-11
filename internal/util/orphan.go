@@ -150,7 +150,7 @@ func loadSignalState(filename string) map[int]signalState {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH); err != nil {
 		return state
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck // unlock in defer, nothing to handle
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -191,7 +191,7 @@ func saveSignalState(filename string, state map[int]signalState) error {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		return fmt.Errorf("acquiring lock: %w", err)
 	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck // unlock in defer, nothing to handle
 
 	for pid, s := range state {
 		fmt.Fprintf(f, "%d %s %d\n", pid, s.Signal, s.Timestamp.Unix())
