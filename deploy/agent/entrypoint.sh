@@ -733,17 +733,13 @@ while true; do
         wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
         COOP_PID=""
 
-        # If resume failed quickly, try fresh start instead.
-        elapsed=$(( $(date +%s) - start_time ))
-        if [ "${elapsed}" -lt 5 ] && [ "${exit_code}" -ne 0 ]; then
-            echo "[entrypoint] Resume failed (exit ${exit_code}), trying fresh start"
-            ${COOP_CMD} -- claude --dangerously-skip-permissions &
-            COOP_PID=$!
-            (auto_bypass_startup && inject_initial_prompt) &
-            monitor_agent_exit &
-            start_time=$(date +%s)
-            wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
-            COOP_PID=""
+        # If resume failed, retire the stale session log so the next iteration
+        # starts fresh.  The log is renamed (not deleted) so the agent can still
+        # review it at <path>.stale if needed.
+        if [ "${exit_code}" -ne 0 ] && [ -n "${LATEST_LOG}" ] && [ -f "${LATEST_LOG}" ]; then
+            echo "[entrypoint] Resume failed (exit ${exit_code}), retiring stale session log"
+            mv "${LATEST_LOG}" "${LATEST_LOG}.stale"
+            echo "[entrypoint]   renamed: ${LATEST_LOG} -> ${LATEST_LOG}.stale"
         fi
     else
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT})"
