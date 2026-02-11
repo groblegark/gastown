@@ -269,6 +269,10 @@ func runFeedInWindow(workDir string, bdArgs []string) error {
 
 	t := tmux.NewTmux()
 
+	if !t.IsAvailable() {
+		return fmt.Errorf("feed windows require tmux (not available in this environment)")
+	}
+
 	// Get current session name
 	sessionName, err := getCurrentTmuxSession()
 	if err != nil {
@@ -316,15 +320,13 @@ func runFeedInWindow(workDir string, bdArgs []string) error {
 
 // windowExists checks if a window with the given name exists in the session.
 // Note: getCurrentTmuxSession is defined in handoff.go
-func windowExists(_ *tmux.Tmux, session, windowName string) (bool, error) { // t unused: direct exec for simplicity
-	cmd := exec.Command("tmux", "list-windows", "-t", session, "-F", "#{window_name}")
-	out, err := cmd.Output()
+func windowExists(t *tmux.Tmux, session, windowName string) (bool, error) {
+	names, err := t.ListWindowNames(session)
 	if err != nil {
 		return false, err
 	}
-
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.TrimSpace(line) == windowName {
+	for _, name := range names {
+		if strings.TrimSpace(name) == windowName {
 			return true, nil
 		}
 	}
@@ -332,14 +334,11 @@ func windowExists(_ *tmux.Tmux, session, windowName string) (bool, error) { // t
 }
 
 // createWindow creates a new tmux window with the given name and command.
-func createWindow(_ *tmux.Tmux, session, windowName, workDir, command string) error { // t unused: direct exec for simplicity
-	args := []string{"new-window", "-t", session, "-n", windowName, "-c", workDir, command}
-	cmd := exec.Command("tmux", args...)
-	return cmd.Run()
+func createWindow(t *tmux.Tmux, session, windowName, workDir, command string) error {
+	return t.NewWindow(session, windowName, workDir, command)
 }
 
 // selectWindow switches to the specified window.
-func selectWindow(_ *tmux.Tmux, target string) error { // t unused: direct exec for simplicity
-	cmd := exec.Command("tmux", "select-window", "-t", target)
-	return cmd.Run()
+func selectWindow(t *tmux.Tmux, target string) error {
+	return t.SelectWindowByTarget(target)
 }
