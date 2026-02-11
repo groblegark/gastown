@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -101,7 +102,7 @@ func runBroadcast(cmd *cobra.Command, args []string) error {
 	}
 
 	// Send nudges
-	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(tmux.NewTmux())
 	var succeeded, failed int
 	var failures []string
 
@@ -110,7 +111,7 @@ func runBroadcast(cmd *cobra.Command, args []string) error {
 	for i, agent := range targets {
 		agentName := formatAgentName(agent)
 
-		if err := t.NudgeSession(agent.Name, message); err != nil {
+		if err := backend.NudgeSession(agent.Name, message); err != nil {
 			failed++
 			failures = append(failures, fmt.Sprintf("%s: %v", agentName, err))
 			fmt.Printf("  %s %s %s\n", style.ErrorPrefix, AgentTypeIcons[agent.Type], agentName)
