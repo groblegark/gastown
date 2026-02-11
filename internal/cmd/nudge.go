@@ -426,14 +426,14 @@ func runNudgeChannel(channelName, message string) error {
 	}
 
 	// Send nudges
-	backend := terminal.NewTmuxBackend(tmux.NewTmux())
 	var succeeded, failed int
 	var failures []string
 
 	fmt.Printf("Nudging channel %q (%d target(s))...\n\n", channelName, len(targets))
 
 	for i, sessionName := range targets {
-		if err := backend.NudgeSession(sessionName, prefixedMessage); err != nil {
+		backend, sessionKey := resolveBackendForSession(sessionName)
+		if err := backend.NudgeSession(sessionKey, prefixedMessage); err != nil {
 			failed++
 			failures = append(failures, fmt.Sprintf("%s: %v", sessionName, err))
 			fmt.Printf("  %s %s\n", style.ErrorPrefix, sessionName)

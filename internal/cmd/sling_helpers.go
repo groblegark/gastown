@@ -632,11 +632,11 @@ func wakeRigAgents(rigName string) {
 	_ = bootCmd.Run() // Ignore errors - rig might already be running
 
 	// Nudge witness to clear any backoff
-	t := tmux.NewTmux()
 	witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
+	backend, sessionKey := resolveBackendForSession(witnessSession)
 
 	// Silent nudge - session might not exist yet
-	_ = t.NudgeSession(witnessSession, "Polecat dispatched - check for work")
+	_ = backend.NudgeSession(sessionKey, "Polecat dispatched - check for work")
 }
 
 // nudgeRefinery wakes the refinery for a rig after an MR is created.
@@ -656,8 +656,8 @@ func nudgeRefinery(rigName, message string) {
 		return // Don't actually nudge tmux in tests
 	}
 
-	t := tmux.NewTmux()
-	_ = t.NudgeSession(refinerySession, message)
+	refBackend, refSessionKey := resolveBackendForSession(refinerySession)
+	_ = refBackend.NudgeSession(refSessionKey, message)
 }
 
 // isPolecatTarget checks if the target string refers to a polecat.

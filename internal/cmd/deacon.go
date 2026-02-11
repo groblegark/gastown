@@ -462,12 +462,11 @@ func startDeaconSession(t *tmux.Tmux, sessionName, agentOverride string) error {
 }
 
 func runDeaconStop(cmd *cobra.Command, args []string) error {
-	backend := terminal.NewTmuxBackend(tmux.NewTmux())
-
 	sessionName := getDeaconSessionName()
+	backend, sessionKey := resolveBackendForSession(sessionName)
 
 	// Check if session exists
-	running, err := backend.HasSession(sessionName)
+	running, err := backend.HasSession(sessionKey)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -478,11 +477,11 @@ func runDeaconStop(cmd *cobra.Command, args []string) error {
 	fmt.Println("Stopping Deacon session...")
 
 	// Try graceful shutdown first (best-effort interrupt)
-	_ = backend.SendKeys(sessionName, "C-c")
+	_ = backend.SendKeys(sessionKey, "C-c")
 	time.Sleep(100 * time.Millisecond)
 
 	// Kill the session and all descendant processes.
-	if err := backend.KillSession(sessionName); err != nil {
+	if err := backend.KillSession(sessionKey); err != nil {
 		return fmt.Errorf("killing session: %w", err)
 	}
 
@@ -573,11 +572,10 @@ func runDeaconStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runDeaconRestart(cmd *cobra.Command, args []string) error {
-	backend := terminal.NewTmuxBackend(tmux.NewTmux())
-
 	sessionName := getDeaconSessionName()
+	backend, sessionKey := resolveBackendForSession(sessionName)
 
-	running, err := backend.HasSession(sessionName)
+	running, err := backend.HasSession(sessionKey)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -586,7 +584,7 @@ func runDeaconRestart(cmd *cobra.Command, args []string) error {
 
 	if running {
 		// Kill existing session and all descendant processes.
-		if err := backend.KillSession(sessionName); err != nil {
+		if err := backend.KillSession(sessionKey); err != nil {
 			style.PrintWarning("failed to kill session: %v", err)
 		}
 	}
@@ -727,10 +725,10 @@ func runDeaconHealthCheck(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid agent address: %w", err)
 	}
 
-	backend := terminal.NewTmuxBackend(tmux.NewTmux())
+	backend, sessionKey := resolveBackendForSession(sessionName)
 
 	// Check if session exists
-	exists, err := backend.HasSession(sessionName)
+	exists, err := backend.HasSession(sessionKey)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -750,7 +748,7 @@ func runDeaconHealthCheck(cmd *cobra.Command, args []string) error {
 	agentState.RecordPing()
 
 	// Send health check nudge
-	if err := backend.NudgeSession(sessionName, "HEALTH_CHECK: respond with any action to confirm responsiveness"); err != nil {
+	if err := backend.NudgeSession(sessionKey, "HEALTH_CHECK: respond with any action to confirm responsiveness"); err != nil {
 		return fmt.Errorf("sending nudge: %w", err)
 	}
 
@@ -845,10 +843,10 @@ func runDeaconForceKill(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid agent address: %w", err)
 	}
 
-	backend := terminal.NewTmuxBackend(tmux.NewTmux())
+	backend, sessionKey := resolveBackendForSession(sessionName)
 
 	// Check if session exists
-	exists, err := backend.HasSession(sessionName)
+	exists, err := backend.HasSession(sessionKey)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -871,7 +869,7 @@ func runDeaconForceKill(cmd *cobra.Command, args []string) error {
 
 	// Step 2: Kill the session and all descendant processes.
 	fmt.Printf("%s Killing session %s...\n", style.Dim.Render("2."), sessionName)
-	if err := backend.KillSession(sessionName); err != nil {
+	if err := backend.KillSession(sessionKey); err != nil {
 		return fmt.Errorf("killing session: %w", err)
 	}
 

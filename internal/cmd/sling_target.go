@@ -56,6 +56,18 @@ func sessionToAgentID(sessionName string) string {
 	return identity.Address()
 }
 
+// resolveBackendForSession resolves the Backend for a tmux session name.
+// Returns the backend and the session key to use with it ("claude" for Coop,
+// the original sessionName for tmux/SSH).
+func resolveBackendForSession(sessionName string) (terminal.Backend, string) {
+	agentID := sessionToAgentID(sessionName)
+	backend := terminal.ResolveBackend(agentID)
+	if _, ok := backend.(*terminal.TmuxBackend); ok {
+		return backend, sessionName
+	}
+	return backend, "claude"
+}
+
 // resolveSelfTarget determines agent identity, pane, and hook root for slinging to self.
 func resolveSelfTarget() (agentID string, pane string, hookRoot string, err error) {
 	roleInfo, err := GetRole()

@@ -92,9 +92,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 	if session == "" && len(args) > 0 {
 		session = args[0]
 	}
-	// Create tmux instance
 	tmuxClient := tmux.NewTmux()
-	backend := terminal.NewTmuxBackend(tmuxClient)
 
 	if session == "" {
 		// Auto-detect session
@@ -104,6 +102,9 @@ func runContext(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("session auto-detection failed: %w", err)
 		}
 	}
+
+	// Resolve backend for the target session (supports tmux, coop, ssh)
+	backend, sessionKey := resolveBackendForSession(session)
 
 	// If no specific flag is set, default to --check
 	if !contextUsage && !contextErrors && !contextCircuitStatus && !contextCircuitReset && !contextCheck {
@@ -115,7 +116,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 		return runContextUsage(session, tmuxClient)
 	}
 	if contextErrors {
-		return runContextErrors(session, backend)
+		return runContextErrors(sessionKey, backend)
 	}
 	if contextCircuitStatus {
 		return runCircuitBreakerStatus()
@@ -124,7 +125,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 		return runCircuitBreakerReset()
 	}
 	if contextCheck {
-		return runContextCheck(session, backend)
+		return runContextCheck(sessionKey, backend)
 	}
 
 	return nil
