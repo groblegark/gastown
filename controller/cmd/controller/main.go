@@ -388,6 +388,22 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		spec.DaemonTokenSecret = cfg.DaemonTokenSecret
 	}
 
+	// Git credentials: inject GIT_USERNAME and GIT_TOKEN from secret for clone/push.
+	if cfg.GitCredentialsSecret != "" {
+		spec.SecretEnv = append(spec.SecretEnv,
+			podmanager.SecretEnvSource{
+				EnvName:    "GIT_USERNAME",
+				SecretName: cfg.GitCredentialsSecret,
+				SecretKey:  "username",
+			},
+			podmanager.SecretEnvSource{
+				EnvName:    "GIT_TOKEN",
+				SecretName: cfg.GitCredentialsSecret,
+				SecretKey:  "token",
+			},
+		)
+	}
+
 	// Coop: either built-in (HTTP probes on agent) or sidecar (separate container).
 	if cfg.CoopBuiltin {
 		spec.CoopBuiltin = true

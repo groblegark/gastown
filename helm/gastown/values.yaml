@@ -378,6 +378,21 @@ agentController:
   # NATS server URL for event bus integration (e.g., "nats://daemon-svc:4222")
   natsURL: ""
 
+  # K8s secret with git credentials (username/token keys) for agent pods.
+  # Created by gitCredentialsExternalSecret below, or manually.
+  gitCredentialsSecret: ""
+
+  # ExternalSecret config for git credentials (optional — creates the K8s Secret).
+  # Set remoteRef + secretStoreName to enable.
+  gitCredentialsExternalSecret: {}
+  # gitCredentialsExternalSecret:
+  #   secretStoreName: "aws-secretsmanager"
+  #   secretStoreKind: ClusterSecretStore
+  #   refreshInterval: "15m"
+  #   remoteRef: "gastown/git-credentials"
+  #   usernameProperty: "username"
+  #   tokenProperty: "token"
+
   # K8s secret with NATS auth token for agent pods
   natsTokenSecret: ""
 

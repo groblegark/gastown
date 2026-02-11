@@ -65,6 +65,11 @@ type Config struct {
 	// Passed to agent pods as COOP_NATS_URL for real-time events.
 	NatsURL string
 
+	// GitCredentialsSecret is the K8s secret containing git credentials (env: GIT_CREDENTIALS_SECRET).
+	// Keys "username" and "token" are injected as GIT_USERNAME and GIT_TOKEN env vars
+	// in agent pods for git clone/push to GitHub.
+	GitCredentialsSecret string
+
 	// NatsTokenSecret is the K8s secret containing the NATS auth token (env: NATS_TOKEN_SECRET).
 	// Injected as COOP_NATS_TOKEN in agent pods.
 	NatsTokenSecret string
@@ -116,8 +121,9 @@ func Parse() *Config {
 		CredentialsSecret: os.Getenv("CLAUDE_CREDENTIALS_SECRET"),
 		DaemonTokenSecret: os.Getenv("DAEMON_TOKEN_SECRET"),
 		TownName:          envOr("GT_TOWN_NAME", "town"),
-		NatsURL:           os.Getenv("NATS_URL"),
-		NatsTokenSecret:   os.Getenv("NATS_TOKEN_SECRET"),
+		GitCredentialsSecret: os.Getenv("GIT_CREDENTIALS_SECRET"),
+		NatsURL:              os.Getenv("NATS_URL"),
+		NatsTokenSecret:      os.Getenv("NATS_TOKEN_SECRET"),
 		Transport:         envOr("WATCHER_TRANSPORT", "sse"),
 		NatsConsumerName:  os.Getenv("NATS_CONSUMER_NAME"),
 		SyncInterval:      envDurationOr("SYNC_INTERVAL", 60*time.Second),
@@ -137,6 +143,7 @@ func Parse() *Config {
 	flag.StringVar(&cfg.CredentialsSecret, "credentials-secret", cfg.CredentialsSecret, "K8s secret with Claude OAuth credentials")
 	flag.StringVar(&cfg.DaemonTokenSecret, "daemon-token-secret", cfg.DaemonTokenSecret, "K8s secret with daemon auth token for agent pods")
 	flag.StringVar(&cfg.TownName, "town-name", cfg.TownName, "Gas Town deployment name")
+	flag.StringVar(&cfg.GitCredentialsSecret, "git-credentials-secret", cfg.GitCredentialsSecret, "K8s secret with git credentials (username/token keys)")
 	flag.StringVar(&cfg.NatsURL, "nats-url", cfg.NatsURL, "NATS server URL for event bus")
 	flag.StringVar(&cfg.NatsTokenSecret, "nats-token-secret", cfg.NatsTokenSecret, "K8s secret with NATS auth token")
 	flag.StringVar(&cfg.Transport, "transport", cfg.Transport, "Event transport: sse or nats")

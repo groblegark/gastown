@@ -1,0 +1,84 @@
+# Gas Town Next agent pod configuration
+# Namespace: gastown-next
+# Purpose: Daily-driver agent pods with full git push/pull access
+#
+# Deploy:
+#   cd helm/agent-pod/
+#   helm upgrade --install agent-pod ./ -n gastown-next \
+#     --values values.yaml --values values/gastown-next.yaml
+
+agent:
+  image:
+    repository: 909418727440.dkr.ecr.us-east-1.amazonaws.com/gastown-agent
+    tag: "latest"
+    pullPolicy: Always
+
+  role: polecat
+  rig: gastown-next
+
+  replicaCount: 1
+
+  # Claude Max credentials (synced via sync-claude-credentials.sh)
+  credentialsSecret: "claude-credentials"
+
+  sessionResume:
+    enabled: true
+
+  persistence:
+    enabled: true
+    storageClass: gp2
+    size: 10Gi
+
+  nodeSelector:
+    kubernetes.io/arch: amd64
+
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: karpenter.sh/capacity-type
+                operator: In
+                values:
+                  - on-demand
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: per-mr
+                operator: DoesNotExist
+
+# BD daemon connection (in-cluster service)
+bdDaemon:
+  host: "gastown-next-bd-daemon.gastown-next.svc.cluster.local"
+  port: 9876
+
+# External Secrets — Anthropic API key + git credentials from AWS Secrets Manager
+externalSecrets:
+  enabled: true
+  clusterSecretStore: "aws-secretsmanager"
+  refreshInterval: "15m"
+
+  anthropicApiKey:
+    remoteRef: "gastown/anthropic-api-key"
+    property: "ANTHROPIC_API_KEY"
+
+  gitCredentials:
+    enabled: true
+    remoteRef: "gastown/git-credentials"
+    usernameProperty: "username"
+    tokenProperty: "token"
+
+# Network policy — allow DNS, daemon, HTTPS
+networkPolicy:
+  enabled: true
+
+resourceQuota:
+  enabled: true
+  hard:
+    requests.cpu: "8"
+    requests.memory: "16Gi"
+    limits.cpu: "16"
+    limits.memory: "32Gi"
+    pods: "10"
+    persistentvolumeclaims: "5"

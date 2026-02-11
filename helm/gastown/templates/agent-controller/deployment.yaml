@@ -80,6 +80,10 @@ spec:
             - name: NATS_TOKEN_SECRET
               value: {{ .Values.agentController.natsTokenSecret }}
             {{- end }}
+            {{- if .Values.agentController.gitCredentialsSecret }}
+            - name: GIT_CREDENTIALS_SECRET
+              value: {{ .Values.agentController.gitCredentialsSecret }}
+            {{- end }}
           resources:
             {{- toYaml .Values.agentController.resources | nindent 12 }}
       {{- with .Values.agentController.nodeSelector }}
