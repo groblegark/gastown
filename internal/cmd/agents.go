@@ -38,6 +38,8 @@ type AgentSession struct {
 	Type      AgentType
 	Rig       string // For rig-specific agents
 	AgentName string // e.g., crew name, polecat name
+	K8s       bool   // True for K8s coop-backed agents (no tmux session)
+	BeadID    string // Bead ID for K8s agents (used by Backend.AttachSession)
 }
 
 // AgentTypeColors maps agent types to tmux color codes.
@@ -293,6 +295,8 @@ func mergeK8sAgents(agents []*AgentSession, seen map[string]bool, townRoot strin
 			Name:      s.TmuxSession,
 			Rig:       s.Rig,
 			AgentName: s.Name,
+			K8s:       true,
+			BeadID:    s.ID,
 		}
 		switch s.Role {
 		case "polecat":
@@ -392,7 +396,17 @@ func runAgents(cmd *cobra.Command, args []string) error {
 
 		key := shortcutKey(keyIndex)
 		label := agent.displayLabel()
-		action := fmt.Sprintf("switch-client -t '%s'", agent.Name)
+		var action string
+		if agent.K8s {
+			// K8s agents run in coop pods — open a new window for the attach flow.
+			label += " #[fg=white,dim]☸"
+			action = fmt.Sprintf("new-window -n '%s' 'gt mayor attach'", agent.Name)
+			if agent.Type == AgentCrew {
+				action = fmt.Sprintf("new-window -n '%s' 'gt crew at %s'", agent.Name, agent.AgentName)
+			}
+		} else {
+			action = fmt.Sprintf("switch-client -t '%s'", agent.Name)
+		}
 
 		menuArgs = append(menuArgs, label, key, action)
 		keyIndex++
@@ -435,19 +449,23 @@ func runAgentsList(cmd *cobra.Command, args []string) error {
 		}
 
 		icon := AgentTypeIcons[agent.Type]
+		k8sTag := ""
+		if agent.K8s {
+			k8sTag = " [k8s]"
+		}
 		switch agent.Type {
 		case AgentMayor:
-			fmt.Printf("  %s Mayor\n", icon)
+			fmt.Printf("  %s Mayor%s\n", icon, k8sTag)
 		case AgentDeacon:
-			fmt.Printf("  %s Deacon\n", icon)
+			fmt.Printf("  %s Deacon%s\n", icon, k8sTag)
 		case AgentWitness:
-			fmt.Printf("  %s witness\n", icon)
+			fmt.Printf("  %s witness%s\n", icon, k8sTag)
 		case AgentRefinery:
-			fmt.Printf("  %s refinery\n", icon)
+			fmt.Printf("  %s refinery%s\n", icon, k8sTag)
 		case AgentCrew:
-			fmt.Printf("  %s crew/%s\n", icon, agent.AgentName)
+			fmt.Printf("  %s crew/%s%s\n", icon, agent.AgentName, k8sTag)
 		case AgentPolecat:
-			fmt.Printf("  %s %s\n", icon, agent.AgentName)
+			fmt.Printf("  %s %s%s\n", icon, agent.AgentName, k8sTag)
 		}
 	}
 
