@@ -24,6 +24,7 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -396,9 +397,11 @@ func startConfiguredCrew(t *tmux.Tmux, rigs []*rig.Rig, townRoot string, mu *syn
 
 // startOrRestartCrewMember starts or restarts a single crew member and returns a status message.
 func startOrRestartCrewMember(t *tmux.Tmux, r *rig.Rig, crewName, townRoot string) (msg string, started bool) {
+	backend := terminal.NewTmuxBackend(t)
 	sessionID := crewSessionName(r.Name, crewName)
-	if running, _ := t.HasSession(sessionID); running {
+	if running, _ := backend.HasSession(sessionID); running {
 		// Session exists - check if agent is still running
+		// tmux-only: IsAgentRunning checks pane commands which is tmux-specific
 		agentCfg := config.ResolveRoleAgentConfig(constants.RoleCrew, townRoot, r.Path)
 		if !t.IsAgentRunning(sessionID, config.ExpectedPaneCommands(agentCfg)...) {
 			// Agent has exited, restart it
@@ -410,6 +413,7 @@ func startOrRestartCrewMember(t *tmux.Tmux, r *rig.Rig, crewName, townRoot strin
 				Topic:     "restart",
 			})
 			agentCmd := config.BuildCrewStartupCommand(r.Name, crewName, r.Path, beacon)
+			// tmux-only: SendKeys sends text + Enter to launch agent in existing pane
 			if err := t.SendKeys(sessionID, agentCmd); err != nil {
 				return fmt.Sprintf("  %s %s/%s restart failed: %v\n", style.Dim.Render("○"), r.Name, crewName, err), false
 			}
@@ -548,13 +552,14 @@ func categorizeSessions(sessions []string, mayorSession, deaconSession string) (
 }
 
 func runGracefulShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) error {
+	backend := terminal.NewTmuxBackend(t)
 	fmt.Printf("Graceful shutdown of Gas Town (waiting up to %ds)...\n\n", shutdownWait)
 
 	// Phase 1: Send ESC to all agents to interrupt them
 	fmt.Printf("Phase 1: Sending ESC to %d agent(s)...\n", len(gtSessions))
 	for _, sess := range gtSessions {
 		fmt.Printf("  %s Interrupting %s\n", style.Bold.Render("→"), sess)
-		_ = t.SendKeysRaw(sess, "Escape") // best-effort interrupt
+		_ = backend.SendKeys(sess, "Escape") // best-effort interrupt
 	}
 
 	// Phase 2: Send shutdown message asking agents to handoff
@@ -562,6 +567,8 @@ func runGracefulShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) err
 	shutdownMsg := "[SHUTDOWN] Gas Town is shutting down. Please save your state and update your handoff bead, then type /exit or wait to be terminated."
 	for _, sess := range gtSessions {
 		// Small delay then send the message
+		// tmux-only: SendKeys sends text + Enter; using tmux directly to avoid
+		// NudgeSession's 5s debounce which would slow the shutdown loop
 		time.Sleep(constants.ShutdownNotifyDelay)
 		_ = t.SendKeys(sess, shutdownMsg) // best-effort notification
 	}
@@ -654,6 +661,7 @@ func runImmediateShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) er
 // Returns the count of sessions that were successfully stopped (verified by checking
 // if the session no longer exists after the kill attempt).
 func killSessionsInOrder(t *tmux.Tmux, sessions []string, mayorSession, deaconSession string) int {
+	backend := terminal.NewTmuxBackend(t)
 	stopped := 0
 
 	// Helper to check if session is in our list
@@ -669,18 +677,18 @@ func killSessionsInOrder(t *tmux.Tmux, sessions []string, mayorSession, deaconSe
 	// Helper to kill a session and verify it was stopped
 	killAndVerify := func(sess string) bool {
 		// Check if session exists before attempting to kill
-		exists, _ := t.HasSession(sess)
+		exists, _ := backend.HasSession(sess)
 		if !exists {
 			return false // Session already gone
 		}
 
 		// Attempt to kill the session and its processes
-		_ = t.KillSessionWithProcesses(sess)
+		_ = backend.KillSession(sess)
 
 		// Verify the session is actually gone (ignore error, check existence)
-		// KillSessionWithProcesses might return an error even if it successfully
+		// KillSession might return an error even if it successfully
 		// killed the processes and the session auto-closed
-		stillExists, _ := t.HasSession(sess)
+		stillExists, _ := backend.HasSession(sess)
 		if !stillExists {
 			fmt.Printf("  %s %s stopped\n", style.Bold.Render("✓"), sess)
 			return true
