@@ -208,13 +208,13 @@ func (r *BdReporter) SyncAll(ctx context.Context) error {
 		}
 
 		// Write backend metadata for coop-enabled pods so ResolveBackend() works
-		// after controller restarts.
-		if coopPort := detectCoopPort(&pod); coopPort > 0 {
+		// after controller restarts. Uses pod IP (no headless Service for DNS).
+		if coopPort := detectCoopPort(&pod); coopPort > 0 && pod.Status.PodIP != "" {
 			_ = r.ReportBackendMetadata(ctx, agentBeadID, BackendMetadata{
 				PodName:   pod.Name,
 				Namespace: pod.Namespace,
 				Backend:   "coop",
-				CoopURL:   fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", pod.Name, pod.Namespace, coopPort),
+				CoopURL:   fmt.Sprintf("http://%s:%d", pod.Status.PodIP, coopPort),
 			})
 		}
 	}
@@ -428,12 +428,13 @@ func (r *HTTPReporter) SyncAll(ctx context.Context) error {
 
 		// Write backend metadata for coop-enabled pods so ResolveBackend() works
 		// after controller restarts. Detect coop by checking for port 8080 on any container.
-		if coopPort := detectCoopPort(&pod); coopPort > 0 {
+		// Uses pod IP because individual pods don't have DNS entries (no headless Service).
+		if coopPort := detectCoopPort(&pod); coopPort > 0 && pod.Status.PodIP != "" {
 			_ = r.ReportBackendMetadata(ctx, agentBeadID, BackendMetadata{
 				PodName:   pod.Name,
 				Namespace: pod.Namespace,
 				Backend:   "coop",
-				CoopURL:   fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", pod.Name, pod.Namespace, coopPort),
+				CoopURL:   fmt.Sprintf("http://%s:%d", pod.Status.PodIP, coopPort),
 			})
 		}
 	}

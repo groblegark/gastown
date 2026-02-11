@@ -193,19 +193,8 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 		if err := pods.CreateAgentPod(ctx, spec); err != nil {
 			return err
 		}
-		// Report backend metadata so ResolveBackend() can find this agent.
-		if spec.CoopSidecar != nil || spec.CoopBuiltin {
-			var coopPort int32 = podmanager.CoopDefaultPort
-			if spec.CoopSidecar != nil && spec.CoopSidecar.Port != 0 {
-				coopPort = spec.CoopSidecar.Port
-			}
-			_ = status.ReportBackendMetadata(ctx, agentBeadID, statusreporter.BackendMetadata{
-				PodName:   spec.PodName(),
-				Namespace: spec.Namespace,
-				Backend:   "coop",
-				CoopURL:   fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", spec.PodName(), spec.Namespace, coopPort),
-			})
-		}
+		// Backend metadata (coop_url) is written by SyncAll once the pod has an IP.
+		// We skip writing it here because the pod IP isn't available at creation time.
 		// Report spawning status to beads.
 		_ = status.ReportPodStatus(ctx, agentBeadID, statusreporter.PodStatus{
 			PodName:   spec.PodName(),
