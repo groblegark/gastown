@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/style"
 )
 
@@ -25,6 +27,11 @@ type CrewListItem struct {
 func runCrewList(cmd *cobra.Command, args []string) error {
 	if crewListAll && crewRig != "" {
 		return fmt.Errorf("cannot use --all with --rig")
+	}
+
+	// Remote mode: query daemon RPC (K8s pod or gt connect).
+	if client := newConnectedDaemonClient(); client != nil {
+		return runCrewListRemote(client)
 	}
 
 	var rigs []*rig.Rig
@@ -104,6 +111,58 @@ func runCrewList(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s %s/%s\n", status, item.Rig, item.Name)
 		fmt.Printf("    Branch: %s  Git: %s\n", item.Branch, gitStatus)
 		fmt.Printf("    %s\n", style.Dim.Render(item.Path))
+	}
+
+	return nil
+}
+
+// runCrewListRemote lists crew workers via daemon RPC.
+func runCrewListRemote(client *rpcclient.Client) error {
+	agents, _, _, err := client.ListAgents(context.Background(), crewRig, "crew", false, crewListAll)
+	if err != nil {
+		return fmt.Errorf("listing remote crew: %w", err)
+	}
+
+	var items []CrewListItem
+	for _, a := range agents {
+		items = append(items, CrewListItem{
+			Name:       a.Name,
+			Rig:        a.Rig,
+			Branch:     a.Branch,
+			Path:       a.WorkDir,
+			HasSession: a.State == "running",
+			GitClean:   a.GitStatus == "" || a.GitStatus == "clean",
+		})
+	}
+
+	if len(items) == 0 {
+		fmt.Println("No crew workspaces found.")
+		return nil
+	}
+
+	if crewJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(items)
+	}
+
+	fmt.Printf("%s %s\n\n", style.Bold.Render("Crew Workspaces"), style.Dim.Render("(remote)"))
+	for _, item := range items {
+		status := style.Dim.Render("○")
+		if item.HasSession {
+			status = style.Bold.Render("●")
+		}
+
+		gitStatus := style.Dim.Render("clean")
+		if !item.GitClean {
+			gitStatus = style.Bold.Render("dirty")
+		}
+
+		fmt.Printf("  %s %s/%s\n", status, item.Rig, item.Name)
+		fmt.Printf("    Branch: %s  Git: %s\n", item.Branch, gitStatus)
+		if item.Path != "" {
+			fmt.Printf("    %s\n", style.Dim.Render(item.Path))
+		}
 	}
 
 	return nil

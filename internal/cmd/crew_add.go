@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -10,6 +11,7 @@ import (
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/style"
 	crewtui "github.com/steveyegge/gastown/internal/tui/crew"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -39,12 +41,6 @@ func runCrewAdd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Load rigs config (beads-first, filesystem fallback).
-	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
-	if err != nil {
-		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
-	}
-
 	// Determine base rig from --rig flag or first name's rig/name format
 	baseRig := crewRig
 	if baseRig == "" {
@@ -59,6 +55,21 @@ func runCrewAdd(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("could not determine rig (use --rig flag): %w", err)
 		}
+	}
+
+	// Remote daemon mode: route through CreateCrew RPC instead of local
+	// filesystem operations. The daemon creates the agent bead and the
+	// K8s controller handles pod/PVC creation.
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		return runCrewAddRemote(rpcClient, baseRig, args)
+	}
+
+	// --- Local mode: create workspace on the local filesystem ---
+
+	// Load rigs config (beads-first, filesystem fallback).
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
+	if err != nil {
+		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
 	}
 
 	// Get rig
@@ -159,5 +170,69 @@ func runCrewAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create any crew workspaces")
 	}
 
+	return nil
+}
+
+// runCrewAddRemote sends CreateCrew RPCs to the remote daemon for each name.
+// The daemon writes the agent bead (with role_type=crew, agent_state=idle)
+// and the K8s controller watches for the bead event to create the crew pod
+// with a persistent volume.
+func runCrewAddRemote(client *rpcclient.Client, baseRig string, args []string) error {
+	var created []string
+	var failed []string
+
+	for _, arg := range args {
+		name := arg
+		rigName := baseRig
+
+		// Parse rig/name format
+		if parsedRig, crewName, ok := parseRigSlashName(arg); ok {
+			if parsedRig != baseRig {
+				style.PrintWarning("%s: different rig '%s' ignored (use --rig to change)", arg, parsedRig)
+			}
+			name = crewName
+		}
+
+		fmt.Printf("Creating crew workspace %s in %s (remote)...\n", name, rigName)
+
+		resp, err := client.CreateCrew(context.Background(), rpcclient.CreateCrewRequest{
+			Name:   name,
+			Rig:    rigName,
+			Branch: crewBranch,
+		})
+		if err != nil {
+			style.PrintWarning("creating crew workspace '%s': %v", name, err)
+			failed = append(failed, name)
+			continue
+		}
+
+		if resp.Reopened {
+			fmt.Printf("%s Reopened crew workspace: %s/%s\n",
+				style.Bold.Render("✓"), rigName, name)
+		} else {
+			fmt.Printf("%s Created crew workspace: %s/%s\n",
+				style.Bold.Render("✓"), rigName, name)
+		}
+		fmt.Printf("  Agent bead: %s\n", resp.BeadID)
+		if resp.Agent != nil && resp.Agent.WorkDir != "" {
+			fmt.Printf("  Work dir: %s\n", resp.Agent.WorkDir)
+		}
+		fmt.Println()
+
+		created = append(created, name)
+	}
+
+	// Summary
+	if len(created) > 0 {
+		fmt.Printf("%s Created %d crew workspace(s): %v\n",
+			style.Bold.Render("✓"), len(created), created)
+	}
+	if len(failed) > 0 {
+		fmt.Printf("%s Failed to create %d workspace(s): %v\n",
+			style.Warning.Render("!"), len(failed), failed)
+	}
+	if len(created) == 0 && len(failed) > 0 {
+		return fmt.Errorf("failed to create any crew workspaces")
+	}
 	return nil
 }

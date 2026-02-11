@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mail"
+	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/style"
 )
 
@@ -47,6 +49,11 @@ func runCrewStatus(cmd *cobra.Command, args []string) error {
 				targetName = "" // Show all crew in the rig
 			}
 		}
+	}
+
+	// Remote mode: query daemon RPC (K8s pod or gt connect).
+	if client := newConnectedDaemonClient(); client != nil {
+		return runCrewStatusRemote(client, targetName)
 	}
 
 	crewMgr, r, err := getCrewManager(crewRig)
@@ -164,6 +171,97 @@ func runCrewStatus(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  Mail:   %d unread / %d total\n", item.MailUnread, item.MailTotal)
 		} else {
 			fmt.Printf("  Mail:   %s\n", style.Dim.Render(fmt.Sprintf("%d messages", item.MailTotal)))
+		}
+	}
+
+	return nil
+}
+
+// runCrewStatusRemote fetches crew status via daemon RPC.
+func runCrewStatusRemote(client *rpcclient.Client, targetName string) error {
+	ctx := context.Background()
+
+	if targetName != "" {
+		// Specific worker: use GetAgent.
+		addr := targetName
+		if crewRig != "" {
+			addr = fmt.Sprintf("%s/crew/%s", crewRig, targetName)
+		}
+		agent, _, err := client.GetAgent(ctx, addr)
+		if err != nil {
+			return fmt.Errorf("getting remote crew status: %w", err)
+		}
+		return renderRemoteCrewStatus([]rpcclient.Agent{*agent})
+	}
+
+	// All workers in rig.
+	agents, _, _, err := client.ListAgents(ctx, crewRig, "crew", false, false)
+	if err != nil {
+		return fmt.Errorf("listing remote crew: %w", err)
+	}
+
+	if len(agents) == 0 {
+		fmt.Println("No crew workspaces found.")
+		return nil
+	}
+
+	return renderRemoteCrewStatus(agents)
+}
+
+func renderRemoteCrewStatus(agents []rpcclient.Agent) error {
+	var items []CrewStatusItem
+	for _, a := range agents {
+		item := CrewStatusItem{
+			Name:       a.Name,
+			Rig:        a.Rig,
+			Path:       a.WorkDir,
+			Branch:     a.Branch,
+			HasSession: a.State == "running",
+			GitClean:   a.GitStatus == "" || a.GitStatus == "clean",
+			MailUnread: a.UnreadMail,
+		}
+		if a.State == "running" {
+			item.SessionID = a.Session
+		}
+		if a.GitStatus != "" && a.GitStatus != "clean" {
+			item.GitModified = []string{a.GitStatus}
+		}
+		items = append(items, item)
+	}
+
+	if crewJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(items)
+	}
+
+	for i, item := range items {
+		if i > 0 {
+			fmt.Println()
+		}
+
+		sessionStatus := style.Dim.Render("○ stopped")
+		if item.HasSession {
+			sessionStatus = style.Bold.Render("● running")
+		}
+
+		fmt.Printf("%s %s/%s %s\n", sessionStatus, item.Rig, item.Name, style.Dim.Render("(remote)"))
+		if item.Path != "" {
+			fmt.Printf("  Path:   %s\n", item.Path)
+		}
+		fmt.Printf("  Branch: %s\n", item.Branch)
+
+		if item.GitClean {
+			fmt.Printf("  Git:    %s\n", style.Dim.Render("clean"))
+		} else {
+			fmt.Printf("  Git:    %s\n", style.Bold.Render("dirty"))
+			if len(item.GitModified) > 0 {
+				fmt.Printf("          Modified: %s\n", strings.Join(item.GitModified, ", "))
+			}
+		}
+
+		if item.MailUnread > 0 {
+			fmt.Printf("  Mail:   %d unread\n", item.MailUnread)
 		}
 	}
 

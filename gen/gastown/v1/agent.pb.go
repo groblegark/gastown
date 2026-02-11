@@ -1142,6 +1142,267 @@ func (x *AgentUpdate) GetAgent() *Agent {
 	return nil
 }
 
+type CreateCrewRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Crew worker name
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Rig name
+	Rig string `protobuf:"bytes,2,opt,name=rig,proto3" json:"rig,omitempty"`
+	// Create a feature branch (crew/<name>)
+	Branch        bool `protobuf:"varint,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCrewRequest) Reset() {
+	*x = CreateCrewRequest{}
+	mi := &file_gastown_v1_agent_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCrewRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCrewRequest) ProtoMessage() {}
+
+func (x *CreateCrewRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gastown_v1_agent_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCrewRequest.ProtoReflect.Descriptor instead.
+func (*CreateCrewRequest) Descriptor() ([]byte, []int) {
+	return file_gastown_v1_agent_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CreateCrewRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateCrewRequest) GetRig() string {
+	if x != nil {
+		return x.Rig
+	}
+	return ""
+}
+
+func (x *CreateCrewRequest) GetBranch() bool {
+	if x != nil {
+		return x.Branch
+	}
+	return false
+}
+
+type CreateCrewResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The agent bead ID that was created
+	BeadId string `protobuf:"bytes,1,opt,name=bead_id,json=beadId,proto3" json:"bead_id,omitempty"`
+	// The agent proto representing the new crew
+	Agent *Agent `protobuf:"bytes,2,opt,name=agent,proto3" json:"agent,omitempty"`
+	// True if the bead already existed and was reopened
+	Reopened      bool `protobuf:"varint,3,opt,name=reopened,proto3" json:"reopened,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateCrewResponse) Reset() {
+	*x = CreateCrewResponse{}
+	mi := &file_gastown_v1_agent_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateCrewResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateCrewResponse) ProtoMessage() {}
+
+func (x *CreateCrewResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_gastown_v1_agent_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateCrewResponse.ProtoReflect.Descriptor instead.
+func (*CreateCrewResponse) Descriptor() ([]byte, []int) {
+	return file_gastown_v1_agent_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CreateCrewResponse) GetBeadId() string {
+	if x != nil {
+		return x.BeadId
+	}
+	return ""
+}
+
+func (x *CreateCrewResponse) GetAgent() *Agent {
+	if x != nil {
+		return x.Agent
+	}
+	return nil
+}
+
+func (x *CreateCrewResponse) GetReopened() bool {
+	if x != nil {
+		return x.Reopened
+	}
+	return false
+}
+
+type RemoveCrewRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Crew worker name
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Rig name
+	Rig string `protobuf:"bytes,2,opt,name=rig,proto3" json:"rig,omitempty"`
+	// Purge: delete bead entirely (vs close). Also signals PVC deletion.
+	Purge bool `protobuf:"varint,3,opt,name=purge,proto3" json:"purge,omitempty"`
+	// Force: skip safety checks
+	Force bool `protobuf:"varint,4,opt,name=force,proto3" json:"force,omitempty"`
+	// Reason for removal
+	Reason        string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveCrewRequest) Reset() {
+	*x = RemoveCrewRequest{}
+	mi := &file_gastown_v1_agent_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveCrewRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveCrewRequest) ProtoMessage() {}
+
+func (x *RemoveCrewRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_gastown_v1_agent_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveCrewRequest.ProtoReflect.Descriptor instead.
+func (*RemoveCrewRequest) Descriptor() ([]byte, []int) {
+	return file_gastown_v1_agent_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *RemoveCrewRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RemoveCrewRequest) GetRig() string {
+	if x != nil {
+		return x.Rig
+	}
+	return ""
+}
+
+func (x *RemoveCrewRequest) GetPurge() bool {
+	if x != nil {
+		return x.Purge
+	}
+	return false
+}
+
+func (x *RemoveCrewRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
+}
+
+func (x *RemoveCrewRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type RemoveCrewResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The agent bead ID that was closed/deleted
+	BeadId string `protobuf:"bytes,1,opt,name=bead_id,json=beadId,proto3" json:"bead_id,omitempty"`
+	// True if the bead was deleted (purge=true), false if just closed
+	Deleted       bool `protobuf:"varint,2,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveCrewResponse) Reset() {
+	*x = RemoveCrewResponse{}
+	mi := &file_gastown_v1_agent_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveCrewResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveCrewResponse) ProtoMessage() {}
+
+func (x *RemoveCrewResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_gastown_v1_agent_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveCrewResponse.ProtoReflect.Descriptor instead.
+func (*RemoveCrewResponse) Descriptor() ([]byte, []int) {
+	return file_gastown_v1_agent_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RemoveCrewResponse) GetBeadId() string {
+	if x != nil {
+		return x.BeadId
+	}
+	return ""
+}
+
+func (x *RemoveCrewResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
 // Agent represents a crew worker or polecat
 type Agent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1181,7 +1442,7 @@ type Agent struct {
 
 func (x *Agent) Reset() {
 	*x = Agent{}
-	mi := &file_gastown_v1_agent_proto_msgTypes[16]
+	mi := &file_gastown_v1_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1193,7 +1454,7 @@ func (x *Agent) String() string {
 func (*Agent) ProtoMessage() {}
 
 func (x *Agent) ProtoReflect() protoreflect.Message {
-	mi := &file_gastown_v1_agent_proto_msgTypes[16]
+	mi := &file_gastown_v1_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1206,7 +1467,7 @@ func (x *Agent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Agent.ProtoReflect.Descriptor instead.
 func (*Agent) Descriptor() ([]byte, []int) {
-	return file_gastown_v1_agent_proto_rawDescGZIP(), []int{16}
+	return file_gastown_v1_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Agent) GetAddress() string {
@@ -1385,7 +1646,24 @@ const file_gastown_v1_agent_proto_rawDesc = "" +
 	"\ttimestamp\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x1f\n" +
 	"\vupdate_type\x18\x02 \x01(\tR\n" +
 	"updateType\x12'\n" +
-	"\x05agent\x18\x03 \x01(\v2\x11.gastown.v1.AgentR\x05agent\"\x8a\x04\n" +
+	"\x05agent\x18\x03 \x01(\v2\x11.gastown.v1.AgentR\x05agent\"Q\n" +
+	"\x11CreateCrewRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03rig\x18\x02 \x01(\tR\x03rig\x12\x16\n" +
+	"\x06branch\x18\x03 \x01(\bR\x06branch\"r\n" +
+	"\x12CreateCrewResponse\x12\x17\n" +
+	"\abead_id\x18\x01 \x01(\tR\x06beadId\x12'\n" +
+	"\x05agent\x18\x02 \x01(\v2\x11.gastown.v1.AgentR\x05agent\x12\x1a\n" +
+	"\breopened\x18\x03 \x01(\bR\breopened\"}\n" +
+	"\x11RemoveCrewRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03rig\x18\x02 \x01(\tR\x03rig\x12\x14\n" +
+	"\x05purge\x18\x03 \x01(\bR\x05purge\x12\x14\n" +
+	"\x05force\x18\x04 \x01(\bR\x05force\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"G\n" +
+	"\x12RemoveCrewResponse\x12\x17\n" +
+	"\abead_id\x18\x01 \x01(\tR\x06beadId\x12\x18\n" +
+	"\adeleted\x18\x02 \x01(\bR\adeleted\"\x8a\x04\n" +
 	"\x05Agent\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x10\n" +
@@ -1423,7 +1701,7 @@ const file_gastown_v1_agent_proto_rawDesc = "" +
 	"\x13AGENT_STATE_WORKING\x10\x03\x12\x14\n" +
 	"\x10AGENT_STATE_IDLE\x10\x04\x12\x15\n" +
 	"\x11AGENT_STATE_STUCK\x10\x05\x12\x14\n" +
-	"\x10AGENT_STATE_DONE\x10\x062\xea\x04\n" +
+	"\x10AGENT_STATE_DONE\x10\x062\x84\x06\n" +
 	"\fAgentService\x12K\n" +
 	"\n" +
 	"ListAgents\x12\x1d.gastown.v1.ListAgentsRequest\x1a\x1e.gastown.v1.ListAgentsResponse\x12E\n" +
@@ -1434,7 +1712,11 @@ const file_gastown_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"NudgeAgent\x12\x1d.gastown.v1.NudgeAgentRequest\x1a\x1e.gastown.v1.NudgeAgentResponse\x12H\n" +
 	"\tPeekAgent\x12\x1c.gastown.v1.PeekAgentRequest\x1a\x1d.gastown.v1.PeekAgentResponse\x12H\n" +
-	"\vWatchAgents\x12\x1e.gastown.v1.WatchAgentsRequest\x1a\x17.gastown.v1.AgentUpdate0\x01B\x9d\x01\n" +
+	"\vWatchAgents\x12\x1e.gastown.v1.WatchAgentsRequest\x1a\x17.gastown.v1.AgentUpdate0\x01\x12K\n" +
+	"\n" +
+	"CreateCrew\x12\x1d.gastown.v1.CreateCrewRequest\x1a\x1e.gastown.v1.CreateCrewResponse\x12K\n" +
+	"\n" +
+	"RemoveCrew\x12\x1d.gastown.v1.RemoveCrewRequest\x1a\x1e.gastown.v1.RemoveCrewResponseB\x9d\x01\n" +
 	"\x0ecom.gastown.v1B\n" +
 	"AgentProtoP\x01Z6github.com/steveyegge/gastown/gen/gastown/v1;gastownv1\xa2\x02\x03GXX\xaa\x02\n" +
 	"Gastown.V1\xca\x02\n" +
@@ -1453,7 +1735,7 @@ func file_gastown_v1_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_gastown_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_gastown_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_gastown_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_gastown_v1_agent_proto_goTypes = []any{
 	(AgentType)(0),                // 0: gastown.v1.AgentType
 	(AgentState)(0),               // 1: gastown.v1.AgentState
@@ -1473,44 +1755,53 @@ var file_gastown_v1_agent_proto_goTypes = []any{
 	(*PeekAgentResponse)(nil),     // 15: gastown.v1.PeekAgentResponse
 	(*WatchAgentsRequest)(nil),    // 16: gastown.v1.WatchAgentsRequest
 	(*AgentUpdate)(nil),           // 17: gastown.v1.AgentUpdate
-	(*Agent)(nil),                 // 18: gastown.v1.Agent
-	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
+	(*CreateCrewRequest)(nil),     // 18: gastown.v1.CreateCrewRequest
+	(*CreateCrewResponse)(nil),    // 19: gastown.v1.CreateCrewResponse
+	(*RemoveCrewRequest)(nil),     // 20: gastown.v1.RemoveCrewRequest
+	(*RemoveCrewResponse)(nil),    // 21: gastown.v1.RemoveCrewResponse
+	(*Agent)(nil),                 // 22: gastown.v1.Agent
+	(*timestamppb.Timestamp)(nil), // 23: google.protobuf.Timestamp
 }
 var file_gastown_v1_agent_proto_depIdxs = []int32{
 	0,  // 0: gastown.v1.ListAgentsRequest.type:type_name -> gastown.v1.AgentType
-	18, // 1: gastown.v1.ListAgentsResponse.agents:type_name -> gastown.v1.Agent
-	18, // 2: gastown.v1.GetAgentResponse.agent:type_name -> gastown.v1.Agent
-	18, // 3: gastown.v1.SpawnPolecatResponse.agent:type_name -> gastown.v1.Agent
-	18, // 4: gastown.v1.StartCrewResponse.agent:type_name -> gastown.v1.Agent
-	18, // 5: gastown.v1.StopAgentResponse.agent:type_name -> gastown.v1.Agent
+	22, // 1: gastown.v1.ListAgentsResponse.agents:type_name -> gastown.v1.Agent
+	22, // 2: gastown.v1.GetAgentResponse.agent:type_name -> gastown.v1.Agent
+	22, // 3: gastown.v1.SpawnPolecatResponse.agent:type_name -> gastown.v1.Agent
+	22, // 4: gastown.v1.StartCrewResponse.agent:type_name -> gastown.v1.Agent
+	22, // 5: gastown.v1.StopAgentResponse.agent:type_name -> gastown.v1.Agent
 	0,  // 6: gastown.v1.WatchAgentsRequest.type:type_name -> gastown.v1.AgentType
-	19, // 7: gastown.v1.AgentUpdate.timestamp:type_name -> google.protobuf.Timestamp
-	18, // 8: gastown.v1.AgentUpdate.agent:type_name -> gastown.v1.Agent
-	0,  // 9: gastown.v1.Agent.type:type_name -> gastown.v1.AgentType
-	1,  // 10: gastown.v1.Agent.state:type_name -> gastown.v1.AgentState
-	19, // 11: gastown.v1.Agent.started_at:type_name -> google.protobuf.Timestamp
-	19, // 12: gastown.v1.Agent.last_activity:type_name -> google.protobuf.Timestamp
-	2,  // 13: gastown.v1.AgentService.ListAgents:input_type -> gastown.v1.ListAgentsRequest
-	4,  // 14: gastown.v1.AgentService.GetAgent:input_type -> gastown.v1.GetAgentRequest
-	6,  // 15: gastown.v1.AgentService.SpawnPolecat:input_type -> gastown.v1.SpawnPolecatRequest
-	8,  // 16: gastown.v1.AgentService.StartCrew:input_type -> gastown.v1.StartCrewRequest
-	10, // 17: gastown.v1.AgentService.StopAgent:input_type -> gastown.v1.StopAgentRequest
-	12, // 18: gastown.v1.AgentService.NudgeAgent:input_type -> gastown.v1.NudgeAgentRequest
-	14, // 19: gastown.v1.AgentService.PeekAgent:input_type -> gastown.v1.PeekAgentRequest
-	16, // 20: gastown.v1.AgentService.WatchAgents:input_type -> gastown.v1.WatchAgentsRequest
-	3,  // 21: gastown.v1.AgentService.ListAgents:output_type -> gastown.v1.ListAgentsResponse
-	5,  // 22: gastown.v1.AgentService.GetAgent:output_type -> gastown.v1.GetAgentResponse
-	7,  // 23: gastown.v1.AgentService.SpawnPolecat:output_type -> gastown.v1.SpawnPolecatResponse
-	9,  // 24: gastown.v1.AgentService.StartCrew:output_type -> gastown.v1.StartCrewResponse
-	11, // 25: gastown.v1.AgentService.StopAgent:output_type -> gastown.v1.StopAgentResponse
-	13, // 26: gastown.v1.AgentService.NudgeAgent:output_type -> gastown.v1.NudgeAgentResponse
-	15, // 27: gastown.v1.AgentService.PeekAgent:output_type -> gastown.v1.PeekAgentResponse
-	17, // 28: gastown.v1.AgentService.WatchAgents:output_type -> gastown.v1.AgentUpdate
-	21, // [21:29] is the sub-list for method output_type
-	13, // [13:21] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	23, // 7: gastown.v1.AgentUpdate.timestamp:type_name -> google.protobuf.Timestamp
+	22, // 8: gastown.v1.AgentUpdate.agent:type_name -> gastown.v1.Agent
+	22, // 9: gastown.v1.CreateCrewResponse.agent:type_name -> gastown.v1.Agent
+	0,  // 10: gastown.v1.Agent.type:type_name -> gastown.v1.AgentType
+	1,  // 11: gastown.v1.Agent.state:type_name -> gastown.v1.AgentState
+	23, // 12: gastown.v1.Agent.started_at:type_name -> google.protobuf.Timestamp
+	23, // 13: gastown.v1.Agent.last_activity:type_name -> google.protobuf.Timestamp
+	2,  // 14: gastown.v1.AgentService.ListAgents:input_type -> gastown.v1.ListAgentsRequest
+	4,  // 15: gastown.v1.AgentService.GetAgent:input_type -> gastown.v1.GetAgentRequest
+	6,  // 16: gastown.v1.AgentService.SpawnPolecat:input_type -> gastown.v1.SpawnPolecatRequest
+	8,  // 17: gastown.v1.AgentService.StartCrew:input_type -> gastown.v1.StartCrewRequest
+	10, // 18: gastown.v1.AgentService.StopAgent:input_type -> gastown.v1.StopAgentRequest
+	12, // 19: gastown.v1.AgentService.NudgeAgent:input_type -> gastown.v1.NudgeAgentRequest
+	14, // 20: gastown.v1.AgentService.PeekAgent:input_type -> gastown.v1.PeekAgentRequest
+	16, // 21: gastown.v1.AgentService.WatchAgents:input_type -> gastown.v1.WatchAgentsRequest
+	18, // 22: gastown.v1.AgentService.CreateCrew:input_type -> gastown.v1.CreateCrewRequest
+	20, // 23: gastown.v1.AgentService.RemoveCrew:input_type -> gastown.v1.RemoveCrewRequest
+	3,  // 24: gastown.v1.AgentService.ListAgents:output_type -> gastown.v1.ListAgentsResponse
+	5,  // 25: gastown.v1.AgentService.GetAgent:output_type -> gastown.v1.GetAgentResponse
+	7,  // 26: gastown.v1.AgentService.SpawnPolecat:output_type -> gastown.v1.SpawnPolecatResponse
+	9,  // 27: gastown.v1.AgentService.StartCrew:output_type -> gastown.v1.StartCrewResponse
+	11, // 28: gastown.v1.AgentService.StopAgent:output_type -> gastown.v1.StopAgentResponse
+	13, // 29: gastown.v1.AgentService.NudgeAgent:output_type -> gastown.v1.NudgeAgentResponse
+	15, // 30: gastown.v1.AgentService.PeekAgent:output_type -> gastown.v1.PeekAgentResponse
+	17, // 31: gastown.v1.AgentService.WatchAgents:output_type -> gastown.v1.AgentUpdate
+	19, // 32: gastown.v1.AgentService.CreateCrew:output_type -> gastown.v1.CreateCrewResponse
+	21, // 33: gastown.v1.AgentService.RemoveCrew:output_type -> gastown.v1.RemoveCrewResponse
+	24, // [24:34] is the sub-list for method output_type
+	14, // [14:24] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_gastown_v1_agent_proto_init() }
@@ -1525,7 +1816,7 @@ func file_gastown_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gastown_v1_agent_proto_rawDesc), len(file_gastown_v1_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   17,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

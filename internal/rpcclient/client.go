@@ -2683,6 +2683,252 @@ func (c *Client) SpawnPolecat(ctx context.Context, req SpawnPolecatRequest) (*Ag
 	return agent, result.Session, nil
 }
 
+// CreateCrewRequest contains the parameters for creating a crew workspace via RPC.
+type CreateCrewRequest struct {
+	Name   string
+	Rig    string
+	Branch bool
+}
+
+// CreateCrewResponse contains the result of creating a crew workspace.
+type CreateCrewResponse struct {
+	BeadID   string
+	Agent    *Agent
+	Reopened bool
+}
+
+// CreateCrew creates a crew workspace via RPC.
+// The daemon writes the agent bead and the K8s controller creates the crew pod.
+func (c *Client) CreateCrew(ctx context.Context, req CreateCrewRequest) (*CreateCrewResponse, error) {
+	body := map[string]interface{}{
+		"name": req.Name,
+		"rig":  req.Rig,
+	}
+	if req.Branch {
+		body["branch"] = true
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.AgentService/CreateCrew",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		BeadID string `json:"beadId"`
+		Agent  struct {
+			Address string `json:"address"`
+			Name    string `json:"name"`
+			Rig     string `json:"rig"`
+			Type    string `json:"type"`
+			State   string `json:"state"`
+			WorkDir string `json:"workDir"`
+		} `json:"agent"`
+		Reopened bool `json:"reopened"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &CreateCrewResponse{
+		BeadID: result.BeadID,
+		Agent: &Agent{
+			Address: result.Agent.Address,
+			Name:    result.Agent.Name,
+			Rig:     result.Agent.Rig,
+			Type:    agentTypeToString(result.Agent.Type),
+			State:   agentStateToString(result.Agent.State),
+			WorkDir: result.Agent.WorkDir,
+		},
+		Reopened: result.Reopened,
+	}, nil
+}
+
+// RemoveCrewRequest contains the parameters for removing a crew workspace via RPC.
+type RemoveCrewRequest struct {
+	Name   string
+	Rig    string
+	Purge  bool
+	Force  bool
+	Reason string
+}
+
+// RemoveCrewResponse contains the result of removing a crew workspace.
+type RemoveCrewResponse struct {
+	BeadID  string
+	Deleted bool
+}
+
+// RemoveCrew removes a crew workspace via RPC.
+// The daemon closes or deletes the agent bead and the K8s controller tears down the crew pod.
+func (c *Client) RemoveCrew(ctx context.Context, req RemoveCrewRequest) (*RemoveCrewResponse, error) {
+	body := map[string]interface{}{
+		"name": req.Name,
+		"rig":  req.Rig,
+	}
+	if req.Purge {
+		body["purge"] = true
+	}
+	if req.Force {
+		body["force"] = true
+	}
+	if req.Reason != "" {
+		body["reason"] = req.Reason
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.AgentService/RemoveCrew",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		BeadID  string `json:"beadId"`
+		Deleted bool   `json:"deleted"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &RemoveCrewResponse{
+		BeadID:  result.BeadID,
+		Deleted: result.Deleted,
+	}, nil
+}
+
+// StartCrewRequest contains the parameters for starting a crew session via RPC.
+type StartCrewRequest struct {
+	Name          string
+	Rig           string
+	Account       string
+	AgentOverride string
+	Create        bool
+}
+
+// StartCrewResponse contains the result of starting a crew session.
+type StartCrewResponse struct {
+	Agent   *Agent
+	Session string
+	Created bool
+}
+
+// StartCrew starts a crew worker session via RPC.
+func (c *Client) StartCrew(ctx context.Context, req StartCrewRequest) (*StartCrewResponse, error) {
+	body := map[string]interface{}{
+		"name": req.Name,
+		"rig":  req.Rig,
+	}
+	if req.Account != "" {
+		body["account"] = req.Account
+	}
+	if req.AgentOverride != "" {
+		body["agentOverride"] = req.AgentOverride
+	}
+	if req.Create {
+		body["create"] = true
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encoding request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST",
+		c.baseURL+"/gastown.v1.AgentService/StartCrew",
+		strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RPC error: %s", resp.Status)
+	}
+
+	var result struct {
+		Agent struct {
+			Address string `json:"address"`
+			Name    string `json:"name"`
+			Rig     string `json:"rig"`
+			Type    string `json:"type"`
+			State   string `json:"state"`
+			Session string `json:"session"`
+			WorkDir string `json:"workDir"`
+		} `json:"agent"`
+		Session string `json:"session"`
+		Created bool   `json:"created"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding response: %w", err)
+	}
+
+	return &StartCrewResponse{
+		Agent: &Agent{
+			Address: result.Agent.Address,
+			Name:    result.Agent.Name,
+			Rig:     result.Agent.Rig,
+			Type:    agentTypeToString(result.Agent.Type),
+			State:   agentStateToString(result.Agent.State),
+			Session: result.Agent.Session,
+			WorkDir: result.Agent.WorkDir,
+		},
+		Session: result.Session,
+		Created: result.Created,
+	}, nil
+}
+
 // StopAgent stops an agent's session via RPC.
 func (c *Client) StopAgent(ctx context.Context, agentAddr string, force bool, reason string) (*Agent, bool, error) {
 	body := map[string]interface{}{

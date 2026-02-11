@@ -477,6 +477,7 @@ func (m *K8sManager) buildEnvVars(spec AgentPodSpec) []corev1.EnvVar {
 			corev1.EnvVar{Name: "GT_SCOPE", Value: "rig"},
 			corev1.EnvVar{Name: "BD_ACTOR", Value: spec.AgentName},
 			corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: spec.AgentName},
+			corev1.EnvVar{Name: "BEADS_AGENT_NAME", Value: fmt.Sprintf("%s/%s", spec.Rig, spec.AgentName)},
 		)
 	case "crew":
 		envVars = append(envVars,
@@ -484,6 +485,7 @@ func (m *K8sManager) buildEnvVars(spec AgentPodSpec) []corev1.EnvVar {
 			corev1.EnvVar{Name: "GT_SCOPE", Value: "rig"},
 			corev1.EnvVar{Name: "BD_ACTOR", Value: spec.AgentName},
 			corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: spec.AgentName},
+			corev1.EnvVar{Name: "BEADS_AGENT_NAME", Value: fmt.Sprintf("%s/%s", spec.Rig, spec.AgentName)},
 		)
 	case "witness", "refinery":
 		envVars = append(envVars,

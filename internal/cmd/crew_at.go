@@ -71,6 +71,12 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 
 	crewMgr, r, err := getCrewManager(crewRig)
 	if err != nil {
+		// No local rig: try remote attach via coop if connected to a daemon.
+		if crewRig != "" && name != "" {
+			if attached, remoteErr := tryRemoteCrewAt(crewRig, name); attached {
+				return remoteErr
+			}
+		}
 		return err
 	}
 
@@ -78,6 +84,12 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 	worker, err := crewMgr.Get(name)
 	if err != nil {
 		if err == crew.ErrCrewNotFound {
+			// Might exist remotely: try coop attach.
+			if crewRig != "" {
+				if attached, remoteErr := tryRemoteCrewAt(crewRig, name); attached {
+					return remoteErr
+				}
+			}
 			return fmt.Errorf("crew workspace '%s' not found", name)
 		}
 		return fmt.Errorf("getting crew worker: %w", err)
@@ -353,4 +365,30 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 		fmt.Printf("[DEBUG] calling attachToTmuxSession(%q)\n", sessionID)
 	}
 	return attachToTmuxSession(sessionID)
+}
+
+// tryRemoteCrewAt attempts to attach to a remote K8s crew pod via coop.
+// Returns (true, err) if a remote backend was found (coop or SSH),
+// or (false, nil) if no remote backend exists (fall through to local).
+func tryRemoteCrewAt(rigName, crewName string) (handled bool, err error) {
+	// Check if we're connected to a remote daemon.
+	if newConnectedDaemonClient() == nil {
+		return false, nil
+	}
+
+	agentID := fmt.Sprintf("%s/crew/%s", rigName, crewName)
+	backend := terminal.ResolveBackend(agentID)
+	switch backend.(type) {
+	case *terminal.CoopBackend:
+		podName := fmt.Sprintf("gt-%s-crew-%s", rigName, crewName)
+		namespace := os.Getenv("NAMESPACE")
+		if namespace == "" {
+			namespace = "gastown"
+		}
+		fmt.Printf("Attaching to remote crew %s/%s...\n", rigName, crewName)
+		return true, attachToCoopPod(podName, namespace)
+	case *terminal.SSHBackend:
+		return true, fmt.Errorf("SSH backend not supported for crew at")
+	}
+	return false, nil
 }

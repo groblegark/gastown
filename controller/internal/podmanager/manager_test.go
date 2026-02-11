@@ -193,6 +193,9 @@ func TestK8sManager_PolecatEnvVars(t *testing.T) {
 	if envMap["GT_POLECAT"] != "valkyrie" {
 		t.Errorf("GT_POLECAT = %q, want %q", envMap["GT_POLECAT"], "valkyrie")
 	}
+	if envMap["BEADS_AGENT_NAME"] != "gastown/valkyrie" {
+		t.Errorf("BEADS_AGENT_NAME = %q, want %q", envMap["BEADS_AGENT_NAME"], "gastown/valkyrie")
+	}
 }
 
 func TestK8sManager_CrewEnvVars(t *testing.T) {
@@ -216,6 +219,9 @@ func TestK8sManager_CrewEnvVars(t *testing.T) {
 
 	if envMap["GT_CREW"] != "colonization" {
 		t.Errorf("GT_CREW = %q, want %q", envMap["GT_CREW"], "colonization")
+	}
+	if envMap["BEADS_AGENT_NAME"] != "gastown/colonization" {
+		t.Errorf("BEADS_AGENT_NAME = %q, want %q", envMap["BEADS_AGENT_NAME"], "gastown/colonization")
 	}
 }
 

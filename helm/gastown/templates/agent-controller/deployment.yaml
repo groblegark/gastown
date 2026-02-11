@@ -69,6 +69,10 @@ spec:
             {{- end }}
             - name: GT_TOWN_NAME
               value: {{ .Values.agentController.townName | default .Release.Name }}
+            {{- if .Values.agentController.watcherTransport }}
+            - name: WATCHER_TRANSPORT
+              value: {{ .Values.agentController.watcherTransport }}
+            {{- end }}
             {{- if .Values.agentController.natsURL }}
             - name: NATS_URL
               value: {{ .Values.agentController.natsURL }}

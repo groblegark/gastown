@@ -32,6 +32,14 @@ service AgentService {
 
   // WatchAgents streams agent status updates
   rpc WatchAgents(WatchAgentsRequest) returns (stream AgentUpdate);
+
+  // CreateCrew creates a crew workspace by writing an agent bead.
+  // The controller watches bead events and creates the crew pod.
+  rpc CreateCrew(CreateCrewRequest) returns (CreateCrewResponse);
+
+  // RemoveCrew removes a crew workspace by closing/deleting the agent bead.
+  // The controller reacts to the bead close/delete event to remove the pod.
+  rpc RemoveCrew(RemoveCrewRequest) returns (RemoveCrewResponse);
 }
 
 // Agent type enum
@@ -210,6 +218,53 @@ message AgentUpdate {
   google.protobuf.Timestamp timestamp = 1;
   string update_type = 2;  // spawned, started, stopped, state_changed
   Agent agent = 3;
+}
+
+message CreateCrewRequest {
+  // Crew worker name
+  string name = 1;
+
+  // Rig name
+  string rig = 2;
+
+  // Create a feature branch (crew/<name>)
+  bool branch = 3;
+}
+
+message CreateCrewResponse {
+  // The agent bead ID that was created
+  string bead_id = 1;
+
+  // The agent proto representing the new crew
+  Agent agent = 2;
+
+  // True if the bead already existed and was reopened
+  bool reopened = 3;
+}
+
+message RemoveCrewRequest {
+  // Crew worker name
+  string name = 1;
+
+  // Rig name
+  string rig = 2;
+
+  // Purge: delete bead entirely (vs close). Also signals PVC deletion.
+  bool purge = 3;
+
+  // Force: skip safety checks
+  bool force = 4;
+
+  // Reason for removal
+  string reason = 5;
+}
+
+message RemoveCrewResponse {
+  // The agent bead ID that was closed/deleted
+  string bead_id = 1;
+
+  // True if the bead was deleted (purge=true), false if just closed
+  bool deleted = 2;
 }
 
 // Agent represents a crew worker or polecat

@@ -51,6 +51,10 @@ const (
 	// AgentServiceWatchAgentsProcedure is the fully-qualified name of the AgentService's WatchAgents
 	// RPC.
 	AgentServiceWatchAgentsProcedure = "/gastown.v1.AgentService/WatchAgents"
+	// AgentServiceCreateCrewProcedure is the fully-qualified name of the AgentService's CreateCrew RPC.
+	AgentServiceCreateCrewProcedure = "/gastown.v1.AgentService/CreateCrew"
+	// AgentServiceRemoveCrewProcedure is the fully-qualified name of the AgentService's RemoveCrew RPC.
+	AgentServiceRemoveCrewProcedure = "/gastown.v1.AgentService/RemoveCrew"
 )
 
 // AgentServiceClient is a client for the gastown.v1.AgentService service.
@@ -71,6 +75,12 @@ type AgentServiceClient interface {
 	PeekAgent(context.Context, *connect.Request[v1.PeekAgentRequest]) (*connect.Response[v1.PeekAgentResponse], error)
 	// WatchAgents streams agent status updates
 	WatchAgents(context.Context, *connect.Request[v1.WatchAgentsRequest]) (*connect.ServerStreamForClient[v1.AgentUpdate], error)
+	// CreateCrew creates a crew workspace by writing an agent bead.
+	// The controller watches bead events and creates the crew pod.
+	CreateCrew(context.Context, *connect.Request[v1.CreateCrewRequest]) (*connect.Response[v1.CreateCrewResponse], error)
+	// RemoveCrew removes a crew workspace by closing/deleting the agent bead.
+	// The controller reacts to the bead close/delete event to remove the pod.
+	RemoveCrew(context.Context, *connect.Request[v1.RemoveCrewRequest]) (*connect.Response[v1.RemoveCrewResponse], error)
 }
 
 // NewAgentServiceClient constructs a client for the gastown.v1.AgentService service. By default, it
@@ -132,6 +142,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("WatchAgents")),
 			connect.WithClientOptions(opts...),
 		),
+		createCrew: connect.NewClient[v1.CreateCrewRequest, v1.CreateCrewResponse](
+			httpClient,
+			baseURL+AgentServiceCreateCrewProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("CreateCrew")),
+			connect.WithClientOptions(opts...),
+		),
+		removeCrew: connect.NewClient[v1.RemoveCrewRequest, v1.RemoveCrewResponse](
+			httpClient,
+			baseURL+AgentServiceRemoveCrewProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RemoveCrew")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -145,6 +167,8 @@ type agentServiceClient struct {
 	nudgeAgent   *connect.Client[v1.NudgeAgentRequest, v1.NudgeAgentResponse]
 	peekAgent    *connect.Client[v1.PeekAgentRequest, v1.PeekAgentResponse]
 	watchAgents  *connect.Client[v1.WatchAgentsRequest, v1.AgentUpdate]
+	createCrew   *connect.Client[v1.CreateCrewRequest, v1.CreateCrewResponse]
+	removeCrew   *connect.Client[v1.RemoveCrewRequest, v1.RemoveCrewResponse]
 }
 
 // ListAgents calls gastown.v1.AgentService.ListAgents.
@@ -187,6 +211,16 @@ func (c *agentServiceClient) WatchAgents(ctx context.Context, req *connect.Reque
 	return c.watchAgents.CallServerStream(ctx, req)
 }
 
+// CreateCrew calls gastown.v1.AgentService.CreateCrew.
+func (c *agentServiceClient) CreateCrew(ctx context.Context, req *connect.Request[v1.CreateCrewRequest]) (*connect.Response[v1.CreateCrewResponse], error) {
+	return c.createCrew.CallUnary(ctx, req)
+}
+
+// RemoveCrew calls gastown.v1.AgentService.RemoveCrew.
+func (c *agentServiceClient) RemoveCrew(ctx context.Context, req *connect.Request[v1.RemoveCrewRequest]) (*connect.Response[v1.RemoveCrewResponse], error) {
+	return c.removeCrew.CallUnary(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the gastown.v1.AgentService service.
 type AgentServiceHandler interface {
 	// ListAgents returns all agents (crew + polecats) in a rig or town
@@ -205,6 +239,12 @@ type AgentServiceHandler interface {
 	PeekAgent(context.Context, *connect.Request[v1.PeekAgentRequest]) (*connect.Response[v1.PeekAgentResponse], error)
 	// WatchAgents streams agent status updates
 	WatchAgents(context.Context, *connect.Request[v1.WatchAgentsRequest], *connect.ServerStream[v1.AgentUpdate]) error
+	// CreateCrew creates a crew workspace by writing an agent bead.
+	// The controller watches bead events and creates the crew pod.
+	CreateCrew(context.Context, *connect.Request[v1.CreateCrewRequest]) (*connect.Response[v1.CreateCrewResponse], error)
+	// RemoveCrew removes a crew workspace by closing/deleting the agent bead.
+	// The controller reacts to the bead close/delete event to remove the pod.
+	RemoveCrew(context.Context, *connect.Request[v1.RemoveCrewRequest]) (*connect.Response[v1.RemoveCrewResponse], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -262,6 +302,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("WatchAgents")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceCreateCrewHandler := connect.NewUnaryHandler(
+		AgentServiceCreateCrewProcedure,
+		svc.CreateCrew,
+		connect.WithSchema(agentServiceMethods.ByName("CreateCrew")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceRemoveCrewHandler := connect.NewUnaryHandler(
+		AgentServiceRemoveCrewProcedure,
+		svc.RemoveCrew,
+		connect.WithSchema(agentServiceMethods.ByName("RemoveCrew")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/gastown.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceListAgentsProcedure:
@@ -280,6 +332,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServicePeekAgentHandler.ServeHTTP(w, r)
 		case AgentServiceWatchAgentsProcedure:
 			agentServiceWatchAgentsHandler.ServeHTTP(w, r)
+		case AgentServiceCreateCrewProcedure:
+			agentServiceCreateCrewHandler.ServeHTTP(w, r)
+		case AgentServiceRemoveCrewProcedure:
+			agentServiceRemoveCrewHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -319,4 +375,12 @@ func (UnimplementedAgentServiceHandler) PeekAgent(context.Context, *connect.Requ
 
 func (UnimplementedAgentServiceHandler) WatchAgents(context.Context, *connect.Request[v1.WatchAgentsRequest], *connect.ServerStream[v1.AgentUpdate]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("gastown.v1.AgentService.WatchAgents is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) CreateCrew(context.Context, *connect.Request[v1.CreateCrewRequest]) (*connect.Response[v1.CreateCrewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gastown.v1.AgentService.CreateCrew is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) RemoveCrew(context.Context, *connect.Request[v1.RemoveCrewRequest]) (*connect.Response[v1.RemoveCrewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("gastown.v1.AgentService.RemoveCrew is not implemented"))
 }

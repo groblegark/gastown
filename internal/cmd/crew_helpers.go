@@ -10,11 +10,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
+	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -68,6 +70,44 @@ func getCrewManager(rigName string) (*crew.Manager, *rig.Rig, error) {
 	crewMgr := crew.NewManager(r, crewGit)
 
 	return crewMgr, r, nil
+}
+
+// newDaemonRPCClient creates an RPC client from the BD_DAEMON_HOST and
+// BD_DAEMON_TOKEN environment variables. Returns nil if not in daemon mode.
+// This detects K8s pod mode where BD_DAEMON_HOST is set by the controller.
+func newDaemonRPCClient() *rpcclient.Client {
+	if !beads.IsDaemonMode() {
+		return nil
+	}
+	host := os.Getenv("BD_DAEMON_HOST")
+	token := os.Getenv("BD_DAEMON_TOKEN")
+	var opts []rpcclient.Option
+	if token != "" {
+		opts = append(opts, rpcclient.WithAPIKey(token))
+	}
+	return rpcclient.NewClient(host, opts...)
+}
+
+// newConnectedDaemonClient creates an RPC client from either BD_DAEMON_HOST
+// env var (K8s pods) or the global daemon config written by "gt connect"
+// (local users connected to a remote daemon). Returns nil if no remote daemon
+// is configured.
+func newConnectedDaemonClient() *rpcclient.Client {
+	// Check env var first (K8s pod mode).
+	if client := newDaemonRPCClient(); client != nil {
+		return client
+	}
+
+	// Check global daemon config (gt connect mode).
+	host, token, _, err := readGlobalDaemonConfig()
+	if err != nil || host == "" {
+		return nil
+	}
+	var opts []rpcclient.Option
+	if token != "" {
+		opts = append(opts, rpcclient.WithAPIKey(token))
+	}
+	return rpcclient.NewClient(host, opts...)
 }
 
 // crewSessionName generates the tmux session name for a crew worker.

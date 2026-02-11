@@ -12,12 +12,14 @@ import (
 	gastownv1 "github.com/steveyegge/gastown/gen/gastown/v1"
 	"github.com/steveyegge/gastown/gen/gastown/v1/gastownv1connect"
 
+	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/workspace"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -612,9 +614,9 @@ func (s *AgentServer) WatchAgents(
 		case <-ticker.C:
 			// Get current agents
 			listReq := &gastownv1.ListAgentsRequest{
-				Rig:           req.Msg.Rig,
-				Type:          req.Msg.Type,
-				IncludeGlobal: req.Msg.IncludeGlobal,
+				Rig:            req.Msg.Rig,
+				Type:           req.Msg.Type,
+				IncludeGlobal:  req.Msg.IncludeGlobal,
 				IncludeStopped: true,
 			}
 			resp, err := s.ListAgents(ctx, connect.NewRequest(listReq))
@@ -666,4 +668,135 @@ func (s *AgentServer) WatchAgents(
 			}
 		}
 	}
+}
+
+// CreateCrew creates a crew workspace by writing an agent bead.
+// The controller watches bead events and creates the crew pod.
+//
+// Flow: gt crew add UI -> CreateCrew RPC -> daemon creates agent bead
+//       -> controller watches bead event -> controller creates crew pod
+func (s *AgentServer) CreateCrew(
+	ctx context.Context,
+	req *connect.Request[gastownv1.CreateCrewRequest],
+) (*connect.Response[gastownv1.CreateCrewResponse], error) {
+	if req.Msg.Name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("crew name is required"))
+	}
+	if req.Msg.Rig == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("rig is required"))
+	}
+
+	// Resolve town name for bead ID generation.
+	townName, err := workspace.GetTownName(s.townRoot)
+	if err != nil {
+		townName = "" // Fall back to no-town format
+	}
+
+	// Generate the agent bead ID using town-level format (hq- prefix).
+	// This matches gt crew add behavior: beads.CrewBeadIDTown(townName, rigName, name)
+	crewID := beads.CrewBeadIDTown(townName, req.Msg.Rig, req.Msg.Name)
+
+	// Create the beads client against town-level beads.
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	bd := beads.New(townBeadsPath)
+
+	// Build agent fields. Setting agent_state=spawning marks this as a new crew.
+	fields := &beads.AgentFields{
+		RoleType:   "crew",
+		Rig:        req.Msg.Rig,
+		AgentState: "spawning",
+	}
+
+	title := fmt.Sprintf("Crew worker %s in %s", req.Msg.Name, req.Msg.Rig)
+
+	// CreateOrReopen handles re-spawning a crew with the same name.
+	issue, err := bd.CreateOrReopenAgentBead(crewID, title, fields)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("creating agent bead: %w", err))
+	}
+
+	// Determine if this was a reopen (issue existed before).
+	reopened := issue.Status != "" && issue.Status != "open"
+
+	// Set the bead status to in_progress to trigger the controller.
+	// The controller's bead watcher maps status->in_progress to AgentSpawn.
+	inProgress := "in_progress"
+	if err := bd.Update(crewID, beads.UpdateOptions{Status: &inProgress}); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("setting bead status to in_progress: %w", err))
+	}
+
+	agent := &gastownv1.Agent{
+		Address:   fmt.Sprintf("%s/crew/%s", req.Msg.Rig, req.Msg.Name),
+		Name:      req.Msg.Name,
+		Rig:       req.Msg.Rig,
+		Type:      gastownv1.AgentType_AGENT_TYPE_CREW,
+		State:     gastownv1.AgentState_AGENT_STATE_RUNNING,
+		StartedAt: timestamppb.Now(),
+	}
+
+	return connect.NewResponse(&gastownv1.CreateCrewResponse{
+		BeadId:   crewID,
+		Agent:    agent,
+		Reopened: reopened,
+	}), nil
+}
+
+// RemoveCrew removes a crew workspace by closing or deleting the agent bead.
+// The controller reacts to the bead close/delete event to remove the pod.
+//
+// With purge=true, the bead is hard-deleted and the controller also deletes the PVC.
+// Without purge, the bead is closed (soft delete), preserving history.
+func (s *AgentServer) RemoveCrew(
+	ctx context.Context,
+	req *connect.Request[gastownv1.RemoveCrewRequest],
+) (*connect.Response[gastownv1.RemoveCrewResponse], error) {
+	if req.Msg.Name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("crew name is required"))
+	}
+	if req.Msg.Rig == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("rig is required"))
+	}
+
+	// Resolve town name and bead ID.
+	townName, err := workspace.GetTownName(s.townRoot)
+	if err != nil {
+		townName = ""
+	}
+	crewID := beads.CrewBeadIDTown(townName, req.Msg.Rig, req.Msg.Name)
+
+	// Create the beads client.
+	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
+	bd := beads.New(townBeadsPath)
+
+	// Verify the bead exists.
+	_, _, err = bd.GetAgentBead(crewID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("agent bead not found: %s", crewID))
+	}
+
+	reason := req.Msg.Reason
+	if reason == "" {
+		reason = "crew removed via RPC"
+	}
+
+	deleted := false
+	if req.Msg.Purge {
+		// Hard delete: signals controller to also remove PVC.
+		// Add a purge label before deleting so the controller knows to clean up storage.
+		_ = bd.AddLabel(crewID, "gt:purge")
+		if err := bd.DeleteAgentBead(crewID); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("deleting agent bead: %w", err))
+		}
+		deleted = true
+	} else {
+		// Soft delete: close the bead. Controller removes the pod but preserves PVC.
+		if err := bd.CloseAndClearAgentBead(crewID, reason); err != nil {
+			return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("closing agent bead: %w", err))
+		}
+	}
+
+	return connect.NewResponse(&gastownv1.RemoveCrewResponse{
+		BeadId:  crewID,
+		Deleted: deleted,
+	}), nil
 }

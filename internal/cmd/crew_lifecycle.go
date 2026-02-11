@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/mail"
+	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/townlog"
@@ -27,6 +29,11 @@ func runCrewRemove(cmd *cobra.Command, args []string) error {
 
 	// --purge implies --force
 	forceRemove := crewForce || crewPurge
+
+	// Remote daemon mode: route through RemoveCrew RPC.
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		return runCrewRemoveRemote(rpcClient, args, forceRemove)
+	}
 
 	for _, arg := range args {
 		name := arg
@@ -184,6 +191,67 @@ func runCrewRemove(cmd *cobra.Command, args []string) error {
 	return lastErr
 }
 
+// runCrewRemoveRemote removes crew workspaces via the daemon's RemoveCrew RPC.
+func runCrewRemoveRemote(client *rpcclient.Client, args []string, forceRemove bool) error {
+	var lastErr error
+
+	for _, arg := range args {
+		name := arg
+		rigName := crewRig
+
+		// Parse rig/name format (e.g., "beads/emma" -> rig=beads, name=emma)
+		if rig, crewName, ok := parseRigSlashName(name); ok {
+			if rigName == "" {
+				rigName = rig
+			}
+			name = crewName
+		}
+
+		// Resolve rig name if not provided
+		if rigName == "" {
+			townRoot, err := workspace.FindFromCwdOrError()
+			if err != nil {
+				fmt.Printf("Error removing %s: not in a Gas Town workspace: %v\n", arg, err)
+				lastErr = err
+				continue
+			}
+			var inferErr error
+			rigName, inferErr = inferRigFromCwd(townRoot)
+			if inferErr != nil {
+				fmt.Printf("Error removing %s: could not determine rig (use --rig flag): %v\n", arg, inferErr)
+				lastErr = inferErr
+				continue
+			}
+		}
+
+		resp, err := client.RemoveCrew(context.Background(), rpcclient.RemoveCrewRequest{
+			Name:   name,
+			Rig:    rigName,
+			Purge:  crewPurge,
+			Force:  forceRemove,
+			Reason: "gt crew remove",
+		})
+		if err != nil {
+			fmt.Printf("Error removing %s: %v\n", arg, err)
+			lastErr = err
+			continue
+		}
+
+		if resp.Deleted {
+			fmt.Printf("%s Removed crew workspace: %s/%s (purged)\n",
+				style.Bold.Render("✓"), rigName, name)
+		} else {
+			fmt.Printf("%s Removed crew workspace: %s/%s\n",
+				style.Bold.Render("✓"), rigName, name)
+		}
+		if resp.BeadID != "" {
+			fmt.Printf("  Bead: %s\n", resp.BeadID)
+		}
+	}
+
+	return lastErr
+}
+
 func runCrewRefresh(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	// Parse rig/name format (e.g., "beads/emma" -> rig=beads, name=emma)
@@ -275,6 +343,23 @@ func runCrewStart(cmd *cobra.Command, args []string) error {
 			rigName = "" // getCrewManager will infer from cwd
 			crewNames = args
 		}
+	}
+
+	// Remote daemon mode: route through StartCrew RPC. The daemon starts
+	// the crew session inside the K8s pod; no local tmux/session needed.
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		// Need rig name resolved for the RPC call
+		if rigName == "" {
+			townRoot, err := workspace.FindFromCwdOrError()
+			if err != nil {
+				return fmt.Errorf("not in a Gas Town workspace: %w", err)
+			}
+			rigName, err = inferRigFromCwd(townRoot)
+			if err != nil {
+				return fmt.Errorf("could not determine rig (use --rig flag or specify as first argument): %w", err)
+			}
+		}
+		return runCrewStartRemote(rpcClient, rigName, crewNames)
 	}
 
 	// Get the rig manager and rig (infers from cwd if rigName is empty)
@@ -587,6 +672,11 @@ func runCrewStop(cmd *cobra.Command, args []string) error {
 		// Not a rig name - fall through to treat as crew name
 	}
 
+	// Remote daemon mode: route through StopAgent RPC.
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		return runCrewStopRemote(rpcClient, args)
+	}
+
 	var lastErr error
 
 	for _, arg := range args {
@@ -664,6 +754,68 @@ func runCrewStop(cmd *cobra.Command, args []string) error {
 		if output != "" {
 			fmt.Printf("      %s\n", style.Dim.Render("(output captured)"))
 		}
+	}
+
+	return lastErr
+}
+
+// runCrewStopRemote stops crew workers via the daemon's StopAgent RPC.
+func runCrewStopRemote(client *rpcclient.Client, args []string) error {
+	var lastErr error
+
+	for _, arg := range args {
+		name := arg
+		rigName := crewRig
+
+		// Parse rig/name format (e.g., "beads/emma" -> rig=beads, name=emma)
+		if rig, crewName, ok := parseRigSlashName(name); ok {
+			if rigName == "" {
+				rigName = rig
+			}
+			name = crewName
+		}
+
+		// Resolve rig name if not provided
+		if rigName == "" {
+			townRoot, err := workspace.FindFromCwdOrError()
+			if err != nil {
+				fmt.Printf("Error stopping %s: not in a Gas Town workspace: %v\n", arg, err)
+				lastErr = err
+				continue
+			}
+			var inferErr error
+			rigName, inferErr = inferRigFromCwd(townRoot)
+			if inferErr != nil {
+				fmt.Printf("Error stopping %s: could not determine rig (use --rig flag): %v\n", arg, inferErr)
+				lastErr = inferErr
+				continue
+			}
+		}
+
+		// Dry run - just show what would be stopped
+		if crewDryRun {
+			fmt.Printf("Would stop %s/%s (remote)\n", rigName, name)
+			continue
+		}
+
+		agentAddr := fmt.Sprintf("%s/crew/%s", rigName, name)
+		agent, _, err := client.StopAgent(context.Background(), agentAddr, crewForce, "gt crew stop")
+		if err != nil {
+			fmt.Printf("  %s [%s] %s: %s\n",
+				style.ErrorPrefix,
+				rigName, name,
+				style.Dim.Render(err.Error()))
+			lastErr = err
+			continue
+		}
+
+		state := "stopped"
+		if agent != nil && agent.State != "" {
+			state = agent.State
+		}
+		fmt.Printf("  %s [%s] %s: %s\n",
+			style.SuccessPrefix,
+			rigName, name, state)
 	}
 
 	return lastErr
@@ -764,4 +916,60 @@ func runCrewStopAll() error {
 
 	fmt.Printf("%s Stop complete: %d crew session(s) stopped\n", style.SuccessPrefix, succeeded)
 	return nil
+}
+
+// runCrewStartRemote starts crew workers via the daemon's StartCrew RPC.
+// Each crew member is started by sending a StartCrew request which creates
+// the workspace (if needed) and starts the session inside the K8s pod.
+func runCrewStartRemote(client *rpcclient.Client, rigName string, crewNames []string) error {
+	// If no names specified, let the daemon start all crew in the rig.
+	// We still need at least one name for the current RPC shape.
+	if len(crewNames) == 0 {
+		// Use ListAgents to discover crew in this rig, then start each.
+		agents, _, _, err := client.ListAgents(context.Background(), rigName, "crew", true, false)
+		if err != nil {
+			return fmt.Errorf("listing crew in %s: %w", rigName, err)
+		}
+		if len(agents) == 0 {
+			fmt.Printf("No crew members in rig %s\n", rigName)
+			return nil
+		}
+		for _, a := range agents {
+			crewNames = append(crewNames, a.Name)
+		}
+	}
+
+	fmt.Printf("Starting %d crew member(s) in %s (remote)...\n", len(crewNames), rigName)
+
+	var lastErr error
+	startedCount := 0
+	for _, name := range crewNames {
+		resp, err := client.StartCrew(context.Background(), rpcclient.StartCrewRequest{
+			Name:          name,
+			Rig:           rigName,
+			Account:       crewAccount,
+			AgentOverride: crewAgentOverride,
+			Create:        true, // Create workspace if it doesn't exist
+		})
+		if err != nil {
+			fmt.Printf("  %s %s/%s: %v\n", style.ErrorPrefix, rigName, name, err)
+			lastErr = err
+			continue
+		}
+
+		if resp.Created {
+			fmt.Printf("  %s %s/%s: created and started\n", style.SuccessPrefix, rigName, name)
+		} else {
+			fmt.Printf("  %s %s/%s: started\n", style.SuccessPrefix, rigName, name)
+		}
+		startedCount++
+	}
+
+	fmt.Println()
+	if startedCount > 0 {
+		fmt.Printf("%s Started %d crew member(s) in %s\n",
+			style.Bold.Render("✓"), startedCount, rigName)
+	}
+
+	return lastErr
 }

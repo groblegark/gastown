@@ -275,6 +275,7 @@ agentController:
     remoteRef: "gastown/git-credentials"
     usernameProperty: "username"
     tokenProperty: "token"
+  watcherTransport: "nats"
   natsURL: ""
   natsTokenSecret: ""
 
