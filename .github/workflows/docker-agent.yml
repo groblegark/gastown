@@ -12,6 +12,8 @@ on:
     paths:
       - 'deploy/agent/**'
       - '.github/workflows/docker-agent.yml'
+  repository_dispatch:
+    types: [coop-release]
   workflow_dispatch: {}
 
 concurrency:
@@ -55,6 +57,15 @@ jobs:
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Resolve coop version
+        id: coop
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "version=${{ github.event.client_payload.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=latest" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -64,5 +75,7 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            COOP_VERSION=${{ steps.coop.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
