@@ -12,6 +12,7 @@ import (
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -129,11 +130,12 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 
 	// Check if session exists
 	t := tmux.NewTmux()
+	backend := terminal.NewTmuxBackend(t)
 	sessionID := crewSessionName(r.Name, name)
 	if debug {
 		fmt.Printf("[DEBUG] sessionID=%q (r.Name=%q, name=%q)\n", sessionID, r.Name, name)
 	}
-	hasSession, err := t.HasSession(sessionID)
+	hasSession, err := backend.HasSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("checking session: %w", err)
 	}
@@ -292,7 +294,7 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 						return fmt.Errorf("stale session persists after cleanup: %w", err)
 					}
 					fmt.Printf("Stale session detected, recreating...\n")
-					if killErr := t.KillSession(sessionID); killErr != nil {
+					if killErr := backend.KillSession(sessionID); killErr != nil {
 						return fmt.Errorf("failed to kill stale session: %w", killErr)
 					}
 					crewAtRetried = true
