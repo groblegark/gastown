@@ -381,6 +381,17 @@ func (b *Beads) CreateOrReopenAgentBead(id, title string, fields *AgentFields) (
 		}
 	}
 
+	// Reset agent_state label to match the new state (fix: gt-iq9).
+	// When reusing a polecat name, the old agent_state label (e.g., "done")
+	// must be replaced with the new state (e.g., "spawning").
+	// Use set-state for atomic remove-old + add-new label operation.
+	if fields != nil && fields.AgentState != "" {
+		if _, err := b.run("set-state", id, "agent_state="+fields.AgentState, "--reason=re-spawning agent"); err != nil {
+			// Non-fatal: the description text has the authoritative state
+			fmt.Printf("Warning: could not update agent_state label: %v\n", err)
+		}
+	}
+
 	// Clear any existing hook slot (handles stale state from previous lifecycle).
 	// In daemon mode, use workDir — the subprocess routes via BD_DAEMON_HOST.
 	slotDir := targetDir
