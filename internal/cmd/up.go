@@ -487,8 +487,7 @@ func discoverRigs(townRoot string) []string {
 	var rigs []string
 
 	// Try rigs.json first
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	if rigsConfig, err := config.LoadRigsConfig(rigsConfigPath); err == nil {
+	if rigsConfig, err := loadRigsConfigBeadsFirst(townRoot); err == nil {
 		for name := range rigsConfig.Rigs {
 			rigs = append(rigs, name)
 		}

@@ -404,8 +404,7 @@ func findCurrentRig(townRoot string) (string, *rig.Rig, error) {
 	}
 
 	// Load rig manager and get the rig
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
 	}

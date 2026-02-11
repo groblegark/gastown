@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -40,9 +39,8 @@ func runCrewAdd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Load rigs config
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	// Load rigs config (beads-first, filesystem fallback).
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
 	}

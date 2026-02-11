@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/style"
@@ -217,8 +216,7 @@ func runWorktreeList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load rigs config to list all rigs
-	rigsConfigPath := constants.MayorRigsPath(townRoot)
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		return fmt.Errorf("loading rigs config: %w", err)
 	}

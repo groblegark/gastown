@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -437,8 +436,7 @@ func querySessionEvents() []CostEntry {
 	beadsLocations := []string{townRoot}
 
 	// Load rigs to find all rig beads locations
-	rigsConfigPath := filepath.Join(townRoot, constants.DirMayor, constants.FileRigsJSON)
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err == nil && rigsConfig != nil {
 		for rigName := range rigsConfig.Rigs {
 			rigPath := filepath.Join(townRoot, rigName)

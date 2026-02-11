@@ -9,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
-	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/statusline"
 	"github.com/steveyegge/gastown/internal/terminal"
@@ -184,8 +183,7 @@ func runMayorStatusLine(t *tmux.Tmux) error {
 	// Load registered rigs to validate against
 	registeredRigs := make(map[string]bool)
 	if townRoot != "" {
-		rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-		if rigsConfig, err := config.LoadRigsConfig(rigsConfigPath); err == nil {
+		if rigsConfig, err := loadRigsConfigBeadsFirst(townRoot); err == nil {
 			for rigName := range rigsConfig.Rigs {
 				registeredRigs[rigName] = true
 			}
@@ -424,8 +422,7 @@ func runDeaconStatusLine(t *tmux.Tmux) error {
 	// Load registered rigs to validate against
 	registeredRigs := make(map[string]bool)
 	if townRoot != "" {
-		rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-		if rigsConfig, err := config.LoadRigsConfig(rigsConfigPath); err == nil {
+		if rigsConfig, err := loadRigsConfigBeadsFirst(townRoot); err == nil {
 			for rigName := range rigsConfig.Rigs {
 				registeredRigs[rigName] = true
 			}

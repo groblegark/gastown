@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/config"
@@ -184,8 +183,7 @@ func getSwarmRig(rigName string) (*rig.Rig, string, error) {
 		return nil, "", fmt.Errorf("not in a Gas Town workspace: %w", err)
 	}
 
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
 	}
@@ -207,8 +205,7 @@ func getAllRigs() ([]*rig.Rig, string, error) {
 		return nil, "", fmt.Errorf("not in a Gas Town workspace: %w", err)
 	}
 
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
 	}

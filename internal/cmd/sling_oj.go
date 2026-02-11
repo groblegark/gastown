@@ -37,9 +37,8 @@ type OjDispatchInfo struct {
 // GT still owns: name allocation, formula instantiation, bead lifecycle.
 // OJ owns: workspace creation, agent spawn, step execution, monitoring, crash recovery, cleanup.
 func dispatchToOj(rigName string, opts SlingSpawnOptions, beadID, instructions, base, townRoot string) (*OjDispatchInfo, error) {
-	// Load rig config for name allocation
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	// Load rig config for name allocation (beads-first, filesystem fallback).
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
 	}

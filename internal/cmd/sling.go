@@ -355,9 +355,8 @@ func runSling(cmd *cobra.Command, args []string) error {
 					// FIX (hq-cc7214.25): Auto-start crew session if not running
 					fmt.Printf("Target crew %s/%s has no active session, starting...\n", rigName, crewName)
 
-					// Get rig and crew manager
-					rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-					rigsConfig, configErr := config.LoadRigsConfig(rigsConfigPath)
+					// Get rig and crew manager (beads-first, filesystem fallback).
+					rigsConfig, configErr := loadRigsConfigBeadsFirst(townRoot)
 					if configErr != nil {
 						return fmt.Errorf("loading rigs config: %w", configErr)
 					}

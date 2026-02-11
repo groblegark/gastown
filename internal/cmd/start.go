@@ -430,8 +430,7 @@ func startOrRestartCrewMember(t *tmux.Tmux, r *rig.Rig, crewName, townRoot strin
 
 // discoverAllRigs finds all rigs in the workspace.
 func discoverAllRigs(townRoot string) ([]*rig.Rig, error) {
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		return nil, fmt.Errorf("loading rigs config: %w", err)
 	}
@@ -727,8 +726,7 @@ func killSessionsInOrder(t *tmux.Tmux, sessions []string, mayorSession, deaconSe
 // It refuses to clean up polecats with uncommitted work unless --nuclear is set.
 func cleanupPolecats(townRoot string) {
 	// Load rigs config
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		fmt.Printf("  %s Could not load rigs config: %v\n", style.Dim.Render("○"), err)
 		return
@@ -895,8 +893,7 @@ func runStartCrew(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load rigs config
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
 	}
@@ -1007,8 +1004,7 @@ func getCrewToStart(r *rig.Rig) []string {
 // This is a simplified version of runStartCrew that doesn't print output.
 func startCrewMember(rigName, crewName, townRoot string) error {
 	// Load rigs config
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
 	}

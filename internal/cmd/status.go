@@ -201,8 +201,7 @@ func runStatusOnce(_ *cobra.Command, _ []string) error {
 	}
 
 	// Load rigs config
-	rigsConfigPath := constants.MayorRigsPath(townRoot)
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
 	if err != nil {
 		// Empty config if file doesn't exist
 		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
