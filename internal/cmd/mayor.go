@@ -204,6 +204,16 @@ func runMayorStop(cmd *cobra.Command, args []string) error {
 }
 
 func runMayorAttach(cmd *cobra.Command, args []string) error {
+	// When GT_K8S_NAMESPACE is set, try K8s attach first — no local workspace needed.
+	// This allows `gt mayor attach` from any directory (e.g., ~/).
+	if os.Getenv("GT_K8S_NAMESPACE") != "" {
+		if podName, ns := detectMayorK8sPod(""); podName != "" {
+			fmt.Printf("%s Attaching to K8s Mayor pod via coop...\n",
+				style.Bold.Render("☸"))
+			return attachToCoopPod(podName, ns)
+		}
+	}
+
 	mgr, err := getMayorManager()
 	if err != nil {
 		return err
@@ -222,12 +232,6 @@ func runMayorAttach(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("checking session: %w", err)
 	}
 	if !running {
-		// Check for K8s mayor pod (coop-based).
-		if podName, ns := detectMayorK8sPod(townRoot); podName != "" {
-			fmt.Printf("%s Attaching to K8s Mayor pod via coop...\n",
-				style.Bold.Render("☸"))
-			return attachToCoopPod(podName, ns)
-		}
 
 		// Legacy: check for K8s terminal server session (screen-based).
 		k8sSession := session.MayorK8sSessionName()
