@@ -143,12 +143,16 @@ rm -rf "${CLAUDE_DIR}"
 ln -sfn "${CLAUDE_STATE}" "${CLAUDE_DIR}"
 echo "[entrypoint] Linked ${CLAUDE_DIR} → ${CLAUDE_STATE} (PVC-backed)"
 
-# Copy credentials from staging mount into PVC dir (K8s secret mount lives
-# at /tmp/claude-credentials/credentials.json, set by helm chart).
+# Seed credentials from K8s secret mount if PVC doesn't have them yet.
+# IMPORTANT: Don't overwrite PVC credentials on restart — the refresh loop
+# rotates refresh tokens, so the PVC copy is newer than the K8s secret.
 CREDS_STAGING="/tmp/claude-credentials/credentials.json"
-if [ -f "${CREDS_STAGING}" ]; then
-    cp "${CREDS_STAGING}" "${CLAUDE_STATE}/.credentials.json"
-    echo "[entrypoint] Copied Claude credentials to PVC state dir"
+CREDS_PVC="${CLAUDE_STATE}/.credentials.json"
+if [ -f "${CREDS_STAGING}" ] && [ ! -f "${CREDS_PVC}" ]; then
+    cp "${CREDS_STAGING}" "${CREDS_PVC}"
+    echo "[entrypoint] Seeded Claude credentials from K8s secret"
+elif [ -f "${CREDS_PVC}" ]; then
+    echo "[entrypoint] Using existing PVC credentials (preserved from refresh)"
 fi
 
 # Set XDG_STATE_HOME so coop writes session artifacts to the PVC.
