@@ -6,7 +6,6 @@ import (
 
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // resolveTargetAgent converts a target spec to agent ID, pane, and hook root.
@@ -36,8 +35,7 @@ func resolveTargetAgent(target string) (agentID string, pane string, hookRoot st
 		return "", "", "", fmt.Errorf("getting pane for %s: %w", sessionName, err)
 	}
 
-	t := tmux.NewTmux()
-	hookRoot, err = t.GetPaneWorkDir(sessionName)
+	hookRoot, err = backend.GetPaneWorkDir(sessionName)
 	if err != nil {
 		return "", "", "", fmt.Errorf("getting working dir for %s: %w", sessionName, err)
 	}

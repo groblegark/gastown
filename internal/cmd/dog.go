@@ -14,7 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/plugin"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -637,14 +637,14 @@ func showDogStatus(mgr *dog.Manager, name string) error {
 		}
 	}
 
-	// Check for tmux session
+	// Check for running session via backend (supports coop + tmux)
 	townRoot, _ := workspace.FindFromCwd()
 	if townRoot != "" {
 		townName, err := workspace.GetTownName(townRoot)
 		if err == nil {
 			sessionName := fmt.Sprintf("gt-%s-deacon-%s", townName, name)
-			tm := tmux.NewTmux()
-			if has, _ := tm.HasSession(sessionName); has {
+			backend := terminal.ResolveBackend("deacon")
+			if has, _ := backend.HasSession(sessionName); has {
 				fmt.Printf("\nSession: %s (running)\n", sessionName)
 			}
 		}
