@@ -463,6 +463,61 @@ CLAUDEMD
     esac
 fi
 
+# ── Append toolchain sidecar section to CLAUDE.md if sidecar is configured ──
+if [ -n "${GT_TOOLCHAIN_PROFILE:-}" ] || [ -n "${GT_TOOLCHAIN_IMAGE:-}" ]; then
+    cat >> "${WORKSPACE}/CLAUDE.md" <<'TOOLCHAIN'
+
+## Toolchain Sidecar
+
+This agent has a toolchain sidecar with development tools.
+
+### Usage
+```bash
+gt toolchain status            # Show sidecar info
+gt toolchain list              # List available tools
+gt toolchain exec -- <cmd>     # Run command in sidecar
+```
+
+### Examples
+```bash
+gt toolchain exec -- go build ./...
+gt toolchain exec -- npm install
+gt toolchain exec -- python3 script.py
+gt toolchain exec -- aws s3 ls
+```
+
+### Self-Enhancement
+To add tools not in the current sidecar:
+1. Create a Dockerfile extending the current image
+2. Build with kaniko: `gt toolchain exec -- kaniko --context=. --destination=<registry>/<image>:<tag> --cache=true`
+3. Update bead metadata: `bd update $BEAD_ID --set sidecar_image=<registry>/<image>:<tag>`
+4. Your session will resume automatically after pod restart (~30s)
+TOOLCHAIN
+
+    # Add profile-specific details
+    if [ "${GT_TOOLCHAIN_PROFILE:-}" = "toolchain-full" ]; then
+        cat >> "${WORKSPACE}/CLAUDE.md" <<'TOOLCHAIN_FULL'
+
+### Available Tools (toolchain-full profile)
+| Tool | Command |
+|------|---------|
+| Go | `gt toolchain exec -- go` |
+| Node.js | `gt toolchain exec -- node` / `npm` |
+| Python 3 | `gt toolchain exec -- python3` |
+| AWS CLI | `gt toolchain exec -- aws` |
+| Docker CLI | `gt toolchain exec -- docker` (client only) |
+| Kaniko | `gt toolchain exec -- kaniko` (image builder) |
+| git, jq, make, curl | Base tools |
+TOOLCHAIN_FULL
+    elif [ "${GT_TOOLCHAIN_PROFILE:-}" = "toolchain-minimal" ]; then
+        cat >> "${WORKSPACE}/CLAUDE.md" <<'TOOLCHAIN_MINIMAL'
+
+### Available Tools (toolchain-minimal profile)
+- git, jq, make, curl (base tools only)
+TOOLCHAIN_MINIMAL
+    fi
+fi
+
 # ── Skip Claude onboarding wizard ─────────────────────────────────────────
 
 printf '{"hasCompletedOnboarding":true,"lastOnboardingVersion":"2.1.37","preferredTheme":"dark","bypassPermissionsModeAccepted":true}\n' > "${HOME}/.claude.json"
