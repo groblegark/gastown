@@ -62,10 +62,45 @@ current sidecar profile provides.`,
 	RunE: runToolchainList,
 }
 
+var toolchainBuildCmd = &cobra.Command{
+	Use:   "build --tag <image:tag>",
+	Short: "Build a container image using kaniko in the sidecar",
+	Long: `Build a container image using kaniko executor in the toolchain sidecar.
+
+This command runs /kaniko/executor inside the toolchain sidecar container
+to build and push a container image. The build context is the shared
+workspace volume, so the sidecar can access your Dockerfile and source.
+
+The built image can be used as a new sidecar image by passing --auto-apply,
+which updates the agent's bead metadata to trigger a sidecar replacement.
+
+Examples:
+  gt toolchain build --tag ghcr.io/org/my-tools:v1
+  gt toolchain build --tag ghcr.io/org/my-tools:v1 --file tools/Dockerfile
+  gt toolchain build --tag ghcr.io/org/my-tools:v1 --auto-apply`,
+	RunE: runToolchainBuild,
+}
+
+var (
+	buildTag       string
+	buildFile      string
+	buildContext   string
+	buildCacheRepo string
+	buildAutoApply bool
+)
+
 func init() {
+	toolchainBuildCmd.Flags().StringVar(&buildTag, "tag", "", "Target image name and tag (required)")
+	toolchainBuildCmd.Flags().StringVar(&buildFile, "file", "Dockerfile", "Path to Dockerfile relative to context")
+	toolchainBuildCmd.Flags().StringVar(&buildContext, "context", "", "Build context directory (default: workspace root)")
+	toolchainBuildCmd.Flags().StringVar(&buildCacheRepo, "cache-repo", "", "Registry repo for kaniko layer caching")
+	toolchainBuildCmd.Flags().BoolVar(&buildAutoApply, "auto-apply", false, "Update this agent's bead with the new image")
+	_ = toolchainBuildCmd.MarkFlagRequired("tag")
+
 	toolchainCmd.AddCommand(toolchainStatusCmd)
 	toolchainCmd.AddCommand(toolchainExecCmd)
 	toolchainCmd.AddCommand(toolchainListCmd)
+	toolchainCmd.AddCommand(toolchainBuildCmd)
 	rootCmd.AddCommand(toolchainCmd)
 }
 
@@ -159,6 +194,96 @@ func runToolchainExec(cmd *cobra.Command, args []string) error {
 	execCmd.Stderr = os.Stderr
 
 	return execCmd.Run()
+}
+
+func runToolchainBuild(cmd *cobra.Command, args []string) error {
+	container := os.Getenv("GT_TOOLCHAIN_CONTAINER")
+	if container == "" {
+		return fmt.Errorf("no toolchain sidecar configured (GT_TOOLCHAIN_CONTAINER not set)")
+	}
+
+	podName := os.Getenv("HOSTNAME")
+	if podName == "" {
+		return fmt.Errorf("cannot determine pod name (HOSTNAME not set)")
+	}
+
+	namespace := os.Getenv("GT_POD_NAMESPACE")
+	if namespace == "" {
+		namespace = detectNamespace()
+	}
+
+	// Resolve build context to absolute path inside the shared workspace.
+	context := buildContext
+	if context == "" {
+		context = os.Getenv("GT_WORKSPACE")
+		if context == "" {
+			context = "/home/agent/gt/workspace"
+		}
+	}
+
+	fmt.Printf("%s Building image %s\n\n", style.Bold.Render("🔨"), style.Bold.Render(buildTag))
+	fmt.Printf("  Dockerfile: %s\n", buildFile)
+	fmt.Printf("  Context:    %s\n", context)
+	fmt.Printf("  Container:  %s\n\n", container)
+
+	// Build kaniko executor arguments.
+	kanikoArgs := []string{
+		"/kaniko/executor",
+		"--context", "dir://" + context,
+		"--dockerfile", buildFile,
+		"--destination", buildTag,
+	}
+
+	if buildCacheRepo != "" {
+		kanikoArgs = append(kanikoArgs, "--cache=true", "--cache-repo", buildCacheRepo)
+	}
+
+	// Build kubectl exec command to run kaniko in the sidecar.
+	kubectlArgs := []string{"exec", podName, "-c", container}
+	if namespace != "" {
+		kubectlArgs = append(kubectlArgs, "-n", namespace)
+	}
+	kubectlArgs = append(kubectlArgs, "--")
+	kubectlArgs = append(kubectlArgs, kanikoArgs...)
+
+	fmt.Printf("  %s Running kaniko executor...\n\n", style.Dim.Render(">>>"))
+
+	execCmd := exec.Command("kubectl", kubectlArgs...)
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+
+	if err := execCmd.Run(); err != nil {
+		return fmt.Errorf("kaniko build failed: %w", err)
+	}
+
+	fmt.Printf("\n  %s Image built and pushed: %s\n", style.Bold.Render("✓"), buildTag)
+
+	// Auto-apply: update this agent's bead metadata so the controller
+	// reconciles with the new sidecar image.
+	if buildAutoApply {
+		beadID := os.Getenv("GT_BEAD_ID")
+		if beadID == "" {
+			fmt.Printf("  %s Cannot auto-apply: GT_BEAD_ID not set\n", style.Dim.Render("⚠"))
+			return nil
+		}
+
+		fmt.Printf("  %s Updating bead %s with sidecar_image=%s\n",
+			style.Bold.Render("↻"), beadID, buildTag)
+
+		updateCmd := exec.Command("bd", "update", beadID,
+			"--metadata", fmt.Sprintf("sidecar_image=%s", buildTag))
+		updateCmd.Stdout = os.Stdout
+		updateCmd.Stderr = os.Stderr
+
+		if err := updateCmd.Run(); err != nil {
+			return fmt.Errorf("failed to update bead metadata: %w", err)
+		}
+
+		fmt.Printf("  %s Bead updated. Controller will reconcile the pod with new sidecar.\n",
+			style.Bold.Render("✓"))
+	}
+
+	return nil
 }
 
 // detectNamespace reads the K8s namespace from the service account mount.
