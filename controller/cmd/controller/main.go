@@ -429,25 +429,24 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		}
 	}
 
-	// Wire NATS config: sidecar gets dedicated env vars, built-in gets plain env.
-	// BD_NATS_URL is always set so the beads client can publish decision events.
+	// Wire NATS config to all agents. Every agent gets BD_NATS_URL and
+	// COOP_NATS_URL so beads decisions, coop events, and bus emit all work.
+	// When a coop sidecar is present it also gets its own copy.
 	if cfg.NatsURL != "" {
 		spec.Env["BD_NATS_URL"] = cfg.NatsURL
+		spec.Env["COOP_NATS_URL"] = cfg.NatsURL
 		if spec.CoopSidecar != nil {
 			spec.CoopSidecar.NatsURL = cfg.NatsURL
-		} else {
-			spec.Env["COOP_NATS_URL"] = cfg.NatsURL
 		}
 	}
 	if cfg.NatsTokenSecret != "" {
+		spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
+			EnvName:    "COOP_NATS_TOKEN",
+			SecretName: cfg.NatsTokenSecret,
+			SecretKey:  "token",
+		})
 		if spec.CoopSidecar != nil {
 			spec.CoopSidecar.NatsTokenSecret = cfg.NatsTokenSecret
-		} else {
-			spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
-				EnvName:    "COOP_NATS_TOKEN",
-				SecretName: cfg.NatsTokenSecret,
-				SecretKey:  "token",
-			})
 		}
 	}
 }
