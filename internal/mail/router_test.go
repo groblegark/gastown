@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -954,20 +955,30 @@ func TestValidateRecipient(t *testing.T) {
 		t.Skip("bd CLI not available, skipping test")
 	}
 
-	// Create isolated beads environment for testing
+	// Create isolated beads environment for testing.
+	// Override HOME so bd doesn't read ~/.beads/config.yaml (which may set
+	// daemon-host), and strip daemon env vars.
 	tmpDir := t.TempDir()
 	townRoot := tmpDir
 
-	// Create .beads directory and initialize
-	beadsDir := filepath.Join(townRoot, ".beads")
-	if err := os.MkdirAll(beadsDir, 0755); err != nil {
-		t.Fatalf("creating beads dir: %v", err)
+	cleanEnv := []string{
+		"HOME=" + tmpDir,
+	}
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "BD_DAEMON_HOST=") ||
+			strings.HasPrefix(e, "BD_DAEMON_TOKEN=") ||
+			strings.HasPrefix(e, "BEADS_DIR=") ||
+			strings.HasPrefix(e, "BEADS_NO_DAEMON=") ||
+			strings.HasPrefix(e, "HOME=") {
+			continue
+		}
+		cleanEnv = append(cleanEnv, e)
 	}
 
 	// Initialize beads database with "gt" prefix (matches agent bead IDs)
 	cmd := exec.Command("bd", "init", "gt")
 	cmd.Dir = townRoot
-	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	cmd.Env = cleanEnv
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("bd init failed: %v\n%s", err, out)
 	}
@@ -975,7 +986,7 @@ func TestValidateRecipient(t *testing.T) {
 	// Set issue prefix to "gt" (matches agent bead ID pattern)
 	cmd = exec.Command("bd", "config", "set", "issue_prefix", "gt")
 	cmd.Dir = townRoot
-	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	cmd.Env = cleanEnv
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("bd config set issue_prefix failed: %v\n%s", err, out)
 	}
@@ -983,7 +994,7 @@ func TestValidateRecipient(t *testing.T) {
 	// Register custom types (agent, message, etc.) - required before creating agents
 	cmd = exec.Command("bd", "config", "set", "types.custom", "agent,role,rig,convoy,slot,queue,event,message,molecule,gate,merge-request")
 	cmd.Dir = townRoot
-	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+	cmd.Env = cleanEnv
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("bd config set types.custom failed: %v\n%s", err, out)
 	}
@@ -992,7 +1003,7 @@ func TestValidateRecipient(t *testing.T) {
 	createAgent := func(id, title string) {
 		cmd := exec.Command("bd", "create", title, "--type=agent", "--id="+id, "--force")
 		cmd.Dir = townRoot
-		cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
+		cmd.Env = cleanEnv
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("creating agent %s: %v\n%s", id, err, out)
 		}

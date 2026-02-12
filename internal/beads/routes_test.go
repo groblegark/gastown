@@ -9,6 +9,8 @@ import (
 )
 
 func TestGetPrefixForRig(t *testing.T) {
+	t.Setenv("BD_DAEMON_HOST", "") // Use local routes.jsonl, not daemon
+	t.Setenv("HOME", t.TempDir())  // Prevent bd subprocess from reading ~/.beads/config.yaml
 	// Create a temporary directory with routes.jsonl
 	tmpDir := t.TempDir()
 	beadsDir := filepath.Join(tmpDir, ".beads")
@@ -45,6 +47,8 @@ func TestGetPrefixForRig(t *testing.T) {
 }
 
 func TestGetPrefixForRig_NoRoutesFile(t *testing.T) {
+	t.Setenv("BD_DAEMON_HOST", "") // Prevent daemon fallback
+	t.Setenv("HOME", t.TempDir())  // Prevent bd subprocess from reading ~/.beads/config.yaml
 	tmpDir := t.TempDir()
 	// No routes.jsonl file
 
@@ -108,6 +112,8 @@ func TestExtractPrefix(t *testing.T) {
 }
 
 func TestGetRigPathForPrefix(t *testing.T) {
+	t.Setenv("BD_DAEMON_HOST", "") // Use local routes.jsonl, not daemon
+	t.Setenv("HOME", t.TempDir())  // Prevent bd subprocess from reading ~/.beads/config.yaml
 	// Create a temporary directory with routes.jsonl
 	tmpDir := t.TempDir()
 	beadsDir := filepath.Join(tmpDir, ".beads")
@@ -145,6 +151,8 @@ func TestGetRigPathForPrefix(t *testing.T) {
 }
 
 func TestGetRigPathForPrefix_NoRoutesFile(t *testing.T) {
+	t.Setenv("BD_DAEMON_HOST", "") // Prevent daemon fallback
+	t.Setenv("HOME", t.TempDir())  // Prevent bd subprocess from reading ~/.beads/config.yaml
 	tmpDir := t.TempDir()
 	// No routes.jsonl file
 
@@ -155,6 +163,8 @@ func TestGetRigPathForPrefix_NoRoutesFile(t *testing.T) {
 }
 
 func TestGetRoutePathForRigName(t *testing.T) {
+	t.Setenv("BD_DAEMON_HOST", "") // Use local routes.jsonl, not daemon
+	t.Setenv("HOME", t.TempDir())  // Prevent bd subprocess from reading ~/.beads/config.yaml
 	// Create a temporary directory with routes.jsonl
 	tmpDir := t.TempDir()
 	beadsDir := filepath.Join(tmpDir, ".beads")
@@ -193,6 +203,8 @@ func TestGetRoutePathForRigName(t *testing.T) {
 }
 
 func TestGetRoutePathForRigName_NoRoutesFile(t *testing.T) {
+	t.Setenv("BD_DAEMON_HOST", "") // Prevent daemon fallback
+	t.Setenv("HOME", t.TempDir())  // Prevent bd subprocess from reading ~/.beads/config.yaml
 	tmpDir := t.TempDir()
 	// No routes.jsonl file
 
@@ -203,6 +215,8 @@ func TestGetRoutePathForRigName_NoRoutesFile(t *testing.T) {
 }
 
 func TestResolveHookDir(t *testing.T) {
+	t.Setenv("BD_DAEMON_HOST", "") // Use local routes.jsonl, not daemon
+	t.Setenv("HOME", t.TempDir())  // Prevent bd subprocess from reading ~/.beads/config.yaml
 	// Create a temporary directory with routes.jsonl
 	tmpDir := t.TempDir()
 	beadsDir := filepath.Join(tmpDir, ".beads")
@@ -267,6 +281,8 @@ func TestResolveHookDir(t *testing.T) {
 }
 
 func TestResolveToExternalRef(t *testing.T) {
+	t.Setenv("BD_DAEMON_HOST", "") // Use local routes.jsonl, not daemon
+	t.Setenv("HOME", t.TempDir())  // Prevent bd subprocess from reading ~/.beads/config.yaml
 	// Create a temporary directory with routes.jsonl
 	tmpDir := t.TempDir()
 	beadsDir := filepath.Join(tmpDir, ".beads")
@@ -336,6 +352,8 @@ func TestResolveToExternalRef(t *testing.T) {
 }
 
 func TestResolveToExternalRef_NoRoutesFile(t *testing.T) {
+	t.Setenv("BD_DAEMON_HOST", "") // Prevent daemon fallback
+	t.Setenv("HOME", t.TempDir())  // Prevent bd subprocess from reading ~/.beads/config.yaml
 	tmpDir := t.TempDir()
 	// No routes.jsonl file
 

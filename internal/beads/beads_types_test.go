@@ -48,6 +48,8 @@ func TestFindTownRoot(t *testing.T) {
 }
 
 func TestResolveRoutingTarget(t *testing.T) {
+	t.Setenv("BD_DAEMON_HOST", "") // Use local routes.jsonl, not daemon
+	t.Setenv("HOME", t.TempDir())  // Prevent bd subprocess from reading ~/.beads/config.yaml
 	// Create a temporary town with routes
 	tmpDir := t.TempDir()
 	beadsDir := filepath.Join(tmpDir, ".beads")
