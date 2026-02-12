@@ -15,6 +15,7 @@ type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	apiKey     string
+	townName   string // Town name for bead ID generation (set via WithTownName)
 }
 
 // NewClient creates a new RPC client.
@@ -45,6 +46,13 @@ func WithAPIKey(key string) Option {
 func WithTimeout(d time.Duration) Option {
 	return func(c *Client) {
 		c.httpClient.Timeout = d
+	}
+}
+
+// WithTownName sets the town name used for bead ID generation.
+func WithTownName(name string) Option {
+	return func(c *Client) {
+		c.townName = name
 	}
 }
 
@@ -2408,7 +2416,7 @@ func mergeStrategyToProto(s string) string {
 }
 
 // ============================================================================
-// AgentService Client Methods
+// AgentService Client Methods — backed by bd.v1.BeadsService HTTP API
 // ============================================================================
 
 // Agent represents an agent (crew worker or polecat) from the RPC API.
@@ -2430,174 +2438,167 @@ type Agent struct {
 	ConvoyID     string
 }
 
-// ListAgents fetches agents from the RPC server.
-func (c *Client) ListAgents(ctx context.Context, rig string, agentType string, includeStopped, includeGlobal bool) ([]Agent, int, int, error) {
-	body := map[string]interface{}{}
-	if rig != "" {
-		body["rig"] = rig
-	}
-	if agentType != "" {
-		body["type"] = agentTypeToProto(agentType)
-	}
-	if includeStopped {
-		body["includeStopped"] = true
-	}
-	if includeGlobal {
-		body["includeGlobal"] = true
-	}
-
+// postBeads sends a POST to /bd.v1.BeadsService/{method} and decodes the
+// JSON response into dst.  The bd daemon uses Authorization: Bearer <token>
+// for auth.
+func (c *Client) postBeads(ctx context.Context, method string, body interface{}, dst interface{}) error {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("encoding request: %w", err)
+		return fmt.Errorf("encoding request: %w", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, "POST",
-		c.baseURL+"/gastown.v1.AgentService/ListAgents",
+		c.baseURL+"/bd.v1.BeadsService/"+method,
 		strings.NewReader(string(jsonBody)))
 	if err != nil {
-		return nil, 0, 0, err
+		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
-		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, 0, 0, err
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, 0, fmt.Errorf("RPC error: %s", resp.Status)
+		// Try to extract error message from body.
+		var errBody struct {
+			Error string `json:"error"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&errBody) == nil && errBody.Error != "" {
+			return fmt.Errorf("beads API %s: %s", method, errBody.Error)
+		}
+		return fmt.Errorf("beads API %s: %s", method, resp.Status)
 	}
 
-	var result struct {
-		Agents []struct {
-			Address      string `json:"address"`
-			Name         string `json:"name"`
-			Rig          string `json:"rig"`
-			Type         string `json:"type"`
-			State        string `json:"state"`
-			Session      string `json:"session"`
-			WorkDir      string `json:"workDir"`
-			Branch       string `json:"branch"`
-			HookedBead   string `json:"hookedBead"`
-			HookedTitle  string `json:"hookedTitle"`
-			UnreadMail   int    `json:"unreadMail"`
-			StartedAt    string `json:"startedAt"`
-			LastActivity string `json:"lastActivity"`
-			GitStatus    string `json:"gitStatus"`
-			ConvoyID     string `json:"convoyId"`
-		} `json:"agents"`
-		Total   int `json:"total"`
-		Running int `json:"running"`
+	if dst != nil {
+		if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
+			return fmt.Errorf("decoding %s response: %w", method, err)
+		}
+	}
+	return nil
+}
+
+// crewBeadID builds the deterministic bead ID for a crew worker.
+// Format: hq-<town>-<rig>-crew-<name> (or hq-<rig>-crew-<name> when town is empty).
+func crewBeadID(town, rig, name string) string {
+	if town == "" {
+		return fmt.Sprintf("hq-%s-crew-%s", rig, name)
+	}
+	return fmt.Sprintf("hq-%s-%s-crew-%s", town, rig, name)
+}
+
+// agentBeadID builds a bead ID from an agent address (rig/role/name).
+func (c *Client) agentBeadID(agentAddr string) string {
+	parts := strings.Split(agentAddr, "/")
+	if len(parts) == 3 {
+		if c.townName != "" {
+			return fmt.Sprintf("hq-%s-%s-%s-%s", c.townName, parts[0], parts[1], parts[2])
+		}
+		return fmt.Sprintf("hq-%s-%s-%s", parts[0], parts[1], parts[2])
+	}
+	return agentAddr
+}
+
+// beadIssue is the JSON shape returned by bd.v1.BeadsService for issue fields.
+type beadIssue struct {
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Status       string `json:"status"`
+	IssueType    string `json:"issue_type"`
+	RoleType     string `json:"role_type"`
+	Rig          string `json:"rig"`
+	AgentState   string `json:"agent_state"`
+	HookBead     string `json:"hook_bead"`
+	PodName      string `json:"pod_name"`
+	PodIP        string `json:"pod_ip"`
+	PodStatus    string `json:"pod_status"`
+	Branch       string `json:"branch"`
+	StartedAt    string `json:"started_at"`
+	LastActivity string `json:"last_activity"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+// agentFromBead converts a beadIssue into an Agent, extracting the name
+// from the bead ID suffix.
+func agentFromBead(b beadIssue) Agent {
+	name := ""
+	roleType := b.RoleType
+	if roleType == "" {
+		roleType = "crew"
+	}
+	sep := roleType + "-"
+	if idx := strings.LastIndex(b.ID, sep); idx >= 0 {
+		name = b.ID[idx+len(sep):]
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, 0, 0, fmt.Errorf("decoding response: %w", err)
+	return Agent{
+		Address:      fmt.Sprintf("%s/%s/%s", b.Rig, roleType, name),
+		Name:         name,
+		Rig:          b.Rig,
+		Type:         roleType,
+		State:        b.AgentState,
+		HookedBead:   b.HookBead,
+		StartedAt:    b.StartedAt,
+		LastActivity: b.LastActivity,
+	}
+}
+
+// ListAgents fetches agent beads from the daemon's beads API.
+// It queries beads with label "gt:agent" and optional "role:<type>" and "rig:<rig>".
+func (c *Client) ListAgents(ctx context.Context, rig string, agentType string, includeStopped, includeGlobal bool) ([]Agent, int, int, error) {
+	labels := []string{"gt:agent"}
+	if agentType != "" {
+		labels = append(labels, "role:"+agentType)
+	}
+	if rig != "" {
+		labels = append(labels, "rig:"+rig)
+	}
+
+	body := map[string]interface{}{
+		"labels":     labels,
+		"issue_type": "agent",
+	}
+	if !includeStopped {
+		body["status"] = "open"
+	}
+
+	var issues []beadIssue
+	if err := c.postBeads(ctx, "List", body, &issues); err != nil {
+		return nil, 0, 0, err
 	}
 
 	var agents []Agent
-	for _, a := range result.Agents {
-		agents = append(agents, Agent{
-			Address:      a.Address,
-			Name:         a.Name,
-			Rig:          a.Rig,
-			Type:         agentTypeToString(a.Type),
-			State:        agentStateToString(a.State),
-			Session:      a.Session,
-			WorkDir:      a.WorkDir,
-			Branch:       a.Branch,
-			HookedBead:   a.HookedBead,
-			HookedTitle:  a.HookedTitle,
-			UnreadMail:   a.UnreadMail,
-			StartedAt:    a.StartedAt,
-			LastActivity: a.LastActivity,
-			GitStatus:    a.GitStatus,
-			ConvoyID:     a.ConvoyID,
-		})
+	running := 0
+	for _, iss := range issues {
+		a := agentFromBead(iss)
+		agents = append(agents, a)
+		if a.State == "running" || a.State == "working" || a.State == "spawning" {
+			running++
+		}
 	}
 
-	return agents, result.Total, result.Running, nil
+	return agents, len(agents), running, nil
 }
 
-// GetAgent fetches a specific agent by address via RPC.
+// GetAgent fetches a specific agent bead by address (rig/role/name).
 func (c *Client) GetAgent(ctx context.Context, agentAddr string) (*Agent, []string, error) {
-	body := map[string]interface{}{
-		"agent": agentAddr,
-	}
-
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, nil, fmt.Errorf("encoding request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST",
-		c.baseURL+"/gastown.v1.AgentService/GetAgent",
-		strings.NewReader(string(jsonBody)))
-	if err != nil {
-		return nil, nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("RPC error: %s", resp.Status)
-	}
+	beadID := c.agentBeadID(agentAddr)
 
 	var result struct {
-		Agent struct {
-			Address      string `json:"address"`
-			Name         string `json:"name"`
-			Rig          string `json:"rig"`
-			Type         string `json:"type"`
-			State        string `json:"state"`
-			Session      string `json:"session"`
-			WorkDir      string `json:"workDir"`
-			Branch       string `json:"branch"`
-			HookedBead   string `json:"hookedBead"`
-			HookedTitle  string `json:"hookedTitle"`
-			UnreadMail   int    `json:"unreadMail"`
-			StartedAt    string `json:"startedAt"`
-			LastActivity string `json:"lastActivity"`
-			GitStatus    string `json:"gitStatus"`
-			ConvoyID     string `json:"convoyId"`
-		} `json:"agent"`
-		RecentOutput []string `json:"recentOutput"`
+		Issue beadIssue `json:"issue"`
+	}
+	if err := c.postBeads(ctx, "Show", map[string]interface{}{"id": beadID}, &result); err != nil {
+		return nil, nil, err
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, nil, fmt.Errorf("decoding response: %w", err)
-	}
-
-	agent := &Agent{
-		Address:      result.Agent.Address,
-		Name:         result.Agent.Name,
-		Rig:          result.Agent.Rig,
-		Type:         agentTypeToString(result.Agent.Type),
-		State:        agentStateToString(result.Agent.State),
-		Session:      result.Agent.Session,
-		WorkDir:      result.Agent.WorkDir,
-		Branch:       result.Agent.Branch,
-		HookedBead:   result.Agent.HookedBead,
-		HookedTitle:  result.Agent.HookedTitle,
-		UnreadMail:   result.Agent.UnreadMail,
-		StartedAt:    result.Agent.StartedAt,
-		LastActivity: result.Agent.LastActivity,
-		GitStatus:    result.Agent.GitStatus,
-		ConvoyID:     result.Agent.ConvoyID,
-	}
-
-	return agent, result.RecentOutput, nil
+	agent := agentFromBead(result.Issue)
+	return &agent, nil, nil
 }
 
 // SpawnPolecatRequest contains the parameters for spawning a polecat via RPC.
@@ -2609,78 +2610,52 @@ type SpawnPolecatRequest struct {
 	HookBead      string
 }
 
-// SpawnPolecat spawns a new polecat via RPC.
+// SpawnPolecat spawns a new polecat by creating an agent bead via the beads API.
 func (c *Client) SpawnPolecat(ctx context.Context, req SpawnPolecatRequest) (*Agent, string, error) {
-	body := map[string]interface{}{
-		"rig": req.Rig,
-	}
-	if req.Name != "" {
-		body["name"] = req.Name
-	}
-	if req.Account != "" {
-		body["account"] = req.Account
-	}
-	if req.AgentOverride != "" {
-		body["agentOverride"] = req.AgentOverride
-	}
-	if req.HookBead != "" {
-		body["hookBead"] = req.HookBead
+	name := req.Name
+	beadID := fmt.Sprintf("hq-%s-polecat-%s", req.Rig, name)
+	if c.townName != "" {
+		beadID = fmt.Sprintf("hq-%s-%s-polecat-%s", c.townName, req.Rig, name)
 	}
 
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, "", fmt.Errorf("encoding request: %w", err)
+	title := fmt.Sprintf("Polecat %s in %s", name, req.Rig)
+	labels := fmt.Sprintf("gt:agent,role:polecat,rig:%s,agent:%s", req.Rig, name)
+	description := fmt.Sprintf("Polecat agent %s in %s - ephemeral worker.", name, req.Rig)
+
+	createBody := map[string]interface{}{
+		"id":          beadID,
+		"title":       title,
+		"description": description,
+		"issue_type":  "agent",
+		"labels":      labels,
+		"pinned":      true,
+		"role_type":   "polecat",
+		"rig":         req.Rig,
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST",
-		c.baseURL+"/gastown.v1.AgentService/SpawnPolecat",
-		strings.NewReader(string(jsonBody)))
-	if err != nil {
-		return nil, "", err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	var created beadIssue
+	if err := c.postBeads(ctx, "Create", createBody, &created); err != nil {
+		return nil, "", fmt.Errorf("creating polecat bead: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, "", err
+	// Set status to in_progress to trigger the controller.
+	updateBody := map[string]interface{}{
+		"id":     beadID,
+		"status": "in_progress",
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("RPC error: %s", resp.Status)
-	}
-
-	var result struct {
-		Agent struct {
-			Address string `json:"address"`
-			Name    string `json:"name"`
-			Rig     string `json:"rig"`
-			Type    string `json:"type"`
-			State   string `json:"state"`
-			Session string `json:"session"`
-			WorkDir string `json:"workDir"`
-		} `json:"agent"`
-		Session string `json:"session"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, "", fmt.Errorf("decoding response: %w", err)
+	if err := c.postBeads(ctx, "Update", updateBody, nil); err != nil {
+		return nil, "", fmt.Errorf("setting polecat status: %w", err)
 	}
 
 	agent := &Agent{
-		Address: result.Agent.Address,
-		Name:    result.Agent.Name,
-		Rig:     result.Agent.Rig,
-		Type:    agentTypeToString(result.Agent.Type),
-		State:   agentStateToString(result.Agent.State),
-		Session: result.Agent.Session,
-		WorkDir: result.Agent.WorkDir,
+		Address: fmt.Sprintf("%s/polecat/%s", req.Rig, name),
+		Name:    name,
+		Rig:     req.Rig,
+		Type:    "polecat",
+		State:   "running",
 	}
 
-	return agent, result.Session, nil
+	return agent, "", nil
 }
 
 // CreateCrewRequest contains the parameters for creating a crew workspace via RPC.
@@ -2697,71 +2672,67 @@ type CreateCrewResponse struct {
 	Reopened bool
 }
 
-// CreateCrew creates a crew workspace via RPC.
-// The daemon writes the agent bead and the K8s controller creates the crew pod.
+// CreateCrew creates a crew workspace by writing an agent bead via the beads API.
+// The K8s controller watches for the bead event and creates the crew pod.
 func (c *Client) CreateCrew(ctx context.Context, req CreateCrewRequest) (*CreateCrewResponse, error) {
-	body := map[string]interface{}{
-		"name": req.Name,
-		"rig":  req.Rig,
-	}
-	if req.Branch {
-		body["branch"] = true
+	beadID := crewBeadID(c.townName, req.Rig, req.Name)
+	title := fmt.Sprintf("Crew worker %s in %s", req.Name, req.Rig)
+	labels := fmt.Sprintf("gt:agent,role:crew,rig:%s,agent:%s", req.Rig, req.Name)
+	description := fmt.Sprintf("Crew worker %s in %s - human-managed persistent workspace.", req.Name, req.Rig)
+
+	createBody := map[string]interface{}{
+		"id":          beadID,
+		"title":       title,
+		"description": description,
+		"issue_type":  "agent",
+		"labels":      labels,
+		"pinned":      true,
+		"role_type":   "crew",
+		"rig":         req.Rig,
 	}
 
-	jsonBody, err := json.Marshal(body)
+	var created beadIssue
+	err := c.postBeads(ctx, "Create", createBody, &created)
+
+	reopened := false
 	if err != nil {
-		return nil, fmt.Errorf("encoding request: %w", err)
+		// If the bead already exists (UNIQUE constraint), try to reopen it.
+		errStr := err.Error()
+		if strings.Contains(errStr, "UNIQUE") || strings.Contains(errStr, "Duplicate") || strings.Contains(errStr, "already exists") {
+			updateBody := map[string]interface{}{
+				"id":     beadID,
+				"status": "open",
+			}
+			if err2 := c.postBeads(ctx, "Update", updateBody, nil); err2 != nil {
+				return nil, fmt.Errorf("reopening existing crew bead: %w", err2)
+			}
+			reopened = true
+		} else {
+			return nil, fmt.Errorf("creating crew bead: %w", err)
+		}
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST",
-		c.baseURL+"/gastown.v1.AgentService/CreateCrew",
-		strings.NewReader(string(jsonBody)))
-	if err != nil {
-		return nil, err
+	// Set status to in_progress to trigger the controller.
+	updateBody := map[string]interface{}{
+		"id":     beadID,
+		"status": "in_progress",
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
+	if err := c.postBeads(ctx, "Update", updateBody, nil); err != nil {
+		return nil, fmt.Errorf("setting crew status to in_progress: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("RPC error: %s", resp.Status)
-	}
-
-	var result struct {
-		BeadID string `json:"beadId"`
-		Agent  struct {
-			Address string `json:"address"`
-			Name    string `json:"name"`
-			Rig     string `json:"rig"`
-			Type    string `json:"type"`
-			State   string `json:"state"`
-			WorkDir string `json:"workDir"`
-		} `json:"agent"`
-		Reopened bool `json:"reopened"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+	agent := &Agent{
+		Address: fmt.Sprintf("%s/crew/%s", req.Rig, req.Name),
+		Name:    req.Name,
+		Rig:     req.Rig,
+		Type:    "crew",
+		State:   "running",
 	}
 
 	return &CreateCrewResponse{
-		BeadID: result.BeadID,
-		Agent: &Agent{
-			Address: result.Agent.Address,
-			Name:    result.Agent.Name,
-			Rig:     result.Agent.Rig,
-			Type:    agentTypeToString(result.Agent.Type),
-			State:   agentStateToString(result.Agent.State),
-			WorkDir: result.Agent.WorkDir,
-		},
-		Reopened: result.Reopened,
+		BeadID:   beadID,
+		Agent:    agent,
+		Reopened: reopened,
 	}, nil
 }
 
@@ -2780,61 +2751,44 @@ type RemoveCrewResponse struct {
 	Deleted bool
 }
 
-// RemoveCrew removes a crew workspace via RPC.
-// The daemon closes or deletes the agent bead and the K8s controller tears down the crew pod.
+// RemoveCrew removes a crew workspace by closing or deleting the agent bead.
+// The controller reacts to the bead close/delete event to remove the pod.
 func (c *Client) RemoveCrew(ctx context.Context, req RemoveCrewRequest) (*RemoveCrewResponse, error) {
-	body := map[string]interface{}{
-		"name": req.Name,
-		"rig":  req.Rig,
+	beadID := crewBeadID(c.townName, req.Rig, req.Name)
+
+	reason := req.Reason
+	if reason == "" {
+		reason = "crew removed via CLI"
 	}
+
+	deleted := false
 	if req.Purge {
-		body["purge"] = true
-	}
-	if req.Force {
-		body["force"] = true
-	}
-	if req.Reason != "" {
-		body["reason"] = req.Reason
-	}
+		// Add purge label so controller knows to delete PVC too.
+		_ = c.postBeads(ctx, "LabelAdd", map[string]interface{}{
+			"id":    beadID,
+			"label": "gt:purge",
+		}, nil)
 
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("encoding request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST",
-		c.baseURL+"/gastown.v1.AgentService/RemoveCrew",
-		strings.NewReader(string(jsonBody)))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("RPC error: %s", resp.Status)
-	}
-
-	var result struct {
-		BeadID  string `json:"beadId"`
-		Deleted bool   `json:"deleted"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
+		if err := c.postBeads(ctx, "Delete", map[string]interface{}{
+			"ids":   []string{beadID},
+			"force": true,
+		}, nil); err != nil {
+			return nil, fmt.Errorf("deleting crew bead: %w", err)
+		}
+		deleted = true
+	} else {
+		// Soft close: controller removes pod but preserves PVC.
+		if err := c.postBeads(ctx, "Close", map[string]interface{}{
+			"id":     beadID,
+			"reason": reason,
+		}, nil); err != nil {
+			return nil, fmt.Errorf("closing crew bead: %w", err)
+		}
 	}
 
 	return &RemoveCrewResponse{
-		BeadID:  result.BeadID,
-		Deleted: result.Deleted,
+		BeadID:  beadID,
+		Deleted: deleted,
 	}, nil
 }
 
@@ -2854,142 +2808,61 @@ type StartCrewResponse struct {
 	Created bool
 }
 
-// StartCrew starts a crew worker session via RPC.
+// StartCrew starts a crew worker by reopening its agent bead and setting in_progress.
 func (c *Client) StartCrew(ctx context.Context, req StartCrewRequest) (*StartCrewResponse, error) {
-	body := map[string]interface{}{
-		"name": req.Name,
-		"rig":  req.Rig,
-	}
-	if req.Account != "" {
-		body["account"] = req.Account
-	}
-	if req.AgentOverride != "" {
-		body["agentOverride"] = req.AgentOverride
-	}
-	if req.Create {
-		body["create"] = true
-	}
+	beadID := crewBeadID(c.townName, req.Rig, req.Name)
 
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("encoding request: %w", err)
+	updateBody := map[string]interface{}{
+		"id":     beadID,
+		"status": "in_progress",
 	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST",
-		c.baseURL+"/gastown.v1.AgentService/StartCrew",
-		strings.NewReader(string(jsonBody)))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("RPC error: %s", resp.Status)
-	}
-
-	var result struct {
-		Agent struct {
-			Address string `json:"address"`
-			Name    string `json:"name"`
-			Rig     string `json:"rig"`
-			Type    string `json:"type"`
-			State   string `json:"state"`
-			Session string `json:"session"`
-			WorkDir string `json:"workDir"`
-		} `json:"agent"`
-		Session string `json:"session"`
-		Created bool   `json:"created"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decoding response: %w", err)
-	}
-
-	return &StartCrewResponse{
-		Agent: &Agent{
-			Address: result.Agent.Address,
-			Name:    result.Agent.Name,
-			Rig:     result.Agent.Rig,
-			Type:    agentTypeToString(result.Agent.Type),
-			State:   agentStateToString(result.Agent.State),
-			Session: result.Agent.Session,
-			WorkDir: result.Agent.WorkDir,
-		},
-		Session: result.Session,
-		Created: result.Created,
-	}, nil
-}
-
-// StopAgent stops an agent's session via RPC.
-func (c *Client) StopAgent(ctx context.Context, agentAddr string, force bool, reason string) (*Agent, bool, error) {
-	body := map[string]interface{}{
-		"agent": agentAddr,
-	}
-	if force {
-		body["force"] = true
-	}
-	if reason != "" {
-		body["reason"] = reason
-	}
-
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, false, fmt.Errorf("encoding request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST",
-		c.baseURL+"/gastown.v1.AgentService/StopAgent",
-		strings.NewReader(string(jsonBody)))
-	if err != nil {
-		return nil, false, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("X-GT-API-Key", c.apiKey)
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, false, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("RPC error: %s", resp.Status)
-	}
-
-	var result struct {
-		Agent struct {
-			Address string `json:"address"`
-			Name    string `json:"name"`
-			State   string `json:"state"`
-		} `json:"agent"`
-		HadIncompleteWork bool `json:"hadIncompleteWork"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, false, fmt.Errorf("decoding response: %w", err)
+	if err := c.postBeads(ctx, "Update", updateBody, nil); err != nil {
+		return nil, fmt.Errorf("starting crew bead: %w", err)
 	}
 
 	agent := &Agent{
-		Address: result.Agent.Address,
-		Name:    result.Agent.Name,
-		State:   agentStateToString(result.Agent.State),
+		Address: fmt.Sprintf("%s/crew/%s", req.Rig, req.Name),
+		Name:    req.Name,
+		Rig:     req.Rig,
+		Type:    "crew",
+		State:   "running",
 	}
 
-	return agent, result.HadIncompleteWork, nil
+	return &StartCrewResponse{
+		Agent: agent,
+	}, nil
+}
+
+// StopAgent stops an agent by updating its agent_state to "stopping".
+func (c *Client) StopAgent(ctx context.Context, agentAddr string, force bool, reason string) (*Agent, bool, error) {
+	beadID := c.agentBeadID(agentAddr)
+
+	updateBody := map[string]interface{}{
+		"id":          beadID,
+		"agent_state": "stopping",
+	}
+	if err := c.postBeads(ctx, "Update", updateBody, nil); err != nil {
+		return nil, false, fmt.Errorf("stopping agent: %w", err)
+	}
+
+	parts := strings.Split(agentAddr, "/")
+	name := agentAddr
+	if len(parts) == 3 {
+		name = parts[2]
+	}
+
+	agent := &Agent{
+		Address: agentAddr,
+		Name:    name,
+		State:   "stopping",
+	}
+
+	return agent, false, nil
 }
 
 // NudgeAgent sends a message to an agent's terminal via RPC.
+// NOTE: This still uses the gastown AgentService endpoint as nudge is
+// a terminal operation that cannot be expressed as a bead mutation.
 func (c *Client) NudgeAgent(ctx context.Context, agentAddr, message string, urgent bool) (bool, string, error) {
 	body := map[string]interface{}{
 		"agent":   agentAddr,

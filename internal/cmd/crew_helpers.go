@@ -81,9 +81,13 @@ func newDaemonRPCClient() *rpcclient.Client {
 	}
 	host := os.Getenv("BD_DAEMON_HOST")
 	token := os.Getenv("BD_DAEMON_TOKEN")
+	townName := os.Getenv("GT_TOWN")
 	var opts []rpcclient.Option
 	if token != "" {
 		opts = append(opts, rpcclient.WithAPIKey(token))
+	}
+	if townName != "" {
+		opts = append(opts, rpcclient.WithTownName(townName))
 	}
 	return rpcclient.NewClient(host, opts...)
 }
@@ -99,15 +103,18 @@ func newConnectedDaemonClient() *rpcclient.Client {
 	}
 
 	// Check global daemon config (gt connect mode).
-	host, token, _, err := readGlobalDaemonConfig()
-	if err != nil || host == "" {
+	cfg, err := readGlobalDaemonConfigFull()
+	if err != nil || cfg.DaemonHost == "" {
 		return nil
 	}
 	var opts []rpcclient.Option
-	if token != "" {
-		opts = append(opts, rpcclient.WithAPIKey(token))
+	if cfg.DaemonToken != "" {
+		opts = append(opts, rpcclient.WithAPIKey(cfg.DaemonToken))
 	}
-	return rpcclient.NewClient(host, opts...)
+	if cfg.TownName != "" {
+		opts = append(opts, rpcclient.WithTownName(cfg.TownName))
+	}
+	return rpcclient.NewClient(cfg.DaemonHost, opts...)
 }
 
 // crewSessionName generates the tmux session name for a crew worker.
