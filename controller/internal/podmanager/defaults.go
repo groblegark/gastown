@@ -1,6 +1,8 @@
 package podmanager
 
 import (
+	"sort"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -19,6 +21,7 @@ type PodDefaults struct {
 	ConfigMapName      string
 	WorkspaceStorage   *WorkspaceStorageSpec
 	CoopSidecar        *CoopSidecarSpec
+	ToolchainSidecar   *ToolchainSidecarSpec
 }
 
 // MergePodDefaults merges an override layer onto a base, returning a new PodDefaults.
@@ -68,6 +71,9 @@ func MergePodDefaults(base, override *PodDefaults) *PodDefaults {
 	if override.CoopSidecar != nil {
 		result.CoopSidecar = override.CoopSidecar
 	}
+	if override.ToolchainSidecar != nil {
+		result.ToolchainSidecar = override.ToolchainSidecar
+	}
 
 	return &result
 }
@@ -102,6 +108,9 @@ func ApplyDefaults(spec *AgentPodSpec, defaults *PodDefaults) {
 	}
 	if spec.CoopSidecar == nil && defaults.CoopSidecar != nil {
 		spec.CoopSidecar = defaults.CoopSidecar
+	}
+	if spec.ToolchainSidecar == nil && defaults.ToolchainSidecar != nil {
+		spec.ToolchainSidecar = defaults.ToolchainSidecar
 	}
 
 	// Merge env maps (spec values take precedence over defaults).
@@ -167,6 +176,92 @@ func mergeMaps(base, override map[string]string) map[string]string {
 		result[k] = v
 	}
 	return result
+}
+
+// SidecarProfile is a named toolchain sidecar preset.
+type SidecarProfile struct {
+	Name      string
+	Image     string
+	Resources *corev1.ResourceRequirements
+}
+
+// ProfileRegistry maps profile names to sidecar specs.
+type ProfileRegistry struct {
+	profiles map[string]SidecarProfile
+}
+
+// NewProfileRegistry creates a registry from a map of profiles.
+func NewProfileRegistry(profiles map[string]SidecarProfile) *ProfileRegistry {
+	return &ProfileRegistry{profiles: profiles}
+}
+
+// Resolve resolves bead metadata into a ToolchainSidecarSpec.
+// Returns nil if no sidecar is requested.
+func (r *ProfileRegistry) Resolve(meta map[string]string) *ToolchainSidecarSpec {
+	// Custom image takes precedence over profile.
+	if img := meta["sidecar_image"]; img != "" {
+		spec := &ToolchainSidecarSpec{Image: img}
+		// Apply resource overrides from metadata if present.
+		spec.Resources = parseResourceOverrides(meta)
+		return spec
+	}
+	// Named profile lookup.
+	if name := meta["sidecar_profile"]; name != "" && name != "none" {
+		if p, ok := r.profiles[name]; ok {
+			spec := &ToolchainSidecarSpec{
+				Profile:   name,
+				Image:     p.Image,
+				Resources: p.Resources,
+			}
+			// Allow metadata to override profile resource defaults.
+			if overrides := parseResourceOverrides(meta); overrides != nil {
+				spec.Resources = overrides
+			}
+			return spec
+		}
+	}
+	return nil
+}
+
+// HasProfile returns true if the named profile exists.
+func (r *ProfileRegistry) HasProfile(name string) bool {
+	_, ok := r.profiles[name]
+	return ok
+}
+
+// ListProfiles returns all registered profile names.
+func (r *ProfileRegistry) ListProfiles() []string {
+	names := make([]string, 0, len(r.profiles))
+	for name := range r.profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// parseResourceOverrides reads sidecar_resources_cpu and sidecar_resources_memory
+// from bead metadata and returns ResourceRequirements, or nil if neither is set.
+func parseResourceOverrides(meta map[string]string) *corev1.ResourceRequirements {
+	cpu := meta["sidecar_resources_cpu"]
+	mem := meta["sidecar_resources_memory"]
+	if cpu == "" && mem == "" {
+		return nil
+	}
+	res := &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{},
+		Limits:   corev1.ResourceList{},
+	}
+	if cpu != "" {
+		q := resource.MustParse(cpu)
+		res.Requests[corev1.ResourceCPU] = q
+		res.Limits[corev1.ResourceCPU] = q
+	}
+	if mem != "" {
+		q := resource.MustParse(mem)
+		res.Requests[corev1.ResourceMemory] = q
+		res.Limits[corev1.ResourceMemory] = q
+	}
+	return res
 }
 
 // DefaultPodDefaultsForRole returns sensible defaults for a given role.

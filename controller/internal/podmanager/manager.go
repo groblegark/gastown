@@ -127,6 +127,10 @@ type AgentPodSpec struct {
 	// shareProcessNamespace is enabled, and backend metadata is set to "coop".
 	CoopSidecar *CoopSidecarSpec
 
+	// ToolchainSidecar configures an optional toolchain sidecar container.
+	// Resolved from bead metadata via ProfileRegistry.
+	ToolchainSidecar *ToolchainSidecarSpec
+
 	// GitMirrorService is the in-cluster git mirror service name for this rig
 	// (e.g., "git-mirror-beads"). When set and the role needs code access
 	// (polecat, crew, refinery), an init container is added that clones from
@@ -174,6 +178,19 @@ type CoopSidecarSpec struct {
 
 	// Resources sets compute requests/limits for the sidecar.
 	// If nil, defaults (50m/32Mi → 200m/64Mi) are used.
+	Resources *corev1.ResourceRequirements
+}
+
+// ToolchainSidecarSpec configures an optional toolchain sidecar container.
+// Resolved from bead metadata (sidecar_profile / sidecar_image).
+type ToolchainSidecarSpec struct {
+	// Profile is the named preset (e.g., "toolchain-full"). Empty means custom image.
+	Profile string
+
+	// Image is the container image. Takes precedence over profile default.
+	Image string
+
+	// Resources overrides profile defaults for the sidecar.
 	Resources *corev1.ResourceRequirements
 }
 
