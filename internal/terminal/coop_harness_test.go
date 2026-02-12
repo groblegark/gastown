@@ -65,7 +65,7 @@ func startCoop(t *testing.T) (baseURL string, cleanup func()) {
 	cmd := exec.Command(coopPath,
 		"--port", fmt.Sprintf("%d", port),
 		"--host", "127.0.0.1",
-		"sleep", "infinity",
+		"bash",
 	)
 
 	// Coop writes JSON logs to stdout; capture it for startup detection.
