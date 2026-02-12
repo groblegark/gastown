@@ -1,0 +1,139 @@
+formula = "mol-gastown-e2e-full"
+description = """
+Gastown Full E2E Test Suite — Orchestrates infrastructure validation and
+agent capability testing for a gastown K8s namespace.
+
+This is the single formula an agent runs to execute the complete E2E suite:
+  gt formula run mol-gastown-e2e-full --var namespace=gastown-next
+
+Steps:
+  1. Verify infrastructure health (dolt, redis, daemon, broker, controller)
+  2. Verify agent capabilities (spawn, state, I/O, credentials, multi-agent)
+  3. Run Playwright mux dashboard tests
+  4. Produce final summary with pass/fail counts
+
+Failures auto-file bugs linked to the E2E test epics.
+"""
+version = 1
+type = "workflow"
+
+# ── Steps ────────────────────────────────────────────────────────────
+
+[[steps]]
+id = "preflight"
+title = "Preflight checks for {{namespace}}"
+description = """
+Verify prerequisites before running the full E2E suite.
+
+Action:
+  1. Verify kubectl can reach the cluster: kubectl cluster-info
+  2. Verify namespace exists: kubectl get ns {{namespace}}
+  3. Verify test scripts exist: ls tests/e2e/scripts/run-suite.sh
+  4. If running Playwright tests, verify npx is available
+
+Verify:
+  All checks pass. Namespace {{namespace}} is accessible.
+
+OnFail:
+  Cannot proceed. Check kubeconfig, VPN, and test script paths.
+"""
+
+[[steps]]
+id = "infra-health"
+title = "Phase 1: Infrastructure health validation for {{namespace}}"
+description = """
+Run all Phase 1 infrastructure health modules.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/run-suite.sh \
+    --skip agent-spawn --skip agent-state --skip agent-io \
+    --skip agent-credentials --skip agent-resume --skip agent-multi \
+    --skip agent-coordination --skip agent-cleanup
+
+  This runs: dolt-health, redis-health, daemon-health, coop-broker-health,
+  controller-health, git-mirror-health.
+
+Verify:
+  All 6 infrastructure modules pass (44+ tests). Git-mirror may skip if not deployed.
+
+OnFail:
+  For each failed module, file a bug:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e:infra-health:{module} in {{namespace}}' --priority=1
+  Do NOT proceed to Phase 2 if infrastructure is broken.
+"""
+needs = ["preflight"]
+
+[[steps]]
+id = "agent-capabilities"
+title = "Phase 2: Agent capability validation for {{namespace}}"
+description = """
+Run all Phase 2 agent capability modules.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/run-suite.sh \
+    --skip dolt-health --skip redis-health --skip daemon-health \
+    --skip coop-broker-health --skip controller-health --skip git-mirror-health
+
+  This runs: agent-spawn, agent-state, agent-io, agent-credentials,
+  agent-resume, agent-multi, agent-coordination, agent-cleanup.
+
+Verify:
+  All 8 agent modules pass (55+ tests).
+
+OnFail:
+  For each failed module, file a bug:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e:agent-capabilities:{module} in {{namespace}}' --priority=1
+"""
+needs = ["infra-health"]
+
+[[steps]]
+id = "mux-dashboard"
+title = "Phase 3: Mux dashboard Playwright tests for {{namespace}}"
+description = """
+Run the Playwright mux.spec.js test suite against the coop broker mux dashboard.
+
+Action:
+  Set up port-forward (local) or use in-cluster URL:
+    kubectl port-forward -n {{namespace}} svc/$(kubectl get svc -n {{namespace}} --no-headers | grep coop-broker | awk '{print $1}') 18080:8080 &
+    sleep 3
+    cd tests/e2e && npx playwright test mux.spec.js
+
+Verify:
+  All 29 Playwright tests pass.
+
+OnFail:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e:mux-dashboard in {{namespace}}' --priority=1
+  Save Playwright traces: tests/e2e/test-results/
+"""
+needs = ["agent-capabilities"]
+
+[[steps]]
+id = "final-summary"
+title = "E2E suite final summary for {{namespace}}"
+description = """
+Produce the final E2E test report.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/run-suite.sh --json
+
+  Summarize results from all phases:
+  - Phase 1 (Infrastructure): X/6 modules passed
+  - Phase 2 (Agent Capabilities): X/8 modules passed
+  - Phase 3 (Mux Dashboard): X/29 Playwright tests passed
+  - Total: X tests passed, Y failed, Z skipped
+
+  If any bugs were filed, list them with IDs and titles.
+  Report overall: PASS or FAIL.
+
+Verify:
+  Summary is complete and accurate.
+"""
+needs = ["infra-health", "agent-capabilities", "mux-dashboard"]
+
+# ── Variables ────────────────────────────────────────────────────────
+
+[vars]
+
+[vars.namespace]
+description = "Target K8s namespace for the full E2E suite"
+required = true

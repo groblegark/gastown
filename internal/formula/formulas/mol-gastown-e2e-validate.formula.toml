@@ -1,0 +1,177 @@
+formula = "mol-gastown-e2e-validate"
+description = """
+Gastown E2E Agent Capability Validation — Tests agent pod lifecycle and
+capabilities on a running gastown namespace. Exercises coop APIs, state machine,
+credentials, multi-agent coordination, and session infrastructure.
+
+Assumes infrastructure is already healthy (run mol-gastown-e2e-bootstrap first).
+
+Usage:
+  gt formula run mol-gastown-e2e-validate --var namespace=gastown-next
+"""
+version = 1
+type = "workflow"
+
+# ── Steps ────────────────────────────────────────────────────────────
+
+[[steps]]
+id = "verify-spawn"
+title = "Verify agent pod spawn and registration in {{namespace}}"
+description = """
+Run the agent-spawn test module to verify agent pods exist, are healthy,
+and are registered with the coop broker.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-agent-spawn.sh
+
+Verify:
+  All 10 tests pass (pods exist, coop health, broker registration, IPs match).
+
+OnFail:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e-validate:verify-spawn in {{namespace}}' --priority=1
+"""
+
+[[steps]]
+id = "verify-state"
+title = "Verify agent state machine in {{namespace}}"
+description = """
+Run the agent-state test module to verify coop reports valid agent states.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-agent-state.sh
+
+Verify:
+  All 6 tests pass (valid state, health endpoint, main API, all agents, broker, mux badges).
+
+OnFail:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e-validate:verify-state in {{namespace}}' --priority=1
+"""
+needs = ["verify-spawn"]
+
+[[steps]]
+id = "verify-io"
+title = "Verify agent I/O via coop API in {{namespace}}"
+description = """
+Run the agent-io test module to verify coop input/output/screen endpoints.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-agent-io.sh
+
+Verify:
+  All 7 tests pass (screen, input, keys, nudge, state, port isolation).
+
+OnFail:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e-validate:verify-io in {{namespace}}' --priority=1
+"""
+needs = ["verify-spawn"]
+
+[[steps]]
+id = "verify-credentials"
+title = "Verify agent credentials in {{namespace}}"
+description = """
+Run the agent-credentials test module.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-agent-credentials.sh
+
+Verify:
+  All 8 tests pass (secret, volume, mount, file, JSON, agent type, workspace, claude dir).
+
+OnFail:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e-validate:verify-credentials in {{namespace}}' --priority=1
+"""
+needs = ["verify-spawn"]
+
+[[steps]]
+id = "verify-resume"
+title = "Verify session resume infrastructure in {{namespace}}"
+description = """
+Run the agent-resume test module.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-agent-resume.sh
+
+Verify:
+  All 6 tests pass (state dir, coop sessions, claude state, session info, git, beads).
+
+OnFail:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e-validate:verify-resume in {{namespace}}' --priority=1
+"""
+needs = ["verify-spawn"]
+
+[[steps]]
+id = "verify-multi"
+title = "Verify multi-agent coexistence in {{namespace}}"
+description = """
+Run the agent-multi and agent-coordination test modules.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-agent-multi.sh
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-agent-coordination.sh
+
+Verify:
+  All 13 tests pass across both modules.
+
+OnFail:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e-validate:verify-multi in {{namespace}}' --priority=1
+"""
+needs = ["verify-spawn"]
+
+[[steps]]
+id = "verify-cleanup"
+title = "Verify agent cleanup expectations in {{namespace}}"
+description = """
+Run the agent-cleanup test module.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-agent-cleanup.sh
+
+Verify:
+  All 5 tests pass (labels, limits, restart policy, orphaned PVCs, crash loops).
+
+OnFail:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e-validate:verify-cleanup in {{namespace}}' --priority=1
+"""
+needs = ["verify-multi"]
+
+[[steps]]
+id = "verify-mux"
+title = "Run Playwright mux dashboard tests against {{namespace}}"
+description = """
+Run the full Playwright mux.spec.js test suite.
+
+Action:
+  Set up port-forward to coop-broker:8080 (or use in-cluster URL).
+  cd tests/e2e && npx playwright test mux.spec.js
+
+Verify:
+  All 29 Playwright tests pass.
+
+OnFail:
+  bd create --type=bug --title='E2E FAIL: gastown-e2e-validate:verify-mux in {{namespace}}' --priority=1
+  Attach Playwright trace if available (test-results/ directory).
+"""
+needs = ["verify-state", "verify-io"]
+
+[[steps]]
+id = "agent-summary"
+title = "Agent capability validation summary for {{namespace}}"
+description = """
+Produce the final agent capability report.
+
+Action:
+  Summarize: How many of the 8 agent capability modules passed?
+  Report any failures and their associated bug IDs.
+
+Verify:
+  All agent capability modules report PASS.
+"""
+needs = ["verify-state", "verify-io", "verify-credentials", "verify-resume", "verify-multi", "verify-cleanup", "verify-mux"]
+
+# ── Variables ────────────────────────────────────────────────────────
+
+[vars]
+
+[vars.namespace]
+description = "Target K8s namespace to validate (must already be running)"
+required = true

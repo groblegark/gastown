@@ -1,0 +1,157 @@
+formula = "mol-gastown-e2e-bootstrap"
+description = """
+Gastown E2E Infrastructure Bootstrap — Validates a gastown K8s namespace has
+all infrastructure components healthy. Runs the Phase 1 health test modules
+(dolt, redis, daemon, broker, controller, git-mirror) and reports results.
+
+If a step fails, it auto-files a bug linked to the E2E test epic.
+
+Usage:
+  gt formula run mol-gastown-e2e-bootstrap --var namespace=gastown-next
+"""
+version = 1
+type = "workflow"
+
+# ── Steps ────────────────────────────────────────────────────────────
+
+[[steps]]
+id = "verify-cluster"
+title = "Verify K8s cluster access for {{namespace}}"
+description = """
+Confirm kubectl can reach the cluster and namespace {{namespace}} exists.
+
+Action:
+  kubectl cluster-info && kubectl get ns {{namespace}}
+
+Verify:
+  Exit code 0 means cluster is reachable and namespace exists.
+
+OnFail:
+  Cannot proceed without cluster access. Check kubeconfig and VPN.
+"""
+
+[[steps]]
+id = "verify-dolt"
+title = "Verify Dolt health in {{namespace}}"
+description = """
+Run the dolt-health test module against {{namespace}}.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-dolt-health.sh
+
+Verify:
+  All 7 tests pass (pod ready, SQL port, auth, beads DB, deploy config, s3-sync).
+
+OnFail:
+  File bug: bd create --type=bug --title='E2E FAIL: gastown-e2e-bootstrap:verify-dolt in {{namespace}}' --priority=1
+"""
+needs = ["verify-cluster"]
+
+[[steps]]
+id = "verify-redis"
+title = "Verify Redis health in {{namespace}}"
+description = """
+Run the redis-health test module against {{namespace}}.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-redis-health.sh
+
+Verify:
+  All 5 tests pass (pod ready, service, PING/PONG, port-forward, INFO).
+
+OnFail:
+  File bug: bd create --type=bug --title='E2E FAIL: gastown-e2e-bootstrap:verify-redis in {{namespace}}' --priority=1
+"""
+needs = ["verify-cluster"]
+
+[[steps]]
+id = "verify-daemon"
+title = "Verify BD daemon health in {{namespace}}"
+description = """
+Run the daemon-health test module against {{namespace}}.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-daemon-health.sh
+
+Verify:
+  All 8 tests pass (pod 2/2, containers, HTTP health, RPC port, status API, NATS, no panics).
+
+OnFail:
+  File bug: bd create --type=bug --title='E2E FAIL: gastown-e2e-bootstrap:verify-daemon in {{namespace}}' --priority=1
+"""
+needs = ["verify-dolt"]
+
+[[steps]]
+id = "verify-broker"
+title = "Verify coop broker health in {{namespace}}"
+description = """
+Run the coop-broker-health test module against {{namespace}}.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-coop-broker-health.sh
+
+Verify:
+  All 8 tests pass (pod 2/2, containers, health 200, mux HTML, pods API, auth, registration, PVC).
+
+OnFail:
+  File bug: bd create --type=bug --title='E2E FAIL: gastown-e2e-bootstrap:verify-broker in {{namespace}}' --priority=1
+"""
+needs = ["verify-daemon"]
+
+[[steps]]
+id = "verify-controller"
+title = "Verify agent controller health in {{namespace}}"
+description = """
+Run the controller-health test module against {{namespace}}.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-controller-health.sh
+
+Verify:
+  All 8 tests pass (deploy ready, pod running, SA, agent pods, no panics, image).
+
+OnFail:
+  File bug: bd create --type=bug --title='E2E FAIL: gastown-e2e-bootstrap:verify-controller in {{namespace}}' --priority=1
+"""
+needs = ["verify-daemon"]
+
+[[steps]]
+id = "verify-git-mirror"
+title = "Verify git mirror health in {{namespace}}"
+description = """
+Run the git-mirror-health test module against {{namespace}}.
+Note: git-mirror is optional — tests skip gracefully if not deployed.
+
+Action:
+  E2E_NAMESPACE={{namespace}} ./tests/e2e/scripts/test-git-mirror-health.sh
+
+Verify:
+  Tests pass or skip (skip is OK if git-mirror not deployed).
+
+OnFail:
+  File bug only if git-mirror IS deployed but tests fail.
+"""
+needs = ["verify-cluster"]
+
+[[steps]]
+id = "infra-summary"
+title = "Infrastructure health summary for {{namespace}}"
+description = """
+Produce the final infrastructure health report.
+
+Action:
+  Summarize: How many of the 6 infrastructure modules passed?
+  Report any failures and their associated bug IDs.
+
+Verify:
+  All infrastructure modules report PASS (skips are acceptable for optional components).
+"""
+needs = ["verify-dolt", "verify-redis", "verify-daemon", "verify-broker", "verify-controller", "verify-git-mirror"]
+
+# ── Variables ────────────────────────────────────────────────────────
+
+[vars]
+
+[vars.namespace]
+description = "Target K8s namespace to validate"
+required = true
