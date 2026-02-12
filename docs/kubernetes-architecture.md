@@ -279,30 +279,79 @@ K8s-specific configuration lives in the Dolt config table under `deploy.*` keys:
 
 **Location**: `gastown/controller/` (lives entirely in the gastown repo, not beads)
 
-The controller is a standalone Go binary that bridges beads state to K8s pod operations.
-It is intentionally thin -- no CRDs, no controller-runtime, no informers. All intelligence
-lives in beads. The beads repo provides the daemon API that the controller calls into;
-the controller itself, its pod manager, reconciler, and status reporter all live in gastown.
+The controller is a standalone Go binary (`controller/cmd/controller/main.go`, 669 lines)
+that bridges beads state to K8s pod operations. It is intentionally thin -- no CRDs, no
+controller-runtime, no informers, no watches on K8s resources. All intelligence lives in
+beads. The beads repo provides the daemon API that the controller calls into; the
+controller itself, its pod manager, reconciler, and status reporter all live in gastown.
 
-### Architecture
+### Internal Packages
+
+```
+controller/
+├── cmd/controller/
+│   ├── main.go            # Main loop, event handling, spec building (669 lines)
+│   └── gitmirror.go       # Auto-provision git-mirror Deployments for rigs
+├── internal/
+│   ├── beadswatcher/
+│   │   ├── watcher.go     # SSE watcher: daemon /events endpoint (460 lines)
+│   │   └── nats_watcher.go # JetStream watcher: MUTATION_EVENTS stream (223 lines)
+│   ├── config/
+│   │   └── config.go      # 30+ flags/env vars, sidecar profiles (271 lines)
+│   ├── daemonclient/
+│   │   └── client.go      # HTTP client: ListAgentBeads, ListRigBeads, UpdateBeadNotes
+│   ├── podmanager/
+│   │   ├── manager.go     # Pod CRUD, container/volume/env construction (1,045 lines)
+│   │   ├── defaults.go    # Role-specific pod defaults (storage, resources)
+│   │   ├── ratelimit.go   # Sidecar change rate limiting per agent
+│   │   └── security.go    # Registry allowlist validation for custom sidecars
+│   ├── reconciler/
+│   │   └── reconciler.go  # Desired vs actual state diffing (169 lines)
+│   └── statusreporter/
+│       └── reporter.go    # Pod status → beads sync, backend metadata (490 lines)
+└── Dockerfile
+```
+
+### Startup Sequence
 
 ```go
-// controller/cmd/controller/main.go
 func main() {
-    // 1. Connect to daemon (HTTP client)
-    daemon := daemonclient.New(cfg)
+    cfg := config.Parse()                        // 30+ flags/env vars
 
-    // 2. Connect to K8s (pod CRUD)
-    pods := podmanager.New(k8sClient, namespace)
+    // 1. Build K8s client (in-cluster or kubeconfig)
+    k8sClient := buildK8sClient(cfg.KubeConfig)
 
-    // 3. Start beads watcher (SSE or NATS)
-    watcher := beadswatcher.New(daemon, eventHandler)
+    // 2. Select event transport: SSE or NATS JetStream
+    var watcher beadswatcher.Watcher
+    switch cfg.Transport {
+    case "nats":
+        watcher = beadswatcher.NewNATSWatcher(natsCfg, logger)
+    default:
+        watcher = beadswatcher.NewSSEWatcher(sseCfg, logger)
+    }
 
-    // 4. Start reconciler (periodic sync)
-    reconciler := reconciler.New(daemon, pods, interval)
+    // 3. Initialize pod manager with optional resource caps
+    pods := podmanager.New(k8sClient, logger)
+    pods.SetResourceCaps(podmanager.ParseResourceCaps(cfg.SidecarMaxCPU, cfg.SidecarMaxMemory))
 
-    // 5. Start status reporter (pod → bead sync)
-    reporter := statusreporter.New(daemon, pods)
+    // 4. Daemon HTTP client (for reconciler + status reporter)
+    daemon := daemonclient.New(daemonclient.Config{
+        BaseURL: fmt.Sprintf("http://%s:%d", cfg.DaemonHost, cfg.DaemonHTTPPort),
+        Token:   cfg.DaemonToken,
+    })
+
+    // 5. Status reporter (pod status → bead state, backend metadata → bead notes)
+    status := statusreporter.NewHTTPReporter(daemon, k8sClient, cfg.Namespace, logger)
+
+    // 6. Populate rig cache from daemon rig beads (git mirrors, image overrides)
+    refreshRigCache(ctx, logger, daemon, cfg)
+    provisionGitMirrors(ctx, logger, k8sClient, cfg)
+
+    // 7. Reconciler (periodic desired-vs-actual convergence)
+    rec := reconciler.New(daemon, pods, cfg, logger, BuildSpecFromBeadInfo)
+
+    // 8. Run: startup reconciliation → event loop + periodic sync
+    run(ctx, logger, cfg, k8sClient, watcher, pods, status, rec, daemon)
 }
 ```
 
@@ -310,101 +359,261 @@ func main() {
 
 **Path A: Event-driven (real-time)**
 
-The `beadswatcher` subscribes to daemon mutation events and reacts immediately:
+The `beadswatcher` subscribes to daemon mutation events via SSE (`GET /events`) or NATS
+JetStream (`mutations.>` with durable pull consumer). Both use the same mapping logic.
 
-```
-Daemon mutation event (SSE or NATS)
-    ↓
-beadswatcher.handleEvent()
-    ↓
-Map to lifecycle event:
-  - Mutation "create" on gt:agent bead     → AgentSpawn
-  - Status change to "in_progress"         → AgentSpawn (reactivation)
-  - Status change to "closed"              → AgentDone
-  - Agent state "stuck"                    → AgentStuck
-    ↓
-podmanager.CreateAgentPod() or DeleteAgentPod()
-```
+Mutation events are filtered to agent beads (`issue_type=agent` or `gt:agent` label),
+then mapped to lifecycle events:
+
+| Daemon Mutation | Lifecycle Event | Controller Action |
+|-----------------|-----------------|-------------------|
+| `create` on agent bead | `AgentSpawn` | `pods.CreateAgentPod(spec)` |
+| Status → `in_progress` | `AgentSpawn` | Create pod (reactivation) |
+| Status → `closed` | `AgentDone` | `pods.DeleteAgentPod()`, clear backend metadata |
+| `delete` | `AgentKill` | Delete pod, report Failed status |
+| `update` | `AgentUpdate` | Check sidecar drift, recreate pod if changed |
+| (witness escalation) | `AgentStuck` | Delete + recreate pod |
+
+Agent identity is extracted from the event in priority order:
+1. Labels: `rig:X`, `role:Y`, `agent:Z` (most reliable)
+2. Actor field: `gastown/polecats/rictus` (slash-separated)
+3. Issue ID parsing: `hq-mayor`, `gastown-crew-k8s` (fallback)
+
+**SSE transport** (`watcher.go`):
+- Connects to `http://<daemon>:<http-port>/events`
+- Parses `data:` frames from the SSE stream
+- Exponential backoff reconnection (1s → 30s max)
+- 64-event buffered channel; drops events when full
+
+**NATS transport** (`nats_watcher.go`):
+- Subscribes to `mutations.>` on the MUTATION_EVENTS JetStream stream
+- Durable pull consumer named `controller-<namespace>` for crash recovery
+- Fetches in batches of 10 with 2s timeout
+- Explicit ack after processing each message
 
 **Path B: Reconciler (periodic, every 60s)**
 
 Convergence loop that catches anything the event path missed:
 
 ```
-reconciler.Reconcile()
+reconciler.Reconcile()  [mutex-protected, single pass]
     ↓
 Desired state: daemon.ListAgentBeads()
   → POST /bd.v1.BeadsService/List
   → {exclude_status: ["closed"], labels: ["gt:agent", "execution_target:k8s"]}
     ↓
 Actual state: pods.ListAgentPods()
-  → K8s API: list pods with label app=gastown-agent
+  → K8s API: list pods where app.kubernetes.io/name=gastown AND gastown.io/agent exists
     ↓
 Diff and converge:
-  - Desired but no pod → Create pod
-  - Pod but not desired → Delete pod (orphan)
-  - Pod failed → Recreate
+  - Desired but no pod        → Create pod via specBuilder
+  - Pod but not desired       → Delete pod (orphan cleanup)
+  - Pod in Failed phase       → Delete + recreate
+  - Sidecar image changed     → Delete + recreate with new spec
 ```
+
+Fail-safe: if the daemon is unreachable, no pods are deleted. The reconciler only
+deletes pods when it has a confirmed view of desired state.
+
+### Periodic Sync Loop
+
+Every `SyncInterval` (default 60s), the controller runs four operations in sequence:
+
+1. **Status sync** (`status.SyncAll`): Lists all gastown-labeled pods, reports each
+   pod's phase to beads via `ReportPodStatus`, and writes backend metadata
+   (`coop_url`, `pod_name`, `pod_namespace`) to bead notes for each coop-enabled pod.
+
+2. **Rig cache refresh** (`refreshRigCache`): Queries daemon for rig beads (`type=rig`),
+   extracts per-rig config from labels (git_mirror, image override, storage class,
+   default branch, prefix), and updates `cfg.RigCache`.
+
+3. **Git mirror provisioning** (`provisionGitMirrors`): Creates K8s Deployments + Services
+   for any rig with a `GitURL` that doesn't already have a git-mirror.
+
+4. **Reconciliation** (`rec.Reconcile`): Full desired-vs-actual convergence pass.
 
 ### Daemon Client
 
-**Location**: `gastown/controller/internal/daemonclient/client.go`
+**Location**: `controller/internal/daemonclient/client.go` (319 lines)
 
-The controller talks to the daemon via HTTP, using the same Connect-RPC style API:
+The controller talks to the daemon via HTTP POST to Connect-RPC style endpoints:
 
 ```go
 type DaemonClient struct {
     baseURL    string        // http://bd-daemon:9080
-    token      string        // BD_DAEMON_TOKEN
-    httpClient *http.Client
+    token      string        // BD_DAEMON_TOKEN (Bearer auth)
+    httpClient *http.Client  // 10s timeout
 }
-
-// Core queries
-func (c *DaemonClient) ListAgentBeads(ctx) ([]AgentBead, error)
-func (c *DaemonClient) ListRigBeads(ctx) (map[string]RigInfo, error)
-func (c *DaemonClient) UpdateBeadNotes(ctx, beadID, notes string) error
 ```
 
-`ListAgentBeads` queries the daemon for all non-closed agent beads with `execution_target:k8s`,
-extracts identity from labels (`rig:X`, `role:Y`, `agent:Z`), and returns structured
-`AgentBead` objects the pod manager uses for pod naming and configuration.
+Three core queries:
+
+**`ListAgentBeads(ctx) → []AgentBead`**: Queries `POST /bd.v1.BeadsService/List` with
+`{exclude_status: ["closed"], labels: ["gt:agent", "execution_target:k8s"]}`. Extracts
+agent identity from labels (`rig:X`, `role:Y`, `agent:Z`) with fallback to ID parsing.
+Returns `AgentBead{ID, Rig, Role, AgentName, Metadata}`.
+
+**`ListRigBeads(ctx) → map[string]RigInfo`**: Queries for `type=rig` beads, extracts
+per-rig config from labels: `prefix`, `git_url`, `git_mirror`, `default_branch`, `image`,
+`storage_class`. Returns `RigInfo` keyed by rig name.
+
+**`UpdateBeadNotes(ctx, beadID, notes)`**: Updates the notes field on a bead via
+`POST /bd.v1.BeadsService/Update`. Used by status reporter to write backend metadata.
 
 ### Status Reporter
 
-The status reporter provides the reverse sync: K8s pod status back to beads.
+**Location**: `controller/internal/statusreporter/reporter.go` (490 lines)
 
-```
-K8s Pod Phase        →   Bead Agent State
-─────────────────────────────────────────
-Pending              →   spawning
-Running              →   working
-Succeeded            →   done
-Failed               →   stuck (triggers witness escalation)
-```
+Two implementations, both implementing the `Reporter` interface:
 
-It also writes backend metadata to the bead's notes field:
+**`HTTPReporter`** (production, used by default): Updates bead notes via daemon HTTP API.
+No external binary dependencies -- works in distroless containers.
+
+**`BdReporter`** (legacy): Shells out to the `bd` CLI for agent state updates. Creates
+escalation beads on pod failure (`bd create -t bug "Pod failed: <agent>"`).
+
+The reporter provides three operations:
+
+**`ReportPodStatus(agentName, status)`**: Maps K8s pod phase to beads agent state:
+
+| K8s Phase | Beads State | Additional Action |
+|-----------|-------------|-------------------|
+| Pending | spawning | -- |
+| Running | working | -- |
+| Succeeded | done | -- |
+| Failed | failed | Creates escalation bead for witness |
+
+**`ReportBackendMetadata(agentName, meta)`**: Writes structured key-value lines to the
+bead's notes field so `ResolveBackend()` can discover how to connect:
+
 ```
 backend: coop
-coop_url: http://10.0.1.5:8080
 pod_name: gt-gastown-crew-k8s
 pod_namespace: gastown
+coop_url: http://10.0.1.5:8080
 ```
 
-This metadata is how other components (session registry, `gt peek`, `gt nudge`) discover
-the Coop endpoint for a given agent.
+Coop URL is detected by scanning pod containers for port 8080 (or a container named
+"coop"), then constructing `http://<pod-ip>:8080`.
+
+**`SyncAll(ctx)`**: Lists all pods with label `app.kubernetes.io/name=gastown`, reads
+`gastown.io/{agent,rig,role}` labels to reconstruct bead IDs, and calls both
+`ReportPodStatus` and `ReportBackendMetadata` for each pod.
+
+### Pod Manager
+
+**Location**: `controller/internal/podmanager/manager.go` (1,045 lines)
+
+The pod manager translates `AgentPodSpec` structs into K8s pod objects. It never makes
+lifecycle decisions -- it only executes them.
+
+**`AgentPodSpec`** describes a desired pod:
+
+```go
+type AgentPodSpec struct {
+    Rig, Role, AgentName string
+    Image, Namespace     string
+    Env                  map[string]string      // Plain env vars
+    SecretEnv            []SecretEnvSource      // Env vars from K8s Secrets
+    Resources            *ResourceRequirements  // CPU/memory (defaults: 500m/1Gi → 2/4Gi)
+    WorkspaceStorage     *WorkspaceStorageSpec  // PVC for persistent roles (nil = EmptyDir)
+    CoopBuiltin          bool                   // Agent image includes coop
+    CoopSidecar          *CoopSidecarSpec       // Separate coop container
+    ToolchainSidecar     *ToolchainSidecarSpec  // Optional toolchain sidecar
+    CredentialsSecret    string                 // Claude OAuth credentials
+    DaemonTokenSecret    string                 // BD_DAEMON_TOKEN
+    GitMirrorService     string                 // In-cluster git mirror for init-clone
+    GitURL               string                 // Upstream repo URL
+    GitDefaultBranch     string                 // Branch to checkout
+}
+```
+
+**Pod construction** (`buildPod`):
+1. Build agent container with env vars, resources, probes, mounts
+2. Add coop sidecar if `CoopSidecar != nil`
+3. Add init-clone container if `GitMirrorService` is set
+4. Add toolchain sidecar if `ToolchainSidecar` is set (K8s native sidecar pattern:
+   `initContainer` with `restartPolicy: Always`)
+5. Set pod security context (UID 1000, non-root, fsGroup)
+6. Enable `shareProcessNamespace` if coop sidecar is present
+
+**Environment variables per role** (`buildEnvVars`):
+- All roles: `GT_ROLE`, `GT_RIG`, `GT_AGENT`, `HOME`, `POD_IP` (downward API),
+  `BD_DAEMON_HOST/PORT/HTTP_PORT/HTTP_URL`, `BEADS_AUTO_START_DAEMON=false`
+- Persistent roles (crew, witness, mayor, deacon): `GT_SESSION_RESUME=1`
+- Polecat: `GT_POLECAT=<name>`, `GT_SCOPE=rig`, `BD_ACTOR=<name>`
+- Crew: `GT_CREW=<name>`, `GT_SCOPE=rig`, `BD_ACTOR=<name>`
+- Mayor/Deacon: `GT_SCOPE=town`, `BD_ACTOR=mayor/deacon`
+- With toolchain: `GT_TOOLCHAIN_CONTAINER`, `GT_TOOLCHAIN_IMAGE`, `GT_TOOLCHAIN_PROFILE`
+
+**Workspace PVC management** (`ensurePVC`): Creates PVC before pod creation (idempotent).
+Default: 10Gi, gp2 storage class. Named `<pod-name>-workspace`.
+
+**Probe configuration** depends on coop mode:
+- **CoopBuiltin**: HTTP probes against `/api/v1/health` on port 9090. Startup allows 60
+  failures at 5s = 300s total. Liveness every 15s, readiness every 5s.
+- **No coop**: Exec probes running `pgrep -f 'claude|node'`. Same timing.
+
+### Spec Building and Configuration Layering
+
+When a pod spec is constructed (either from an event or by the reconciler), configuration
+is applied in layers:
+
+```
+1. Role defaults         (DefaultPodDefaultsForRole: storage, resources per role)
+2. Rig overrides         (applyRigDefaults: image, storage class from rig bead labels)
+3. Common config         (applyCommonConfig: credentials, daemon token, coop, git, NATS)
+4. Sidecar resolution    (resolveSidecar: profile registry → ToolchainSidecarSpec)
+5. Event metadata        (buildAgentPodSpec: per-event overrides for namespace, secrets, etc.)
+```
+
+**Sidecar profiles** are named presets defined in Helm values and passed as
+`SIDECAR_PROFILES_JSON`. Example:
+
+```json
+{
+    "toolchain-full":    {"image": "ghcr.io/.../toolchain:latest", "cpuLimit": "2", "memoryLimit": "4Gi"},
+    "toolchain-minimal": {"image": "ghcr.io/.../toolchain:minimal", "cpuLimit": "500m", "memoryLimit": "512Mi"}
+}
+```
+
+Agent bead metadata `sidecar_profile: toolchain-full` resolves to the profile's spec.
+Custom images (no profile) must pass registry allowlist validation. Sidecar changes are
+rate-limited to `SidecarMaxChangesPerHour` (default 3) per agent.
 
 ### Controller Configuration
 
-```
---namespace              K8s namespace (refuses "gastown" as safety)
---interval              Reconcile interval (default 60s)
---stale-timeout         Agent stale threshold (default 15m)
---daemon-addr           BD_DAEMON_HOST
---daemon-token          BD_DAEMON_TOKEN
---agent-image           Default agent container image
---coop-image            Coop sidecar image (optional)
---coop-builtin          Use coop compiled into agent image
-```
+All 30+ settings come from environment variables (Helm-injected) with flag overrides:
+
+| Env Var | Default | Purpose |
+|---------|---------|---------|
+| `BD_DAEMON_HOST` | localhost | Daemon hostname |
+| `BD_DAEMON_PORT` | 9876 | Daemon RPC port |
+| `BD_DAEMON_HTTP_PORT` | 9080 | Daemon HTTP/SSE port |
+| `BD_DAEMON_TOKEN` | -- | Auth token |
+| `NAMESPACE` | gastown | K8s namespace |
+| `AGENT_IMAGE` | -- | Default agent container image |
+| `COOP_IMAGE` | -- | Coop sidecar image |
+| `COOP_BUILTIN` | false | Agent image has coop built-in |
+| `API_KEY_SECRET` | -- | K8s secret with ANTHROPIC_API_KEY |
+| `CLAUDE_CREDENTIALS_SECRET` | -- | K8s secret with OAuth credentials |
+| `DAEMON_TOKEN_SECRET` | -- | K8s secret with daemon token for agents |
+| `GT_TOWN_NAME` | town | Gas Town deployment name |
+| `NATS_URL` | -- | NATS server URL |
+| `NATS_TOKEN_SECRET` | -- | K8s secret with NATS auth token |
+| `GIT_CREDENTIALS_SECRET` | -- | K8s secret with git username/token |
+| `COOP_BROKER_URL` | -- | Central coop broker URL |
+| `COOP_BROKER_TOKEN_SECRET` | -- | K8s secret with broker auth token |
+| `COOP_MUX_URL` | -- | Coop multiplexer URL |
+| `WATCHER_TRANSPORT` | sse | Event transport: `sse` or `nats` |
+| `NATS_CONSUMER_NAME` | controller-{ns} | Durable JetStream consumer name |
+| `SYNC_INTERVAL` | 60s | Periodic sync interval |
+| `SIDECAR_PROFILES_JSON` | -- | Toolchain sidecar profile definitions |
+| `DEFAULT_SIDECAR_PROFILE` | -- | Default sidecar profile name |
+| `SIDECAR_REGISTRY_ALLOWLIST` | -- | Comma-separated allowed image registries |
+| `SIDECAR_MAX_CPU` | 2 | Max CPU for sidecars |
+| `SIDECAR_MAX_MEMORY` | 4Gi | Max memory for sidecars |
+| `SIDECAR_MAX_CHANGES_PER_HOUR` | 3 | Rate limit for sidecar changes per agent |
 
 ---
 
