@@ -1,0 +1,36 @@
+{{- if and .Values.coopBroker.enabled .Values.coopBroker.ingress.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "gastown.coopBroker.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.coopBroker.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`{{ .Values.coopBroker.ingress.host }}`)
+      kind: Rule
+      services:
+        - name: {{ include "gastown.coopBroker.fullname" . }}
+          port: {{ .Values.coopBroker.service.port }}
+      {{- if .Values.coopBroker.ingress.ipWhitelist.enabled }}
+      middlewares:
+        - name: {{ include "gastown.coopBroker.fullname" . }}-ipwhitelist
+      {{- end }}
+---
+{{- if .Values.coopBroker.ingress.ipWhitelist.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "gastown.coopBroker.fullname" . }}-ipwhitelist
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.coopBroker.labels" . | nindent 4 }}
+spec:
+  ipWhiteList:
+    sourceRange:
+      {{- toYaml .Values.coopBroker.ingress.ipWhitelist.sourceRange | nindent 6 }}
+{{- end }}
+{{- end }}

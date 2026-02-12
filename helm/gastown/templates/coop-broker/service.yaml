@@ -1,0 +1,22 @@
+{{- if .Values.coopBroker.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gastown.coopBroker.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.coopBroker.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.coopBroker.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.coopBroker.service.port }}
+      targetPort: http
+      protocol: TCP
+    - name: health
+      port: {{ .Values.coopBroker.service.healthPort }}
+      targetPort: health
+      protocol: TCP
+  selector:
+    {{- include "gastown.coopBroker.selectorLabels" . | nindent 4 }}
+{{- end }}

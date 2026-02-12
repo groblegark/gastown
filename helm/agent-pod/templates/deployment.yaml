@@ -134,6 +134,17 @@ spec:
                   name: {{ include "agent-pod.gitCredentialsSecretName" . }}
                   key: token
             {{- end }}
+            {{- if .Values.coopBroker.url }}
+            - name: COOP_BROKER_URL
+              value: {{ .Values.coopBroker.url | quote }}
+            {{- end }}
+            {{- if .Values.coopBroker.authTokenSecret }}
+            - name: COOP_BROKER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.coopBroker.authTokenSecret }}
+                  key: token
+            {{- end }}
             - name: HOME
               value: "/home/agent"
             # Session persistence: coop + claude state on PVC

@@ -409,6 +409,79 @@ agentController:
       cpu: 500m
       memory: 256Mi
 
+  # Broker coop URL (set when coopBroker is enabled in this chart)
+  # Agent pods will receive COOP_BROKER_URL + COOP_BROKER_TOKEN env vars
+  coopBrokerURL: ""
+  coopBrokerTokenSecret: ""
+
+  # Pod scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# =============================================================================
+# Coop Broker — centralized OAuth credential broker + terminal multiplexer
+# Runs coop in broker mode: manages credential refresh, distributes tokens,
+# and multiplexes terminal views for all agent pods.
+# =============================================================================
+coopBroker:
+  enabled: false
+
+  image:
+    repository: ghcr.io/groblegark/gastown/gastown-agent
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 1
+
+  # Auth token for broker API (agent pods use this to register/authenticate)
+  # If empty, uses the daemon token secret
+  authTokenSecret: ""
+
+  # NATS connection (auto-wired from bd-daemon NATS if empty)
+  natsURL: ""
+
+  # OAuth credential configuration
+  credentials:
+    accountName: "claude-max"
+    provider: "claude"
+    clientId: ""
+    tokenUrl: "https://console.anthropic.com/v1/oauth/token"
+    deviceAuthUrl: "https://console.anthropic.com/v1/oauth/device/code"
+    refreshMarginSecs: 300
+
+  # ExternalSecret for OAuth refresh token
+  externalSecret:
+    enabled: false
+    secretStoreName: "aws-secretsmanager"
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: "15m"
+    remoteRef: ""
+    refreshTokenProperty: "refresh_token"
+
+  # Ingress (Traefik IngressRoute)
+  ingress:
+    enabled: false
+    host: ""
+    ipWhitelist:
+      enabled: false
+      sourceRange: []
+
+  # Service
+  service:
+    type: ClusterIP
+    port: 8080
+    healthPort: 9090
+
+  # Resources (light — no PTY, no agent)
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
   # Pod scheduling
   nodeSelector: {}
   tolerations: []

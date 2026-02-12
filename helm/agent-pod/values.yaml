@@ -163,6 +163,15 @@ externalSecrets:
     tokenProperty: "token"
 
 # =============================================================================
+# Coop Broker (credential broker + multiplexer)
+# =============================================================================
+coopBroker:
+  # Broker URL for auto-registration (e.g., http://gastown-next-coop-broker:8080)
+  url: ""
+  # Auth token secret name (K8s Secret with 'token' key)
+  authTokenSecret: ""
+
+# =============================================================================
 # BD Daemon connection
 # =============================================================================
 bdDaemon:

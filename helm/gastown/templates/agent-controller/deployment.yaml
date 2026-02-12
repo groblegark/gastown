@@ -88,6 +88,17 @@ spec:
             - name: GIT_CREDENTIALS_SECRET
               value: {{ .Values.agentController.gitCredentialsSecret }}
             {{- end }}
+            {{- if or .Values.agentController.coopBrokerURL .Values.coopBroker.enabled }}
+            - name: COOP_BROKER_URL
+              value: {{ .Values.agentController.coopBrokerURL | default (include "gastown.coopBroker.serviceURL" .) }}
+            {{- end }}
+            {{- if .Values.agentController.coopBrokerTokenSecret }}
+            - name: COOP_BROKER_TOKEN_SECRET
+              value: {{ .Values.agentController.coopBrokerTokenSecret }}
+            {{- else if .Values.coopBroker.enabled }}
+            - name: COOP_BROKER_TOKEN_SECRET
+              value: {{ include "gastown.coopBroker.authTokenSecretName" . }}
+            {{- end }}
           resources:
             {{- toYaml .Values.agentController.resources | nindent 12 }}
       {{- with .Values.agentController.nodeSelector }}

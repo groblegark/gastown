@@ -83,3 +83,64 @@ Agent Controller service account name
 {{- default "default" .Values.agentController.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/* ===== Coop Broker component helpers ===== */}}
+
+{{/*
+Coop Broker fully qualified name
+*/}}
+{{- define "gastown.coopBroker.fullname" -}}
+{{- printf "%s-coop-broker" (include "gastown.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Coop Broker labels
+*/}}
+{{- define "gastown.coopBroker.labels" -}}
+{{ include "gastown.labels" . }}
+app.kubernetes.io/component: coop-broker
+{{- end }}
+
+{{/*
+Coop Broker selector labels
+*/}}
+{{- define "gastown.coopBroker.selectorLabels" -}}
+{{ include "gastown.selectorLabels" . }}
+app.kubernetes.io/component: coop-broker
+{{- end }}
+
+{{/*
+Coop Broker auth token secret name
+*/}}
+{{- define "gastown.coopBroker.authTokenSecretName" -}}
+{{- if .Values.coopBroker.authTokenSecret }}
+{{- .Values.coopBroker.authTokenSecret }}
+{{- else }}
+{{- include "gastown.daemon.tokenSecretName" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Coop Broker credential secret name
+*/}}
+{{- define "gastown.coopBroker.credentialSecretName" -}}
+{{- printf "%s-credentials" (include "gastown.coopBroker.fullname" .) }}
+{{- end }}
+
+{{/*
+Coop Broker NATS URL — auto-wire from bd-daemon NATS if not set
+*/}}
+{{- define "gastown.coopBroker.natsURL" -}}
+{{- if .Values.coopBroker.natsURL }}
+{{- .Values.coopBroker.natsURL }}
+{{- else if (index .Values "bd-daemon" "nats" "enabled") }}
+{{- printf "nats://%s-bd-daemon-nats:4222" .Release.Name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Coop Broker service URL (for agent pods to register with)
+*/}}
+{{- define "gastown.coopBroker.serviceURL" -}}
+{{- printf "http://%s:%d" (include "gastown.coopBroker.fullname" .) (int .Values.coopBroker.service.port) }}
+{{- end }}

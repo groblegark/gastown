@@ -1,0 +1,26 @@
+{{- if .Values.coopBroker.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gastown.coopBroker.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.coopBroker.labels" . | nindent 4 }}
+data:
+  config.json: |
+    {
+      "credentials": {
+        "accounts": [
+          {
+            "name": {{ .Values.coopBroker.credentials.accountName | quote }},
+            "provider": {{ .Values.coopBroker.credentials.provider | quote }},
+            "token_url": {{ .Values.coopBroker.credentials.tokenUrl | quote }},
+            "client_id": {{ .Values.coopBroker.credentials.clientId | quote }},
+            "device_auth_url": {{ .Values.coopBroker.credentials.deviceAuthUrl | quote }},
+            "static": false,
+            "refresh_margin_secs": {{ .Values.coopBroker.credentials.refreshMarginSecs }}
+          }
+        ]
+      }
+    }
+{{- end }}
