@@ -78,6 +78,7 @@ MODULES=(
   "agent-cleanup"
   # Phase 3: Advanced health
   "agent-lifecycle"
+  "session-persistence"
   "dolt-s3-sync"
   "controller-failsafe"
   "slack-bot-health"

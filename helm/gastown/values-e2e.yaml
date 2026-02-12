@@ -1,0 +1,156 @@
+# Gastown E2E Test Values
+# Purpose: Ephemeral namespace for automated E2E test runs
+#
+# This file enables all components needed for the full E2E suite.
+# ExternalSecret remoteRefs are NOT included (sensitive) — pass via --set.
+#
+# Usage:
+#   helm upgrade --install $NS ./helm/gastown/ \
+#     -n $NS --create-namespace \
+#     --values helm/gastown/values.yaml \
+#     --values helm/gastown/values-e2e.yaml \
+#     --set bd-daemon.externalSecrets.doltRootPassword.remoteRef=shared-e2e-dolt-root-password \
+#     --set bd-daemon.externalSecrets.daemonToken.remoteRef=shared-e2e-bd-daemon-token \
+#     --set bd-daemon.externalSecrets.doltS3Credentials.remoteRef=shared-e2e-dolt-s3-credentials \
+#     --set bd-daemon.externalSecrets.slackBotCredentials.remoteRef=gastown-uat/slack-bot-credentials \
+#     --timeout 600s --wait
+
+# Image versions — pin to latest for E2E
+bd-daemon:
+  image:
+    tag: "latest"
+    pullPolicy: Always
+
+  imagePullSecrets:
+    - name: docker-hub-registry
+
+  # Dolt — minimal but functional
+  dolt:
+    image:
+      tag: "1.80.2"
+    persistence:
+      storageClass: "gp3"
+      size: 5Gi
+    s3:
+      enabled: true
+      bucket: "fics-gastown-dolt"
+      region: "us-east-1"
+      prefix: "e2e/"
+      sync:
+        pullOnStartup: false   # Fresh DB for E2E
+        pushOnShutdown: false  # Don't pollute S3 with test data
+        schedule:
+          enabled: true
+          intervalMinutes: 60
+      credentials:
+        enabled: true
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+  # Daemon
+  daemon:
+    replicaCount: 1
+    priorityClassName: ""  # E2E doesn't need priority
+    http:
+      enabled: true
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+  # Redis — enabled for E2E (wisp + caching)
+  redis:
+    enabled: true
+    image:
+      registry: public.ecr.aws
+      repository: bitnami/redis
+      tag: "7.4.2"
+    master:
+      persistence:
+        storageClass: "gp3"
+        size: 1Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+
+  # NATS — enabled (event bus)
+  nats:
+    enabled: true
+    jetstream:
+      maxMemory: 128M
+    persistence:
+      storageClass: "gp3"
+      size: 1Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+
+  # External Secrets — enabled, remoteRefs passed via --set
+  externalSecrets:
+    enabled: true
+    secretStoreKind: ClusterSecretStore
+    secretStoreName: "aws-secretsmanager"
+    doltS3Credentials:
+      enabled: true
+
+  # Slack bot — enabled for full E2E coverage
+  slackBot:
+    enabled: true
+    image:
+      tag: "latest"
+      pullPolicy: Always
+
+# Agent Controller — enabled for agent pod lifecycle tests
+agentController:
+  enabled: true
+  image:
+    tag: "latest"
+    pullPolicy: Always
+  agentImage:
+    repository: ghcr.io/groblegark/gastown/gastown-agent
+    tag: "latest"
+  coopBuiltin: true
+
+# Coop Broker — enabled for terminal mux and credential distribution
+coopBroker:
+  enabled: true
+  image:
+    tag: "latest"
+    pullPolicy: Always
+  persistence:
+    enabled: true
+    storageClass: "gp3"
+    size: 100Mi
+  mux:
+    enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# No git mirrors for E2E (optional component)
+gitMirrors: {}
+
+# Global
+global:
+  security:
+    allowInsecureImages: true  # Required for ECR Redis image

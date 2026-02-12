@@ -2,16 +2,19 @@
 # provision-namespace.sh — Create a fresh K8s namespace with the gastown helm chart.
 #
 # Usage:
-#   ./scripts/provision-namespace.sh [--namespace NAME] [--values FILE] [--cleanup]
+#   ./scripts/provision-namespace.sh [--namespace NAME] [--values FILE] [--cleanup] [--set KEY=VAL ...]
 #
 # Defaults:
 #   --namespace  gastown-e2e-$(date +%s)  (unique per run)
-#   --values     gastown-next.yaml        (bleeding-edge stack)
+#   --values     values-e2e.yaml          (E2E overlay with all components enabled)
 #   --cleanup    delete namespace on exit (trap)
+#   --set        passthrough to helm --set (repeatable, for ExternalSecret remoteRefs)
 #
 # Examples:
-#   # Provision ephemeral namespace, run tests, auto-cleanup:
-#   ./scripts/provision-namespace.sh --cleanup
+#   # Full ephemeral E2E run (auto-cleanup):
+#   ./scripts/provision-namespace.sh --cleanup \
+#     --set bd-daemon.externalSecrets.doltRootPassword.remoteRef=shared-e2e-dolt-root-password \
+#     --set bd-daemon.externalSecrets.daemonToken.remoteRef=shared-e2e-bd-daemon-token
 #
 #   # Use an existing namespace (skip install, just validate):
 #   ./scripts/provision-namespace.sh --namespace gastown-next --skip-install
@@ -29,6 +32,7 @@ SKIP_INSTALL=false
 AUTO_CLEANUP=false
 TIMEOUT=600  # 10 minutes for all pods to be ready
 POLL_INTERVAL=10
+HELM_SET_ARGS=()  # --set passthrough flags
 
 # ── Colors ───────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -52,8 +56,9 @@ while [[ $# -gt 0 ]]; do
     --skip-install) SKIP_INSTALL=true; shift ;;
     --cleanup)    AUTO_CLEANUP=true; shift ;;
     --timeout)    TIMEOUT="$2"; shift 2 ;;
+    --set)        HELM_SET_ARGS+=("--set" "$2"); shift 2 ;;
     -h|--help)
-      echo "Usage: $0 [--namespace NAME] [--values FILE] [--chart-dir DIR] [--skip-install] [--cleanup] [--timeout SECS]"
+      echo "Usage: $0 [--namespace NAME] [--values FILE] [--chart-dir DIR] [--skip-install] [--cleanup] [--timeout SECS] [--set KEY=VAL ...]"
       exit 0
       ;;
     *) die "Unknown arg: $1" ;;
@@ -73,7 +78,14 @@ if [[ -z "$CHART_DIR" ]]; then
 fi
 
 if [[ -z "$VALUES_FILE" ]]; then
-  VALUES_FILE="$CHART_DIR/values/gastown-next.yaml"
+  # Default to E2E values overlay (enables all components)
+  if [[ -f "$CHART_DIR/values-e2e.yaml" ]]; then
+    VALUES_FILE="$CHART_DIR/values-e2e.yaml"
+  elif [[ -f "$CHART_DIR/values/gastown-next.yaml" ]]; then
+    VALUES_FILE="$CHART_DIR/values/gastown-next.yaml"
+  else
+    die "No values file found. Use --values."
+  fi
 fi
 
 if [[ -z "$NAMESPACE" ]]; then
@@ -111,10 +123,14 @@ fi
 # ── Install ──────────────────────────────────────────────────────────
 if [[ "$SKIP_INSTALL" == "false" ]]; then
   log "Installing gastown helm chart into $NAMESPACE..."
+  if [[ ${#HELM_SET_ARGS[@]} -gt 0 ]]; then
+    log "  with ${#HELM_SET_ARGS[@]} --set args"
+  fi
   helm upgrade --install "$NAMESPACE" "$CHART_DIR/" \
     -n "$NAMESPACE" --create-namespace \
     --values "$CHART_DIR/values.yaml" \
     --values "$VALUES_FILE" \
+    "${HELM_SET_ARGS[@]}" \
     --timeout "${TIMEOUT}s" \
     --wait 2>&1 | while IFS= read -r line; do log "  helm: $line"; done
 
