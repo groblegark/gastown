@@ -575,6 +575,16 @@ func resolveSidecar(cfg *config.Config, metadata map[string]string, spec *podman
 	}
 	registry := podmanager.NewProfileRegistry(profiles)
 	if resolved := registry.Resolve(metadata); resolved != nil {
+		// Custom images (no profile) must pass registry allowlist validation.
+		// Profile images are trusted — they come from controller config, not user input.
+		if resolved.Profile == "" && len(cfg.SidecarRegistryAllowlist) > 0 {
+			if err := podmanager.ValidateImageRegistry(resolved.Image, cfg.SidecarRegistryAllowlist); err != nil {
+				slog.Warn("sidecar image rejected by registry allowlist",
+					"image", resolved.Image,
+					"allowlist", cfg.SidecarRegistryAllowlist)
+				return // don't inject the sidecar
+			}
+		}
 		spec.ToolchainSidecar = resolved
 	}
 }

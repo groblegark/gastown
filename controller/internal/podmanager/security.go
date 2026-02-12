@@ -1,6 +1,7 @@
 package podmanager
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -88,6 +89,22 @@ func hasLatestOrNoTag(image string) bool {
 	}
 	tag := tagPart[colonIdx+1:]
 	return tag == "latest"
+}
+
+// ValidateImageRegistry checks if an image reference matches the allowlist.
+// Returns nil if the image is allowed, or an error describing the rejection.
+// An empty allowlist allows all images. Profile images bypass validation
+// (they come from controller config, not user input).
+func ValidateImageRegistry(image string, allowlist []string) error {
+	if len(allowlist) == 0 {
+		return nil // no allowlist = allow all
+	}
+	for _, prefix := range allowlist {
+		if strings.HasPrefix(image, prefix) {
+			return nil
+		}
+	}
+	return fmt.Errorf("image %q not in registry allowlist %v", image, allowlist)
 }
 
 // clampQuantity clamps a single resource in a resource list to the given max.
