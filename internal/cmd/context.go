@@ -174,9 +174,17 @@ func saveState(state *ContextLimitState) error {
 	return util.AtomicWriteJSON(path, state)
 }
 
-// autoDetectSession attempts to find the current Gas Town session
+// autoDetectSession attempts to find the current Gas Town session.
+// In K8s agent pods (GT_ROLE set, no tmux), returns the agent address
+// so resolveBackendForSession can route to the coop backend.
 func autoDetectSession(tmuxClient *tmux.Tmux) (string, error) {
-	// First check if we're inside a tmux session
+	// Check if we're in a K8s agent pod (coop backend, no tmux).
+	// GT_ROLE is set by the controller for all agent pods.
+	if role := os.Getenv("GT_ROLE"); role != "" && !tmux.IsInsideTmux() {
+		return detectSenderFromRole(role), nil
+	}
+
+	// Check if we're inside a tmux session
 	if tmux.IsInsideTmux() {
 		// Get current session from TMUX environment variable
 		// Format: /tmp/tmux-1000/default,1234
