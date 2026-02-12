@@ -285,13 +285,16 @@ func (b *Beads) run(args ...string) ([]byte, error) {
 		// When using --json flag, bd outputs errors as JSON to stdout instead of stderr.
 		// Check stdout for JSON error responses containing "not found" patterns.
 		// (gt-ls9t11: "no issue found" in JSON stdout was being missed)
-		stderrStr := stderr.String()
-		if stderrStr == "" && stdout.Len() > 0 {
+		// Check stdout regardless of stderr content — bd may produce
+		// informational warnings on stderr (e.g. staleness, no git repo)
+		// alongside a JSON error on stdout. (bd-hm48s.4)
+		if stdout.Len() > 0 {
 			stdoutStr := stdout.String()
 			if strings.Contains(stdoutStr, "not found") || strings.Contains(stdoutStr, "no issue found") {
 				return nil, ErrNotFound
 			}
 		}
+		stderrStr := stderr.String()
 		return nil, b.wrapError(err, stderrStr, args)
 	}
 

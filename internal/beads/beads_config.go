@@ -376,7 +376,9 @@ func (b *Beads) ListConfigBeadsByCategory(category string) ([]*Issue, error) {
 		return nil, fmt.Errorf("invalid config category %q", category)
 	}
 
-	out, err := b.run("list", "--label=config:"+category, "--json")
+	// Must pass --type=config to override bd's default type exclusions
+	// (bd list hides config/formula/agent types unless --type is explicit).
+	out, err := b.run("list", "--type=config", "--label=config:"+category, "--json")
 	if err != nil {
 		return nil, err
 	}
