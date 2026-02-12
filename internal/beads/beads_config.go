@@ -36,6 +36,7 @@ const (
 	ConfigCategoryDaemon         = "daemon"
 	ConfigCategoryMessaging      = "messaging"
 	ConfigCategoryEscalation     = "escalation"
+	ConfigCategoryFormula        = "formula"
 )
 
 // ValidConfigCategories maps valid config category names to true.
@@ -51,6 +52,7 @@ var ValidConfigCategories = map[string]bool{
 	ConfigCategoryDaemon:         true,
 	ConfigCategoryMessaging:      true,
 	ConfigCategoryEscalation:     true,
+	ConfigCategoryFormula:        true,
 }
 
 // ConfigBeadID returns the bead ID for a config slug.

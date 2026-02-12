@@ -14,6 +14,7 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/claude"
 	"github.com/steveyegge/gastown/internal/config"
+	"github.com/steveyegge/gastown/internal/formula"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -39,6 +40,7 @@ It creates:
   - Town identity config bead
   - Rig beads and route beads for each configured rig
   - Config beads: hooks, roles, messaging, escalation, daemon patrol
+  - Formula beads: all embedded formulas imported into DB
 
 With --seed-config, it also seeds extended config from embedded defaults:
   - MCP server configuration
@@ -150,6 +152,13 @@ func runBootstrap(_ *cobra.Command, _ []string) error {
 		}
 		fmt.Println()
 	}
+
+	// Phase 6: Formulas (always — agents need formulas from DB in K8s)
+	fmt.Println(style.Bold.Render("Phase 6: Formulas"))
+	if err := bootstrapFormulaBeads(bd, stats); err != nil {
+		return fmt.Errorf("formula beads: %w", err)
+	}
+	fmt.Println()
 
 	// Summary
 	if bootstrapDryRun {
@@ -759,6 +768,38 @@ func bootstrapExtendedConfig(bd *beads.Beads, stats *bootstrapStats) error {
 	}
 	stats.add(c, s, u)
 
+	return nil
+}
+
+// bootstrapFormulaBeads imports all embedded formulas as config beads.
+// This makes formulas available to K8s agents via daemon DB without
+// requiring filesystem access to .beads/formulas/.
+func bootstrapFormulaBeads(bd *beads.Beads, stats *bootstrapStats) error {
+	embedded, err := formula.GetAllEmbedded()
+	if err != nil {
+		return fmt.Errorf("reading embedded formulas: %w", err)
+	}
+
+	for _, f := range embedded {
+		// Store formula TOML as metadata JSON with content + hash fields
+		metadata := map[string]interface{}{
+			"name":     f.Name,
+			"filename": f.Filename,
+			"content":  string(f.Content),
+			"hash":     f.Hash,
+		}
+
+		slug := "formula-" + f.Name
+		desc := fmt.Sprintf("Formula: %s", f.Name)
+		c, s, u, err := bootstrapConfigBead(bd, slug, beads.ConfigCategoryFormula,
+			"*", "", "", metadata, desc)
+		if err != nil {
+			return fmt.Errorf("formula %s: %w", f.Name, err)
+		}
+		stats.add(c, s, u)
+	}
+
+	fmt.Printf("  %d embedded formulas processed\n", len(embedded))
 	return nil
 }
 

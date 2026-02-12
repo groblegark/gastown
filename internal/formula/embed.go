@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Formulas are canonical in this directory (internal/formula/formulas/).
@@ -66,6 +67,50 @@ func getEmbeddedFormulas() (map[string]string, error) {
 			return nil, fmt.Errorf("reading %s: %w", entry.Name(), err)
 		}
 		result[entry.Name()] = computeHash(content)
+	}
+	return result, nil
+}
+
+// EmbeddedFormula holds the filename and raw TOML content of an embedded formula.
+type EmbeddedFormula struct {
+	Filename string // e.g. "code-review.formula.toml"
+	Name     string // e.g. "code-review" (derived from filename)
+	Content  []byte // raw TOML bytes
+	Hash     string // SHA256 of content
+}
+
+// GetAllEmbedded returns all embedded formula files with their content.
+// Used by bootstrap to import formulas into the daemon DB.
+func GetAllEmbedded() ([]EmbeddedFormula, error) {
+	entries, err := formulasFS.ReadDir("formulas")
+	if err != nil {
+		return nil, fmt.Errorf("reading formulas directory: %w", err)
+	}
+
+	var result []EmbeddedFormula
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".formula.toml") && !strings.HasSuffix(name, ".formula.json") {
+			continue
+		}
+		content, readErr := formulasFS.ReadFile("formulas/" + name)
+		if readErr != nil {
+			return nil, fmt.Errorf("reading %s: %w", name, readErr)
+		}
+
+		// Derive formula name from filename: "code-review.formula.toml" → "code-review"
+		formulaName := strings.TrimSuffix(name, ".formula.toml")
+		formulaName = strings.TrimSuffix(formulaName, ".formula.json")
+
+		result = append(result, EmbeddedFormula{
+			Filename: name,
+			Name:     formulaName,
+			Content:  content,
+			Hash:     computeHash(content),
+		})
 	}
 	return result, nil
 }

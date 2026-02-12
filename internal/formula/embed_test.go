@@ -32,6 +32,47 @@ func TestGetEmbeddedFormulas(t *testing.T) {
 	}
 }
 
+// TestGetAllEmbedded verifies GetAllEmbedded returns formula content.
+func TestGetAllEmbedded(t *testing.T) {
+	embedded, err := GetAllEmbedded()
+	if err != nil {
+		t.Fatalf("GetAllEmbedded() error: %v", err)
+	}
+	if len(embedded) == 0 {
+		t.Fatal("should have embedded formulas")
+	}
+
+	// Verify fields are populated
+	for _, f := range embedded {
+		if f.Filename == "" {
+			t.Error("Filename should not be empty")
+		}
+		if f.Name == "" {
+			t.Error("Name should not be empty")
+		}
+		if len(f.Content) == 0 {
+			t.Errorf("Content for %s should not be empty", f.Name)
+		}
+		if len(f.Hash) != 64 {
+			t.Errorf("Hash for %s has wrong length: %d", f.Name, len(f.Hash))
+		}
+		// Name should be filename without .formula.toml suffix
+		if f.Name+".formula.toml" != f.Filename {
+			t.Errorf("Name %q doesn't match Filename %q", f.Name, f.Filename)
+		}
+	}
+
+	// Verify count matches getEmbeddedFormulas
+	hashMap, err := getEmbeddedFormulas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(embedded) != len(hashMap) {
+		t.Errorf("GetAllEmbedded returned %d, getEmbeddedFormulas returned %d",
+			len(embedded), len(hashMap))
+	}
+}
+
 // TestProvisionFormulas_FreshInstall tests provisioning to an empty directory.
 func TestProvisionFormulas_FreshInstall(t *testing.T) {
 	tmpDir := t.TempDir()
