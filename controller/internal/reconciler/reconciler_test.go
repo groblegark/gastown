@@ -430,6 +430,127 @@ func TestReconcile_IgnoresPodsWithoutAgentLabel(t *testing.T) {
 	}
 }
 
+// --- sidecarChanged tests ---
+
+func TestSidecarChanged_BothNil(t *testing.T) {
+	pod := &corev1.Pod{}
+	if sidecarChanged(nil, pod) {
+		t.Error("sidecarChanged(nil, no init containers) should be false")
+	}
+}
+
+func TestSidecarChanged_DesiredNil(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{Name: podmanager.ToolchainContainerName, Image: "toolchain:v1"},
+			},
+		},
+	}
+	if !sidecarChanged(nil, pod) {
+		t.Error("sidecarChanged(nil, existing sidecar) should be true (removal)")
+	}
+}
+
+func TestSidecarChanged_CurrentNil(t *testing.T) {
+	pod := &corev1.Pod{}
+	desired := &podmanager.ToolchainSidecarSpec{Image: "toolchain:v1"}
+	if !sidecarChanged(desired, pod) {
+		t.Error("sidecarChanged(desired, no sidecar) should be true (addition)")
+	}
+}
+
+func TestSidecarChanged_SameImage(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{Name: podmanager.ToolchainContainerName, Image: "toolchain:v1"},
+			},
+		},
+	}
+	desired := &podmanager.ToolchainSidecarSpec{Image: "toolchain:v1"}
+	if sidecarChanged(desired, pod) {
+		t.Error("sidecarChanged with same image should be false")
+	}
+}
+
+func TestSidecarChanged_DifferentImage(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{Name: podmanager.ToolchainContainerName, Image: "toolchain:v1"},
+			},
+		},
+	}
+	desired := &podmanager.ToolchainSidecarSpec{Image: "toolchain:v2"}
+	if !sidecarChanged(desired, pod) {
+		t.Error("sidecarChanged with different image should be true")
+	}
+}
+
+func TestReconcile_SidecarChangeTriggersPodRecreation(t *testing.T) {
+	client := fake.NewSimpleClientset()
+
+	// Create a pod with a toolchain init container (v1).
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "gt-town-crew-worker",
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				podmanager.LabelApp:   podmanager.LabelAppValue,
+				podmanager.LabelRig:   "town",
+				podmanager.LabelRole:  "crew",
+				podmanager.LabelAgent: "worker",
+			},
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{Name: podmanager.ToolchainContainerName, Image: "toolchain:v1"},
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	_, err := client.CoreV1().Pods(testNamespace).Create(context.Background(), pod, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Spec builder returns a spec with toolchain sidecar v2 (changed).
+	specBuilder := func(cfg *config.Config, rig, role, agentName string) podmanager.AgentPodSpec {
+		return podmanager.AgentPodSpec{
+			Rig:       rig,
+			Role:      role,
+			AgentName: agentName,
+			Image:     cfg.DefaultImage,
+			Namespace: cfg.Namespace,
+			ToolchainSidecar: &podmanager.ToolchainSidecarSpec{
+				Image: "toolchain:v2",
+			},
+		}
+	}
+
+	cfg := testCfg()
+	lister := &mockBeadLister{beads: []daemonclient.AgentBead{
+		bead("town", "crew", "worker"),
+	}}
+	pods := podmanager.New(client, slog.Default())
+	r := New(lister, pods, cfg, slog.Default(), specBuilder)
+
+	ctx := context.Background()
+	if err := r.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	// The pod should have been deleted and recreated.
+	names := listPodNames(t, client, testNamespace)
+	if len(names) != 1 {
+		t.Fatalf("expected 1 pod, got %d: %v", len(names), names)
+	}
+	if names[0] != "gt-town-crew-worker" {
+		t.Errorf("pod name = %q, want %q", names[0], "gt-town-crew-worker")
+	}
+}
+
 func TestReconcile_Idempotent(t *testing.T) {
 	// Call Reconcile twice with same state -> second call produces no extra operations.
 	client := fake.NewSimpleClientset()

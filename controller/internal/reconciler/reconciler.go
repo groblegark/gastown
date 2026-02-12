@@ -108,8 +108,19 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				}
 				// Fall through to create.
 			} else {
-				// Pod is Running or Pending — no action needed.
-				continue
+				// Pod is Running or Pending. Check if sidecar spec has drifted.
+				desiredSpec := r.specBuilder(r.cfg, bead.Rig, bead.Role, bead.AgentName)
+				if sidecarChanged(desiredSpec.ToolchainSidecar, &pod) {
+					r.logger.Info("toolchain sidecar changed, recreating pod",
+						"pod", name,
+						"desiredImage", sidecarImage(desiredSpec.ToolchainSidecar))
+					if err := r.pods.DeleteAgentPod(ctx, name, pod.Namespace); err != nil {
+						return fmt.Errorf("deleting pod for sidecar update %s: %w", name, err)
+					}
+					// Fall through to create with new spec.
+				} else {
+					continue
+				}
 			}
 		}
 
@@ -122,4 +133,35 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// sidecarChanged returns true if the desired toolchain sidecar differs from
+// what's currently running in the pod.
+func sidecarChanged(desired *podmanager.ToolchainSidecarSpec, actual *corev1.Pod) bool {
+	current := findInitContainer(actual.Spec.InitContainers, podmanager.ToolchainContainerName)
+	if desired == nil && current == nil {
+		return false
+	}
+	if desired == nil || current == nil {
+		return true // added or removed
+	}
+	return current.Image != desired.Image
+}
+
+// findInitContainer finds a container by name in a list.
+func findInitContainer(containers []corev1.Container, name string) *corev1.Container {
+	for i := range containers {
+		if containers[i].Name == name {
+			return &containers[i]
+		}
+	}
+	return nil
+}
+
+// sidecarImage returns the image from a ToolchainSidecarSpec, or empty string if nil.
+func sidecarImage(spec *podmanager.ToolchainSidecarSpec) string {
+	if spec == nil {
+		return ""
+	}
+	return spec.Image
 }

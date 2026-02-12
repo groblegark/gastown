@@ -66,6 +66,13 @@ const (
 	CoopDefaultCPULimit     = "200m"
 	CoopDefaultMemRequest   = "32Mi"
 	CoopDefaultMemLimit     = "64Mi"
+
+	// Toolchain sidecar constants.
+	ToolchainContainerName     = "toolchain"
+	ToolchainDefaultCPURequest = "250m"
+	ToolchainDefaultCPULimit   = "2"
+	ToolchainDefaultMemRequest = "512Mi"
+	ToolchainDefaultMemLimit   = "4Gi"
 )
 
 // SecretEnvSource maps a K8s Secret key to a pod environment variable.
@@ -346,6 +353,13 @@ func (m *K8sManager) buildPod(spec AgentPodSpec) *corev1.Pod {
 		initContainers = append(initContainers, *ic)
 	}
 
+	// Add toolchain sidecar if configured.
+	// Uses K8s native sidecar pattern: initContainer with restartPolicy: Always.
+	if spec.ToolchainSidecar != nil && spec.ToolchainSidecar.Image != "" {
+		toolchainContainer := m.buildToolchainSidecar(spec)
+		initContainers = append(initContainers, toolchainContainer)
+	}
+
 	podSpec := corev1.PodSpec{
 		InitContainers: initContainers,
 		Containers:     containers,
@@ -566,6 +580,17 @@ func (m *K8sManager) buildEnvVars(spec AgentPodSpec) []corev1.EnvVar {
 				},
 			},
 		})
+	}
+
+	// Toolchain sidecar discovery env vars for the agent.
+	if spec.ToolchainSidecar != nil && spec.ToolchainSidecar.Image != "" {
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "GT_TOOLCHAIN_CONTAINER", Value: ToolchainContainerName},
+			corev1.EnvVar{Name: "GT_TOOLCHAIN_IMAGE", Value: spec.ToolchainSidecar.Image},
+		)
+		if spec.ToolchainSidecar.Profile != "" {
+			envVars = append(envVars, corev1.EnvVar{Name: "GT_TOOLCHAIN_PROFILE", Value: spec.ToolchainSidecar.Profile})
+		}
 	}
 
 	return envVars
@@ -850,6 +875,65 @@ func (m *K8sManager) buildCoopResources(coop *CoopSidecarSpec) corev1.ResourceRe
 		Limits: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse(CoopDefaultCPULimit),
 			corev1.ResourceMemory: resource.MustParse(CoopDefaultMemLimit),
+		},
+	}
+}
+
+// buildToolchainSidecar constructs the toolchain sidecar as a K8s native sidecar
+// (init container with restartPolicy: Always). It shares the workspace volume
+// with the agent container so tools can operate on the same files.
+func (m *K8sManager) buildToolchainSidecar(spec AgentPodSpec) corev1.Container {
+	tc := spec.ToolchainSidecar
+
+	resources := m.buildToolchainResources(tc)
+
+	// Environment variables for tool discovery by the agent.
+	envVars := []corev1.EnvVar{
+		{Name: "GT_TOOLCHAIN_CONTAINER", Value: ToolchainContainerName},
+		{Name: "GT_TOOLCHAIN_IMAGE", Value: tc.Image},
+	}
+	if tc.Profile != "" {
+		envVars = append(envVars, corev1.EnvVar{Name: "GT_TOOLCHAIN_PROFILE", Value: tc.Profile})
+	}
+
+	restartAlways := corev1.ContainerRestartPolicyAlways
+
+	return corev1.Container{
+		Name:          ToolchainContainerName,
+		Image:         tc.Image,
+		RestartPolicy: &restartAlways,
+		Env:           envVars,
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: VolumeWorkspace, MountPath: MountWorkspace},
+			{Name: VolumeTmp, MountPath: MountTmp},
+		},
+		Resources:       resources,
+		ImagePullPolicy: corev1.PullAlways,
+		SecurityContext: &corev1.SecurityContext{
+			RunAsUser:                intPtr(AgentUID),
+			RunAsGroup:               intPtr(AgentGID),
+			AllowPrivilegeEscalation: boolPtr(false),
+			ReadOnlyRootFilesystem:   boolPtr(false),
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+			},
+		},
+	}
+}
+
+// buildToolchainResources returns resource requirements for the toolchain sidecar.
+func (m *K8sManager) buildToolchainResources(tc *ToolchainSidecarSpec) corev1.ResourceRequirements {
+	if tc.Resources != nil {
+		return *tc.Resources
+	}
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(ToolchainDefaultCPURequest),
+			corev1.ResourceMemory: resource.MustParse(ToolchainDefaultMemRequest),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(ToolchainDefaultCPULimit),
+			corev1.ResourceMemory: resource.MustParse(ToolchainDefaultMemLimit),
 		},
 	}
 }
