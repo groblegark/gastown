@@ -109,14 +109,14 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				}
 				// Fall through to create.
 			} else {
-				// Pod is Running or Pending. Check if sidecar spec has drifted.
+				// Pod is Running or Pending. Check if spec has drifted.
 				desiredSpec := r.specBuilder(r.cfg, bead.Rig, bead.Role, bead.AgentName, bead.Metadata)
-				if sidecarChanged(desiredSpec.ToolchainSidecar, &pod) {
-					r.logger.Info("toolchain sidecar changed, recreating pod",
-						"pod", name,
-						"desiredImage", sidecarImage(desiredSpec.ToolchainSidecar))
+				reason := podDriftReason(desiredSpec, &pod)
+				if reason != "" {
+					r.logger.Info("spec drift detected, recreating pod",
+						"pod", name, "reason", reason)
 					if err := r.pods.DeleteAgentPod(ctx, name, pod.Namespace); err != nil {
-						return fmt.Errorf("deleting pod for sidecar update %s: %w", name, err)
+						return fmt.Errorf("deleting pod for update %s: %w", name, err)
 					}
 					// Fall through to create with new spec.
 				} else {
@@ -134,6 +134,34 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// podDriftReason returns a non-empty string describing why the pod needs
+// recreation, or "" if the pod matches the desired spec.
+func podDriftReason(desired podmanager.AgentPodSpec, actual *corev1.Pod) string {
+	// Check agent image drift.
+	if agentChanged(desired.Image, actual) {
+		return fmt.Sprintf("agent image changed: %s", desired.Image)
+	}
+	// Check toolchain sidecar drift.
+	if sidecarChanged(desired.ToolchainSidecar, actual) {
+		return fmt.Sprintf("toolchain sidecar changed: %s", sidecarImage(desired.ToolchainSidecar))
+	}
+	return ""
+}
+
+// agentChanged returns true if the desired agent image differs from the
+// running pod's agent container image (compared by tag, not digest).
+func agentChanged(desiredImage string, actual *corev1.Pod) bool {
+	if desiredImage == "" {
+		return false
+	}
+	for _, c := range actual.Spec.Containers {
+		if c.Name == "agent" {
+			return c.Image != desiredImage
+		}
+	}
+	return false
 }
 
 // sidecarChanged returns true if the desired toolchain sidecar differs from

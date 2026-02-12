@@ -430,6 +430,125 @@ func TestReconcile_IgnoresPodsWithoutAgentLabel(t *testing.T) {
 	}
 }
 
+// --- agentChanged tests ---
+
+func TestAgentChanged_SameImage(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: "agent", Image: "gastown-agent:v1"},
+			},
+		},
+	}
+	if agentChanged("gastown-agent:v1", pod) {
+		t.Error("agentChanged with same image should be false")
+	}
+}
+
+func TestAgentChanged_DifferentImage(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: "agent", Image: "gastown-agent:v1"},
+			},
+		},
+	}
+	if !agentChanged("gastown-agent:v2", pod) {
+		t.Error("agentChanged with different image should be true")
+	}
+}
+
+func TestAgentChanged_EmptyDesired(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: "agent", Image: "gastown-agent:v1"},
+			},
+		},
+	}
+	if agentChanged("", pod) {
+		t.Error("agentChanged with empty desired should be false")
+	}
+}
+
+func TestAgentChanged_NoAgentContainer(t *testing.T) {
+	pod := &corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: "other", Image: "something:v1"},
+			},
+		},
+	}
+	if agentChanged("gastown-agent:v2", pod) {
+		t.Error("agentChanged with no agent container should be false")
+	}
+}
+
+func TestReconcile_AgentImageChangeTriggersPodRecreation(t *testing.T) {
+	client := fake.NewSimpleClientset()
+
+	// Create a pod with agent image v1.
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "gt-town-mayor-hq",
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				podmanager.LabelApp:   podmanager.LabelAppValue,
+				podmanager.LabelRig:   "town",
+				podmanager.LabelRole:  "mayor",
+				podmanager.LabelAgent: "hq",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: "agent", Image: "gastown-agent:v1"},
+			},
+		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
+	}
+	_, err := client.CoreV1().Pods(testNamespace).Create(context.Background(), pod, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Config has a newer image (v2).
+	cfg := testCfg()
+	cfg.DefaultImage = "gastown-agent:v2"
+
+	lister := &mockBeadLister{beads: []daemonclient.AgentBead{
+		bead("town", "mayor", "hq"),
+	}}
+	pods := podmanager.New(client, slog.Default())
+	r := New(lister, pods, cfg, slog.Default(), testSpecBuilder)
+
+	ctx := context.Background()
+	if err := r.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	// Pod should have been recreated with the new image.
+	names := listPodNames(t, client, testNamespace)
+	if len(names) != 1 {
+		t.Fatalf("expected 1 pod, got %d: %v", len(names), names)
+	}
+	if names[0] != "gt-town-mayor-hq" {
+		t.Errorf("pod name = %q, want %q", names[0], "gt-town-mayor-hq")
+	}
+
+	// Verify the recreated pod has the new image.
+	recreated, err := client.CoreV1().Pods(testNamespace).Get(ctx, "gt-town-mayor-hq", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range recreated.Spec.Containers {
+		if c.Name == "agent" {
+			if c.Image != "gastown-agent:v2" {
+				t.Errorf("recreated pod agent image = %q, want %q", c.Image, "gastown-agent:v2")
+			}
+		}
+	}
+}
+
 // --- sidecarChanged tests ---
 
 func TestSidecarChanged_BothNil(t *testing.T) {

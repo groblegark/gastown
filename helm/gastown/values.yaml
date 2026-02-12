@@ -376,7 +376,7 @@ agentController:
   # Image used for agent pods spawned by the controller
   agentImage:
     repository: ghcr.io/groblegark/gastown/gastown-agent
-    tag: "latest"
+    tag: "0.6.0"
 
   replicaCount: 1
 
