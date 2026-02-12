@@ -458,11 +458,24 @@ func configScopeScore(issue *Issue, town, rig, role, agent string) int {
 	townMatch := town != "" && HasLabel(issue, "town:"+town)
 	rigMatch := rig != "" && HasLabel(issue, "rig:"+rig)
 	roleMatch := role != "" && HasLabel(issue, "role:"+role)
+	// Role-class match: mayor matches role:crew (interactive), deacon matches
+	// role:polecat (autonomous). This allows config beads labeled with the
+	// canonical role class to apply to all roles in that class.
+	if !roleMatch && role != "" {
+		roleMatch = HasLabel(issue, "role:"+roleClassFor(role))
+	}
 	agentMatch := agent != "" && HasLabel(issue, "agent:"+agent)
 
 	// Check if the bead has a rig label at all (even if it doesn't match ours).
 	// A bead scoped to a specific rig should NOT match a different rig.
 	beadHasRigLabel := hasLabelPrefix(issue, "rig:")
+
+	// Check if the bead has a role label that doesn't match ours.
+	// A bead scoped to a specific role should NOT match a different role.
+	beadHasRoleLabel := hasLabelPrefix(issue, "role:")
+	if beadHasRoleLabel && !roleMatch {
+		return -1 // Role mismatch — exclude
+	}
 
 	// Agent-specific match (most specific)
 	if townMatch && rigMatch && agentMatch {
@@ -496,6 +509,22 @@ func configScopeScore(issue *Issue, town, rig, role, agent string) int {
 	}
 
 	return -1 // Does not match this scope
+}
+
+// roleClassFor maps a specific role to its canonical role class.
+// Interactive roles (mayor, crew) map to "crew"; autonomous roles
+// (witness, refinery, deacon, boot) map to "polecat".
+// Returns empty string if the role is already the canonical class
+// or not recognized.
+func roleClassFor(role string) string {
+	switch role {
+	case "mayor":
+		return "crew"
+	case "witness", "refinery", "deacon", "boot":
+		return "polecat"
+	default:
+		return ""
+	}
 }
 
 // ResolveConfigMetadata queries config beads for a category and scope, returning

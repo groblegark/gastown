@@ -430,7 +430,9 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 	}
 
 	// Wire NATS config: sidecar gets dedicated env vars, built-in gets plain env.
+	// BD_NATS_URL is always set so the beads client can publish decision events.
 	if cfg.NatsURL != "" {
+		spec.Env["BD_NATS_URL"] = cfg.NatsURL
 		if spec.CoopSidecar != nil {
 			spec.CoopSidecar.NatsURL = cfg.NatsURL
 		} else {
