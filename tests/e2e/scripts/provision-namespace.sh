@@ -66,12 +66,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Resolve paths ────────────────────────────────────────────────────
-# Auto-detect chart directory
+# Auto-detect chart directory (prefer gastown repo chart over fics-helm-chart)
 if [[ -z "$CHART_DIR" ]]; then
-  if [[ -d "$HOME/fics-helm-chart/charts/gastown" ]]; then
-    CHART_DIR="$HOME/fics-helm-chart/charts/gastown"
-  elif [[ -d "$(dirname "$0")/../../../helm/gastown" ]]; then
+  if [[ -d "$(dirname "$0")/../../../helm/gastown" ]]; then
     CHART_DIR="$(cd "$(dirname "$0")/../../../helm/gastown" && pwd)"
+  elif [[ -d "$HOME/gastown/helm/gastown" ]]; then
+    CHART_DIR="$HOME/gastown/helm/gastown"
+  elif [[ -d "$HOME/fics-helm-chart/charts/gastown" ]]; then
+    CHART_DIR="$HOME/fics-helm-chart/charts/gastown"
   else
     die "Cannot find gastown helm chart. Use --chart-dir."
   fi
