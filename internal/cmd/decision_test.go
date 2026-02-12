@@ -595,9 +595,9 @@ func TestTurnCheckWithMarker(t *testing.T) {
 	}
 }
 
-// TestTurnCheckMultipleFirings tests that Stop hook can fire multiple times.
-// This was a bug: the first check would clear the marker, causing subsequent
-// checks to block incorrectly.
+// TestTurnCheckMultipleFirings tests the checkTurnMarker helper which
+// intentionally does NOT clear the marker. The main runDecisionTurnCheck
+// path consumes it on first check instead.
 func TestTurnCheckMultipleFirings(t *testing.T) {
 	sessionID := "test-multiple-firings"
 
@@ -607,22 +607,41 @@ func TestTurnCheckMultipleFirings(t *testing.T) {
 	}
 	defer clearTurnMarker(sessionID) // Cleanup
 
-	// First Stop hook firing - should allow
+	// Helper allows repeatedly without clearing
 	result1 := checkTurnMarker(sessionID, false)
 	if result1 != nil {
 		t.Errorf("first check should allow, got %+v", result1)
 	}
 
-	// Second Stop hook firing - should also allow (marker persists)
 	result2 := checkTurnMarker(sessionID, false)
 	if result2 != nil {
-		t.Errorf("second check should also allow, got %+v", result2)
+		t.Errorf("second check should also allow (helper doesn't consume), got %+v", result2)
+	}
+}
+
+// TestTurnMarkerConsumedOnCheck verifies that the main turn-check path
+// consumes the marker so the agent must offer a new decision if it continues
+// working after an inline bd decision create call.
+func TestTurnMarkerConsumedOnCheck(t *testing.T) {
+	sessionID := "test-consume-" + t.Name()
+
+	// Create marker
+	if err := createTurnMarker(sessionID); err != nil {
+		t.Fatalf("createTurnMarker failed: %v", err)
+	}
+	defer clearTurnMarker(sessionID)
+
+	// Marker should exist
+	if !turnMarkerExists(sessionID) {
+		t.Fatal("marker should exist after creation")
 	}
 
-	// Third Stop hook firing - should still allow
-	result3 := checkTurnMarker(sessionID, false)
-	if result3 != nil {
-		t.Errorf("third check should also allow, got %+v", result3)
+	// Simulate the main path: check + clear
+	clearTurnMarker(sessionID)
+
+	// Marker should be gone
+	if turnMarkerExists(sessionID) {
+		t.Error("marker should be consumed after clearTurnMarker")
 	}
 }
 

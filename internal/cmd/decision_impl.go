@@ -1295,9 +1295,9 @@ type TurnBlockResult struct {
 // checkTurnMarker checks if a decision was offered this turn.
 // Returns nil if allowed, or a TurnBlockResult if blocked.
 // If soft is true, never blocks (just returns nil).
-// NOTE: This does NOT clear the marker - that's done by turn-clear at the
-// start of the next turn. This allows Stop hook to fire multiple times
-// without incorrectly blocking on subsequent checks.
+// NOTE: This helper does NOT clear the marker. The main turn-check path
+// clears it on consumption so a new decision is required if the agent
+// continues after a blocking bd decision create call.
 func checkTurnMarker(sessionID string, soft bool) *TurnBlockResult {
 	if turnMarkerExists(sessionID) {
 		// Decision was offered - allow (don't clear; turn-clear handles that)
@@ -1461,12 +1461,15 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		clearStopLoopCounter(input.SessionID)
 	}
 
-	// Check turn marker file first (fast, local) - created by gt decision request
+	// Check turn marker file first (fast, local) - created by gt decision request.
+	// Clear it immediately so the marker is consumed: if the agent continues
+	// working after a decision response (bd decision create blocks inline),
+	// the next stop must offer a new decision.
 	if turnMarkerExists(input.SessionID) {
 		if decisionTurnCheckVerbose {
-			fmt.Fprintf(os.Stderr, "[turn-check] OK: Turn marker file exists\n")
+			fmt.Fprintf(os.Stderr, "[turn-check] OK: Turn marker file exists, consuming\n")
 		}
-		// Decision was offered, reset stop loop counter
+		clearTurnMarker(input.SessionID)
 		clearStopLoopCounter(input.SessionID)
 		return nil
 	}
