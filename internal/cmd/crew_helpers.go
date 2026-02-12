@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -341,6 +342,7 @@ func openBrowserAndBlock(localURL string) error {
 	}
 	fmt.Fprintf(os.Stderr, "  Press Ctrl+C to stop port-forward\n")
 	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	<-sigCh
 	return nil
 }

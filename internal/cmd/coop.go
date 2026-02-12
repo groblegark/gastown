@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
 	"syscall"
 	"time"
@@ -81,10 +82,8 @@ func runCoop(cmd *cobra.Command, args []string) error {
 		// Just print URL and block until interrupted.
 		fmt.Println(localURL)
 		fmt.Fprintf(os.Stderr, "  Press Ctrl+C to stop port-forward\n")
-		// Block until signal.
 		sigCh := make(chan os.Signal, 1)
-		// Can't import signal here easily, just select forever.
-		// The deferred Close() will clean up on return.
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 		<-sigCh
 		return nil
 	}
