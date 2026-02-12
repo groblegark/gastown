@@ -438,6 +438,10 @@ coopBroker:
   # If empty, uses the daemon token secret
   authTokenSecret: ""
 
+  # K8s secret with Claude OAuth credentials (credentials.json key)
+  # Used to seed the broker with initial refresh token on startup
+  credentialsSecret: ""
+
   # NATS connection (auto-wired from bd-daemon NATS if empty)
   natsURL: ""
 
