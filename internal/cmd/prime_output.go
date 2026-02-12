@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -233,6 +234,64 @@ func outputCrewContext(ctx RoleContext) {
 	fmt.Println()
 	fmt.Printf("Crew: %s | Rig: %s\n",
 		style.Dim.Render(ctx.Polecat), style.Dim.Render(ctx.Rig))
+}
+
+// outputToolchainContext outputs the toolchain sidecar section when present.
+// Detected via GT_TOOLCHAIN_* environment variables set by the controller.
+func outputToolchainContext() {
+	profile := os.Getenv("GT_TOOLCHAIN_PROFILE")
+	image := os.Getenv("GT_TOOLCHAIN_IMAGE")
+	container := os.Getenv("GT_TOOLCHAIN_CONTAINER")
+
+	// No toolchain sidecar configured
+	if profile == "" && image == "" {
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf("%s\n\n", style.Bold.Render("## Toolchain Sidecar"))
+
+	if profile != "" {
+		fmt.Printf("Profile: **%s**\n", profile)
+	}
+	if image != "" {
+		fmt.Printf("Image: `%s`\n", image)
+	}
+	if container != "" {
+		fmt.Printf("Container: `%s`\n", container)
+	}
+
+	fmt.Println()
+	fmt.Println("### Available Commands")
+	fmt.Println("```")
+	fmt.Println("gt toolchain status  # Show sidecar status and info")
+	fmt.Println("gt toolchain list    # List available tools in the sidecar")
+	fmt.Println("gt toolchain exec -- <cmd> [args...]  # Run command in sidecar")
+	fmt.Println("```")
+	fmt.Println()
+
+	// Profile-specific tool hints
+	switch profile {
+	case "toolchain-full":
+		fmt.Println("### Tools Available")
+		fmt.Println("- **Go**: `gt toolchain exec -- go build ./...`")
+		fmt.Println("- **Node**: `gt toolchain exec -- node --version`")
+		fmt.Println("- **Python**: `gt toolchain exec -- python3 -c 'print(1)'`")
+		fmt.Println("- **AWS CLI**: `gt toolchain exec -- aws --version`")
+		fmt.Println("- **Docker CLI**: `gt toolchain exec -- docker --version` (client only)")
+		fmt.Println("- **Kaniko**: `gt toolchain exec -- kaniko --help` (image builder)")
+	case "toolchain-minimal":
+		fmt.Println("### Tools Available")
+		fmt.Println("- git, jq, make, curl (base tools)")
+	}
+
+	fmt.Println()
+	fmt.Println("### Self-Enhancement")
+	fmt.Println("To add tools not in the current sidecar:")
+	fmt.Println("1. Write a Dockerfile extending the current image")
+	fmt.Println("2. Build: `gt toolchain exec -- kaniko --context=/home/agent/gt/my-image --destination=ghcr.io/groblegark/custom:v1 --cache=true`")
+	fmt.Println("3. Update bead: `bd update $BEAD_ID --set sidecar_image=ghcr.io/groblegark/custom:v1`")
+	fmt.Println("4. Session restarts automatically with new sidecar (~30s)")
 }
 
 func outputUnknownContext(ctx RoleContext) {

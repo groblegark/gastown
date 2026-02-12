@@ -256,6 +256,9 @@ func runPrime(cmd *cobra.Command, args []string) error {
 	// Output applicable advice for this agent
 	outputAdviceContext(ctx)
 
+	// Output toolchain sidecar context if present (K8s pods with toolchain)
+	outputToolchainContext()
+
 	// Output handoff content if present
 	outputHandoffContent(ctx)
 
