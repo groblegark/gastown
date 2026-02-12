@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 )
 
@@ -88,9 +89,7 @@ func (w *ConvoyWatcher) run() {
 
 // watchActivity starts bd activity and processes events until error or context cancellation.
 func (w *ConvoyWatcher) watchActivity() error {
-	cmd := exec.CommandContext(w.ctx, "bd", "activity", "--follow", "--town", "--json")
-	cmd.Dir = w.townRoot
-	cmd.Env = os.Environ() // Inherit PATH to find bd executable
+	cmd := bdcmd.CommandContextInDir(w.ctx, w.townRoot, "activity", "--follow", "--town", "--json")
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

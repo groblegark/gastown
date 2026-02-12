@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/rpcclient"
 )
 
@@ -308,7 +308,7 @@ func (l *SSEListener) handleCancelledDecision(de decisionEvent) {
 // and notifies Slack about them. Uses the slack_notified label to track notification state.
 func (l *SSEListener) catchUpMissedDecisions() {
 	// Query for open gate-type decisions without the slack_notified label
-	out, err := exec.Command("bd", "q", "type:gate status:open -label:slack_notified").Output()
+	out, err := bdcmd.Command("q", "type:gate status:open -label:slack_notified").Output()
 	if err != nil {
 		log.Printf("SSE: Error querying for missed decisions: %v", err)
 		return
@@ -366,7 +366,7 @@ func (l *SSEListener) notifyMissedDecision(decisionID string) {
 
 // addSlackNotifiedLabel adds the slack_notified label to a decision bead.
 func (l *SSEListener) addSlackNotifiedLabel(decisionID string) {
-	if err := exec.Command("bd", "label", "add", decisionID, "slack_notified").Run(); err != nil {
+	if err := bdcmd.Command("label", "add", decisionID, "slack_notified").Run(); err != nil {
 		log.Printf("SSE: Warning: failed to add slack_notified label to %s: %v", decisionID, err)
 	}
 }

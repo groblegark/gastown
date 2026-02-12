@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/configbeads"
@@ -476,8 +477,7 @@ func initTownBeads(townPath string) error {
 	// Use --no-auto-import to create database WITHOUT importing from JSONL.
 	// This allows us to configure custom types BEFORE the import runs (bd-3q6.10).
 	// Without this, auto-import fails when issues.jsonl contains custom types like merge-request.
-	cmd := exec.Command("bd", "init", "--prefix", "hq", "--no-auto-import")
-	cmd.Dir = townPath
+	cmd := bdcmd.CommandInDir(townPath, "init", "--prefix", "hq", "--no-auto-import")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -496,8 +496,7 @@ func initTownBeads(townPath string) error {
 	}
 
 	// Explicitly set issue_prefix config (bd init --prefix may not persist it in newer versions).
-	prefixSetCmd := exec.Command("bd", "config", "set", "issue_prefix", "hq")
-	prefixSetCmd.Dir = townPath
+	prefixSetCmd := bdcmd.CommandInDir(townPath, "config", "set", "issue_prefix", "hq")
 	if prefixOutput, prefixErr := prefixSetCmd.CombinedOutput(); prefixErr != nil {
 		return fmt.Errorf("bd config set issue_prefix failed: %s", strings.TrimSpace(string(prefixOutput)))
 	}
@@ -505,8 +504,7 @@ func initTownBeads(townPath string) error {
 	// Configure custom types for Gas Town (agent, role, rig, convoy, slot, merge-request, etc).
 	// These were extracted from beads core in v0.46.0 and now require explicit config.
 	// IMPORTANT: This must run BEFORE any auto-import to avoid validation failures (bd-3q6.10).
-	configCmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-	configCmd.Dir = townPath
+	configCmd := bdcmd.CommandInDir(townPath, "config", "set", "types.custom", constants.BeadsCustomTypes)
 	if configOutput, configErr := configCmd.CombinedOutput(); configErr != nil {
 		// Non-fatal: older beads versions don't need this, newer ones do
 		fmt.Printf("   %s Could not set custom types: %s\n", style.Dim.Render("⚠"), strings.TrimSpace(string(configOutput)))
@@ -514,14 +512,12 @@ func initTownBeads(townPath string) error {
 
 	// Trigger JSONL import now that custom types are configured.
 	// bd import will import from issues.jsonl and validate types correctly.
-	syncCmd := exec.Command("bd", "import")
-	syncCmd.Dir = townPath
+	syncCmd := bdcmd.CommandInDir(townPath, "import")
 	_, _ = syncCmd.CombinedOutput() // Ignore errors - JSONL might not exist yet
 
 	// Configure allowed_prefixes for convoy beads (hq-cv-* IDs).
 	// This allows bd create --id=hq-cv-xxx to pass prefix validation.
-	prefixCmd := exec.Command("bd", "config", "set", "allowed_prefixes", "hq,hq-cv")
-	prefixCmd.Dir = townPath
+	prefixCmd := bdcmd.CommandInDir(townPath, "config", "set", "allowed_prefixes", "hq,hq-cv")
 	if prefixOutput, prefixErr := prefixCmd.CombinedOutput(); prefixErr != nil {
 		fmt.Printf("   %s Could not set allowed_prefixes: %s\n", style.Dim.Render("⚠"), strings.TrimSpace(string(prefixOutput)))
 	}
@@ -565,8 +561,7 @@ func initTownBeads(townPath string) error {
 // has a repository fingerprint. Legacy databases (pre-0.17.5) lack this, which
 // prevents the daemon from starting properly.
 func ensureRepoFingerprint(beadsPath string) error {
-	cmd := exec.Command("bd", "migrate", "--update-repo-id")
-	cmd.Dir = beadsPath
+	cmd := bdcmd.CommandInDir(beadsPath, "migrate", "--update-repo-id")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("bd migrate --update-repo-id: %s", strings.TrimSpace(string(output)))
@@ -579,8 +574,7 @@ func ensureRepoFingerprint(beadsPath string) error {
 // Gas Town needs custom types: agent, role, rig, convoy, slot.
 // This is idempotent - safe to call multiple times.
 func ensureCustomTypes(beadsPath string) error {
-	cmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-	cmd.Dir = beadsPath
+	cmd := bdcmd.CommandInDir(beadsPath, "config", "set", "types.custom", constants.BeadsCustomTypes)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("bd config set types.custom: %s", strings.TrimSpace(string(output)))
@@ -588,8 +582,7 @@ func ensureCustomTypes(beadsPath string) error {
 
 	// Disable contributor routing to use gastown's rig-based routing instead
 	// This prevents issues being routed to ~/.beads-planning
-	routingCmd := exec.Command("bd", "config", "set", "routing.mode", "direct")
-	routingCmd.Dir = beadsPath
+	routingCmd := bdcmd.CommandInDir(beadsPath, "config", "set", "routing.mode", "direct")
 	_, _ = routingCmd.CombinedOutput() // Ignore errors - not critical
 
 	return nil
@@ -677,8 +670,7 @@ func ensureBeadsCustomTypes(workDir string, types []string) error {
 		return nil
 	}
 
-	cmd := exec.Command("bd", "config", "set", "types.custom", strings.Join(types, ","))
-	cmd.Dir = workDir
+	cmd := bdcmd.CommandInDir(workDir, "config", "set", "types.custom", strings.Join(types, ","))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("bd config set types.custom failed: %s", strings.TrimSpace(string(output)))

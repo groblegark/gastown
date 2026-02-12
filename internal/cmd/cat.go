@@ -3,10 +3,10 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 )
 
 var catJSON bool
@@ -47,7 +47,7 @@ func runCat(cmd *cobra.Command, args []string) error {
 		bdArgs = append(bdArgs, "--json")
 	}
 
-	bdCmd := exec.Command("bd", bdArgs...)
+	bdCmd := bdcmd.Command(bdArgs...)
 	bdCmd.Stdout = os.Stdout
 	bdCmd.Stderr = os.Stderr
 

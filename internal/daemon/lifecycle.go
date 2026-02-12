@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/configbeads"
@@ -659,9 +660,7 @@ func (d *Daemon) getAgentBeadState(agentBeadID string) (string, error) {
 
 // getAgentBeadInfo fetches and parses an agent bead by ID.
 func (d *Daemon) getAgentBeadInfo(agentBeadID string) (*AgentBeadInfo, error) {
-	cmd := exec.Command("bd", "show", agentBeadID, "--json")
-	cmd.Dir = d.config.TownRoot
-	cmd.Env = os.Environ() // Inherit PATH to find bd executable
+	cmd := bdcmd.CommandInDir(d.config.TownRoot, "show", agentBeadID, "--json")
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -800,9 +799,7 @@ func (d *Daemon) checkGUPPViolations() {
 func (d *Daemon) checkRigGUPPViolations(rigName string) {
 	// List polecat agent beads for this rig
 	// Pattern: <prefix>-<rig>-polecat-<name> (e.g., gt-gastown-polecat-Toast)
-	cmd := exec.Command("bd", "list", "--type=agent", "--json")
-	cmd.Dir = d.config.TownRoot
-	cmd.Env = os.Environ() // Inherit PATH to find bd executable
+	cmd := bdcmd.CommandInDir(d.config.TownRoot, "list", "--type=agent", "--json")
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -900,9 +897,7 @@ func (d *Daemon) checkOrphanedWork() {
 
 // checkRigOrphanedWork checks polecats in a specific rig for orphaned work.
 func (d *Daemon) checkRigOrphanedWork(rigName string) {
-	cmd := exec.Command("bd", "list", "--type=agent", "--json")
-	cmd.Dir = d.config.TownRoot
-	cmd.Env = os.Environ() // Inherit PATH to find bd executable
+	cmd := bdcmd.CommandInDir(d.config.TownRoot, "list", "--type=agent", "--json")
 
 	output, err := cmd.Output()
 	if err != nil {

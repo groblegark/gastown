@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/polecat"
@@ -819,8 +820,7 @@ func queryAssignedIssues(rigPath, assignee, status string) ([]IssueInfo, error) 
 		args = append(args, "--status="+status)
 	}
 
-	cmd := exec.Command("bd", args...)
-	cmd.Dir = rigPath
+	cmd := bdcmd.CommandInDir(rigPath, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
@@ -724,8 +725,7 @@ func ensureRigBeadsCustomTypes(townRoot string, rigNames []string) {
 	// Also configure town-level beads
 	townBeadsDir := filepath.Join(townRoot, ".beads")
 	if _, err := os.Stat(townBeadsDir); err == nil {
-		cmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-		cmd.Dir = townRoot
+		cmd := bdcmd.CommandInDir(townRoot, "config", "set", "types.custom", constants.BeadsCustomTypes)
 		_ = cmd.Run() // Ignore errors - older beads versions may not support this
 	}
 
@@ -740,8 +740,7 @@ func ensureRigBeadsCustomTypes(townRoot string, rigNames []string) {
 		}
 
 		// Run bd config set in the rig directory
-		cmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-		cmd.Dir = rigPath
+		cmd := bdcmd.CommandInDir(rigPath, "config", "set", "types.custom", constants.BeadsCustomTypes)
 		_ = cmd.Run() // Ignore errors - older beads versions may not support this
 	}
 }

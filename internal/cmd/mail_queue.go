@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -145,7 +145,7 @@ func listUnclaimedQueueMessages(beadsDir, queueName string) ([]queueMessage, err
 		"--json",
 	}
 
-	cmd := exec.Command("bd", args...)
+	cmd := bdcmd.Command(args...)
 	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 
 	var stdout, stderr bytes.Buffer
@@ -226,7 +226,7 @@ func claimQueueMessage(beadsDir, messageID, claimant string) error {
 		"claimed-at:" + now,
 	}
 
-	cmd := exec.Command("bd", args...)
+	cmd := bdcmd.Command(args...)
 	cmd.Env = append(os.Environ(),
 		"BEADS_DIR="+beadsDir,
 		"BD_ACTOR="+claimant,
@@ -306,7 +306,7 @@ type queueMessageInfo struct {
 func getQueueMessageInfo(beadsDir, messageID string) (*queueMessageInfo, error) {
 	args := []string{"show", messageID, "--json"}
 
-	cmd := exec.Command("bd", args...)
+	cmd := bdcmd.Command(args...)
 	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 
 	var stdout, stderr bytes.Buffer
@@ -375,7 +375,7 @@ func releaseQueueMessage(beadsDir, messageID, actor string) error {
 	// Remove claimed-by label
 	if info.ClaimedBy != "" {
 		args := []string{"label", "remove", messageID, "claimed-by:" + info.ClaimedBy}
-		cmd := exec.Command("bd", args...)
+		cmd := bdcmd.Command(args...)
 		cmd.Env = append(os.Environ(),
 			"BEADS_DIR="+beadsDir,
 			"BD_ACTOR="+actor,
@@ -396,7 +396,7 @@ func releaseQueueMessage(beadsDir, messageID, actor string) error {
 	if info.ClaimedAt != nil {
 		claimedAtStr := info.ClaimedAt.Format(time.RFC3339)
 		args := []string{"label", "remove", messageID, "claimed-at:" + claimedAtStr}
-		cmd := exec.Command("bd", args...)
+		cmd := bdcmd.Command(args...)
 		cmd.Env = append(os.Environ(),
 			"BEADS_DIR="+beadsDir,
 			"BD_ACTOR="+actor,

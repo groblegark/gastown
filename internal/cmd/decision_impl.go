@@ -14,6 +14,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/inject"
@@ -1878,11 +1879,11 @@ func emitDecisionBusEvent(eventType string, payload map[string]interface{}) {
 
 	// Use --event and --payload flags for decision events (od-k3o.15.1).
 	// Falls back to --hook for older bd versions that don't have --event yet.
-	cmd := exec.Command("bd", "bus", "emit", "--event", eventType, "--payload", string(payloadJSON)) //nolint:gosec // trusted internal command
+	cmd := bdcmd.Command("bus", "emit", "--event", eventType, "--payload", string(payloadJSON))
 	cmd.Stderr = io.Discard // suppress daemon-unavailable warnings
 	if err := cmd.Run(); err != nil {
 		// Fallback: use --hook with stdin pipe (works with all bd versions)
-		fallback := exec.Command("bd", "bus", "emit", "--hook", eventType) //nolint:gosec // trusted internal command
+		fallback := bdcmd.Command("bus", "emit", "--hook", eventType)
 		fallback.Stdin = strings.NewReader(string(payloadJSON))
 		fallback.Stderr = io.Discard
 		_ = fallback.Run()
@@ -2422,7 +2423,7 @@ func enrichContextWithBeads(prompt, contextJSON string, additionalBeadIDs ...str
 // Returns a map with title, type, status, and description_summary (first 200 chars).
 // On error, returns a map with an "error" field.
 func fetchBeadInfo(beadID string) map[string]interface{} {
-	cmd := exec.Command("bd", "show", beadID, "--json")
+	cmd := bdcmd.Command("show", beadID, "--json")
 	output, err := cmd.Output()
 	if err != nil {
 		// Bead not found or command failed

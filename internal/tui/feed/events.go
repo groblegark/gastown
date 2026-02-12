@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 )
 
@@ -33,8 +34,7 @@ type BdActivitySource struct {
 func NewBdActivitySource(workDir string) (*BdActivitySource, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	cmd := exec.CommandContext(ctx, "bd", "activity", "--follow")
-	cmd.Dir = workDir
+	cmd := bdcmd.CommandContextInDir(ctx, workDir, "activity", "--follow")
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

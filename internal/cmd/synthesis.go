@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/formula"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/style"
@@ -326,8 +327,7 @@ func runSynthesisClose(cmd *cobra.Command, args []string) error {
 	if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
 		closeArgs = append(closeArgs, "--session="+sessionID)
 	}
-	closeCmd := exec.Command("bd", closeArgs...)
-	closeCmd.Dir = townBeads
+	closeCmd := bdcmd.CommandInDir(townBeads, closeArgs...)
 	closeCmd.Stderr = os.Stderr
 
 	if err := closeCmd.Run(); err != nil {
@@ -349,8 +349,7 @@ func getConvoyMeta(convoyID string) (*ConvoyMeta, error) {
 		return nil, err
 	}
 
-	showCmd := exec.Command("bd", "show", convoyID, "--json")
-	showCmd.Dir = townBeads
+	showCmd := bdcmd.CommandInDir(townBeads, "show", convoyID, "--json")
 	var stdout bytes.Buffer
 	showCmd.Stdout = &stdout
 
@@ -539,8 +538,7 @@ func createSynthesisBead(convoyID string, meta *ConvoyMeta, f *formula.Formula,
 		return "", err
 	}
 
-	createCmd := exec.Command("bd", createArgs...)
-	createCmd.Dir = townBeads
+	createCmd := bdcmd.CommandInDir(townBeads, createArgs...)
 	var stdout bytes.Buffer
 	createCmd.Stdout = &stdout
 	createCmd.Stderr = os.Stderr
@@ -564,8 +562,7 @@ func createSynthesisBead(convoyID string, meta *ConvoyMeta, f *formula.Formula,
 
 	// Add tracking relation: convoy tracks synthesis
 	depArgs := []string{"dep", "add", convoyID, result.ID, "--type=tracks"}
-	depCmd := exec.Command("bd", depArgs...)
-	depCmd.Dir = townBeads
+	depCmd := bdcmd.CommandInDir(townBeads, depArgs...)
 	_ = depCmd.Run() // Non-fatal if this fails
 
 	return result.ID, nil

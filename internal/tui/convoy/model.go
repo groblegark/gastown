@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 )
 
@@ -89,8 +89,7 @@ func loadConvoys(townBeads string) ([]ConvoyItem, error) {
 
 	// Get list of open convoys
 	listArgs := []string{"list", "--type=convoy", "--json"}
-	listCmd := exec.CommandContext(ctx, "bd", listArgs...)
-	listCmd.Dir = townBeads
+	listCmd := bdcmd.CommandContextInDir(ctx, townBeads, listArgs...)
 	var stdout bytes.Buffer
 	listCmd.Stdout = &stdout
 
@@ -209,8 +208,7 @@ func getIssueDetailsBatch(townBeads string, issueIDs []string) map[string]IssueI
 	args := append([]string{"show"}, issueIDs...)
 	args = append(args, "--json")
 
-	cmd := exec.CommandContext(ctx, "bd", args...) //nolint:gosec // G204: bd is a trusted internal tool
-	cmd.Dir = townBeads
+	cmd := bdcmd.CommandContextInDir(ctx, townBeads, args...)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 

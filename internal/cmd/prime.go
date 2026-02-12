@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/git"
@@ -393,8 +394,7 @@ func detectRole(cwd, townRoot string) RoleInfo {
 // runBdPrime runs `bd prime` and outputs the result.
 // This provides beads workflow context to the agent.
 func runBdPrime(workDir string) {
-	cmd := exec.Command("bd", "prime")
-	cmd.Dir = workDir
+	cmd := bdcmd.CommandInDir(workDir, "prime")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -593,7 +593,7 @@ func checkSlungWork(ctx RoleContext) bool {
 	} else {
 		// No molecule - show bead preview using bd show
 		fmt.Println("**Bead details:**")
-		cmd := exec.Command("bd", "show", hookedBead.ID)
+		cmd := bdcmd.Command("show", hookedBead.ID)
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
@@ -835,8 +835,7 @@ func ensureBeadsRedirect(ctx RoleContext) {
 // This is called on Mayor startup to surface issues needing human attention.
 func checkPendingEscalations(ctx RoleContext) {
 	// Query for open escalations using bd list with tag filter
-	cmd := exec.Command("bd", "list", "--status=open", "--tag=escalation", "--json")
-	cmd.Dir = ctx.WorkDir
+	cmd := bdcmd.CommandInDir(ctx.WorkDir, "list", "--status=open", "--tag=escalation", "--json")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

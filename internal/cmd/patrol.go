@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/style"
 )
 
@@ -204,7 +204,7 @@ func runPatrolDigest(cmd *cobra.Command, args []string) error {
 func queryPatrolDigests(targetDate time.Time) ([]PatrolCycleEntry, error) {
 	// List closed issues with "digest" label that are ephemeral
 	// Patrol digests have titles like "Digest: mol-deacon-patrol", "Digest: mol-witness-patrol"
-	listCmd := exec.Command("bd", "list",
+	listCmd := bdcmd.Command("list",
 		"--status=closed",
 		"--label=digest",
 		"--json",
@@ -325,7 +325,7 @@ func createPatrolDigestBead(digest PatrolDigest) (string, error) {
 		"--silent",
 	}
 
-	bdCmd := exec.Command("bd", bdArgs...)
+	bdCmd := bdcmd.Command(bdArgs...)
 	output, err := bdCmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("creating digest bead: %w\nOutput: %s", err, string(output))
@@ -334,7 +334,7 @@ func createPatrolDigestBead(digest PatrolDigest) (string, error) {
 	digestID := strings.TrimSpace(string(output))
 
 	// Auto-close the digest (it's an audit record, not work)
-	closeCmd := exec.Command("bd", "close", digestID, "--reason=daily patrol digest")
+	closeCmd := bdcmd.Command("close", digestID, "--reason=daily patrol digest")
 	_ = closeCmd.Run() // Best effort
 
 	return digestID, nil
@@ -346,7 +346,7 @@ func findExistingPatrolDigest(dateStr string) (string, error) {
 	expectedTitle := fmt.Sprintf("Patrol Report %s", dateStr)
 
 	// Query event beads with patrol.digest category
-	listCmd := exec.Command("bd", "list",
+	listCmd := bdcmd.Command("list",
 		"--type=event",
 		"--json",
 		"--limit=50", // Recent events only
@@ -394,7 +394,7 @@ func deletePatrolDigests(targetDate time.Time) (int, error) {
 
 	// Delete in batch
 	deleteArgs := append([]string{"delete", "--force"}, idsToDelete...)
-	deleteCmd := exec.Command("bd", deleteArgs...)
+	deleteCmd := bdcmd.Command(deleteArgs...)
 	if err := deleteCmd.Run(); err != nil {
 		return 0, fmt.Errorf("deleting patrol digests: %w", err)
 	}
@@ -405,7 +405,7 @@ func deletePatrolDigests(targetDate time.Time) (int, error) {
 // runPatrolCleanup cleans up stale hooked patrol wisps.
 func runPatrolCleanup(cmd *cobra.Command, args []string) error {
 	// List all hooked wisps
-	listCmd := exec.Command("bd", "list", "--status=hooked", "--type=wisp", "--json")
+	listCmd := bdcmd.Command("list", "--status=hooked", "--type=wisp", "--json")
 	listOutput, err := listCmd.Output()
 	if err != nil {
 		return fmt.Errorf("listing hooked wisps: %w", err)
@@ -437,7 +437,7 @@ func runPatrolCleanup(cmd *cobra.Command, args []string) error {
 		}
 
 		// Check if wisp has open/in_progress children
-		showCmd := exec.Command("bd", "show", wisp.ID, "--json")
+		showCmd := bdcmd.Command("show", wisp.ID, "--json")
 		showOutput, err := showCmd.Output()
 		if err != nil {
 			// Can't check, skip
@@ -453,7 +453,7 @@ func runPatrolCleanup(cmd *cobra.Command, args []string) error {
 
 		if err := json.Unmarshal(showOutput, &showData); err != nil {
 			// Parse error, check via text
-			showTextCmd := exec.Command("bd", "show", wisp.ID)
+			showTextCmd := bdcmd.Command("show", wisp.ID)
 			showTextOutput, _ := showTextCmd.Output()
 			showText := string(showTextOutput)
 			hasActive := strings.Contains(showText, "- open]") ||
@@ -495,7 +495,7 @@ func runPatrolCleanup(cmd *cobra.Command, args []string) error {
 	// Close stale wisps
 	closed := 0
 	for _, id := range staleWisps {
-		closeCmd := exec.Command("bd", "close", id)
+		closeCmd := bdcmd.Command("close", id)
 		if err := closeCmd.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to close %s: %v\n", id, err)
 		} else {

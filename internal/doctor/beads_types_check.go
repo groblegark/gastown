@@ -3,10 +3,10 @@ package doctor
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/constants"
 )
@@ -52,8 +52,7 @@ func (c *BeadsCustomTypesCheck) Run(ctx *CheckContext) *CheckResult {
 	}
 
 	// Get current custom types configuration
-	cmd := exec.Command("bd", "config", "get", "types.custom")
-	cmd.Dir = ctx.RigPath()
+	cmd := bdcmd.CommandInDir(ctx.RigPath(), "config", "get", "types.custom")
 	output, err := cmd.Output()
 	if err != nil {
 		// Command failed - types may not be configured at all
@@ -122,8 +121,7 @@ func (c *BeadsCustomTypesCheck) Fix(ctx *CheckContext) error {
 	}
 
 	// Set the custom types
-	cmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-	cmd.Dir = ctx.RigPath()
+	cmd := bdcmd.CommandInDir(ctx.RigPath(), "config", "set", "types.custom", constants.BeadsCustomTypes)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("setting types.custom: %s", strings.TrimSpace(string(output)))
 	}
@@ -161,8 +159,7 @@ func (c *BeadsCustomTypesTownCheck) Run(ctx *CheckContext) *CheckResult {
 	}
 
 	// Get current custom types configuration
-	cmd := exec.Command("bd", "config", "get", "types.custom")
-	cmd.Dir = ctx.TownRoot
+	cmd := bdcmd.CommandInDir(ctx.TownRoot, "config", "get", "types.custom")
 	output, err := cmd.Output()
 	if err != nil {
 		return &CheckResult{
@@ -224,8 +221,7 @@ func (c *BeadsCustomTypesTownCheck) Fix(ctx *CheckContext) error {
 		return nil // No beads database
 	}
 
-	cmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-	cmd.Dir = ctx.TownRoot
+	cmd := bdcmd.CommandInDir(ctx.TownRoot, "config", "set", "types.custom", constants.BeadsCustomTypes)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("setting types.custom: %s", strings.TrimSpace(string(output)))
 	}

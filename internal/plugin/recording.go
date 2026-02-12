@@ -4,11 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 )
 
@@ -77,11 +76,10 @@ func (r *Recorder) RecordRun(record PluginRunRecord) (string, error) {
 		args = append(args, "--description="+record.Body)
 	}
 
-	cmd := exec.Command("bd", args...) //nolint:gosec // G204: bd is a trusted internal tool
-	cmd.Dir = r.townRoot
+	cmd := bdcmd.CommandInDir(r.townRoot, args...)
 	// Set BEADS_DIR explicitly to prevent inherited env vars from causing
 	// prefix mismatches when redirects are in play.
-	cmd.Env = append(os.Environ(), "BEADS_DIR="+beads.ResolveBeadsDir(r.townRoot))
+	cmd.Env = append(cmd.Environ(), "BEADS_DIR="+beads.ResolveBeadsDir(r.townRoot))
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -143,11 +141,10 @@ func (r *Recorder) queryRuns(pluginName string, limit int, since string) ([]*Plu
 		args = append(args, "--created-after="+sinceArg)
 	}
 
-	cmd := exec.Command("bd", args...) //nolint:gosec // G204: bd is a trusted internal tool
-	cmd.Dir = r.townRoot
+	cmd := bdcmd.CommandInDir(r.townRoot, args...)
 	// Set BEADS_DIR explicitly to prevent inherited env vars from causing
 	// prefix mismatches when redirects are in play.
-	cmd.Env = append(os.Environ(), "BEADS_DIR="+beads.ResolveBeadsDir(r.townRoot))
+	cmd.Env = append(cmd.Environ(), "BEADS_DIR="+beads.ResolveBeadsDir(r.townRoot))
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

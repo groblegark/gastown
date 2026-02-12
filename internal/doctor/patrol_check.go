@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 )
@@ -93,8 +93,7 @@ func (c *PatrolMoleculesExistCheck) Run(ctx *CheckContext) *CheckResult {
 func (c *PatrolMoleculesExistCheck) checkPatrolFormulas(rigPath string) []string {
 	// List formulas accessible from this rig using bd formula list
 	// This checks .beads/formulas/, ~/.beads/formulas/, and $GT_ROOT/.beads/formulas/
-	cmd := exec.Command("bd", "formula", "list")
-	cmd.Dir = rigPath
+	cmd := bdcmd.CommandInDir(rigPath, "formula", "list")
 	output, err := cmd.Output()
 	if err != nil {
 		// Can't check formulas, assume all missing

@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/configbeads"
@@ -470,7 +470,7 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 			"--silent",
 		}
 
-		createCmd := exec.Command("bd", createArgs...)
+		createCmd := bdcmd.Command(createArgs...)
 		createCmd.Stderr = os.Stderr
 		if _, err := createCmd.Output(); err != nil {
 			// Non-fatal: routing will still work, just not from town root
@@ -713,7 +713,7 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 			"--silent",
 		}
 
-		createCmd := exec.Command("bd", createArgs...)
+		createCmd := bdcmd.Command(createArgs...)
 		createCmd.Stderr = os.Stderr
 		if _, err := createCmd.Output(); err != nil {
 			fmt.Printf("  %s Could not create route bead: %v\n", style.Warning.Render("!"), err)
@@ -830,7 +830,7 @@ func runRigRegister(_ *cobra.Command, args []string) error {
 		createArgs = append(createArgs, "--label", label)
 	}
 
-	createCmd := exec.Command("bd", createArgs...)
+	createCmd := bdcmd.Command(createArgs...)
 	createCmd.Stderr = os.Stderr
 	if _, err := createCmd.Output(); err != nil {
 		fmt.Printf("  %s Could not create rig bead: %v\n", style.Warning.Render("!"), err)

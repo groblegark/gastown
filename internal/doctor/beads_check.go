@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 )
 
@@ -219,8 +220,7 @@ func (c *BeadsDatabaseCheck) Fix(ctx *CheckContext) error {
 		}
 
 		// Run bd import to rebuild from JSONL
-		cmd := exec.Command("bd", "import")
-		cmd.Dir = ctx.TownRoot
+		cmd := bdcmd.CommandInDir(ctx.TownRoot, "import")
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		if err := cmd.Run(); err != nil {
@@ -242,8 +242,7 @@ func (c *BeadsDatabaseCheck) Fix(ctx *CheckContext) error {
 				return err
 			}
 
-			cmd := exec.Command("bd", "import")
-			cmd.Dir = ctx.RigPath()
+			cmd := bdcmd.CommandInDir(ctx.RigPath(), "import")
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
 			if err := cmd.Run(); err != nil {
@@ -553,8 +552,7 @@ type labelAdder interface {
 type realLabelAdder struct{}
 
 func (r *realLabelAdder) AddLabel(townRoot, id, label string) error {
-	cmd := exec.Command("bd", "label", "add", id, label)
-	cmd.Dir = townRoot
+	cmd := bdcmd.CommandInDir(townRoot, "label", "add", id, label)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("adding %s label to %s: %s", label, id, strings.TrimSpace(string(output)))
 	}
@@ -804,7 +802,7 @@ func (c *DatabasePrefixCheck) Run(ctx *CheckContext) *CheckResult {
 
 // getDBPrefix queries the database for issue_prefix config value.
 func (c *DatabasePrefixCheck) getDBPrefix(beadsDir string) (string, error) {
-	cmd := exec.Command("bd", "config", "get", "issue_prefix", "--db", beadsDir)
+	cmd := bdcmd.Command("config", "get", "issue_prefix", "--db", beadsDir)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -823,7 +821,7 @@ func (c *DatabasePrefixCheck) Fix(ctx *CheckContext) error {
 	}
 
 	for _, m := range c.mismatches {
-		cmd := exec.Command("bd", "config", "set", "issue_prefix", m.routesPrefix, "--db", m.beadsDir)
+		cmd := bdcmd.Command("config", "set", "issue_prefix", m.routesPrefix, "--db", m.beadsDir)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("updating %s: %s", m.rigPath, strings.TrimSpace(string(output)))
 		}

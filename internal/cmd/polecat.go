@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/polecat"
@@ -1290,8 +1291,7 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 			if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
 				closeArgs = append(closeArgs, "--session="+sessionID)
 			}
-			closeCmd := exec.Command("bd", closeArgs...)
-			closeCmd.Dir = filepath.Join(p.r.Path, "mayor", "rig")
+			closeCmd := bdcmd.CommandInDir(filepath.Join(p.r.Path, "mayor", "rig"), closeArgs...)
 			if err := closeCmd.Run(); err != nil {
 				nukeErrors = append(nukeErrors, fmt.Sprintf("%s/%s: agent bead close failed: %v", p.rigName, p.polecatName, err))
 				continue
@@ -1392,8 +1392,7 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 		if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
 			closeArgs = append(closeArgs, "--session="+sessionID)
 		}
-		closeCmd := exec.Command("bd", closeArgs...)
-		closeCmd.Dir = filepath.Join(p.r.Path, "mayor", "rig")
+		closeCmd := bdcmd.CommandInDir(filepath.Join(p.r.Path, "mayor", "rig"), closeArgs...)
 		if err := closeCmd.Run(); err != nil {
 			// Non-fatal - agent bead might not exist
 			fmt.Printf("  %s agent bead not found or already closed\n", style.Dim.Render("○"))

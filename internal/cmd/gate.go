@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -85,7 +85,7 @@ func runGateWake(cmd *cobra.Command, args []string) error {
 	gateID := args[0]
 
 	// Get gate info
-	gateCheck := exec.Command("bd", "gate", "show", gateID, "--json")
+	gateCheck := bdcmd.Command("gate", "show", gateID, "--json")
 	gateOutput, err := gateCheck.Output()
 	if err != nil {
 		return fmt.Errorf("gate '%s' not found or not accessible", gateID)

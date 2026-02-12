@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/style"
 )
 
@@ -93,7 +94,7 @@ func runResume(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check gate status
-	gateCheck := exec.Command("bd", "gate", "show", parked.GateID, "--json")
+	gateCheck := bdcmd.Command("gate", "show", parked.GateID, "--json")
 	gateOutput, err := gateCheck.Output()
 	gateNotFound := false
 	if err != nil {
@@ -155,8 +156,7 @@ func runResume(cmd *cobra.Command, args []string) error {
 
 	// Pin the bead to restore work
 	if parked.BeadID != "" {
-		pinCmd := exec.Command("bd", "update", parked.BeadID, "--status=pinned", "--assignee="+agentID)
-		pinCmd.Dir = cloneRoot
+		pinCmd := bdcmd.CommandInDir(cloneRoot, "update", parked.BeadID, "--status=pinned", "--assignee="+agentID)
 		pinCmd.Stderr = os.Stderr
 		if err := pinCmd.Run(); err != nil {
 			return fmt.Errorf("pinning bead: %w", err)

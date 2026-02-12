@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"strconv"
 	"strings"
 )
@@ -37,7 +39,7 @@ func CheckBeads() (BeadsStatus, string) {
 	_ = path // bd found
 
 	// Get version
-	cmd := exec.Command("bd", "version")
+	cmd := bdcmd.Command("version")
 	output, err := cmd.Output()
 	if err != nil {
 		return BeadsUnknown, ""

@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
+
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"strings"
 	"sync"
 )
@@ -162,7 +163,7 @@ func LoadRouterFromBeads() (*Router, error) {
 // Returns error if the config bead doesn't exist or can't be parsed.
 func LoadRouterFromConfigBead() (*Router, error) {
 	// Use bd show to retrieve the config bead
-	cmd := exec.Command("bd", "show", "hq-cfg-slack-routing", "--json", "--quiet")
+	cmd := bdcmd.Command("show", "hq-cfg-slack-routing", "--json", "--quiet")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("config bead hq-cfg-slack-routing not found")
@@ -211,7 +212,7 @@ func extractMetadataFromDescription(description string) string {
 // bdConfigGet retrieves a value from beads config using bd CLI.
 // Returns empty string if key is not set.
 func bdConfigGet(key string) (string, error) {
-	cmd := exec.Command("bd", "config", "get", key, "--quiet")
+	cmd := bdcmd.Command("config", "get", key, "--quiet")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -226,8 +227,7 @@ func bdConfigGet(key string) (string, error) {
 
 // bdConfigSet sets a value in beads config using bd CLI.
 func bdConfigSet(key, value string) error {
-	cmd := exec.Command("bd", "config", "set", key, value)
-	return cmd.Run()
+	return bdcmd.Command("config", "set", key, value).Run()
 }
 
 // LoadRouterFromFile loads router configuration from a specific file.

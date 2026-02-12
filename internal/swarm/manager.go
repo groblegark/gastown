@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/rig"
 )
 
@@ -41,8 +42,7 @@ func NewManager(r *rig.Rig) *Manager {
 // This is the canonical way to get swarm state - no in-memory caching.
 func (m *Manager) LoadSwarm(epicID string) (*Swarm, error) {
 	// Query beads for the epic
-	cmd := exec.Command("bd", "show", epicID, "--json")
-	cmd.Dir = m.beadsDir
+	cmd := bdcmd.CommandInDir(m.beadsDir, "show", epicID, "--json")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -127,8 +127,7 @@ func (m *Manager) GetSwarm(id string) (*Swarm, error) {
 // GetReadyTasks returns tasks ready to be assigned by querying beads.
 func (m *Manager) GetReadyTasks(swarmID string) ([]SwarmTask, error) {
 	// Use bd swarm status to get ready front
-	cmd := exec.Command("bd", "swarm", "status", swarmID, "--json")
-	cmd.Dir = m.beadsDir
+	cmd := bdcmd.CommandInDir(m.beadsDir, "swarm", "status", swarmID, "--json")
 
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -164,8 +163,7 @@ func (m *Manager) GetReadyTasks(swarmID string) ([]SwarmTask, error) {
 
 // IsComplete checks if all tasks are closed by querying beads.
 func (m *Manager) IsComplete(swarmID string) (bool, error) {
-	cmd := exec.Command("bd", "swarm", "status", swarmID, "--json")
-	cmd.Dir = m.beadsDir
+	cmd := bdcmd.CommandInDir(m.beadsDir, "swarm", "status", swarmID, "--json")
 
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
@@ -214,8 +212,7 @@ func isValidTransition(from, to SwarmState) bool {
 // loadTasksFromBeads loads child issues from beads CLI.
 func (m *Manager) loadTasksFromBeads(epicID string) ([]SwarmTask, error) {
 	// Run: bd show <epicID> --json to get epic with children
-	cmd := exec.Command("bd", "show", epicID, "--json")
-	cmd.Dir = m.beadsDir
+	cmd := bdcmd.CommandInDir(m.beadsDir, "show", epicID, "--json")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -13,6 +13,7 @@ import (
 	"text/template"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/style"
@@ -181,7 +182,7 @@ func runFormulaList(cmd *cobra.Command, args []string) error {
 		bdArgs = append(bdArgs, "--json")
 	}
 
-	bdCmd := exec.Command("bd", bdArgs...)
+	bdCmd := bdcmd.Command(bdArgs...)
 	bdCmd.Stdout = os.Stdout
 	bdCmd.Stderr = os.Stderr
 	return bdCmd.Run()
@@ -195,7 +196,7 @@ func runFormulaShow(cmd *cobra.Command, args []string) error {
 		bdArgs = append(bdArgs, "--json")
 	}
 
-	bdCmd := exec.Command("bd", bdArgs...)
+	bdCmd := bdcmd.Command(bdArgs...)
 	bdCmd.Stdout = os.Stdout
 	bdCmd.Stderr = os.Stderr
 	return bdCmd.Run()
@@ -448,8 +449,7 @@ func executeConvoyFormula(f *formulaData, formulaName, targetRig string, vars ma
 		createArgs = append(createArgs, "--force")
 	}
 
-	createCmd := exec.Command("bd", createArgs...)
-	createCmd.Dir = townBeads
+	createCmd := bdcmd.CommandInDir(townBeads, createArgs...)
 	createCmd.Stderr = os.Stderr
 	if err := createCmd.Run(); err != nil {
 		return fmt.Errorf("creating convoy bead: %w", err)
@@ -564,8 +564,7 @@ func executeConvoyFormula(f *formulaData, formulaName, targetRig string, vars ma
 			legArgs = append(legArgs, "--force")
 		}
 
-		legCmd := exec.Command("bd", legArgs...)
-		legCmd.Dir = townBeads
+		legCmd := bdcmd.CommandInDir(townBeads, legArgs...)
 		legCmd.Stderr = os.Stderr
 		if err := legCmd.Run(); err != nil {
 			fmt.Printf("%s Failed to create leg bead for %s: %v\n",
@@ -575,8 +574,7 @@ func executeConvoyFormula(f *formulaData, formulaName, targetRig string, vars ma
 
 		// Track the leg with the convoy
 		trackArgs := []string{"dep", "add", convoyID, legBeadID, "--type=tracks"}
-		trackCmd := exec.Command("bd", trackArgs...)
-		trackCmd.Dir = townBeads
+		trackCmd := bdcmd.CommandInDir(townBeads, trackArgs...)
 		if err := trackCmd.Run(); err != nil {
 			fmt.Printf("%s Failed to track leg %s: %v\n",
 				style.Dim.Render("Warning:"), leg.ID, err)
@@ -616,8 +614,7 @@ func executeConvoyFormula(f *formulaData, formulaName, targetRig string, vars ma
 			synArgs = append(synArgs, "--force")
 		}
 
-		synCmd := exec.Command("bd", synArgs...)
-		synCmd.Dir = townBeads
+		synCmd := bdcmd.CommandInDir(townBeads, synArgs...)
 		synCmd.Stderr = os.Stderr
 		if err := synCmd.Run(); err != nil {
 			fmt.Printf("%s Failed to create synthesis bead: %v\n",
@@ -625,15 +622,13 @@ func executeConvoyFormula(f *formulaData, formulaName, targetRig string, vars ma
 		} else {
 			// Track synthesis with convoy
 			trackArgs := []string{"dep", "add", convoyID, synthesisBeadID, "--type=tracks"}
-			trackCmd := exec.Command("bd", trackArgs...)
-			trackCmd.Dir = townBeads
+			trackCmd := bdcmd.CommandInDir(townBeads, trackArgs...)
 			_ = trackCmd.Run()
 
 			// Add dependencies: synthesis depends on all legs
 			for _, legBeadID := range legBeads {
 				depArgs := []string{"dep", "add", synthesisBeadID, legBeadID}
-				depCmd := exec.Command("bd", depArgs...)
-				depCmd.Dir = townBeads
+				depCmd := bdcmd.CommandInDir(townBeads, depArgs...)
 				_ = depCmd.Run()
 			}
 
@@ -670,8 +665,7 @@ func executeConvoyFormula(f *formulaData, formulaName, targetRig string, vars ma
 				style.Dim.Render("Warning:"), leg.ID, err)
 			// Add comment to bead about failure
 			commentArgs := []string{"comment", legBeadID, fmt.Sprintf("Failed to sling: %v", err)}
-			commentCmd := exec.Command("bd", commentArgs...)
-			commentCmd.Dir = townBeads
+			commentCmd := bdcmd.CommandInDir(townBeads, commentArgs...)
 			_ = commentCmd.Run()
 			continue
 		}

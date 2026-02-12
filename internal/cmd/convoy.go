@@ -15,6 +15,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/style"
@@ -40,11 +41,7 @@ func generateShortID() string {
 // BEADS_DIR is set explicitly to ensure bd uses the correct beads directory and
 // respects the storage-backend setting in config.yaml.
 func newBdCmd(beadsDir string, args ...string) *exec.Cmd {
-	cmd := exec.Command("bd", args...)
-
-	// Set working directory to parent of beadsDir (e.g., townRoot)
-	// This prevents bd from finding nested .beads/.beads/ directories
-	cmd.Dir = filepath.Dir(beadsDir)
+	cmd := bdcmd.CommandInDir(filepath.Dir(beadsDir), args...)
 
 	// Set BEADS_DIR so bd finds the configuration and respects storage-backend setting
 	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
@@ -628,8 +625,7 @@ func runConvoyCheck(cmd *cobra.Command, args []string) error {
 func checkSingleConvoy(townBeads, convoyID string, dryRun bool) error {
 	// Get convoy details
 	showArgs := []string{"show", convoyID, "--json"}
-	showCmd := exec.Command("bd", showArgs...)
-	showCmd.Dir = townBeads
+	showCmd := bdcmd.CommandInDir(townBeads, showArgs...)
 	var stdout bytes.Buffer
 	showCmd.Stdout = &stdout
 
@@ -695,8 +691,7 @@ func checkSingleConvoy(townBeads, convoyID string, dryRun bool) error {
 
 	// Actually close the convoy
 	closeArgs := []string{"close", convoyID, "-r", "All tracked issues completed"}
-	closeCmd := exec.Command("bd", closeArgs...)
-	closeCmd.Dir = townBeads
+	closeCmd := bdcmd.CommandInDir(townBeads, closeArgs...)
 
 	if err := closeCmd.Run(); err != nil {
 		return fmt.Errorf("closing convoy: %w", err)
@@ -1057,7 +1052,7 @@ func getBlockedIssueIDs() map[string]bool {
 	blocked := make(map[string]bool)
 
 	// Run bd blocked --json
-	blockedCmd := exec.Command("bd", "blocked", "--json")
+	blockedCmd := bdcmd.Command("blocked", "--json")
 	var stdout bytes.Buffer
 	blockedCmd.Stdout = &stdout
 
@@ -1556,8 +1551,7 @@ func getTrackedIssues(townBeads, convoyID string) []trackedIssueInfo {
 	// Use bd dep list to get tracked dependencies
 	// Run from town root (parent of .beads) so bd routes correctly
 	townRoot := filepath.Dir(townBeads)
-	depCmd := exec.Command("bd", "dep", "list", convoyID, "--direction=down", "--type=tracks", "--json")
-	depCmd.Dir = townRoot
+	depCmd := bdcmd.CommandInDir(townRoot, "dep", "list", convoyID, "--direction=down", "--type=tracks", "--json")
 
 	var stdout bytes.Buffer
 	depCmd.Stdout = &stdout
@@ -1628,8 +1622,7 @@ func getExternalIssueDetails(townBeads, rigName, issueID string) *issueDetails {
 
 	// Query the rig database by running bd show from the rig directory
 	// Use --allow-stale to handle cases where JSONL and DB are out of sync
-	showCmd := exec.Command("bd", "show", issueID, "--json", "--allow-stale")
-	showCmd.Dir = rigDir // Set working directory to rig directory
+	showCmd := bdcmd.CommandInDir(rigDir, "show", issueID, "--json", "--allow-stale")
 	var stdout bytes.Buffer
 	showCmd.Stdout = &stdout
 
@@ -1686,7 +1679,7 @@ func getIssueDetailsBatch(issueIDs []string) map[string]*issueDetails {
 	args := append([]string{"show"}, issueIDs...)
 	args = append(args, "--json")
 
-	showCmd := exec.Command("bd", args...)
+	showCmd := bdcmd.Command(args...)
 	var stdout bytes.Buffer
 	showCmd.Stdout = &stdout
 
@@ -1730,7 +1723,7 @@ func getIssueDetailsBatch(issueIDs []string) map[string]*issueDetails {
 func getIssueDetails(issueID string) *issueDetails {
 	// Use bd show with routing - it should find the issue in the right rig
 	// Use --no-daemon to ensure fresh data (avoid stale cache)
-	showCmd := exec.Command("bd", "show", issueID, "--json")
+	showCmd := bdcmd.Command("show", issueID, "--json")
 	var stdout bytes.Buffer
 	showCmd.Stdout = &stdout
 

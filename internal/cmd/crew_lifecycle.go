@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
@@ -131,8 +132,7 @@ func runCrewRemove(cmd *cobra.Command, args []string) error {
 		if crewPurge {
 			// --purge: DELETE the agent bead entirely (obliterate)
 			deleteArgs := []string{"delete", agentBeadID, "--force"}
-			deleteCmd := exec.Command("bd", deleteArgs...)
-			deleteCmd.Dir = r.Path
+			deleteCmd := bdcmd.CommandInDir(r.Path, deleteArgs...)
 			if output, err := deleteCmd.CombinedOutput(); err != nil {
 				// Non-fatal: bead might not exist
 				if !strings.Contains(string(output), "no issue found") &&
@@ -146,16 +146,14 @@ func runCrewRemove(cmd *cobra.Command, args []string) error {
 			// Unassign any beads assigned to this crew member
 			agentAddr := fmt.Sprintf("%s/crew/%s", r.Name, name)
 			unassignArgs := []string{"list", "--assignee=" + agentAddr, "--format=id"}
-			unassignCmd := exec.Command("bd", unassignArgs...)
-			unassignCmd.Dir = r.Path
+			unassignCmd := bdcmd.CommandInDir(r.Path, unassignArgs...)
 			if output, err := unassignCmd.CombinedOutput(); err == nil {
 				ids := strings.Fields(strings.TrimSpace(string(output)))
 				for _, id := range ids {
 					if id == "" {
 						continue
 					}
-					updateCmd := exec.Command("bd", "update", id, "--unassign")
-					updateCmd.Dir = r.Path
+					updateCmd := bdcmd.CommandInDir(r.Path, "update", id, "--unassign")
 					if _, err := updateCmd.CombinedOutput(); err == nil {
 						fmt.Printf("Unassigned: %s\n", id)
 					}
@@ -174,8 +172,7 @@ func runCrewRemove(cmd *cobra.Command, args []string) error {
 			if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
 				closeArgs = append(closeArgs, "--session="+sessionID)
 			}
-			closeCmd := exec.Command("bd", closeArgs...)
-			closeCmd.Dir = r.Path
+			closeCmd := bdcmd.CommandInDir(r.Path, closeArgs...)
 			if output, err := closeCmd.CombinedOutput(); err != nil {
 				// Non-fatal: bead might not exist or already be closed
 				if !strings.Contains(string(output), "no issue found") &&

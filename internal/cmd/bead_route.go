@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/style"
 )
 
@@ -148,7 +148,7 @@ func runRouteAdd(cmd *cobra.Command, args []string) error {
 		createArgs = append(createArgs, "--prefix", "hq-")
 	}
 
-	createCmd := exec.Command("bd", createArgs...)
+	createCmd := bdcmd.Command(createArgs...)
 	createCmd.Stderr = os.Stderr
 	output, err := createCmd.Output()
 	if err != nil {
@@ -188,7 +188,7 @@ func runRouteRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Close the route bead
-	closeCmd := exec.Command("bd", "close", found.ID, "--reason", "Route removed")
+	closeCmd := bdcmd.Command("close", found.ID, "--reason", "Route removed")
 	closeCmd.Stderr = os.Stderr
 	if err := closeCmd.Run(); err != nil {
 		return fmt.Errorf("closing route bead: %w", err)
@@ -238,7 +238,7 @@ func runRouteList(cmd *cobra.Command, args []string) error {
 // queryRoutes queries all route-type beads and extracts their metadata
 func queryRoutes() ([]routeInfo, error) {
 	// Query route beads via bd list
-	listCmd := exec.Command("bd", "list", "--type=route", "--json")
+	listCmd := bdcmd.Command("list", "--type=route", "--json")
 	output, err := listCmd.Output()
 	if err != nil {
 		// If no routes exist, bd list may error or return empty

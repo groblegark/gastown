@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/config"
 )
 
@@ -46,8 +46,7 @@ func LoadRoutes(beadsDir string) ([]Route, error) {
 // Returns routes parsed from beads, or error if unavailable.
 func loadRoutesFromDaemon(beadsDir string) ([]Route, error) {
 	// Run bd list --type=route --json from the beads directory
-	cmd := exec.Command("bd", "list", "--type=route", "--json")
-	cmd.Dir = filepath.Dir(beadsDir) // Run from parent of .beads (the rig dir)
+	cmd := bdcmd.CommandInDir(filepath.Dir(beadsDir), "list", "--type=route", "--json")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("bd list failed: %w", err)

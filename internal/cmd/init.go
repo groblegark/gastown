@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -156,8 +157,7 @@ func registerCustomTypes(workDir string) error {
 	}
 
 	// Try to set custom types
-	cmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-	cmd.Dir = workDir
+	cmd := bdcmd.CommandInDir(workDir, "config", "set", "types.custom", constants.BeadsCustomTypes)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Check for common expected errors
@@ -171,8 +171,7 @@ func registerCustomTypes(workDir string) error {
 
 	// Disable contributor routing to use gastown's rig-based routing instead
 	// This prevents issues being routed to ~/.beads-planning
-	routingCmd := exec.Command("bd", "config", "set", "routing.mode", "direct")
-	routingCmd.Dir = workDir
+	routingCmd := bdcmd.CommandInDir(workDir, "config", "set", "routing.mode", "direct")
 	_, _ = routingCmd.CombinedOutput() // Ignore errors - not critical
 
 	return nil

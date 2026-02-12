@@ -2,10 +2,10 @@ package cmd
 
 import (
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 )
 
 var closeCmd = &cobra.Command{
@@ -51,7 +51,7 @@ func runClose(cmd *cobra.Command, args []string) error {
 
 	// Build bd close command with all args passed through
 	bdArgs := append([]string{"close"}, convertedArgs...)
-	bdCmd := exec.Command("bd", bdArgs...)
+	bdCmd := bdcmd.Command(bdArgs...)
 	bdCmd.Stdin = os.Stdin
 	bdCmd.Stdout = os.Stdout
 	bdCmd.Stderr = os.Stderr

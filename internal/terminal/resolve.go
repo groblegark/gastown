@@ -3,9 +3,9 @@ package terminal
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
@@ -148,7 +148,7 @@ func parseSSHConfig(output string) (*SSHConfig, error) {
 // Backend metadata (backend, coop_url, ssh_host, etc.) is stored in the notes
 // field as key: value pairs, one per line.
 func getAgentNotes(agentID string) (string, error) {
-	cmd := exec.Command("bd", "show", agentID, "--json") //nolint:gosec // args are constructed internally
+	cmd := bdcmd.Command("show", agentID, "--json")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("bd show failed: %w", err)

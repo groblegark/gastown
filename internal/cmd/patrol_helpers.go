@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/style"
 	"golang.org/x/text/cases"
@@ -37,8 +38,7 @@ type PatrolConfig struct {
 func findActivePatrol(cfg PatrolConfig) (patrolID, patrolLine string, found bool) {
 	// Check for in-progress patrol first (if configured)
 	if cfg.CheckInProgress {
-		cmdList := exec.Command("bd", "list", "--status=in_progress", "--type=epic")
-		cmdList.Dir = cfg.BeadsDir
+		cmdList := bdcmd.CommandInDir(cfg.BeadsDir, "list", "--status=in_progress", "--type=epic")
 		var stdoutList, stderrList bytes.Buffer
 		cmdList.Stdout = &stdoutList
 		cmdList.Stderr = &stderrList
@@ -61,8 +61,7 @@ func findActivePatrol(cfg PatrolConfig) (patrolID, patrolLine string, found bool
 	}
 
 	// Check for open patrols with open children (active wisp)
-	cmdOpen := exec.Command("bd", "list", "--status=open", "--type=epic")
-	cmdOpen.Dir = cfg.BeadsDir
+	cmdOpen := bdcmd.CommandInDir(cfg.BeadsDir, "list", "--status=open", "--type=epic")
 	var stdoutOpen, stderrOpen bytes.Buffer
 	cmdOpen.Stdout = &stdoutOpen
 	cmdOpen.Stderr = &stderrOpen
@@ -79,8 +78,7 @@ func findActivePatrol(cfg PatrolConfig) (patrolID, patrolLine string, found bool
 				if len(parts) > 0 {
 					molID := parts[0]
 					// Check if this molecule has open children
-					cmdShow := exec.Command("bd", "show", molID)
-					cmdShow.Dir = cfg.BeadsDir
+					cmdShow := bdcmd.CommandInDir(cfg.BeadsDir, "show", molID)
 					var stdoutShow, stderrShow bytes.Buffer
 					cmdShow.Stdout = &stdoutShow
 					cmdShow.Stderr = &stderrShow
@@ -112,8 +110,7 @@ func findActivePatrol(cfg PatrolConfig) (patrolID, patrolLine string, found bool
 // Returns the count of wisps cleaned up.
 func cleanupStalePatrolWisps(cfg PatrolConfig) int {
 	// List all hooked wisps of this patrol type
-	cmdList := exec.Command("bd", "list", "--status=hooked", "--type=wisp")
-	cmdList.Dir = cfg.BeadsDir
+	cmdList := bdcmd.CommandInDir(cfg.BeadsDir, "list", "--status=hooked", "--type=wisp")
 	var stdout, stderr bytes.Buffer
 	cmdList.Stdout = &stdout
 	cmdList.Stderr = &stderr
@@ -137,8 +134,7 @@ func cleanupStalePatrolWisps(cfg PatrolConfig) int {
 		wispID := parts[0]
 
 		// Check if this wisp has open/in_progress children
-		cmdShow := exec.Command("bd", "show", wispID)
-		cmdShow.Dir = cfg.BeadsDir
+		cmdShow := bdcmd.CommandInDir(cfg.BeadsDir, "show", wispID)
 		var showOut, showErr bytes.Buffer
 		cmdShow.Stdout = &showOut
 		cmdShow.Stderr = &showErr
@@ -157,8 +153,7 @@ func cleanupStalePatrolWisps(cfg PatrolConfig) int {
 		}
 
 		// Close the stale wisp (all children are done)
-		cmdClose := exec.Command("bd", "close", wispID)
-		cmdClose.Dir = cfg.BeadsDir
+		cmdClose := bdcmd.CommandInDir(cfg.BeadsDir, "close", wispID)
 		if err := cmdClose.Run(); err == nil {
 			cleaned++
 		}
@@ -208,8 +203,7 @@ func autoSpawnPatrol(cfg PatrolConfig) (string, error) {
 	}
 
 	// Create the patrol wisp with JSON output for reliable parsing
-	cmdSpawn := exec.Command("bd", "mol", "wisp", "create", protoID, "--actor", cfg.RoleName, "--json")
-	cmdSpawn.Dir = cfg.BeadsDir
+	cmdSpawn := bdcmd.CommandInDir(cfg.BeadsDir, "mol", "wisp", "create", protoID, "--actor", cfg.RoleName, "--json")
 	var stdoutSpawn, stderrSpawn bytes.Buffer
 	cmdSpawn.Stdout = &stdoutSpawn
 	cmdSpawn.Stderr = &stderrSpawn
@@ -230,8 +224,7 @@ func autoSpawnPatrol(cfg PatrolConfig) (string, error) {
 	}
 
 	// Hook the wisp to the agent so gt mol status sees it
-	cmdPin := exec.Command("bd", "update", patrolID, "--status=hooked", "--assignee="+cfg.Assignee)
-	cmdPin.Dir = cfg.BeadsDir
+	cmdPin := bdcmd.CommandInDir(cfg.BeadsDir, "update", patrolID, "--status=hooked", "--assignee="+cfg.Assignee)
 	if err := cmdPin.Run(); err != nil {
 		return patrolID, fmt.Errorf("created wisp %s but failed to hook", patrolID)
 	}
@@ -322,8 +315,7 @@ func setPatrolAgentHookSlot(patrolID string, cfg PatrolConfig) {
 		return
 	}
 
-	cmdHookSlot := exec.Command("bd", "slot", "set", agentBeadID, "hook", patrolID)
-	cmdHookSlot.Dir = cfg.BeadsDir
+	cmdHookSlot := bdcmd.CommandInDir(cfg.BeadsDir, "slot", "set", agentBeadID, "hook", patrolID)
 	if err := cmdHookSlot.Run(); err != nil {
 		// Non-fatal: the work is still hooked (status=hooked), but the agent bead's hook slot
 		// might not be updated. Log but continue - bd slot set can fail for cross-database scenarios.

@@ -4,10 +4,10 @@ package deacon
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -124,8 +124,7 @@ func ScanStaleHooks(townRoot string, cfg *StaleHookConfig) (*StaleHookScanResult
 
 // listHookedBeads returns all beads with status=hooked.
 func listHookedBeads(townRoot string) ([]*HookedBead, error) {
-	cmd := exec.Command("bd", "list", "--status=hooked", "--json", "--limit=0")
-	cmd.Dir = townRoot
+	cmd := bdcmd.CommandInDir(townRoot, "list", "--status=hooked", "--json", "--limit=0")
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -191,7 +190,5 @@ func assigneeToSessionName(assignee string) string {
 
 // unhookBead sets a bead's status back to 'open'.
 func unhookBead(townRoot, beadID string) error {
-	cmd := exec.Command("bd", "update", beadID, "--status=open")
-	cmd.Dir = townRoot
-	return cmd.Run()
+	return bdcmd.CommandInDir(townRoot, "update", beadID, "--status=open").Run()
 }

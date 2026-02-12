@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -25,8 +26,7 @@ func getOjJobIDForPolecat(townRoot, rigName, polecatName string) string {
 	}
 
 	// Get hook_bead from agent bead via bd slot get
-	cmd := exec.Command("bd", "slot", "get", agentBeadID, "hook")
-	cmd.Dir = townRoot
+	cmd := bdcmd.CommandInDir(townRoot, "slot", "get", agentBeadID, "hook")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -42,7 +42,7 @@ func getOjJobIDForPolecat(townRoot, rigName, polecatName string) string {
 // getOjJobIDFromBead reads the oj_job_id from a bead's description.
 // Returns empty string if not found or on error.
 func getOjJobIDFromBead(beadID string) string {
-	cmd := exec.Command("bd", "show", beadID, "--json", "--allow-stale")
+	cmd := bdcmd.Command("show", beadID, "--json", "--allow-stale")
 	if townRoot, err := workspace.FindFromCwd(); err == nil {
 		cmd.Dir = townRoot
 	}

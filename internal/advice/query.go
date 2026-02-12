@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/bdcmd"
 )
 
 // AdviceBead represents an advice bead from bd advice list --json.
@@ -37,7 +39,7 @@ func QueryHooks(agentID, trigger string) ([]*Hook, error) {
 	}
 
 	// Run bd advice list --for=<agent> --json
-	cmd := exec.Command("bd", "advice", "list", "--for="+agentID, "--json")
+	cmd := bdcmd.Command("advice", "list", "--for="+agentID, "--json")
 	output, err := cmd.Output()
 	if err != nil {
 		// Check if it's just no advice found (empty result)

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/daemon"
 )
@@ -84,8 +85,7 @@ func (c *RepoFingerprintCheck) Run(ctx *CheckContext) *CheckResult {
 // checkBeadsDir checks a single beads directory for repo fingerprint using bd doctor.
 func (c *RepoFingerprintCheck) checkBeadsDir(workDir, location string) *CheckResult {
 	// Run bd doctor --json to get fingerprint status
-	cmd := exec.Command("bd", "doctor", "--json")
-	cmd.Dir = workDir
+	cmd := bdcmd.CommandInDir(workDir, "doctor", "--json")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -163,8 +163,7 @@ func (c *RepoFingerprintCheck) Fix(ctx *CheckContext) error {
 	}
 
 	// Run bd migrate --update-repo-id
-	cmd := exec.Command("bd", "migrate", "--update-repo-id")
-	cmd.Dir = filepath.Dir(c.beadsDir) // Parent of .beads directory
+	cmd := bdcmd.CommandInDir(filepath.Dir(c.beadsDir), "migrate", "--update-repo-id")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

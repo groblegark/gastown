@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 )
 
@@ -143,8 +143,7 @@ func (c *WispGCCheck) Fix(checkCtx *CheckContext) error {
 		// Run bd mol wisp gc with timeout to prevent hanging when Dolt is slow.
 		// This was a major cause of deacon dogs getting stuck for hours.
 		ctx, cancel := context.WithTimeout(context.Background(), wispGCTimeout)
-		cmd := exec.CommandContext(ctx, "bd", "mol", "wisp", "gc")
-		cmd.Dir = rigPath
+		cmd := bdcmd.CommandContextInDir(ctx, rigPath, "mol", "wisp", "gc")
 		output, err := cmd.CombinedOutput()
 		cancel()
 		if err != nil {

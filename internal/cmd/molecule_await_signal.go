@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/style"
 )
@@ -245,8 +245,7 @@ func calculateEffectiveTimeout(idleCycles int) (time.Duration, error) {
 // Returns immediately when a line is received, or when context is canceled.
 func waitForActivitySignal(ctx context.Context, workDir string) (*AwaitSignalResult, error) {
 	// Start bd activity --follow
-	cmd := exec.CommandContext(ctx, "bd", "activity", "--follow")
-	cmd.Dir = workDir
+	cmd := bdcmd.CommandContextInDir(ctx, workDir, "activity", "--follow")
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -329,7 +328,7 @@ func parseIntSimple(s string) (int, error) {
 // updateAgentHeartbeat updates the last_activity timestamp on an agent bead.
 // This proves the agent is alive and processing signals.
 func updateAgentHeartbeat(agentBead, beadsDir string) error {
-	cmd := exec.Command("bd", "agent", "heartbeat", agentBead)
+	cmd := bdcmd.Command("agent", "heartbeat", agentBead)
 	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 	return cmd.Run()
 }
@@ -362,7 +361,7 @@ func setAgentIdleCycles(agentBead, beadsDir string, cycles int) error {
 		args = append(args, "--set-labels="+label)
 	}
 
-	cmd := exec.Command("bd", args...)
+	cmd := bdcmd.Command(args...)
 	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 
 	if err := cmd.Run(); err != nil {

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/steveyegge/gastown/internal/bdcmd"
 )
 
 // MinBeadsVersion is the minimum required beads version for Gas Town.
@@ -95,7 +97,7 @@ func getBeadsVersion() (string, error) {
 	defer cancel()
 
 	// Version check doesn't need database access, so it's fast and reliable.
-	cmd := exec.CommandContext(ctx, "bd", "version")
+	cmd := bdcmd.CommandContext(ctx, "version")
 	output, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {

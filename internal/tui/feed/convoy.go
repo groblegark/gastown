@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 )
 
@@ -94,8 +94,7 @@ func listConvoys(beadsDir, status string) ([]convoyListItem, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), convoySubprocessTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "bd", listArgs...) //nolint:gosec // G204: args are constructed internally
-	cmd.Dir = beadsDir
+	cmd := bdcmd.CommandContextInDir(ctx, beadsDir, listArgs...)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
@@ -199,7 +198,7 @@ func getIssueStatus(issueID string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), convoySubprocessTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "bd", "show", issueID, "--json")
+	cmd := bdcmd.CommandContext(ctx, "show", issueID, "--json")
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 

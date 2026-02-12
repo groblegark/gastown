@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 )
 
@@ -212,8 +212,7 @@ func (c *CheckMisclassifiedWisps) Fix(ctx *CheckContext) error {
 		}
 
 		// Run bd update <id> --ephemeral
-		cmd := exec.Command("bd", "update", wisp.id, "--ephemeral")
-		cmd.Dir = workDir
+		cmd := bdcmd.CommandInDir(workDir, "update", wisp.id, "--ephemeral")
 		if output, err := cmd.CombinedOutput(); err != nil {
 			lastErr = fmt.Errorf("%s/%s: %v (%s)", wisp.rigName, wisp.id, err, string(output))
 		}

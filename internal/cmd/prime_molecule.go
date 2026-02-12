@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/deacon"
@@ -31,8 +31,7 @@ type MoleculeCurrentOutput struct {
 // with execution instructions. This is the core of the Propulsion Principle.
 func showMoleculeExecutionPrompt(workDir, moleculeID string) {
 	// Call bd mol current with JSON output
-	cmd := exec.Command("bd", "mol", "current", moleculeID, "--json")
-	cmd.Dir = workDir
+	cmd := bdcmd.CommandInDir(workDir, "mol", "current", moleculeID, "--json")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

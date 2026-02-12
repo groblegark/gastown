@@ -3,8 +3,9 @@ package validator
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/bdcmd"
 )
 
 // SchemaBeadValidator validates decisions against schema beads.
@@ -64,7 +65,7 @@ func ValidateAgainstSchema(schemaName string, context map[string]interface{}) Va
 // loadSchemaBead retrieves a schema bead by name.
 func loadSchemaBead(name string) (*SchemaBead, error) {
 	// Query beads with gt:schema and schema:name:<name> labels
-	output, err := exec.Command("bd", "list", "-l", "gt:schema", "-l", fmt.Sprintf("schema:name:%s", name), "--json").Output()
+	output, err := bdcmd.Command("list", "-l", "gt:schema", "-l", fmt.Sprintf("schema:name:%s", name), "--json").Output()
 	if err != nil {
 		return nil, fmt.Errorf("bd list failed: %w", err)
 	}
@@ -121,6 +122,6 @@ func IncrementSchemaUsage(schemaName string) error {
 
 	// Add/update usage count label
 	// For simplicity, we'll just add a new label each time (could dedupe later)
-	_, err = exec.Command("bd", "update", schema.ID, "-l", "schema:used").Output()
+	_, err = bdcmd.Command("update", schema.ID, "-l", "schema:used").Output()
 	return err
 }

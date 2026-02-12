@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/steveyegge/gastown/internal/bdcmd"
 )
 
 // PodInfo contains information about an agent's K8s pod.
@@ -71,7 +72,7 @@ func (s *CLIPodSource) ListPods(ctx context.Context) ([]*PodInfo, error) {
 	if s.Rig != "" {
 		args = append(args, "--rig="+s.Rig)
 	}
-	cmd := exec.CommandContext(ctx, "bd", args...) //nolint:gosec // args are constructed internally
+	cmd := bdcmd.CommandContext(ctx, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("bd agent pod-list: %w", err)

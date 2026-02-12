@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/style"
 )
 
@@ -106,7 +106,7 @@ func runBeadMove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get source bead details
-	showCmd := exec.Command("bd", "show", sourceID, "--json")
+	showCmd := bdcmd.Command("show", sourceID, "--json")
 	output, err := showCmd.Output()
 	if err != nil {
 		return fmt.Errorf("getting bead %s: %w", sourceID, err)
@@ -159,7 +159,7 @@ func runBeadMove(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create the new bead
-	createCmd := exec.Command("bd", createArgs...)
+	createCmd := bdcmd.Command(createArgs...)
 	createCmd.Stderr = os.Stderr
 	newIDBytes, err := createCmd.Output()
 	if err != nil {
@@ -171,7 +171,7 @@ func runBeadMove(cmd *cobra.Command, args []string) error {
 
 	// Close the source bead with reference
 	closeReason := fmt.Sprintf("Moved to %s", newID)
-	closeCmd := exec.Command("bd", "close", sourceID, "--reason", closeReason)
+	closeCmd := bdcmd.Command("close", sourceID, "--reason", closeReason)
 	closeCmd.Stderr = os.Stderr
 	if err := closeCmd.Run(); err != nil {
 		// Try to clean up the new bead if close fails

@@ -2,8 +2,9 @@ package mail
 
 import (
 	"bytes"
-	"os/exec"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/bdcmd"
 )
 
 // bdError represents an error from running a bd command.
@@ -46,7 +47,7 @@ func runBdCommand(args []string, workDir, beadsDir string, extraEnv ...string) (
 	// Use the daemon for connection pooling. Previous --no-daemon was causing
 	// massive connection churn (~17 connections/second with 32 agents).
 	// See: hq-i97ri for the fix, hq-vvbubs/hq-33lwcx for original daemon issues.
-	cmd := exec.Command("bd", args...) //nolint:gosec // G204: bd is a trusted internal tool
+	cmd := bdcmd.Command(args...)
 	// Don't set cmd.Dir - use current directory to avoid daemon timeout issue
 
 	// Only set BEADS_DIR if explicitly provided. When empty, bd uses prefix-based

@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/style"
 )
@@ -217,7 +217,7 @@ func modifyAgentState(agentBead, beadsDir string, hasIncr bool) error {
 	}
 
 	// Execute bd update
-	cmd := exec.Command("bd", args...)
+	cmd := bdcmd.Command(args...)
 	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 
 	var stderr bytes.Buffer
@@ -261,7 +261,7 @@ func getAgentLabels(agentBead, beadsDir string) (map[string]string, error) {
 func getAllAgentLabels(agentBead, beadsDir string) ([]string, error) {
 	args := []string{"show", agentBead, "--json"}
 
-	cmd := exec.Command("bd", args...)
+	cmd := bdcmd.Command(args...)
 	cmd.Env = append(os.Environ(), "BEADS_DIR="+beadsDir)
 
 	var stdout, stderr bytes.Buffer

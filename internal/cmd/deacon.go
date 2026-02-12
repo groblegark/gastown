@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
@@ -1067,8 +1068,7 @@ func agentAddressToIDs(address string) (beadID, sessionName string, err error) {
 
 // getAgentBeadUpdateTime gets the update time from an agent bead.
 func getAgentBeadUpdateTime(townRoot, beadID string) (time.Time, error) {
-	cmd := exec.Command("bd", "show", beadID, "--json")
-	cmd.Dir = townRoot
+	cmd := bdcmd.CommandInDir(townRoot, "show", beadID, "--json")
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -1104,8 +1104,7 @@ func updateAgentBeadState(townRoot, agent, state, _ string) { // reason unused b
 	}
 
 	// Use bd agent state command
-	cmd := exec.Command("bd", "agent", "state", beadID, state)
-	cmd.Dir = townRoot
+	cmd := bdcmd.CommandInDir(townRoot, "agent", "state", beadID, state)
 	_ = cmd.Run() // Best effort
 }
 

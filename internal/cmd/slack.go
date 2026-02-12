@@ -14,6 +14,7 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/slack"
 	"github.com/steveyegge/gastown/internal/slackbot"
 	"github.com/steveyegge/gastown/internal/style"
@@ -552,7 +553,7 @@ func runSlackMigrate(cmd *cobra.Command, args []string) error {
 	// Sync beads
 	fmt.Println()
 	fmt.Println("Syncing beads...")
-	syncCmd := exec.Command("bd", "sync")
+	syncCmd := bdcmd.Command("sync")
 	syncCmd.Stdout = os.Stdout
 	syncCmd.Stderr = os.Stderr
 	_ = syncCmd.Run()

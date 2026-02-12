@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 )
 
 // Schema represents a decision schema bead
@@ -289,7 +290,7 @@ func runSchemaCreate(cmd *cobra.Command, args []string) error {
 		bdArgs = append(bdArgs, "-l", fmt.Sprintf("schema:intent:%s", truncateLabel(schemaIntent, 50)))
 	}
 
-	output, err := exec.Command("bd", bdArgs...).Output()
+	output, err := bdcmd.Command(bdArgs...).Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return fmt.Errorf("bd create failed: %s", string(exitErr.Stderr))
@@ -327,7 +328,7 @@ func runSchemaCreate(cmd *cobra.Command, args []string) error {
 // listSchemas returns all schemas from beads
 func listSchemas() ([]Schema, error) {
 	// Query beads with gt:schema label
-	output, err := exec.Command("bd", "list", "-l", "gt:schema", "--json").Output()
+	output, err := bdcmd.Command("list", "-l", "gt:schema", "--json").Output()
 	if err != nil {
 		// If no schemas exist, return empty list
 		return []Schema{}, nil

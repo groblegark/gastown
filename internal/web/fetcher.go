@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/steveyegge/gastown/internal/activity"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -49,8 +50,7 @@ func runBdCmd(beadsDir string, args ...string) (*bytes.Buffer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cmdTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "bd", args...)
-	cmd.Dir = beadsDir
+	cmd := bdcmd.CommandContextInDir(ctx, beadsDir, args...)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
@@ -203,7 +203,7 @@ type trackedIssueInfo struct {
 // getTrackedIssues fetches tracked issues for a convoy.
 func (f *LiveConvoyFetcher) getTrackedIssues(convoyID string) []trackedIssueInfo {
 	// Use bd CLI instead of direct sqlite3 access to support both SQLite and Dolt backends
-	cmd := exec.Command("bd", "dep", "list", convoyID, "--json")
+	cmd := bdcmd.Command("dep", "list", convoyID, "--json")
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 

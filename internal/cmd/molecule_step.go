@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -403,8 +404,7 @@ func handleStepContinue(cwd, townRoot, _ string, nextStep *beads.Issue, dryRun b
 	}
 
 	// Pin the next step bead
-	pinCmd := exec.Command("bd", "update", nextStep.ID, "--status=pinned", "--assignee="+agentID)
-	pinCmd.Dir = gitRoot
+	pinCmd := bdcmd.CommandInDir(gitRoot, "update", nextStep.ID, "--status=pinned", "--assignee="+agentID)
 	pinCmd.Stderr = os.Stderr
 	if err := pinCmd.Run(); err != nil {
 		return fmt.Errorf("pinning next step: %w", err)
@@ -482,8 +482,7 @@ func handleParallelSteps(cwd, townRoot, workDir string, steps []*beads.Issue, dr
 	}
 
 	for _, step := range steps {
-		markCmd := exec.Command("bd", "update", step.ID, "--status=in_progress")
-		markCmd.Dir = gitRoot
+		markCmd := bdcmd.CommandInDir(gitRoot, "update", step.ID, "--status=in_progress")
 		markCmd.Stderr = os.Stderr
 		if err := markCmd.Run(); err != nil {
 			style.PrintWarning("could not mark step %s as in_progress: %v", step.ID, err)
@@ -576,8 +575,7 @@ func handleMoleculeComplete(cwd, townRoot, moleculeID string, dryRun bool) error
 		})
 		if err == nil && len(pinnedBeads) > 0 {
 			// Unpin by setting status to open
-			unpinCmd := exec.Command("bd", "update", pinnedBeads[0].ID, "--status=open")
-			unpinCmd.Dir = gitRoot
+			unpinCmd := bdcmd.CommandInDir(gitRoot, "update", pinnedBeads[0].ID, "--status=open")
 			unpinCmd.Stderr = os.Stderr
 			if err := unpinCmd.Run(); err != nil {
 				style.PrintWarning("could not unpin bead: %v", err)

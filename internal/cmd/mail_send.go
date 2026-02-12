@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/mail"
@@ -222,10 +222,10 @@ func emitMailBusEvent(eventType, from, to, subject string) {
 		return
 	}
 
-	cmd := exec.Command("bd", "bus", "emit", "--event", eventType, "--payload", string(payloadJSON)) //nolint:gosec // trusted internal command
+	cmd := bdcmd.Command("bus", "emit", "--event", eventType, "--payload", string(payloadJSON))
 	cmd.Stderr = io.Discard
 	if err := cmd.Run(); err != nil {
-		fallback := exec.Command("bd", "bus", "emit", "--hook", eventType) //nolint:gosec // trusted internal command
+		fallback := bdcmd.Command("bus", "emit", "--hook", eventType)
 		fallback.Stdin = strings.NewReader(string(payloadJSON))
 		fallback.Stderr = io.Discard
 		_ = fallback.Run()

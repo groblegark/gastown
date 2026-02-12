@@ -3,8 +3,9 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/steveyegge/gastown/internal/bdcmd"
 )
 
 // AdviceBead represents an advice issue from beads.
@@ -105,7 +106,7 @@ func buildAgentID(ctx RoleInfo) string {
 // Note: bd advice list --json doesn't include labels (beads bug), so we fetch
 // labels separately using bd show to get proper scope display.
 func queryAdviceForAgent(agentID string) ([]AdviceBead, error) {
-	cmd := exec.Command("bd", "advice", "list", "--for="+agentID, "--json")
+	cmd := bdcmd.Command("advice", "list", "--for="+agentID, "--json")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("bd advice list --for=%s: %w", agentID, err)
@@ -148,7 +149,7 @@ func fetchLabelsForBeads(beads []AdviceBead) error {
 	}
 	args = append(args, "--json")
 
-	cmd := exec.Command("bd", args...)
+	cmd := bdcmd.Command(args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("bd show: %w", err)

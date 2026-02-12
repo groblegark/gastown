@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/slack-go/slack"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/rpcclient"
 )
 
@@ -601,7 +601,7 @@ func (l *BusListener) EmitDecisionResponse(decisionID string, chosenIndex int, c
 	}
 
 	// Fallback: shell out to bd bus emit
-	cmd := exec.Command("bd", "bus", "emit", "--hook=DecisionResponded")
+	cmd := bdcmd.Command("bus", "emit", "--hook=DecisionResponded")
 	cmd.Stdin = bytes.NewReader(data)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("bd bus emit failed: %v: %s", err, string(output))
@@ -613,7 +613,7 @@ func (l *BusListener) EmitDecisionResponse(decisionID string, chosenIndex int, c
 
 // addSlackNotifiedLabel adds the slack_notified label to a decision bead.
 func (l *BusListener) addSlackNotifiedLabel(decisionID string) {
-	if err := exec.Command("bd", "label", "add", decisionID, "slack_notified").Run(); err != nil {
+	if err := bdcmd.Command("label", "add", decisionID, "slack_notified").Run(); err != nil {
 		log.Printf("BusListener: warning: failed to add slack_notified label to %s: %v", decisionID, err)
 	}
 }

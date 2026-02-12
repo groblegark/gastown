@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/steveyegge/gastown/internal/bdcmd"
 )
 
 const (
@@ -769,7 +771,7 @@ func (h *APIHandler) runBdCommand(ctx context.Context, timeout time.Duration, ar
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "bd", args...)
+	cmd := bdcmd.CommandContext(ctx, args...)
 	if h.workDir != "" {
 		cmd.Dir = h.workDir
 	}

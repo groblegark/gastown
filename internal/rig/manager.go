@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
@@ -431,20 +431,17 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 			if townBackend == "dolt" {
 				initArgs = append(initArgs, "--backend", "dolt")
 			}
-			cmd := exec.Command("bd", initArgs...)
-			cmd.Dir = mayorRigPath
+			cmd := bdcmd.CommandInDir(mayorRigPath, initArgs...)
 			if output, err := cmd.CombinedOutput(); err != nil {
 				fmt.Printf("  Warning: Could not init bd database: %v (%s)\n", err, strings.TrimSpace(string(output)))
 			}
 			// Configure custom types for Gas Town (beads v0.46.0+)
 			// IMPORTANT: This must run BEFORE any auto-import to avoid validation failures (bd-3q6.10).
-			configCmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-			configCmd.Dir = mayorRigPath
+			configCmd := bdcmd.CommandInDir(mayorRigPath, "config", "set", "types.custom", constants.BeadsCustomTypes)
 			_, _ = configCmd.CombinedOutput() // Ignore errors - older beads don't need this
 
 			// Trigger JSONL import now that custom types are configured.
-			syncCmd := exec.Command("bd", "sync")
-			syncCmd.Dir = mayorRigPath
+			syncCmd := bdcmd.CommandInDir(mayorRigPath, "sync")
 			_, _ = syncCmd.CombinedOutput() // Ignore errors - JSONL might not exist yet
 		}
 	}
@@ -741,8 +738,7 @@ func (m *Manager) initBeads(rigPath, prefix string) error {
 	if townBackend == "dolt" {
 		initArgs = append(initArgs, "--backend", "dolt")
 	}
-	cmd := exec.Command("bd", initArgs...)
-	cmd.Dir = rigPath
+	cmd := bdcmd.CommandInDir(rigPath, initArgs...)
 	cmd.Env = filteredEnv
 	_, err := cmd.CombinedOutput()
 	if err != nil {
@@ -758,24 +754,21 @@ func (m *Manager) initBeads(rigPath, prefix string) error {
 	// Configure custom types for Gas Town (agent, role, rig, convoy, merge-request, etc).
 	// These were extracted from beads core in v0.46.0 and now require explicit config.
 	// IMPORTANT: This must run BEFORE any auto-import to avoid validation failures (bd-3q6.10).
-	configCmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-	configCmd.Dir = rigPath
+	configCmd := bdcmd.CommandInDir(rigPath, "config", "set", "types.custom", constants.BeadsCustomTypes)
 	configCmd.Env = filteredEnv
 	// Ignore errors - older beads versions don't need this
 	_, _ = configCmd.CombinedOutput()
 
 	// Trigger JSONL import now that custom types are configured.
 	// bd import will import from issues.jsonl and validate types correctly.
-	syncCmd := exec.Command("bd", "import")
-	syncCmd.Dir = rigPath
+	syncCmd := bdcmd.CommandInDir(rigPath, "import")
 	syncCmd.Env = filteredEnv
 	_, _ = syncCmd.CombinedOutput() // Ignore errors - JSONL might not exist yet
 
 	// Ensure database has repository fingerprint (GH #25).
 	// This is idempotent - safe on both new and legacy (pre-0.17.5) databases.
 	// Without fingerprint, the bd daemon fails to start silently.
-	migrateCmd := exec.Command("bd", "migrate", "--update-repo-id")
-	migrateCmd.Dir = rigPath
+	migrateCmd := bdcmd.CommandInDir(rigPath, "migrate", "--update-repo-id")
 	migrateCmd.Env = filteredEnv
 	// Ignore errors - fingerprint is optional for functionality
 	_, _ = migrateCmd.CombinedOutput()
@@ -1372,8 +1365,7 @@ func (m *Manager) mergeHookMatcher(matchers []claudeHookMatcher, pattern string,
 // These molecules define the work loops for Deacon, Witness, and Refinery roles.
 func (m *Manager) seedPatrolMolecules(rigPath string) error {
 	// Use bd command to seed molecules (more reliable than internal API)
-	cmd := exec.Command("bd", "mol", "seed", "--patrol")
-	cmd.Dir = rigPath
+	cmd := bdcmd.CommandInDir(rigPath, "mol", "seed", "--patrol")
 	if err := cmd.Run(); err != nil {
 		// Fallback: bd mol seed might not support --patrol yet
 		// Try creating them individually via bd create
@@ -1405,21 +1397,19 @@ func (m *Manager) seedPatrolMoleculesManually(rigPath string) error {
 
 	for _, mol := range patrolMols {
 		// Check if already exists by title
-		checkCmd := exec.Command("bd", "list", "--type=molecule", "--format=json")
-		checkCmd.Dir = rigPath
+		checkCmd := bdcmd.CommandInDir(rigPath, "list", "--type=molecule", "--format=json")
 		output, _ := checkCmd.Output()
 		if strings.Contains(string(output), mol.title) {
 			continue // Already exists
 		}
 
 		// Create the molecule
-		cmd := exec.Command("bd", "create", //nolint:gosec // G204: bd is a trusted internal tool
+		cmd := bdcmd.CommandInDir(rigPath, "create",
 			"--type=molecule",
 			"--title="+mol.title,
 			"--description="+mol.desc,
 			"--priority=2",
 		)
-		cmd.Dir = rigPath
 		if err := cmd.Run(); err != nil {
 			// Non-fatal, continue with others
 			continue

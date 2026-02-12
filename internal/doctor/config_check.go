@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/constants"
 )
 
@@ -702,8 +703,7 @@ func (c *CustomTypesCheck) Run(ctx *CheckContext) *CheckResult {
 
 	// Get current custom types configuration
 	// Use Output() not CombinedOutput() to avoid capturing bd's stderr messages
-	cmd := exec.Command("bd", "config", "get", "types.custom")
-	cmd.Dir = ctx.TownRoot
+	cmd := bdcmd.CommandInDir(ctx.TownRoot, "config", "get", "types.custom")
 	output, err := cmd.Output()
 	if err != nil {
 		// If config key doesn't exist, types are not configured
@@ -775,8 +775,7 @@ func parseConfigOutput(output []byte) string {
 
 // Fix registers the missing custom types.
 func (c *CustomTypesCheck) Fix(ctx *CheckContext) error {
-	cmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-	cmd.Dir = c.townRoot
+	cmd := bdcmd.CommandInDir(c.townRoot, "config", "set", "types.custom", constants.BeadsCustomTypes)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("bd config set types.custom: %s", strings.TrimSpace(string(output)))

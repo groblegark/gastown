@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -486,8 +486,7 @@ func querySessionEventsFromLocation(location string) ([]CostEntry, error) {
 		"--json",
 	}
 
-	listCmd := exec.Command("bd", listArgs...)
-	listCmd.Dir = location
+	listCmd := bdcmd.CommandInDir(location, listArgs...)
 	listOutput, err := listCmd.Output()
 	if err != nil {
 		// If bd fails (e.g., no beads database), return empty list
@@ -510,8 +509,7 @@ func querySessionEventsFromLocation(location string) ([]CostEntry, error) {
 		showArgs = append(showArgs, item.ID)
 	}
 
-	showCmd := exec.Command("bd", showArgs...)
-	showCmd.Dir = location
+	showCmd := bdcmd.CommandInDir(location, showArgs...)
 	showOutput, err := showCmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("showing events: %w", err)
@@ -570,7 +568,7 @@ func queryDigestBeads(days int) ([]CostEntry, error) {
 		"--json",
 	}
 
-	listCmd := exec.Command("bd", listArgs...)
+	listCmd := bdcmd.Command(listArgs...)
 	listOutput, err := listCmd.Output()
 	if err != nil {
 		return nil, nil
@@ -591,7 +589,7 @@ func queryDigestBeads(days int) ([]CostEntry, error) {
 		showArgs = append(showArgs, item.ID)
 	}
 
-	showCmd := exec.Command("bd", showArgs...)
+	showCmd := bdcmd.Command(showArgs...)
 	showOutput, err := showCmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("showing events: %w", err)
@@ -1312,7 +1310,7 @@ func createCostDigestBead(digest CostDigest) (string, error) {
 		"--silent",
 	}
 
-	bdCmd := exec.Command("bd", bdArgs...)
+	bdCmd := bdcmd.Command(bdArgs...)
 	output, err := bdCmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("creating digest bead: %w\nOutput: %s", err, string(output))
@@ -1321,7 +1319,7 @@ func createCostDigestBead(digest CostDigest) (string, error) {
 	digestID := strings.TrimSpace(string(output))
 
 	// Auto-close the digest (it's an audit record, not work)
-	closeCmd := exec.Command("bd", "close", digestID, "--reason=daily cost digest")
+	closeCmd := bdcmd.Command("close", digestID, "--reason=daily cost digest")
 	_ = closeCmd.Run() // Best effort
 
 	return digestID, nil
@@ -1397,7 +1395,7 @@ func runCostsMigrate(cmd *cobra.Command, args []string) error {
 		"--json",
 	}
 
-	listCmd := exec.Command("bd", listArgs...)
+	listCmd := bdcmd.Command(listArgs...)
 	listOutput, err := listCmd.Output()
 	if err != nil {
 		fmt.Println(style.Dim.Render("No events found or bd command failed"))
@@ -1420,7 +1418,7 @@ func runCostsMigrate(cmd *cobra.Command, args []string) error {
 		showArgs = append(showArgs, item.ID)
 	}
 
-	showCmd := exec.Command("bd", showArgs...)
+	showCmd := bdcmd.Command(showArgs...)
 	showOutput, err := showCmd.Output()
 	if err != nil {
 		return fmt.Errorf("showing events: %w", err)
@@ -1465,7 +1463,7 @@ func runCostsMigrate(cmd *cobra.Command, args []string) error {
 	// Close all open session.ended events
 	closedMigrated := 0
 	for _, event := range openEvents {
-		closeCmd := exec.Command("bd", "close", event.ID, "--reason=migrated to log-file architecture")
+		closeCmd := bdcmd.Command("close", event.ID, "--reason=migrated to log-file architecture")
 		if err := closeCmd.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not close %s: %v\n", event.ID, err)
 			continue

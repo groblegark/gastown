@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/boot"
 	"github.com/steveyegge/gastown/internal/config"
@@ -1114,9 +1115,7 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 // getOjJobIDFromBead reads the oj_job_id from a work bead's description.
 // Returns empty string if not found or on error.
 func (d *Daemon) getOjJobIDFromBead(beadID string) string {
-	cmd := exec.Command("bd", "show", beadID, "--json", "--allow-stale")
-	cmd.Dir = d.config.TownRoot
-	cmd.Env = os.Environ()
+	cmd := bdcmd.CommandInDir(d.config.TownRoot, "show", beadID, "--json", "--allow-stale")
 	output, err := cmd.Output()
 	if err != nil {
 		return ""

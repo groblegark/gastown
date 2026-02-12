@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -833,8 +834,7 @@ func (c *BeadsConfigValidCheck) Run(ctx *CheckContext) *CheckResult {
 	}
 
 	// Check if bd command works
-	cmd := exec.Command("bd", "stats", "--json")
-	cmd.Dir = c.rigPath
+	cmd := bdcmd.CommandInDir(c.rigPath, "stats", "--json")
 	if err := cmd.Run(); err != nil {
 		return &CheckResult{
 			Name:    c.Name(),
@@ -1060,8 +1060,7 @@ func (c *BeadsRedirectCheck) Fix(ctx *CheckContext) error {
 		// Run bd init with --no-auto-import to create database WITHOUT importing from JSONL.
 		// This allows us to configure custom types BEFORE the import runs (bd-3q6.10).
 		// Without this, auto-import fails when issues.jsonl contains custom types like merge-request.
-		cmd := exec.Command("bd", "init", "--prefix", prefix, "--no-auto-import")
-		cmd.Dir = rigPath
+		cmd := bdcmd.CommandInDir(rigPath, "init", "--prefix", prefix, "--no-auto-import")
 		if output, err := cmd.CombinedOutput(); err != nil {
 			// bd might not be installed - create minimal config.yaml
 			configPath := filepath.Join(rigBeadsDir, "config.yaml")
@@ -1074,14 +1073,12 @@ func (c *BeadsRedirectCheck) Fix(ctx *CheckContext) error {
 			_ = output // bd init succeeded
 			// Configure custom types for Gas Town (beads v0.46.0+)
 			// IMPORTANT: This must run BEFORE any auto-import to avoid validation failures (bd-3q6.10).
-			configCmd := exec.Command("bd", "config", "set", "types.custom", constants.BeadsCustomTypes)
-			configCmd.Dir = rigPath
+			configCmd := bdcmd.CommandInDir(rigPath, "config", "set", "types.custom", constants.BeadsCustomTypes)
 			_, _ = configCmd.CombinedOutput() // Ignore errors - older beads don't need this
 
 			// Trigger JSONL import now that custom types are configured.
 			// bd import will import from issues.jsonl and validate types correctly.
-			syncCmd := exec.Command("bd", "import")
-			syncCmd.Dir = rigPath
+			syncCmd := bdcmd.CommandInDir(rigPath, "import")
 			_, _ = syncCmd.CombinedOutput() // Ignore errors - JSONL might not exist yet
 		}
 		return nil
