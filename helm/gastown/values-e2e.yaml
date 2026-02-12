@@ -52,7 +52,7 @@ bd-daemon:
     nodeSelector:
       kubernetes.io/arch: amd64
     persistence:
-      storageClass: "gp3"
+      storageClass: "gp2"
       size: 5Gi
     s3:
       enabled: true
@@ -101,7 +101,7 @@ bd-daemon:
       tag: "latest"
     master:
       persistence:
-        storageClass: "gp3"
+        storageClass: "gp2"
         size: 1Gi
     resources:
       requests:
@@ -121,7 +121,7 @@ bd-daemon:
     jetstream:
       maxMemory: 128M
     persistence:
-      storageClass: "gp3"
+      storageClass: "gp2"
       size: 1Gi
     resources:
       requests:
@@ -137,6 +137,8 @@ bd-daemon:
     secretStoreKind: ClusterSecretStore
     secretStoreName: "aws-secretsmanager"
     doltS3Credentials:
+      enabled: true
+    slackBotCredentials:
       enabled: true
 
   # Slack bot — enabled for full E2E coverage
@@ -173,7 +175,7 @@ coopBroker:
     kubernetes.io/arch: amd64
   persistence:
     enabled: true
-    storageClass: "gp3"
+    storageClass: "gp2"
     size: 100Mi
   mux:
     enabled: true
