@@ -74,6 +74,8 @@ MODULES=(
   "agent-credentials"
   "agent-claude-auth"
   "agent-roundtrip"
+  "agent-interaction"
+  "credential-lifecycle"
   "agent-resume"
   "agent-multi"
   "agent-coordination"
