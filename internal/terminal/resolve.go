@@ -10,14 +10,14 @@ import (
 )
 
 // ResolveBackend returns the appropriate Backend for the given agent.
-// Resolution order: Coop (if backend=coop) → SSH (if backend=k8s) → local tmux.
+// All agents are Coop-backed in the K8s-only architecture.
 //
 // The agentID follows the standard format: "rig/polecat" or "rig/crew/name".
 // Backend detection checks the agent bead for a "backend" field set by
 // the K8s pod manager or Coop sidecar deployment.
 func ResolveBackend(agentID string) Backend {
 	// Try the given agentID first, then hq-prefixed form for town-level
-	// shortnames (mayor → hq-mayor, deacon → hq-deacon, etc.).
+	// shortnames (mayor -> hq-mayor, deacon -> hq-deacon, etc.).
 	candidates := []string{agentID}
 	if !strings.Contains(agentID, "/") && !strings.Contains(agentID, "-") {
 		candidates = append(candidates, "hq-"+agentID)
@@ -31,16 +31,11 @@ func ResolveBackend(agentID string) Backend {
 			b.AddSession("claude", coopCfg.baseURL)
 			return b
 		}
-
-		// Check if agent has K8s/SSH backend metadata
-		sshCfg, err := resolveSSHConfig(id)
-		if err == nil && sshCfg != nil {
-			return NewSSHBackend(*sshCfg)
-		}
 	}
 
-	// Default: local tmux
-	return NewTmuxBackend(tmux.NewTmux())
+	// Default: return a Coop backend with no sessions configured.
+	// Callers should check for errors when invoking methods.
+	return NewCoopBackend(CoopConfig{})
 }
 
 // LocalBackend returns a TmuxBackend for local tmux operations.
@@ -96,56 +91,8 @@ func parseCoopConfig(output string) (*coopResolvedConfig, error) {
 	return cfg, nil
 }
 
-// resolveSSHConfig checks agent bead metadata to determine if this agent
-// is K8s-hosted and returns SSH connection config if so.
-//
-// Returns nil if the agent is local or metadata is unavailable.
-func resolveSSHConfig(agentID string) (*SSHConfig, error) {
-	notes, err := getAgentNotes(agentID)
-	if err != nil {
-		return nil, fmt.Errorf("agent bead lookup failed: %w", err)
-	}
-	return parseSSHConfig(notes)
-}
-
-// parseSSHConfig parses SSH connection config from bd show output.
-// Returns nil if the output doesn't indicate a K8s agent.
-func parseSSHConfig(output string) (*SSHConfig, error) {
-	outStr := strings.TrimSpace(output)
-	if outStr == "" || !strings.Contains(outStr, "k8s") {
-		return nil, nil // Not a K8s agent
-	}
-
-	// Parse SSH config from bead metadata
-	// This will be populated by Phase 4's pod manager when creating K8s polecats
-	cfg := &SSHConfig{Port: 22}
-
-	for _, line := range strings.Split(outStr, "\n") {
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
-		switch key {
-		case "ssh_host":
-			cfg.Host = val
-		case "ssh_port":
-			cfg.Port = parsePort(val)
-		case "ssh_key":
-			cfg.IdentityFile = val
-		}
-	}
-
-	if cfg.Host == "" {
-		return nil, fmt.Errorf("K8s agent missing ssh_host in bead metadata")
-	}
-
-	return cfg, nil
-}
-
 // getAgentNotes fetches the notes field from an agent bead via bd show --json.
-// Backend metadata (backend, coop_url, ssh_host, etc.) is stored in the notes
+// Backend metadata (backend, coop_url, etc.) is stored in the notes
 // field as key: value pairs, one per line.
 func getAgentNotes(agentID string) (string, error) {
 	cmd := bdcmd.Command("show", agentID, "--json")
@@ -165,13 +112,4 @@ func getAgentNotes(agentID string) (string, error) {
 		return "", fmt.Errorf("agent bead %q not found", agentID)
 	}
 	return issues[0].Notes, nil
-}
-
-// parsePort parses a port string to int, defaulting to 22.
-func parsePort(s string) int {
-	var port int
-	if _, err := fmt.Sscanf(s, "%d", &port); err != nil || port <= 0 {
-		return 22
-	}
-	return port
 }
