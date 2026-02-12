@@ -238,13 +238,19 @@ type Manager interface {
 
 // K8sManager implements Manager using client-go.
 type K8sManager struct {
-	client kubernetes.Interface
-	logger *slog.Logger
+	client       kubernetes.Interface
+	logger       *slog.Logger
+	resourceCaps ResourceCaps
 }
 
 // New creates a pod manager backed by a K8s client.
 func New(client kubernetes.Interface, logger *slog.Logger) *K8sManager {
 	return &K8sManager{client: client, logger: logger}
+}
+
+// SetResourceCaps configures maximum resource limits for sidecar containers.
+func (m *K8sManager) SetResourceCaps(caps ResourceCaps) {
+	m.resourceCaps = caps
 }
 
 // CreateAgentPod creates a pod for the given agent spec.
@@ -922,20 +928,24 @@ func (m *K8sManager) buildToolchainSidecar(spec AgentPodSpec) corev1.Container {
 }
 
 // buildToolchainResources returns resource requirements for the toolchain sidecar.
+// If resource caps are configured, requested resources are clamped to the caps.
 func (m *K8sManager) buildToolchainResources(tc *ToolchainSidecarSpec) corev1.ResourceRequirements {
+	var reqs corev1.ResourceRequirements
 	if tc.Resources != nil {
-		return *tc.Resources
+		reqs = *tc.Resources
+	} else {
+		reqs = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(ToolchainDefaultCPURequest),
+				corev1.ResourceMemory: resource.MustParse(ToolchainDefaultMemRequest),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(ToolchainDefaultCPULimit),
+				corev1.ResourceMemory: resource.MustParse(ToolchainDefaultMemLimit),
+			},
+		}
 	}
-	return corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse(ToolchainDefaultCPURequest),
-			corev1.ResourceMemory: resource.MustParse(ToolchainDefaultMemRequest),
-		},
-		Limits: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse(ToolchainDefaultCPULimit),
-			corev1.ResourceMemory: resource.MustParse(ToolchainDefaultMemLimit),
-		},
-	}
+	return ClampResources(reqs, m.resourceCaps, m.logger)
 }
 
 // restartPolicyForRole returns the appropriate restart policy.

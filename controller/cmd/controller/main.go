@@ -72,6 +72,9 @@ func main() {
 		logger.Info("using SSE transport for beads events")
 	}
 	pods := podmanager.New(k8sClient, logger)
+	if cfg.SidecarMaxCPU != "" || cfg.SidecarMaxMemory != "" {
+		pods.SetResourceCaps(podmanager.ParseResourceCaps(cfg.SidecarMaxCPU, cfg.SidecarMaxMemory))
+	}
 
 	// Daemon client for HTTP API access (used by reconciler and status reporter).
 	daemon := daemonclient.New(daemonclient.Config{
