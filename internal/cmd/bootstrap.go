@@ -19,11 +19,12 @@ import (
 )
 
 var (
-	bootstrapTownName string
-	bootstrapRigs     []string // "name:prefix:git_url" format
-	bootstrapAgents   []string // "rig:role:name" format
-	bootstrapDryRun   bool
-	bootstrapForce    bool
+	bootstrapTownName  string
+	bootstrapRigs      []string // "name:prefix:git_url" format
+	bootstrapAgents    []string // "rig:role:name" format
+	bootstrapDryRun    bool
+	bootstrapForce     bool
+	bootstrapSeedConfig bool
 )
 
 var bootstrapCmd = &cobra.Command{
@@ -37,7 +38,11 @@ This is the first command to run after 'gt connect' on a new K8s namespace.
 It creates:
   - Town identity config bead
   - Rig beads and route beads for each configured rig
-  - Config beads: hooks, roles, agent presets, messaging, escalation
+  - Config beads: hooks, roles, messaging, escalation, daemon patrol
+
+With --seed-config, it also seeds extended config from embedded defaults:
+  - MCP server configuration
+  - Agent presets and role-agent mappings
 
 Agent beads are NOT created by bootstrap — they are created by the
 controller when it reconciles (bead-first pattern), or by 'gt rig register'
@@ -49,11 +54,16 @@ Examples:
     --rig "beads:bd:https://github.com/org/beads.git" \
     --rig "gastown:gt:https://github.com/org/gastown.git"
 
+  # Bootstrap with full config seeding
+  gt bootstrap --town gastown-next --seed-config
+
   # Dry run to see what would be created
   gt bootstrap --town gastown-next --dry-run
 
 The command is idempotent — safe to run multiple times.
-Existing beads are skipped unless --force is specified.`,
+Existing beads are skipped unless --force is specified.
+
+Note: This command supersedes 'gt config seed' for K8s namespaces.`,
 	RunE: runBootstrap,
 }
 
@@ -65,6 +75,8 @@ func init() {
 		`[testing only] Pre-create agent bead as "rig:role:name" (normally created by controller)`)
 	bootstrapCmd.Flags().BoolVar(&bootstrapDryRun, "dry-run", false, "Show what would be created")
 	bootstrapCmd.Flags().BoolVar(&bootstrapForce, "force", false, "Overwrite existing beads")
+	bootstrapCmd.Flags().BoolVar(&bootstrapSeedConfig, "seed-config", false,
+		"Also seed extended config beads (MCP, agent presets, role-agent mappings)")
 	_ = bootstrapCmd.MarkFlagRequired("town")
 
 	rootCmd.AddCommand(bootstrapCmd)
@@ -123,12 +135,21 @@ func runBootstrap(_ *cobra.Command, _ []string) error {
 		fmt.Println()
 	}
 
-	// Phase 4: Config beads (hooks, roles, agent presets, messaging, escalation)
+	// Phase 4: Config beads (hooks, roles, messaging, escalation, daemon patrol)
 	fmt.Println(style.Bold.Render("Phase 4: Config beads"))
 	if err := bootstrapConfigBeads(bd, townRoot, stats); err != nil {
 		return fmt.Errorf("config beads: %w", err)
 	}
 	fmt.Println()
+
+	// Phase 5: Extended config (--seed-config)
+	if bootstrapSeedConfig {
+		fmt.Println(style.Bold.Render("Phase 5: Extended config (--seed-config)"))
+		if err := bootstrapExtendedConfig(bd, stats); err != nil {
+			return fmt.Errorf("extended config: %w", err)
+		}
+		fmt.Println()
+	}
 
 	// Summary
 	if bootstrapDryRun {
@@ -671,6 +692,74 @@ func bootstrapBead(bd *beads.Beads, id, title, description string, labels []stri
 
 	fmt.Printf("  %s Created %s\n", style.Success.Render("✓"), id)
 	return 1, 0, 0, nil
+}
+
+// bootstrapExtendedConfig seeds additional config beads from embedded defaults.
+// Called when --seed-config flag is passed. Adds MCP config, agent presets,
+// and role-agent mappings that gt config seed would normally create.
+func bootstrapExtendedConfig(bd *beads.Beads, stats *bootstrapStats) error {
+	// MCP config from embedded template
+	mcpContent, err := claude.MCPTemplateContent()
+	if err != nil {
+		// MCP template is optional — skip if not available
+		fmt.Printf("  - Skipped MCP config (no embedded template)\n")
+	} else {
+		var mcpConfig map[string]interface{}
+		if err := json.Unmarshal(mcpContent, &mcpConfig); err != nil {
+			return fmt.Errorf("parsing MCP template: %w", err)
+		}
+		c, s, u, err := bootstrapConfigBead(bd, "mcp-global", beads.ConfigCategoryMCP,
+			"*", "", "", mcpConfig, "Global MCP server configuration")
+		if err != nil {
+			return fmt.Errorf("MCP config bead: %w", err)
+		}
+		stats.add(c, s, u)
+	}
+
+	// Agent presets from built-in config
+	for _, name := range config.ListAgentPresets() {
+		preset := config.GetAgentPresetByName(name)
+		if preset == nil {
+			continue
+		}
+		presetJSON, marshalErr := json.Marshal(preset)
+		if marshalErr != nil {
+			continue
+		}
+		var metadata map[string]interface{}
+		if unmarshalErr := json.Unmarshal(presetJSON, &metadata); unmarshalErr != nil {
+			continue
+		}
+
+		slug := "agent-" + name
+		desc := fmt.Sprintf("Agent preset: %s", name)
+		c, s, u, seedErr := bootstrapConfigBead(bd, slug, beads.ConfigCategoryAgentPreset,
+			"*", "", "", metadata, desc)
+		if seedErr != nil {
+			return fmt.Errorf("agent preset %s: %w", name, seedErr)
+		}
+		stats.add(c, s, u)
+	}
+
+	// Default role-agent mappings
+	roleAgents := map[string]interface{}{
+		"role_agents": map[string]string{
+			"mayor":    "claude-opus",
+			"deacon":   "claude-haiku",
+			"witness":  "claude-haiku",
+			"refinery": "claude-sonnet",
+			"polecat":  "claude-sonnet",
+			"crew":     "claude-sonnet",
+		},
+	}
+	c, s, u, err := bootstrapConfigBead(bd, "role-agents-global", beads.ConfigCategoryAgentPreset,
+		"*", "", "", roleAgents, "Default role-agent mappings")
+	if err != nil {
+		return fmt.Errorf("role-agents mapping: %w", err)
+	}
+	stats.add(c, s, u)
+
+	return nil
 }
 
 func actionLabel(action string) string {

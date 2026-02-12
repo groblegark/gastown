@@ -82,6 +82,13 @@ func init() {
 }
 
 func runConfigSeed(cmd *cobra.Command, args []string) error {
+	// Deprecation warning for K8s namespaces
+	if os.Getenv("BEADS_DOLT_SERVER_MODE") == "1" {
+		fmt.Fprintf(os.Stderr, "%s gt config seed is deprecated for K8s namespaces.\n"+
+			"  Use: gt bootstrap --town <name> --seed-config\n\n",
+			style.Warning.Render("⚠"))
+	}
+
 	townRoot, err := workspace.FindFromCwd()
 	if err != nil {
 		return fmt.Errorf("finding town root: %w", err)
