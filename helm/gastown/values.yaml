@@ -10,6 +10,25 @@ nameOverride: ""
 fullnameOverride: ""
 imagePullSecrets: []
 
+# =============================================================================
+# Registry Pull Secrets (ExternalSecrets for private container registries)
+# =============================================================================
+registrySecrets:
+  enabled: false
+  secretStoreName: "aws-secretsmanager"
+  secretStoreKind: ClusterSecretStore
+  refreshInterval: "1h"
+  registries: {}
+  # registries:
+  #   docker-hub-registry:
+  #     enabled: true
+  #     remoteRef: "shared-devops-docker.io-credentials"
+  #     hosts: ["docker.io", "https://index.docker.io/v1/"]
+  #   gitlab-registry:
+  #     enabled: true
+  #     remoteRef: "shared-e2e-registry.gitlab.com/pihealth/corefics"
+  #     hosts: ["registry.gitlab.com"]
+
 bd-daemon:
   imagePullSecrets: []
 
