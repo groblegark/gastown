@@ -24,6 +24,10 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.coopBroker.persistence.enabled }}
+      securityContext:
+        fsGroup: 1000
+      {{- end }}
       containers:
         - name: coop-broker
           image: "{{ .Values.coopBroker.image.repository }}:{{ .Values.coopBroker.image.tag }}"
