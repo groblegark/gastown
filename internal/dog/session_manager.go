@@ -36,7 +36,7 @@ func NewSessionManager(t *tmux.Tmux, townRoot string) *SessionManager {
 	townName, _ := workspace.GetTownName(townRoot)
 	var backend terminal.Backend
 	if t != nil {
-		backend = terminal.NewTmuxBackend(t)
+		backend = terminal.NewCoopBackend(terminal.CoopConfig{})
 	}
 	return &SessionManager{
 		tmux:     t,

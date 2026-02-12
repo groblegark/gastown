@@ -249,7 +249,7 @@ func runNudge(cmd *cobra.Command, args []string) error {
 	// This works for any target format (rig/polecat, raw agent bead ID, etc.).
 	remoteBackend := terminal.ResolveBackend(target)
 	switch remoteBackend.(type) {
-	case *terminal.CoopBackend, *terminal.SSHBackend:
+	case *terminal.CoopBackend:
 		// Remote pod: session is always named "claude"
 		if err := remoteBackend.NudgeSession("claude", message); err != nil {
 			return fmt.Errorf("nudging remote session: %w", err)

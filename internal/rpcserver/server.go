@@ -2738,7 +2738,7 @@ func NewTerminalServer() *TerminalServer {
 	t := tmux.NewTmux()
 	return &TerminalServer{
 		tmuxClient: t,
-		backend:    terminal.NewTmuxBackend(t),
+		backend:    terminal.NewCoopBackend(terminal.CoopConfig{}),
 	}
 }
 

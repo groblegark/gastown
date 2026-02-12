@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/bdcmd"
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // ResolveBackend returns the appropriate Backend for the given agent.
@@ -36,12 +35,6 @@ func ResolveBackend(agentID string) Backend {
 	// Default: return a Coop backend with no sessions configured.
 	// Callers should check for errors when invoking methods.
 	return NewCoopBackend(CoopConfig{})
-}
-
-// LocalBackend returns a TmuxBackend for local tmux operations.
-// Use this when you know the agent is local (e.g., town-level agents).
-func LocalBackend() Backend {
-	return NewTmuxBackend(tmux.NewTmux())
 }
 
 // resolveCoopConfig checks agent bead metadata for Coop sidecar configuration.

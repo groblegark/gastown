@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // tmuxClient is the subset of tmux.Tmux methods used by PodConnection.
@@ -92,7 +91,7 @@ func NewPodConnection(cfg PodConnectionConfig) *PodConnection {
 	}
 	t := cfg.Tmux
 	if t == nil {
-		t = tmux.NewTmux()
+		t = newTmuxShim()
 	}
 	return &PodConnection{
 		AgentID:       cfg.AgentID,

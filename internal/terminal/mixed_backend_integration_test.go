@@ -8,15 +8,15 @@ import (
 	"time"
 )
 
-// TestIntegration_MixedBackend_HasSession verifies that both CoopBackend
-// and TmuxBackend implement HasSession correctly, and that the hasSession()
-// fallback pattern used by all managers works with both backends.
+// TestIntegration_MixedBackend_HasSession verifies that CoopBackend
+// implements HasSession correctly, and that the hasSession()
+// fallback pattern used by all managers works with the backend.
 func TestIntegration_MixedBackend_HasSession(t *testing.T) {
 	// Start a real coop process for the coop backend path.
 	base, cleanup := startCoop(t)
 	defer cleanup()
 
-	// Coop backend — session exists
+	// Coop backend -- session exists
 	coop := NewCoopBackend(CoopConfig{})
 	coop.AddSession("claude", base)
 
@@ -28,24 +28,13 @@ func TestIntegration_MixedBackend_HasSession(t *testing.T) {
 		t.Error("expected coop HasSession=true for running process")
 	}
 
-	// Coop backend — unregistered session returns false
+	// Coop backend -- unregistered session returns false
 	ok, err = coop.HasSession("nonexistent")
 	if err != nil {
 		t.Fatalf("coop HasSession(nonexistent) error: %v", err)
 	}
 	if ok {
 		t.Error("expected coop HasSession=false for unregistered session")
-	}
-
-	// Tmux backend — session does not exist (no real tmux sessions expected for test)
-	tmuxB := LocalBackend()
-	ok, err = tmuxB.HasSession("gt-test-nonexistent")
-	if err != nil {
-		// Tmux errors are expected if tmux is not running.
-		t.Logf("tmux HasSession returned expected error: %v", err)
-	}
-	if ok {
-		t.Error("expected tmux HasSession=false for nonexistent session")
 	}
 }
 
@@ -55,7 +44,6 @@ func TestIntegration_MixedBackend_HasSession(t *testing.T) {
 //	if m.backend != nil {
 //	    return m.backend.HasSession(sessionID)
 //	}
-//	return m.tmux.HasSession(sessionID)
 //
 // This simulates both paths: backend-set and backend-nil.
 func TestIntegration_MixedBackend_FallbackPattern(t *testing.T) {
@@ -77,24 +65,14 @@ func TestIntegration_MixedBackend_FallbackPattern(t *testing.T) {
 	})
 
 	t.Run("backend_nil_fallback", func(t *testing.T) {
-		// When backend is nil, managers fall through to tmux.
-		// This simulates the fallback path.
+		// When backend is nil, managers fall through.
+		// In K8s-only mode, there is no tmux fallback.
 		var backend Backend
 		if backend != nil {
 			t.Fatal("backend should be nil for this test")
 		}
-
-		// The fallback to tmux is expected to work even if tmux
-		// has no matching session — it should return false, not error.
-		tmuxB := LocalBackend()
-		ok, err := tmuxB.HasSession("gt-test-nonexistent-session")
-		// On macOS without tmux server, this may error or return false.
-		if err != nil {
-			t.Logf("tmux HasSession error (expected without tmux): %v", err)
-		}
-		if ok {
-			t.Error("expected false for nonexistent tmux session")
-		}
+		// Nil backend means no session check is possible --
+		// managers should handle this gracefully.
 	})
 }
 
@@ -180,7 +158,7 @@ func TestIntegration_MixedBackend_IsAgentRunningCoop(t *testing.T) {
 // TestIntegration_MixedBackend_MultipleCoopSessions verifies that
 // CoopBackend can track multiple sessions simultaneously, as would
 // happen in a multi-rig deployment where a single manager tracks
-// both local and K8s agents.
+// multiple K8s agents.
 func TestIntegration_MixedBackend_MultipleCoopSessions(t *testing.T) {
 	// Start two coop processes.
 	base1, cleanup1 := startCoop(t)

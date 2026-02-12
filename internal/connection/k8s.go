@@ -8,17 +8,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // K8sConnection implements Connection for K8s pods via kubectl exec.
 //
 // File operations and command execution go through kubectl exec to the pod.
-// Tmux operations go through the LOCAL tmux session that the terminal server
-// maintains — that session's pane is piped to the pod's screen session via
-// kubectl exec, so local tmux send-keys/capture-pane transparently bridges
-// to the pod.
 type K8sConnection struct {
 	// PodName is the K8s pod name (e.g., "gt-gastown-polecat-alpha").
 	PodName string
@@ -31,9 +25,6 @@ type K8sConnection struct {
 
 	// KubeConfig is the path to kubeconfig. Empty means default.
 	KubeConfig string
-
-	// tmux handles local tmux operations (terminal server manages the sessions).
-	tmux *tmux.Tmux
 
 	// execTimeout is the timeout for kubectl exec commands.
 	execTimeout time.Duration
@@ -57,7 +48,6 @@ func NewK8sConnection(cfg K8sConnectionConfig) *K8sConnection {
 		Namespace:   cfg.Namespace,
 		Container:   cfg.Container,
 		KubeConfig:  cfg.KubeConfig,
-		tmux:        tmux.NewTmux(),
 		execTimeout: DefaultExecTimeout,
 	}
 }
@@ -67,7 +57,7 @@ func (c *K8sConnection) Name() string {
 	return c.PodName
 }
 
-// IsLocal returns false — K8s connections are remote.
+// IsLocal returns false -- K8s connections are remote.
 func (c *K8sConnection) IsLocal() bool {
 	return false
 }
@@ -328,41 +318,6 @@ func (c *K8sConnection) ExecEnv(env map[string]string, cmd string, args ...strin
 	envArgs = append(envArgs, cmd)
 	envArgs = append(envArgs, args...)
 	return c.kubectlExec("env", envArgs...)
-}
-
-// Tmux operations route through LOCAL tmux sessions managed by the terminal server.
-// The terminal server creates tmux sessions that pipe to the pod's screen session
-// via kubectl exec. So TmuxSendKeys goes to a local tmux session, which flows
-// through kubectl exec into the pod's screen.
-
-// TmuxNewSession creates a new local tmux session.
-func (c *K8sConnection) TmuxNewSession(name, dir string) error {
-	return c.tmux.NewSession(name, dir)
-}
-
-// TmuxKillSession kills a local tmux session.
-func (c *K8sConnection) TmuxKillSession(name string) error {
-	return c.tmux.KillSessionWithProcesses(name)
-}
-
-// TmuxSendKeys sends keys to the local tmux session (which pipes to pod screen).
-func (c *K8sConnection) TmuxSendKeys(session, keys string) error {
-	return c.tmux.SendKeys(session, keys)
-}
-
-// TmuxCapturePane captures output from the local tmux session.
-func (c *K8sConnection) TmuxCapturePane(session string, lines int) (string, error) {
-	return c.tmux.CapturePane(session, lines)
-}
-
-// TmuxHasSession checks if a local tmux session exists.
-func (c *K8sConnection) TmuxHasSession(name string) (bool, error) {
-	return c.tmux.HasSession(name)
-}
-
-// TmuxListSessions lists all local tmux sessions.
-func (c *K8sConnection) TmuxListSessions() ([]string, error) {
-	return c.tmux.ListSessions()
 }
 
 // Verify K8sConnection implements Connection.

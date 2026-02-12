@@ -229,7 +229,7 @@ func SpawnPolecatForSling(rigName string, opts SpawnOptions) (*SpawnResult, erro
 
 	sessionName := polecatSessMgr.SessionName(polecatName)
 
-	if err := verifySpawnedPolecat(polecatObj.ClonePath, sessionName, t, terminal.NewTmuxBackend(t)); err != nil {
+	if err := verifySpawnedPolecat(polecatObj.ClonePath, sessionName, t, terminal.NewCoopBackend(terminal.CoopConfig{})); err != nil {
 		return nil, fmt.Errorf("spawn verification failed for %s: %w", polecatName, err)
 	}
 

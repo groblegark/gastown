@@ -89,7 +89,7 @@ func NewManager(r *rig.Rig, g *git.Git, t *tmux.Tmux) *Manager {
 
 	var backend terminal.Backend
 	if t != nil {
-		backend = terminal.NewTmuxBackend(t)
+		backend = terminal.NewCoopBackend(terminal.CoopConfig{})
 	}
 
 	return &Manager{

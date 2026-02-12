@@ -164,7 +164,7 @@ func runWorkerStatusLine(t *tmux.Tmux, session, rigName, polecat, crew, issue st
 }
 
 func runMayorStatusLine(t *tmux.Tmux) error {
-	backend := terminal.NewTmuxBackend(t)
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 
 	// Count active sessions by listing tmux sessions
 	sessions, err := t.ListSessions()

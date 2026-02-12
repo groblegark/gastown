@@ -116,7 +116,7 @@ func TriggerPendingSpawns(townRoot string, timeout time.Duration) ([]TriggerResu
 		return nil, nil
 	}
 
-	backend := terminal.LocalBackend()
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 	t := tmux.NewTmux()
 	var results []TriggerResult
 

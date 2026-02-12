@@ -717,7 +717,7 @@ func NukePolecat(workDir, rigName, polecatName string) error {
 	// See: gt-g9ft5 - sessions were piling up because nuke wasn't killing them.
 	sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
 	t := tmux.NewTmux()
-	backend := terminal.NewTmuxBackend(t)
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 
 	// Check if session exists and kill it
 	if running, _ := backend.HasSession(sessionName); running {
@@ -919,8 +919,7 @@ func FindPolecatsWithHookedWork(workDir, rigName string) ([]*PolecatsWithHookedW
 	// Get beads directory
 	rigPath := filepath.Join(townRoot, rigName)
 	bd := beads.New(rigPath)
-	t := tmux.NewTmux()
-	backend := terminal.NewTmuxBackend(t)
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 
 	var result []*PolecatsWithHookedWork
 
@@ -1104,7 +1103,7 @@ func FindResolvedDecisionsForCrew(workDir, rigName string, lookback time.Duratio
 
 	var results []*ResolvedDecisionInfo
 	t := tmux.NewTmux()
-	decBackend := terminal.NewTmuxBackend(t)
+	decBackend := terminal.NewCoopBackend(terminal.CoopConfig{})
 
 	for _, issue := range decisions {
 		// Parse decision fields to get requestor

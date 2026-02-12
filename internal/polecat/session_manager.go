@@ -50,7 +50,7 @@ type SessionManager struct {
 func NewSessionManager(t *tmux.Tmux, r *rig.Rig) *SessionManager {
 	var backend terminal.Backend
 	if t != nil {
-		backend = terminal.NewTmuxBackend(t)
+		backend = terminal.NewCoopBackend(terminal.CoopConfig{})
 	}
 	return &SessionManager{
 		tmux:    t,

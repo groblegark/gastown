@@ -18,6 +18,12 @@ import (
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
+// coopDefault returns a CoopBackend with no sessions as a safe default.
+// The real backend is injected via SetBackend() by the daemon in K8s mode.
+func coopDefault() terminal.Backend {
+	return terminal.NewCoopBackend(terminal.CoopConfig{})
+}
+
 // deaconSession is the deacon session name, duplicated here to avoid import cycle with session package.
 const deaconSession = "hq-deacon"
 
@@ -62,7 +68,7 @@ func New(townRoot string) *Boot {
 		bootDir:   filepath.Join(townRoot, "deacon", "dogs", "boot"),
 		deaconDir: filepath.Join(townRoot, "deacon"),
 		tmux:      t,
-		backend:   terminal.NewTmuxBackend(t),
+		backend:   coopDefault(),
 		degraded:  os.Getenv("GT_DEGRADED") == "true",
 	}
 }

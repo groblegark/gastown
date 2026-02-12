@@ -39,7 +39,7 @@ func NewAgentServer(townRoot string) *AgentServer {
 	return &AgentServer{
 		townRoot: townRoot,
 		tmux:     t,
-		backend:  terminal.NewTmuxBackend(t),
+		backend:  terminal.NewCoopBackend(terminal.CoopConfig{}),
 	}
 }
 

@@ -68,7 +68,7 @@ func runPeek(cmd *cobra.Command, args []string) error {
 		beadID := identity.BeadID()
 		backend := terminal.ResolveBackend(beadID)
 		switch backend.(type) {
-		case *terminal.CoopBackend, *terminal.SSHBackend:
+		case *terminal.CoopBackend:
 			return peekViaBackend(backend, "claude", lines)
 		}
 	}

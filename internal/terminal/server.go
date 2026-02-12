@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // ServerConfig configures a terminal server instance.
@@ -57,7 +56,6 @@ type Server struct {
 	inventory   *PodInventory
 	connections map[string]*PodConnection // agentID → connection
 	mu          sync.RWMutex
-	tmux        *tmux.Tmux
 	tmuxClient  tmuxClient // for PodConnections (nil = real tmux)
 }
 
@@ -79,7 +77,6 @@ func NewServer(cfg ServerConfig) *Server {
 		screenSession:  screenSession,
 		healthInterval: healthInterval,
 		connections:    make(map[string]*PodConnection),
-		tmux:           tmux.NewTmux(),
 		tmuxClient:     cfg.TmuxClient,
 	}
 

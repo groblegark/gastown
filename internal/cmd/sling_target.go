@@ -19,28 +19,11 @@ func resolveTargetAgent(target string) (agentID string, pane string, hookRoot st
 	// Convert session name to agent ID format (this doesn't require tmux)
 	agentID = sessionToAgentID(sessionName)
 
-	// Check if this agent uses a non-local backend (Coop, K8s).
-	// If so, skip tmux pane/workdir lookups — the caller handles empty pane
-	// gracefully (sling.go falls back to "agent will discover work via gt prime"),
-	// and ResolveHookDir falls back to townRoot when hookRoot is empty.
-	backend := terminal.ResolveBackend(agentID)
-	if _, isTmux := backend.(*terminal.TmuxBackend); !isTmux {
-		// Non-local agent (Coop or K8s) — no tmux pane or workdir available
-		return agentID, "", "", nil
-	}
-
-	// Local tmux agent — get pane and working directory
-	pane, err = getSessionPane(sessionName)
-	if err != nil {
-		return "", "", "", fmt.Errorf("getting pane for %s: %w", sessionName, err)
-	}
-
-	hookRoot, err = backend.GetPaneWorkDir(sessionName)
-	if err != nil {
-		return "", "", "", fmt.Errorf("getting working dir for %s: %w", sessionName, err)
-	}
-
-	return agentID, pane, hookRoot, nil
+	// In K8s-only mode, all agents use Coop backends. No tmux pane or workdir
+	// available — the caller handles empty pane gracefully (sling.go falls back
+	// to "agent will discover work via gt prime"), and ResolveHookDir falls back
+	// to townRoot when hookRoot is empty.
+	return agentID, "", "", nil
 }
 
 // sessionToAgentID converts a session name to bead ID format.
@@ -57,14 +40,10 @@ func sessionToAgentID(sessionName string) string {
 }
 
 // resolveBackendForSession resolves the Backend for a tmux session name.
-// Returns the backend and the session key to use with it ("claude" for Coop,
-// the original sessionName for tmux/SSH).
+// Returns the backend and the session key to use with it ("claude" for Coop).
 func resolveBackendForSession(sessionName string) (terminal.Backend, string) {
 	agentID := sessionToAgentID(sessionName)
 	backend := terminal.ResolveBackend(agentID)
-	if _, ok := backend.(*terminal.TmuxBackend); ok {
-		return backend, sessionName
-	}
 	return backend, "claude"
 }
 

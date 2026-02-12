@@ -101,7 +101,7 @@ func SpawnPolecatForSling(rigName string, opts SlingSpawnOptions) (*SpawnedPolec
 	// Get polecat manager (with tmux for session-aware allocation)
 	polecatGit := git.NewGit(r.Path)
 	t := tmux.NewTmux()
-	backend := terminal.NewTmuxBackend(t)
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 	polecatMgr := polecat.NewManager(r, polecatGit, t)
 
 	// Allocate a new polecat name

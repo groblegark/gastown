@@ -716,7 +716,7 @@ func getSessionPane(sessionName string) (string, error) {
 		if err != nil {
 			lastErr = err
 			if debug && i%5 == 0 {
-				b := terminal.LocalBackend()
+				b := terminal.NewCoopBackend(terminal.CoopConfig{})
 				has, _ := b.HasSession(sessionName)
 				fmt.Fprintf(os.Stderr, "[sling-debug] retry %d: GetPaneID failed: %v, has-session: %v\n", i, lastErr, has)
 			}

@@ -12,7 +12,6 @@ import (
 	"github.com/steveyegge/gastown/internal/configbeads"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -32,7 +31,6 @@ var ErrUnknownAnnounce = errors.New("unknown announce channel")
 type Router struct {
 	workDir  string // fallback directory to run bd commands in
 	townRoot string // town root directory (e.g., ~/gt)
-	tmux     *tmux.Tmux
 	backend  terminal.Backend
 }
 
@@ -42,24 +40,20 @@ type Router struct {
 func NewRouter(workDir string) *Router {
 	// Try to detect town root from workDir
 	townRoot := detectTownRoot(workDir)
-	t := tmux.NewTmux()
 
 	return &Router{
 		workDir:  workDir,
 		townRoot: townRoot,
-		tmux:     t,
-		backend:  terminal.NewTmuxBackend(t),
+		backend:  terminal.NewCoopBackend(terminal.CoopConfig{}),
 	}
 }
 
 // NewRouterWithTownRoot creates a router with an explicit town root.
 func NewRouterWithTownRoot(workDir, townRoot string) *Router {
-	t := tmux.NewTmux()
 	return &Router{
 		workDir:  workDir,
 		townRoot: townRoot,
-		tmux:     t,
-		backend:  terminal.NewTmuxBackend(t),
+		backend:  terminal.NewCoopBackend(terminal.CoopConfig{}),
 	}
 }
 
@@ -1223,7 +1217,7 @@ func (r *Router) notifyRecipient(msg *Message) error {
 
 		// Send notification to the agent's conversation history
 		notification := fmt.Sprintf("📬 You have new mail from %s. Subject: %s. Run 'gt mail inbox' to read.", msg.From, msg.Subject)
-		return r.tmux.NudgeSession(sessionID, notification)
+		return r.backend.NudgeSession(sessionID, notification)
 	}
 
 	return nil // No active session found

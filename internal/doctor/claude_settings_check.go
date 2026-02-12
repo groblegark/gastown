@@ -631,7 +631,7 @@ func (c *ClaudeSettingsCheck) Fix(ctx *CheckContext) error {
 	var errors []string
 	var renamed []string
 	t := tmux.NewTmux()
-	backend := terminal.NewTmuxBackend(t)
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 
 	for _, sf := range c.staleSettings {
 		wasRenamed := false

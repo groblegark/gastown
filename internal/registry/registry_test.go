@@ -640,7 +640,7 @@ func TestRestartSession_CoopBackend(t *testing.T) {
 	}
 }
 
-func TestRestartSession_TmuxBackendFails(t *testing.T) {
+func TestRestartSession_NonCoopBackendFails(t *testing.T) {
 	reg := New(
 		&mockAgentLister{beads: map[string]*beads.Issue{
 			"hq-mayor": {

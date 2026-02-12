@@ -10,7 +10,6 @@ import (
 	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // StaleHookConfig holds configurable parameters for stale hook detection.
@@ -79,8 +78,7 @@ func ScanStaleHooks(townRoot string, cfg *StaleHookConfig) (*StaleHookScanResult
 
 	// Filter to stale ones (older than threshold)
 	threshold := time.Now().Add(-cfg.MaxAge)
-	t := tmux.NewTmux()
-	backend := terminal.NewTmuxBackend(t)
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 
 	for _, bead := range hookedBeads {
 		// Skip if updated recently (not stale)

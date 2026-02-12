@@ -5,20 +5,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // LocalConnection implements Connection for local file and command operations.
-type LocalConnection struct {
-	tmux *tmux.Tmux
-}
+type LocalConnection struct{}
 
 // NewLocalConnection creates a new local connection.
 func NewLocalConnection() *LocalConnection {
-	return &LocalConnection{
-		tmux: tmux.NewTmux(),
-	}
+	return &LocalConnection{}
 }
 
 // Name returns "local" for local connections.
@@ -153,37 +147,6 @@ func (c *LocalConnection) ExecEnv(env map[string]string, cmd string, args ...str
 		command.Env = append(command.Env, k+"="+v)
 	}
 	return command.CombinedOutput()
-}
-
-// TmuxNewSession creates a new tmux session.
-func (c *LocalConnection) TmuxNewSession(name, dir string) error {
-	return c.tmux.NewSession(name, dir)
-}
-
-// TmuxKillSession terminates a tmux session.
-// Uses KillSessionWithProcesses to ensure all descendant processes are killed.
-func (c *LocalConnection) TmuxKillSession(name string) error {
-	return c.tmux.KillSessionWithProcesses(name)
-}
-
-// TmuxSendKeys sends keys to a tmux session.
-func (c *LocalConnection) TmuxSendKeys(session, keys string) error {
-	return c.tmux.SendKeys(session, keys)
-}
-
-// TmuxCapturePane captures the last N lines from a tmux pane.
-func (c *LocalConnection) TmuxCapturePane(session string, lines int) (string, error) {
-	return c.tmux.CapturePane(session, lines)
-}
-
-// TmuxHasSession returns true if the session exists.
-func (c *LocalConnection) TmuxHasSession(name string) (bool, error) {
-	return c.tmux.HasSession(name)
-}
-
-// TmuxListSessions returns all tmux session names.
-func (c *LocalConnection) TmuxListSessions() ([]string, error) {
-	return c.tmux.ListSessions()
 }
 
 // Verify LocalConnection implements Connection.

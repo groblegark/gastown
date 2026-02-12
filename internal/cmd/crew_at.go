@@ -142,7 +142,7 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 
 	// Check if session exists
 	t := tmux.NewTmux()
-	backend := terminal.NewTmuxBackend(t)
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 	sessionID := crewSessionName(r.Name, name)
 	if debug {
 		fmt.Printf("[DEBUG] sessionID=%q (r.Name=%q, name=%q)\n", sessionID, r.Name, name)
@@ -387,8 +387,8 @@ func tryRemoteCrewAt(rigName, crewName string) (handled bool, err error) {
 		}
 		fmt.Printf("Attaching to remote crew %s/%s...\n", rigName, crewName)
 		return true, attachToCoopPodWithBrowser(podName, namespace, crewBrowser)
-	case *terminal.SSHBackend:
-		return true, fmt.Errorf("SSH backend not supported for crew at")
+	default:
+		// Non-Coop backend (e.g., unconfigured) — fall through to local handling
 	}
 	return false, nil
 }

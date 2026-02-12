@@ -118,7 +118,7 @@ func New(config *Config) (*Daemon, error) {
 		config:       config,
 		patrolConfig: patrolConfig,
 		tmux:         t,
-		backend:      terminal.NewTmuxBackend(t),
+		backend:      terminal.NewCoopBackend(terminal.CoopConfig{}),
 		logger:       logger,
 		ctx:          ctx,
 		cancel:       cancel,

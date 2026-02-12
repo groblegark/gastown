@@ -22,11 +22,10 @@ type Updater struct {
 
 // NewUpdater creates a new status line data updater.
 func NewUpdater(townRoot string) *Updater {
-	t := tmux.NewTmux()
 	return &Updater{
 		townRoot: townRoot,
-		tmux:     t,
-		backend:  terminal.NewTmuxBackend(t),
+		tmux:     tmux.NewTmux(),
+		backend:  terminal.NewCoopBackend(terminal.CoopConfig{}),
 	}
 }
 

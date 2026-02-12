@@ -1,7 +1,6 @@
 // Package terminal provides a backend abstraction for terminal I/O operations.
 //
-// This enables the same peek/nudge commands to work with both local tmux
-// sessions and remote K8s pods via SSH+tmux or Coop.
+// This enables peek/nudge commands to work with K8s pods via Coop.
 package terminal
 
 import "errors"
@@ -12,8 +11,7 @@ import "errors"
 var ErrNotSupported = errors.New("operation not supported by this backend")
 
 // Backend provides terminal capture and input for agent sessions.
-// Implementations include local tmux (TmuxBackend), remote SSH+tmux
-// for K8s-hosted polecats (SSHBackend), and Coop (CoopBackend).
+// The sole implementation is CoopBackend for K8s-hosted agents.
 type Backend interface {
 	// HasSession checks if a terminal session exists and is running.
 	HasSession(session string) (bool, error)
@@ -35,16 +33,14 @@ type Backend interface {
 	SendKeys(session string, keys string) error
 
 	// IsPaneDead checks if the session's pane process has exited.
-	// For tmux: checks pane_dead flag. For coop: checks if agent state is "exited" or "crashed".
+	// For coop: checks if agent state is "exited" or "crashed".
 	IsPaneDead(session string) (bool, error)
 
 	// SetPaneDiedHook sets up a callback/hook for when an agent's pane dies.
-	// For tmux: sets a tmux pane-died hook. For coop: this is a no-op (coop manages its own lifecycle).
+	// For coop: this is a no-op (coop manages its own lifecycle).
 	SetPaneDiedHook(session, agentID string) error
 
-	// --- Coop-first methods (Phase 2) ---
-	// These are fully implemented by CoopBackend; TmuxBackend and SSHBackend
-	// return ErrNotSupported.
+	// --- Coop methods ---
 
 	// KillSession terminates an agent session.
 	// For coop: sends SIGTERM via POST /api/v1/signal.

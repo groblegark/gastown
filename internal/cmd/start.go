@@ -397,7 +397,7 @@ func startConfiguredCrew(t *tmux.Tmux, rigs []*rig.Rig, townRoot string, mu *syn
 
 // startOrRestartCrewMember starts or restarts a single crew member and returns a status message.
 func startOrRestartCrewMember(t *tmux.Tmux, r *rig.Rig, crewName, townRoot string) (msg string, started bool) {
-	backend := terminal.NewTmuxBackend(t)
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 	sessionID := crewSessionName(r.Name, crewName)
 	if running, _ := backend.HasSession(sessionID); running {
 		// Session exists - check if agent is still running
@@ -551,7 +551,7 @@ func categorizeSessions(sessions []string, mayorSession, deaconSession string) (
 }
 
 func runGracefulShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) error {
-	backend := terminal.NewTmuxBackend(t)
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 	fmt.Printf("Graceful shutdown of Gas Town (waiting up to %ds)...\n\n", shutdownWait)
 
 	// Phase 1: Send ESC to all agents to interrupt them
@@ -660,7 +660,7 @@ func runImmediateShutdown(t *tmux.Tmux, gtSessions []string, townRoot string) er
 // Returns the count of sessions that were successfully stopped (verified by checking
 // if the session no longer exists after the kill attempt).
 func killSessionsInOrder(t *tmux.Tmux, sessions []string, mayorSession, deaconSession string) int {
-	backend := terminal.NewTmuxBackend(t)
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 	stopped := 0
 
 	// Helper to check if session is in our list

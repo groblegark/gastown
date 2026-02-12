@@ -417,8 +417,8 @@ func injectStartPrompt(pane, beadID, subject, args string) error {
 // Returns true if the nudge was sent successfully.
 func nudgeViaBackend(agentID, beadID, subject, args string) bool {
 	backend := terminal.ResolveBackend(agentID)
-	if _, isTmux := backend.(*terminal.TmuxBackend); isTmux {
-		return false // Local tmux — caller should use pane-based nudge
+	if _, isCoop := backend.(*terminal.CoopBackend); !isCoop {
+		return false // Unknown backend type — caller should use pane-based nudge
 	}
 
 	// Build the same prompt as injectStartPrompt
