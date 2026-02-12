@@ -32,6 +32,9 @@ import (
 	"github.com/steveyegge/gastown/controller/internal/statusreporter"
 )
 
+// sidecarRateLimiter tracks sidecar change frequency per agent. Initialized in main().
+var sidecarRateLimiter *podmanager.SidecarRateLimiter
+
 func main() {
 	cfg := config.Parse()
 
@@ -77,6 +80,7 @@ func main() {
 	if cfg.SidecarMaxCPU != "" || cfg.SidecarMaxMemory != "" {
 		pods.SetResourceCaps(podmanager.ParseResourceCaps(cfg.SidecarMaxCPU, cfg.SidecarMaxMemory))
 	}
+	sidecarRateLimiter = podmanager.NewSidecarRateLimiter(cfg.SidecarMaxChangesPerHour)
 
 	// Daemon client for HTTP API access (used by reconciler and status reporter).
 	daemon := daemonclient.New(daemonclient.Config{
@@ -258,6 +262,13 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 		}
 		if currentImage == desiredImage {
 			logger.Debug("sidecar unchanged, skipping pod recreation", "pod", podName)
+			return nil
+		}
+		// Enforce sidecar change rate limit.
+		if sidecarRateLimiter != nil && !sidecarRateLimiter.Allow(agentBeadID) {
+			logger.Warn("sidecar change rate limited, skipping pod recreation",
+				"pod", podName, "bead", agentBeadID,
+				"changes", sidecarRateLimiter.Count(agentBeadID))
 			return nil
 		}
 		logger.Info("sidecar changed via metadata update, recreating pod",
