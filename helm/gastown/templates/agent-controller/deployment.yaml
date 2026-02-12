@@ -103,6 +103,32 @@ spec:
             - name: COOP_MUX_URL
               value: {{ include "gastown.coopBroker.muxServiceURL" . }}
             {{- end }}
+            {{- if .Values.agentController.sidecarProfiles }}
+            - name: SIDECAR_PROFILES_JSON
+              value: {{ .Values.agentController.sidecarProfiles | toJson | quote }}
+            {{- end }}
+            {{- if .Values.agentController.defaultSidecarProfile }}
+            - name: DEFAULT_SIDECAR_PROFILE
+              value: {{ .Values.agentController.defaultSidecarProfile | quote }}
+            {{- end }}
+            {{- with .Values.agentController.sidecarSecurity }}
+            {{- if .registryAllowlist }}
+            - name: SIDECAR_REGISTRY_ALLOWLIST
+              value: {{ join "," .registryAllowlist | quote }}
+            {{- end }}
+            {{- if .maxCPU }}
+            - name: SIDECAR_MAX_CPU
+              value: {{ .maxCPU | quote }}
+            {{- end }}
+            {{- if .maxMemory }}
+            - name: SIDECAR_MAX_MEMORY
+              value: {{ .maxMemory | quote }}
+            {{- end }}
+            {{- if .maxChangesPerHour }}
+            - name: SIDECAR_MAX_CHANGES_PER_HOUR
+              value: {{ .maxChangesPerHour | quote }}
+            {{- end }}
+            {{- end }}
           resources:
             {{- toYaml .Values.agentController.resources | nindent 12 }}
       {{- with .Values.agentController.nodeSelector }}
