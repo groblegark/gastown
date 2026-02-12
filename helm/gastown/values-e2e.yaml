@@ -4,7 +4,19 @@
 # This file enables all components needed for the full E2E suite.
 # ExternalSecret remoteRefs are NOT included (sensitive) — pass via --set.
 #
-# Usage:
+# Prerequisites:
+#   - ClusterSecretStore "aws-secretsmanager" must exist
+#   - ghcr.io pull access (gitlab-registry secret created by wrapper chart,
+#     or pass --set imagePullSecrets[0].name=<secret> if installing standalone)
+#
+# Usage (via provision-namespace.sh):
+#   ./tests/e2e/scripts/provision-namespace.sh \
+#     --set bd-daemon.externalSecrets.doltRootPassword.remoteRef=shared-e2e-dolt-root-password \
+#     --set bd-daemon.externalSecrets.daemonToken.remoteRef=shared-e2e-bd-daemon-token \
+#     --set bd-daemon.externalSecrets.doltS3Credentials.remoteRef=shared-e2e-dolt-s3-credentials \
+#     --set bd-daemon.externalSecrets.slackBotCredentials.remoteRef=gastown-uat/slack-bot-credentials
+#
+# Usage (direct helm):
 #   helm upgrade --install $NS ./helm/gastown/ \
 #     -n $NS --create-namespace \
 #     --values helm/gastown/values.yaml \
@@ -15,19 +27,28 @@
 #     --set bd-daemon.externalSecrets.slackBotCredentials.remoteRef=gastown-uat/slack-bot-credentials \
 #     --timeout 600s --wait
 
-# Image versions — pin to latest for E2E
+# Image pull secrets for private ghcr.io images
+imagePullSecrets:
+  - name: gitlab-registry
+  - name: docker-hub-registry
+
+# BD Daemon subchart
 bd-daemon:
+  # Daemon image — pin to known-good tag (not latest, which may lack amd64)
   image:
-    tag: "latest"
+    repository: ghcr.io/groblegark/beads
+    tag: "0.57.17"
     pullPolicy: Always
 
   imagePullSecrets:
+    - name: gitlab-registry
     - name: docker-hub-registry
 
-  # Dolt — minimal but functional
+  # Dolt — use ECR mirror to avoid Docker Hub rate limits
   dolt:
     image:
-      tag: "1.80.2"
+      repository: 909418727440.dkr.ecr.us-east-1.amazonaws.com/external/dolthub/dolt-sql-server
+      tag: "1.81.6"
     persistence:
       storageClass: "gp3"
       size: 5Gi
@@ -66,13 +87,13 @@ bd-daemon:
         cpu: 500m
         memory: 1Gi
 
-  # Redis — enabled for E2E (wisp + caching)
+  # Redis — use ECR mirror to avoid Docker Hub rate limits
   redis:
     enabled: true
     image:
-      registry: public.ecr.aws
-      repository: bitnami/redis
-      tag: "7.4.2"
+      registry: 909418727440.dkr.ecr.us-east-1.amazonaws.com
+      repository: external/bitnami/redis
+      tag: "latest"
     master:
       persistence:
         storageClass: "gp3"
@@ -85,9 +106,13 @@ bd-daemon:
         cpu: 250m
         memory: 256Mi
 
-  # NATS — enabled (event bus)
+  # NATS — enabled (event bus), uses public ECR
   nats:
     enabled: true
+    image:
+      registry: public.ecr.aws
+      repository: docker/library/nats
+      tag: "2.10-alpine"
     jetstream:
       maxMemory: 128M
     persistence:
@@ -113,24 +138,30 @@ bd-daemon:
   slackBot:
     enabled: true
     image:
-      tag: "latest"
+      repository: ghcr.io/groblegark/beads
+      tag: "0.57.17"
       pullPolicy: Always
 
 # Agent Controller — enabled for agent pod lifecycle tests
 agentController:
   enabled: true
   image:
+    repository: ghcr.io/groblegark/gastown/agent-controller
     tag: "latest"
     pullPolicy: Always
   agentImage:
     repository: ghcr.io/groblegark/gastown/gastown-agent
     tag: "latest"
   coopBuiltin: true
+  credentialsSecret: "claude-credentials"
+  nodeSelector:
+    kubernetes.io/arch: amd64
 
 # Coop Broker — enabled for terminal mux and credential distribution
 coopBroker:
   enabled: true
   image:
+    repository: ghcr.io/groblegark/gastown/gastown-agent
     tag: "latest"
     pullPolicy: Always
   persistence:
@@ -153,4 +184,4 @@ gitMirrors: {}
 # Global
 global:
   security:
-    allowInsecureImages: true  # Required for ECR Redis image
+    allowInsecureImages: true  # Required for ECR images
