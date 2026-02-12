@@ -48,6 +48,11 @@ agent:
               - key: per-mr
                 operator: DoesNotExist
 
+# Coop Broker — auto-register with central broker for mux + credential distribution
+coopBroker:
+  url: "http://gastown-next-coop-broker:8080"
+  authTokenSecret: "gastown-next-bd-daemon-daemon-token"
+
 # BD daemon connection (in-cluster service)
 bdDaemon:
   host: "gastown-next-bd-daemon.gastown-next.svc.cluster.local"

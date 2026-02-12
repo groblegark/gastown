@@ -164,6 +164,14 @@ type CoopSidecarSpec struct {
 	// The "token" key within the Secret is used. Optional.
 	NatsTokenSecret string
 
+	// BrokerURL is the central coop broker URL for auto-registration.
+	// When set, the coop instance registers with the broker on startup.
+	BrokerURL string
+
+	// BrokerTokenSecret is the K8s Secret name for the broker auth token.
+	// The "token" key within the Secret is used. Optional.
+	BrokerTokenSecret string
+
 	// Resources sets compute requests/limits for the sidecar.
 	// If nil, defaults (50m/32Mi → 200m/64Mi) are used.
 	Resources *corev1.ResourceRequirements
@@ -713,6 +721,35 @@ func (m *K8sManager) buildCoopSidecar(spec AgentPodSpec) corev1.Container {
 		Name:  "XDG_STATE_HOME",
 		Value: MountStateDir,
 	})
+
+	// POD_IP via downward API — coop uses this to advertise its reachable URL to the broker.
+	envVars = append(envVars, corev1.EnvVar{
+		Name: "POD_IP",
+		ValueFrom: &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{
+				FieldPath: "status.podIP",
+			},
+		},
+	})
+
+	// Broker registration: pass URL + token so coop auto-registers with the central broker.
+	if coop.BrokerURL != "" {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "COOP_BROKER_URL",
+			Value: coop.BrokerURL,
+		})
+	}
+	if coop.BrokerTokenSecret != "" {
+		envVars = append(envVars, corev1.EnvVar{
+			Name: "COOP_BROKER_TOKEN",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: coop.BrokerTokenSecret},
+					Key:                  "token",
+				},
+			},
+		})
+	}
 
 	coopMounts := []corev1.VolumeMount{
 		{Name: VolumeTmp, MountPath: "/tmp"},

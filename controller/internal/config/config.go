@@ -74,6 +74,14 @@ type Config struct {
 	// Injected as COOP_NATS_TOKEN in agent pods.
 	NatsTokenSecret string
 
+	// CoopBrokerURL is the URL of the central coop broker (env: COOP_BROKER_URL).
+	// When set, agent pods register with the broker for credential distribution and mux.
+	CoopBrokerURL string
+
+	// CoopBrokerTokenSecret is the K8s secret containing the broker auth token (env: COOP_BROKER_TOKEN_SECRET).
+	// Injected as COOP_BROKER_TOKEN in agent pods.
+	CoopBrokerTokenSecret string
+
 	// Transport selects the event transport: "sse" or "nats" (env: WATCHER_TRANSPORT).
 	// Default: "sse".
 	Transport string
@@ -122,8 +130,10 @@ func Parse() *Config {
 		DaemonTokenSecret: os.Getenv("DAEMON_TOKEN_SECRET"),
 		TownName:          envOr("GT_TOWN_NAME", "town"),
 		GitCredentialsSecret: os.Getenv("GIT_CREDENTIALS_SECRET"),
-		NatsURL:              os.Getenv("NATS_URL"),
-		NatsTokenSecret:      os.Getenv("NATS_TOKEN_SECRET"),
+		NatsURL:               os.Getenv("NATS_URL"),
+		NatsTokenSecret:       os.Getenv("NATS_TOKEN_SECRET"),
+		CoopBrokerURL:         os.Getenv("COOP_BROKER_URL"),
+		CoopBrokerTokenSecret: os.Getenv("COOP_BROKER_TOKEN_SECRET"),
 		Transport:         envOr("WATCHER_TRANSPORT", "sse"),
 		NatsConsumerName:  os.Getenv("NATS_CONSUMER_NAME"),
 		SyncInterval:      envDurationOr("SYNC_INTERVAL", 60*time.Second),
@@ -146,6 +156,8 @@ func Parse() *Config {
 	flag.StringVar(&cfg.GitCredentialsSecret, "git-credentials-secret", cfg.GitCredentialsSecret, "K8s secret with git credentials (username/token keys)")
 	flag.StringVar(&cfg.NatsURL, "nats-url", cfg.NatsURL, "NATS server URL for event bus")
 	flag.StringVar(&cfg.NatsTokenSecret, "nats-token-secret", cfg.NatsTokenSecret, "K8s secret with NATS auth token")
+	flag.StringVar(&cfg.CoopBrokerURL, "coop-broker-url", cfg.CoopBrokerURL, "URL of the central coop broker")
+	flag.StringVar(&cfg.CoopBrokerTokenSecret, "coop-broker-token-secret", cfg.CoopBrokerTokenSecret, "K8s secret with broker auth token")
 	flag.StringVar(&cfg.Transport, "transport", cfg.Transport, "Event transport: sse or nats")
 	flag.StringVar(&cfg.NatsConsumerName, "nats-consumer-name", cfg.NatsConsumerName, "Durable consumer name for JetStream")
 	flag.DurationVar(&cfg.SyncInterval, "sync-interval", cfg.SyncInterval, "Interval for periodic pod status sync")

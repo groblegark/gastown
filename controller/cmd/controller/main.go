@@ -449,6 +449,28 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 			spec.CoopSidecar.NatsTokenSecret = cfg.NatsTokenSecret
 		}
 	}
+
+	// Wire broker registration config. When CoopBuiltin, the agent container
+	// runs coop directly so it gets COOP_BROKER_URL/TOKEN as env vars.
+	// When a sidecar is present, the sidecar gets them instead.
+	if cfg.CoopBrokerURL != "" {
+		if spec.CoopSidecar != nil {
+			spec.CoopSidecar.BrokerURL = cfg.CoopBrokerURL
+		} else if cfg.CoopBuiltin {
+			spec.Env["COOP_BROKER_URL"] = cfg.CoopBrokerURL
+		}
+	}
+	if cfg.CoopBrokerTokenSecret != "" {
+		if spec.CoopSidecar != nil {
+			spec.CoopSidecar.BrokerTokenSecret = cfg.CoopBrokerTokenSecret
+		} else if cfg.CoopBuiltin {
+			spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
+				EnvName:    "COOP_BROKER_TOKEN",
+				SecretName: cfg.CoopBrokerTokenSecret,
+				SecretKey:  "token",
+			})
+		}
+	}
 }
 
 // namespaceFromEvent returns the namespace from event metadata or a default.

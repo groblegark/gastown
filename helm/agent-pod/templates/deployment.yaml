@@ -145,6 +145,10 @@ spec:
                   name: {{ .Values.coopBroker.authTokenSecret }}
                   key: token
             {{- end }}
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
             - name: HOME
               value: "/home/agent"
             # Session persistence: coop + claude state on PVC
