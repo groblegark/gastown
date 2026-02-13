@@ -31,8 +31,19 @@ PROMPT_TEXT='What is 2+2? Reply with ONLY the number, nothing else.'
 EXPECTED_ANSWER='4'
 
 # ── Discover agent pods ──────────────────────────────────────────────
+# Prefer non-singleton pods (crew/polecat) over mayor/deacon/witness
+# because singletons may be busy with startup or patrol work.
 AGENT_PODS=$(kube get pods --no-headers 2>/dev/null | { grep "^gt-" || true; } | { grep "Running" || true; } | awk '{print $1}')
-AGENT_POD=$(echo "$AGENT_PODS" | head -1)
+AGENT_POD=""
+for _p in $AGENT_PODS; do
+  _role=$(kube get pod "$_p" -o jsonpath='{.metadata.labels.gastown\.io/role}' 2>/dev/null)
+  if [[ "$_role" == "crew" || "$_role" == "polecat" ]]; then
+    AGENT_POD="$_p"
+    break
+  fi
+done
+# Fall back to any running agent pod if no crew/polecat found
+[[ -z "$AGENT_POD" ]] && AGENT_POD=$(echo "$AGENT_PODS" | head -1)
 
 if [[ -z "$AGENT_POD" ]]; then
   skip_test "Agent is idle and ready" "no running agent pods"

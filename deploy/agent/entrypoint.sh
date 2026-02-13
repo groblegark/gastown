@@ -567,8 +567,24 @@ auto_bypass_startup() {
     for i in $(seq 1 30); do
         sleep 2
         state=$(curl -sf http://localhost:8080/api/v1/agent 2>/dev/null) || continue
+        agent_state=$(echo "${state}" | jq -r '.state // empty' 2>/dev/null)
         prompt_type=$(echo "${state}" | jq -r '.prompt.type // empty' 2>/dev/null)
         subtype=$(echo "${state}" | jq -r '.prompt.subtype // empty' 2>/dev/null)
+
+        # Handle "Resume Session" picker — Claude shows this when resuming and
+        # there are multiple session logs. Press Escape to cancel and start fresh.
+        if [ "${agent_state}" = "starting" ]; then
+            screen=$(curl -sf http://localhost:8080/api/v1/screen/text 2>/dev/null)
+            if echo "${screen}" | grep -q "Resume Session"; then
+                echo "[entrypoint] Detected resume session picker, pressing Escape to start fresh"
+                curl -sf -X POST http://localhost:8080/api/v1/input/keys \
+                    -H 'Content-Type: application/json' \
+                    -d '{"keys":["Escape"]}' 2>&1 || true
+                sleep 3
+                continue
+            fi
+        fi
+
         if [ "${prompt_type}" = "setup" ]; then
             # Verify this is a real setup prompt by checking the screen for
             # the actual dialog text, not just the status bar mention.
@@ -846,13 +862,22 @@ while true; do
     fi
 
     # Find latest session log for resume (respects GT_SESSION_RESUME=0 to disable).
+    # After MAX_STALE_RETRIES consecutive resume failures we start fresh to avoid
+    # an infinite loop of stale-session retirements.
     RESUME_FLAG=""
-    if [ "${SESSION_RESUME}" = "1" ] && [ -d "${CLAUDE_STATE}/projects" ]; then
-        LATEST_LOG=$(find "${CLAUDE_STATE}/projects" -name '*.jsonl' -type f -printf '%T@ %p\n' 2>/dev/null \
+    MAX_STALE_RETRIES=2
+    STALE_COUNT=$(find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl.stale' -type f 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${SESSION_RESUME}" = "1" ] && [ -d "${CLAUDE_STATE}/projects" ] && [ "${STALE_COUNT:-0}" -lt "${MAX_STALE_RETRIES}" ]; then
+        # Only look for top-level session logs, NOT subagent logs in subagents/ dirs.
+        # Subagent .jsonl files cause Claude to show a "Resume Session" picker UI
+        # which hangs because there's no user to interact with it.
+        LATEST_LOG=$(find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl' -not -path '*/subagents/*' -type f -printf '%T@ %p\n' 2>/dev/null \
             | sort -rn | head -1 | cut -d' ' -f2-)
         if [ -n "${LATEST_LOG}" ]; then
             RESUME_FLAG="--resume ${LATEST_LOG}"
         fi
+    elif [ "${STALE_COUNT:-0}" -ge "${MAX_STALE_RETRIES}" ]; then
+        echo "[entrypoint] Skipping resume: ${STALE_COUNT} stale session(s) found (max ${MAX_STALE_RETRIES}), starting fresh"
     fi
 
     start_time=$(date +%s)

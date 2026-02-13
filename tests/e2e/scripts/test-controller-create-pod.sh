@@ -30,10 +30,12 @@ NS="$E2E_NAMESPACE"
 log "Testing controller bead→pod lifecycle in namespace: $NS"
 
 # ── Configuration ────────────────────────────────────────────────────
-# Timeouts
-POD_CREATE_TIMEOUT=120   # seconds to wait for pod to appear
+# Timeouts — controller reconciles every SYNC_INTERVAL (default 60s).
+# Pod creation may wait up to one full sync cycle before the controller
+# sees the new bead, plus pod startup time (image pull, init containers).
+POD_CREATE_TIMEOUT=180   # seconds to wait for pod to appear (60s sync + startup)
 POD_READY_TIMEOUT=180    # seconds to wait for pod to become Ready
-POD_DELETE_TIMEOUT=120   # seconds to wait for pod to be deleted (controller reconciles every 60s)
+POD_DELETE_TIMEOUT=180   # seconds to wait for pod to be deleted after bead closed
 
 # Test bead metadata
 TEST_BEAD_TITLE="e2e-lifecycle-test-$(date +%s)"

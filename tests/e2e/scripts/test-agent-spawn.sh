@@ -62,13 +62,20 @@ test_agent_containers() {
 }
 run_test "Agent pod ($AGENT_POD) has containers" test_agent_containers
 
-# ── Test 3: Agent pod is 1/1 Ready ──────────────────────────────────
+# ── Test 3: Agent pod is fully Ready ─────────────────────────────────
+# CoopBuiltin pods are 1/1, CoopSidecar pods are 2/2, toolchain adds +1.
+# Accept any N/N where all containers are ready.
 test_agent_ready() {
   local status
   status=$(kube get pod "$AGENT_POD" --no-headers 2>/dev/null | awk '{print $2}')
-  assert_eq "$status" "1/1"
+  log "Pod readiness: $status"
+  # Accept N/N where both sides match (all containers ready)
+  local ready total
+  ready=$(echo "$status" | cut -d/ -f1)
+  total=$(echo "$status" | cut -d/ -f2)
+  [[ "$ready" == "$total" && "${ready:-0}" -gt 0 ]]
 }
-run_test "Agent pod is 1/1 Ready" test_agent_ready
+run_test "Agent pod is fully Ready (all containers)" test_agent_ready
 
 # ── Test 4: Coop health endpoint on agent pod ────────────────────────
 COOP_PORT=""
