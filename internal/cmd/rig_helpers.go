@@ -127,8 +127,10 @@ func rigBeadsToEntries(bd *beads.Beads, townName string) []config.RigBeadEntry {
 		}
 
 		// Synthesize a config-style bead ID so extractRigNameFromBeadID works.
-		// The rig bead title is just the rig name (e.g., "coop").
-		syntheticID := fmt.Sprintf("hq-cfg-rig-%s-%s", townName, issue.Title)
+		// Strip "Rig: " prefix — legacy rig beads may have titles like
+		// "Rig: beads" instead of just "beads".
+		rigName := strings.TrimPrefix(issue.Title, "Rig: ")
+		syntheticID := fmt.Sprintf("hq-cfg-rig-%s-%s", townName, rigName)
 		entries = append(entries, config.RigBeadEntry{
 			BeadID:   syntheticID,
 			Metadata: string(metadataJSON),

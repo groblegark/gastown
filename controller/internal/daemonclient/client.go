@@ -197,7 +197,11 @@ func (c *DaemonClient) ListRigBeads(ctx context.Context) (map[string]RigInfo, er
 
 	rigs := make(map[string]RigInfo)
 	for _, issue := range result {
-		info := RigInfo{Name: issue.Title}
+		// Strip "Rig: " prefix from title — legacy rig beads may have titles
+		// like "Rig: beads" instead of just "beads".
+		name := issue.Title
+		name = strings.TrimPrefix(name, "Rig: ")
+		info := RigInfo{Name: name}
 		for _, label := range issue.Labels {
 			parts := strings.SplitN(label, ":", 2)
 			if len(parts) != 2 {
@@ -218,8 +222,8 @@ func (c *DaemonClient) ListRigBeads(ctx context.Context) (map[string]RigInfo, er
 				info.StorageClass = parts[1]
 			}
 		}
-		if info.Name != "" {
-			rigs[info.Name] = info
+		if name != "" {
+			rigs[name] = info
 		}
 	}
 

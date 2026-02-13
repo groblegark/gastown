@@ -170,9 +170,13 @@ func AppendRoute(townRoot string, route Route) error {
 	return AppendRouteToDir(beadsDir, route)
 }
 
-// AppendRouteToDir appends a route to routes.jsonl in the given beads directory.
-// If the prefix already exists, it updates the path.
+// AppendRouteToDir appends a route to routes.jsonl in the given beads directory,
+// or creates/updates a route bead in daemon mode.
 func AppendRouteToDir(beadsDir string, route Route) error {
+	if IsDaemonMode() {
+		return appendRouteDaemon(beadsDir, route)
+	}
+
 	// Load existing routes
 	routes, err := LoadRoutes(beadsDir)
 	if err != nil {
@@ -197,8 +201,37 @@ func AppendRouteToDir(beadsDir string, route Route) error {
 	return WriteRoutes(beadsDir, routes)
 }
 
-// RemoveRoute removes a route by prefix from routes.jsonl.
+// appendRouteDaemon creates a route bead in the daemon.
+func appendRouteDaemon(beadsDir string, route Route) error {
+	// Strip trailing "-" from prefix for the label (stored without hyphen).
+	prefixLabel := strings.TrimSuffix(route.Prefix, "-")
+
+	title := fmt.Sprintf("%s → %s", route.Prefix, route.Path)
+	args := []string{
+		"create",
+		"--type", "route",
+		"--title", title,
+		"--prefix", "hq-",
+		"--label", fmt.Sprintf("prefix:%s", prefixLabel),
+		"--label", fmt.Sprintf("path:%s", route.Path),
+		"--label", "scope:town",
+		"--silent",
+	}
+
+	cmd := bdcmd.CommandInDir(filepath.Dir(beadsDir), args...)
+	if _, err := cmd.Output(); err != nil {
+		return fmt.Errorf("creating route bead: %w", err)
+	}
+
+	return nil
+}
+
+// RemoveRoute removes a route by prefix from routes.jsonl or daemon route beads.
 func RemoveRoute(townRoot string, prefix string) error {
+	if IsDaemonMode() {
+		return removeRouteDaemon(townRoot, prefix)
+	}
+
 	beadsDir := filepath.Join(townRoot, ".beads")
 
 	// Load existing routes
@@ -217,6 +250,63 @@ func RemoveRoute(townRoot string, prefix string) error {
 
 	// Write back
 	return WriteRoutes(beadsDir, filtered)
+}
+
+// removeRouteDaemon removes a route bead via the daemon by finding and closing
+// the route bead that matches the given prefix.
+func removeRouteDaemon(townRoot string, prefix string) error {
+	beadsDir := filepath.Join(townRoot, ".beads")
+
+	// Find the route bead with this prefix
+	routes, err := loadRoutesFromDaemon(beadsDir)
+	if err != nil {
+		return fmt.Errorf("loading routes from daemon: %w", err)
+	}
+
+	// Also need the raw bead IDs to close them
+	cmd := bdcmd.CommandInDir(filepath.Dir(beadsDir), "list", "--type=route", "--json")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("listing route beads: %w", err)
+	}
+
+	var rawRoutes []struct {
+		ID     string   `json:"id"`
+		Labels []string `json:"labels"`
+		Status string   `json:"status"`
+	}
+	if err := json.Unmarshal(output, &rawRoutes); err != nil {
+		return fmt.Errorf("parsing route data: %w", err)
+	}
+
+	// Find and close route beads matching the prefix
+	found := false
+	for _, raw := range rawRoutes {
+		if raw.Status == "closed" {
+			continue
+		}
+		for _, label := range raw.Labels {
+			labelPrefix := strings.TrimPrefix(label, "prefix:")
+			if label != labelPrefix && labelPrefix+"-" == prefix {
+				// Close this route bead
+				closeCmd := bdcmd.CommandInDir(filepath.Dir(beadsDir), "close", raw.ID, "--reason=rig removed")
+				if _, err := closeCmd.Output(); err != nil {
+					return fmt.Errorf("closing route bead %s: %w", raw.ID, err)
+				}
+				found = true
+			}
+		}
+	}
+
+	if !found {
+		// Not an error — route may have been cleaned up already
+		_ = routes // suppress unused warning
+		if os.Getenv("GT_DEBUG_ROUTING") != "" {
+			fmt.Fprintf(os.Stderr, "[routing] No route bead found for prefix %q\n", prefix)
+		}
+	}
+
+	return nil
 }
 
 // WriteRoutes writes routes to routes.jsonl, overwriting existing content.

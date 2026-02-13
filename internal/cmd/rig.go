@@ -624,11 +624,11 @@ func runRigRemove(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("saving rigs config: %w", err)
 	}
 
-	// Remove route from routes.jsonl (issue #899)
+	// Remove route (from routes.jsonl or daemon route beads)
 	if beadsPrefix != "" {
 		if err := beads.RemoveRoute(townRoot, beadsPrefix+"-"); err != nil {
 			// Non-fatal: log warning but continue
-			fmt.Printf("  %s Could not remove route from routes.jsonl: %v\n", style.Warning.Render("!"), err)
+			fmt.Printf("  %s Could not remove route: %v\n", style.Warning.Render("!"), err)
 		}
 	}
 
