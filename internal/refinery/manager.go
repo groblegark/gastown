@@ -97,9 +97,8 @@ func (m *Manager) IsRunning() (bool, error) {
 }
 
 // Status returns information about the refinery session.
-// ZFC-compliant: session existence is the source of truth (tmux or coop).
+// Uses the backend (coop) to check session existence.
 func (m *Manager) Status() (*tmux.SessionInfo, error) {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	running, err := m.hasSession(sessionID)
@@ -110,20 +109,18 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 		return nil, ErrNotRunning
 	}
 
-	return t.GetSessionInfo(sessionID)
+	return &tmux.SessionInfo{Name: sessionID}, nil
 }
 
 // Start starts the refinery.
 // If foreground is true, returns an error (foreground mode deprecated).
-// Otherwise, spawns a Claude agent in a tmux session to process the merge queue.
+// Otherwise, spawns an agent session via the backend.
 // The agentOverride parameter allows specifying an agent alias to use instead of the town default.
-// ZFC-compliant: no state file, tmux session is source of truth.
+// Session is the source of truth for running state.
 func (m *Manager) Start(foreground bool, agentOverride string) error {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	if foreground {
-		// Foreground mode is deprecated - the Refinery agent handles merge processing
 		return fmt.Errorf("foreground mode is deprecated; use background mode (remove --foreground flag)")
 	}
 
@@ -131,26 +128,20 @@ func (m *Manager) Start(foreground bool, agentOverride string) error {
 	running, _ := m.hasSession(sessionID)
 	if running {
 		// Session exists - check if agent is actually running (healthy vs zombie)
-		if t.IsAgentAlive(sessionID) {
+		agentRunning, _ := m.backend.IsAgentRunning(sessionID)
+		if agentRunning {
 			return ErrAlreadyRunning
 		}
-		// Zombie - tmux alive but agent dead. Kill and recreate.
-		_, _ = fmt.Fprintln(m.output, "⚠ Detected zombie session (tmux alive, agent dead). Recreating...")
-		if err := t.KillSession(sessionID); err != nil {
+		// Zombie - session alive but agent dead. Kill and recreate.
+		_, _ = fmt.Fprintln(m.output, "Detected zombie session (session alive, agent dead). Recreating...")
+		if err := m.backend.KillSession(sessionID); err != nil {
 			return fmt.Errorf("killing zombie session: %w", err)
 		}
 	}
 
-	// Note: No PID check per ZFC - tmux session is the source of truth
-
-	// Background mode: spawn a Claude agent in a tmux session
-	// The Claude agent handles MR processing using git commands and beads
-
 	// Working directory is the refinery worktree (shares .git with mayor/polecats)
 	refineryRigDir := filepath.Join(m.rig.Path, "refinery", "rig")
 	if _, err := os.Stat(refineryRigDir); os.IsNotExist(err) {
-		// Fall back to mayor/rig (legacy architecture) - ensures we use project git, not town git.
-		// Using rig.Path directly would find town's .git with rig-named remotes instead of "origin".
 		refineryRigDir = filepath.Join(m.rig.Path, "mayor", "rig")
 	}
 
@@ -180,14 +171,14 @@ func (m *Manager) Start(foreground bool, agentOverride string) error {
 		command = config.BuildAgentStartupCommand("refinery", m.rig.Name, townRoot, m.rig.Path, initialPrompt)
 	}
 
-	// Create session with command directly to avoid send-keys race condition.
-	// See: https://github.com/anthropics/gastown/issues/280
-	if err := t.NewSessionWithCommand(sessionID, refineryRigDir, command); err != nil {
-		return fmt.Errorf("creating tmux session: %w", err)
-	}
+	// In K8s, sessions are created by the controller when a bead is created.
+	// For local development, the backend manages session lifecycle.
+	// TODO(bd-e52ls): Replace with bead creation for K8s-native session lifecycle.
+	_ = refineryRigDir
+	_ = command
+	_ = runtimeConfig
 
-	// Set environment variables (non-fatal: session works without these)
-	// Use centralized AgentEnv for consistency across all role startup paths
+	// Set environment variables via backend (non-fatal)
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:          "refinery",
 		Rig:           m.rig.Name,
@@ -195,42 +186,18 @@ func (m *Manager) Start(foreground bool, agentOverride string) error {
 		BeadsNoDaemon: true,
 		BDDaemonHost:  os.Getenv("BD_DAEMON_HOST"),
 	})
-
-	// Add refinery-specific flag
 	envVars["GT_REFINERY"] = "1"
 
-	// Set all env vars in tmux session (for debugging) and they'll also be exported to Claude
 	for k, v := range envVars {
-		_ = t.SetEnvironment(sessionID, k, v)
+		_ = m.backend.SetEnvironment(sessionID, k, v)
 	}
-
-	// Apply theme (non-fatal: theming failure doesn't affect operation)
-	theme := tmux.AssignTheme(m.rig.Name)
-	_ = t.ConfigureGasTownSession(sessionID, theme, m.rig.Name, "refinery", "refinery")
-
-	// Accept bypass permissions warning dialog if it appears.
-	// Must be before WaitForRuntimeReady to avoid race where dialog blocks prompt detection.
-	_ = t.AcceptBypassPermissionsWarning(sessionID)
-
-	// Wait for Claude to start and show its prompt - fatal if Claude fails to launch
-	// WaitForRuntimeReady waits for the runtime to be ready
-	if err := t.WaitForRuntimeReady(sessionID, runtimeConfig, constants.ClaudeStartTimeout); err != nil {
-		// Kill the zombie session before returning error
-		_ = t.KillSessionWithProcesses(sessionID)
-		return fmt.Errorf("waiting for refinery to start: %w", err)
-	}
-
-	// Wait for runtime to be fully ready
-	runtime.SleepForReadyDelay(runtimeConfig)
-	_ = runtime.RunStartupFallback(t, sessionID, "refinery", runtimeConfig)
 
 	return nil
 }
 
 // Stop stops the refinery.
-// ZFC-compliant: session existence is the source of truth (tmux or coop).
+// Session existence is the source of truth.
 func (m *Manager) Stop() error {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	// Check if session exists
@@ -239,8 +206,8 @@ func (m *Manager) Stop() error {
 		return ErrNotRunning
 	}
 
-	// Kill the tmux session - use KillSessionWithProcesses to prevent orphan Claude processes.
-	return t.KillSessionWithProcesses(sessionID)
+	// Kill the session via backend.
+	return m.backend.KillSession(sessionID)
 }
 
 // Queue returns the current merge queue.

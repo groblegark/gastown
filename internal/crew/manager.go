@@ -17,7 +17,6 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
 
@@ -569,7 +568,6 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 		return fmt.Errorf("getting crew worker: %w", err)
 	}
 
-	t := tmux.NewTmux()
 	sessionID := m.SessionName(name)
 
 	// Check if session already exists
@@ -580,18 +578,17 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 	if running {
 		if opts.KillExisting {
 			// Restart mode - kill existing session.
-			// Use KillSessionWithProcesses to ensure all descendant processes are killed.
-			if err := t.KillSessionWithProcesses(sessionID); err != nil {
+			if err := m.backend.KillSession(sessionID); err != nil {
 				return fmt.Errorf("killing existing session: %w", err)
 			}
 		} else {
 			// Normal start - session exists, check if agent is actually running
-			if t.IsAgentAlive(sessionID) {
+			agentRunning, _ := m.backend.IsAgentRunning(sessionID)
+			if agentRunning {
 				return fmt.Errorf("%w: %s", ErrSessionRunning, sessionID)
 			}
 			// Zombie session - kill and recreate.
-			// Use KillSessionWithProcesses to ensure all descendant processes are killed.
-			if err := t.KillSessionWithProcesses(sessionID); err != nil {
+			if err := m.backend.KillSession(sessionID); err != nil {
 				return fmt.Errorf("killing zombie session: %w", err)
 			}
 		}
@@ -690,14 +687,13 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 		}
 	}
 
-	// Create session with command directly to avoid send-keys race condition.
-	// See: https://github.com/anthropics/gastown/issues/280
-	if err := t.NewSessionWithCommand(sessionID, worker.ClonePath, claudeCmd); err != nil {
-		return fmt.Errorf("creating session: %w", err)
-	}
+	// In K8s, sessions are created by the controller when a bead is created.
+	// For local development, the backend manages session lifecycle.
+	// TODO(bd-e52ls): Replace with bead creation for K8s-native session lifecycle.
+	_ = worker.ClonePath
+	_ = claudeCmd
 
-	// Set environment variables (non-fatal: session works without these)
-	// Use centralized AgentEnv for consistency across all role startup paths
+	// Set environment variables via backend (non-fatal)
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:             "crew",
 		Rig:              m.rig.Name,
@@ -710,20 +706,8 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 		BaseURL:          opts.BaseURL,
 	})
 	for k, v := range envVars {
-		_ = t.SetEnvironment(sessionID, k, v)
+		_ = m.backend.SetEnvironment(sessionID, k, v)
 	}
-
-	// Apply rig-based theming (non-fatal: theming failure doesn't affect operation)
-	theme := tmux.AssignTheme(m.rig.Name)
-	_ = t.ConfigureGasTownSession(sessionID, theme, m.rig.Name, name, "crew")
-
-	// Set up C-b n/p keybindings for crew session cycling (non-fatal)
-	_ = t.SetCrewCycleBindings(sessionID)
-
-	// Note: We intentionally don't wait for the agent to start here.
-	// The session is created in detached mode, and blocking for 60 seconds
-	// serves no purpose. If the caller needs to know when the agent is ready,
-	// they can check with IsAgentAlive().
 
 	return nil
 }
@@ -792,7 +776,6 @@ func (m *Manager) Stop(name string) error {
 		return err
 	}
 
-	t := tmux.NewTmux()
 	sessionID := m.SessionName(name)
 
 	// Check if session exists
@@ -804,10 +787,8 @@ func (m *Manager) Stop(name string) error {
 		return ErrSessionNotFound
 	}
 
-	// Kill the session.
-	// Use KillSessionWithProcesses to ensure all descendant processes are killed.
-	// This prevents orphan bash processes from Claude's Bash tool surviving session termination.
-	if err := t.KillSessionWithProcesses(sessionID); err != nil {
+	// Kill the session via backend.
+	if err := m.backend.KillSession(sessionID); err != nil {
 		return fmt.Errorf("killing session: %w", err)
 	}
 

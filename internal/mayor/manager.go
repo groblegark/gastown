@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/steveyegge/gastown/internal/config"
-	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
@@ -64,18 +62,18 @@ func (m *Manager) mayorDir() string {
 // Start starts the mayor session.
 // agentOverride optionally specifies a different agent alias to use.
 func (m *Manager) Start(agentOverride string) error {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	// Check if session already exists
 	running, _ := m.hasSession(sessionID)
 	if running {
 		// Session exists - check if agent is actually running (healthy vs zombie)
-		if t.IsAgentAlive(sessionID) {
+		agentRunning, _ := m.backend.IsAgentRunning(sessionID)
+		if agentRunning {
 			return ErrAlreadyRunning
 		}
-		// Zombie - tmux alive but agent dead. Kill and recreate.
-		if err := t.KillSessionWithProcesses(sessionID); err != nil {
+		// Zombie - session alive but agent dead. Kill and recreate.
+		if err := m.backend.KillSession(sessionID); err != nil {
 			return fmt.Errorf("killing zombie session: %w", err)
 		}
 	}
@@ -93,65 +91,39 @@ func (m *Manager) Start(agentOverride string) error {
 	}
 
 	// Symlink settings.json from town root to mayor's settings.
-	// Mayor session runs from townRoot (not mayorDir) per issue #280,
-	// but Claude Code only looks in cwd for .claude/settings.json.
-	// The town root .claude/ dir has other content (commands/, skills/),
-	// so we symlink just the settings.json file.
 	if err := m.ensureTownRootSettingsSymlink(); err != nil {
 		return fmt.Errorf("symlinking mayor settings to town root: %w", err)
 	}
 
-	// Build startup beacon with explicit instructions (matches gt handoff behavior)
-	// This ensures the agent has clear context immediately, not after nudges arrive
+	// Build startup beacon
 	beacon := session.FormatStartupBeacon(session.BeaconConfig{
 		Recipient: "mayor",
 		Sender:    "human",
 		Topic:     "cold-start",
 	})
 
-	// Build startup command WITH the beacon prompt - the startup hook handles 'gt prime' automatically
-	// Export GT_ROLE and BD_ACTOR in the command since tmux SetEnvironment only affects new panes
+	// Build startup command
 	startupCmd, err := config.BuildAgentStartupCommandWithAgentOverride("mayor", "", m.townRoot, "", beacon, agentOverride)
 	if err != nil {
 		return fmt.Errorf("building startup command: %w", err)
 	}
 
-	// Create session in mayorDir - Mayor's home directory within the town.
-	// Tools like gt prime use workspace.FindFromCwd() which walks UP to find
-	// town root, so running from ~/gt/mayor/ still finds ~/gt/ correctly.
-	if err := t.NewSessionWithCommand(sessionID, mayorDir, startupCmd); err != nil {
-		return fmt.Errorf("creating tmux session: %w", err)
-	}
+	// In K8s, sessions are created by the controller when a bead is created.
+	// For local development, the backend manages session lifecycle.
+	// TODO(bd-e52ls): Replace with bead creation for K8s-native session lifecycle.
+	_ = mayorDir
+	_ = startupCmd
+	_ = runtimeConfig
 
-	// Set environment variables (non-fatal: session works without these)
-	// Use centralized AgentEnv for consistency across all role startup paths
+	// Set environment variables via backend (non-fatal)
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:         "mayor",
 		TownRoot:     m.townRoot,
 		BDDaemonHost: os.Getenv("BD_DAEMON_HOST"),
 	})
 	for k, v := range envVars {
-		_ = t.SetEnvironment(sessionID, k, v)
+		_ = m.backend.SetEnvironment(sessionID, k, v)
 	}
-
-	// Apply Mayor theming (non-fatal: theming failure doesn't affect operation)
-	theme := tmux.MayorTheme()
-	_ = t.ConfigureGasTownSession(sessionID, theme, "", "Mayor", "coordinator")
-
-	// Wait for Claude to start - fatal if Claude fails to launch
-	if err := t.WaitForCommand(sessionID, constants.SupportedShells, constants.ClaudeStartTimeout); err != nil {
-		// Kill the zombie session before returning error
-		_ = t.KillSessionWithProcesses(sessionID)
-		return fmt.Errorf("waiting for mayor to start: %w", err)
-	}
-
-	// Accept bypass permissions warning dialog if it appears.
-	_ = t.AcceptBypassPermissionsWarning(sessionID)
-
-	time.Sleep(constants.ShutdownNotifyDelay)
-
-	// Startup beacon with instructions is now included in the initial command,
-	// so no separate nudge needed. The agent starts with full context immediately.
 
 	return nil
 }
@@ -212,7 +184,6 @@ func (m *Manager) ensureTownRootSettingsSymlink() error {
 
 // Stop stops the mayor session.
 func (m *Manager) Stop() error {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	// Check if session exists
@@ -224,14 +195,8 @@ func (m *Manager) Stop() error {
 		return ErrNotRunning
 	}
 
-	// Try graceful shutdown first (best-effort interrupt)
-	_ = t.SendKeysRaw(sessionID, "C-c")
-	time.Sleep(100 * time.Millisecond)
-
-	// Kill the session with explicit process cleanup.
-	// Claude processes can ignore SIGHUP, so we need to explicitly SIGTERM/SIGKILL
-	// all descendants before killing the tmux session to prevent orphans.
-	if err := t.KillSessionWithProcesses(sessionID); err != nil {
+	// Kill the session via backend.
+	if err := m.backend.KillSession(sessionID); err != nil {
 		return fmt.Errorf("killing session: %w", err)
 	}
 
@@ -245,7 +210,6 @@ func (m *Manager) IsRunning() (bool, error) {
 
 // Status returns information about the mayor session.
 func (m *Manager) Status() (*tmux.SessionInfo, error) {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	running, err := m.hasSession(sessionID)
@@ -256,5 +220,5 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 		return nil, ErrNotRunning
 	}
 
-	return t.GetSessionInfo(sessionID)
+	return &tmux.SessionInfo{Name: sessionID}, nil
 }

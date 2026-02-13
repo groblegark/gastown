@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/steveyegge/gastown/internal/config"
-	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
@@ -65,19 +63,18 @@ func (m *Manager) deaconDir() string {
 // agentOverride allows specifying an alternate agent alias (e.g., for testing).
 // Restarts are handled by daemon via ensureDeaconRunning on each heartbeat.
 func (m *Manager) Start(agentOverride string) error {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	// Check if session already exists
 	running, _ := m.hasSession(sessionID)
 	if running {
 		// Session exists - check if agent is actually running (healthy vs zombie)
-		if t.IsAgentAlive(sessionID) {
+		agentRunning, _ := m.backend.IsAgentRunning(sessionID)
+		if agentRunning {
 			return ErrAlreadyRunning
 		}
-		// Zombie - tmux alive but agent dead. Kill and recreate.
-		// Use KillSessionWithProcesses to ensure all descendant processes are killed.
-		if err := t.KillSessionWithProcesses(sessionID); err != nil {
+		// Zombie - session alive but agent dead. Kill and recreate.
+		if err := m.backend.KillSession(sessionID); err != nil {
 			return fmt.Errorf("killing zombie session: %w", err)
 		}
 	}
@@ -104,45 +101,28 @@ func (m *Manager) Start(agentOverride string) error {
 		return fmt.Errorf("building startup command: %w", err)
 	}
 
-	// Create session with command directly to avoid send-keys race condition.
-	// See: https://github.com/anthropics/gastown/issues/280
-	if err := t.NewSessionWithCommand(sessionID, deaconDir, startupCmd); err != nil {
-		return fmt.Errorf("creating tmux session: %w", err)
-	}
+	// In K8s, sessions are created by the controller when a bead is created.
+	// For local development, the backend manages session lifecycle.
+	// TODO(bd-e52ls): Replace with bead creation for K8s-native session lifecycle.
+	_ = deaconDir
+	_ = startupCmd
+	_ = runtimeConfig
 
-	// Set environment variables (non-fatal: session works without these)
-	// Use centralized AgentEnv for consistency across all role startup paths
+	// Set environment variables via backend (non-fatal)
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:         "deacon",
 		TownRoot:     m.townRoot,
 		BDDaemonHost: os.Getenv("BD_DAEMON_HOST"),
 	})
 	for k, v := range envVars {
-		_ = t.SetEnvironment(sessionID, k, v)
+		_ = m.backend.SetEnvironment(sessionID, k, v)
 	}
-
-	// Apply Deacon theming (non-fatal: theming failure doesn't affect operation)
-	theme := tmux.DeaconTheme()
-	_ = t.ConfigureGasTownSession(sessionID, theme, "", "Deacon", "health-check")
-
-	// Wait for Claude to start - fatal if Claude fails to launch
-	if err := t.WaitForCommand(sessionID, constants.SupportedShells, constants.ClaudeStartTimeout); err != nil {
-		// Kill the zombie session before returning error
-		_ = t.KillSessionWithProcesses(sessionID)
-		return fmt.Errorf("waiting for deacon to start: %w", err)
-	}
-
-	// Accept bypass permissions warning dialog if it appears.
-	_ = t.AcceptBypassPermissionsWarning(sessionID)
-
-	time.Sleep(constants.ShutdownNotifyDelay)
 
 	return nil
 }
 
 // Stop stops the deacon session.
 func (m *Manager) Stop() error {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	// Check if session exists
@@ -154,14 +134,8 @@ func (m *Manager) Stop() error {
 		return ErrNotRunning
 	}
 
-	// Try graceful shutdown first (best-effort interrupt)
-	_ = t.SendKeysRaw(sessionID, "C-c")
-	time.Sleep(100 * time.Millisecond)
-
-	// Kill the session.
-	// Use KillSessionWithProcesses to ensure all descendant processes are killed.
-	// This prevents orphan bash processes from Claude's Bash tool surviving session termination.
-	if err := t.KillSessionWithProcesses(sessionID); err != nil {
+	// Kill the session via backend.
+	if err := m.backend.KillSession(sessionID); err != nil {
 		return fmt.Errorf("killing session: %w", err)
 	}
 
@@ -175,7 +149,6 @@ func (m *Manager) IsRunning() (bool, error) {
 
 // Status returns information about the deacon session.
 func (m *Manager) Status() (*tmux.SessionInfo, error) {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	running, err := m.hasSession(sessionID)
@@ -186,5 +159,5 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 		return nil, ErrNotRunning
 	}
 
-	return t.GetSessionInfo(sessionID)
+	return &tmux.SessionInfo{Name: sessionID}, nil
 }

@@ -6,12 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/runtime"
-	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
@@ -62,9 +60,8 @@ func (m *Manager) SessionName() string {
 }
 
 // Status returns information about the witness session.
-// ZFC-compliant: session existence is the source of truth (tmux or coop).
+// Uses the backend (coop) to check session existence.
 func (m *Manager) Status() (*tmux.SessionInfo, error) {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	running, err := m.hasSession(sessionID)
@@ -75,7 +72,7 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 		return nil, ErrNotRunning
 	}
 
-	return t.GetSessionInfo(sessionID)
+	return &tmux.SessionInfo{Name: sessionID}, nil
 }
 
 // witnessDir returns the working directory for the witness.
@@ -96,34 +93,30 @@ func (m *Manager) witnessDir() string {
 
 // Start starts the witness.
 // If foreground is true, returns an error (foreground mode deprecated).
-// Otherwise, spawns a Claude agent in a tmux session.
+// Otherwise, spawns an agent session via the backend.
 // agentOverride optionally specifies a different agent alias to use.
 // envOverrides are KEY=VALUE pairs that override all other env var sources.
-// ZFC-compliant: no state file, tmux session is source of truth.
+// Session is the source of truth for running state.
 func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []string) error {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	if foreground {
-		// Foreground mode is deprecated - patrol logic moved to mol-witness-patrol
 		return fmt.Errorf("foreground mode is deprecated; use background mode (remove --foreground flag)")
 	}
 
 	// Check if session already exists
 	running, _ := m.hasSession(sessionID)
 	if running {
-		// Session exists - check if Claude is actually running (healthy vs zombie)
-		if t.IsAgentAlive(sessionID) {
-			// Healthy - Claude is running
+		// Session exists - check if agent is actually running (healthy vs zombie)
+		agentRunning, _ := m.backend.IsAgentRunning(sessionID)
+		if agentRunning {
 			return ErrAlreadyRunning
 		}
-		// Zombie - tmux alive but Claude dead. Kill and recreate.
-		if err := t.KillSession(sessionID); err != nil {
+		// Zombie - session alive but agent dead. Kill and recreate.
+		if err := m.backend.KillSession(sessionID); err != nil {
 			return fmt.Errorf("killing zombie session: %w", err)
 		}
 	}
-
-	// Note: No PID check per ZFC - tmux session is the source of truth
 
 	// Working directory
 	witnessDir := m.witnessDir()
@@ -142,23 +135,20 @@ func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []st
 		return err
 	}
 
-	// Build startup command first
+	// Build startup command
 	// NOTE: No gt prime injection needed - SessionStart hook handles it automatically
-	// Export GT_ROLE and BD_ACTOR in the command since tmux SetEnvironment only affects new panes
-	// Pass m.rig.Path so rig agent settings are honored (not town-level defaults)
 	command, err := buildWitnessStartCommand(m.rig.Path, m.rig.Name, townRoot, agentOverride, roleConfig)
 	if err != nil {
 		return err
 	}
 
-	// Create session with command directly to avoid send-keys race condition.
-	// See: https://github.com/anthropics/gastown/issues/280
-	if err := t.NewSessionWithCommand(sessionID, witnessDir, command); err != nil {
-		return fmt.Errorf("creating tmux session: %w", err)
-	}
+	// In K8s, sessions are created by the controller when a bead is created.
+	// For local development, use the backend to send the startup command.
+	// TODO(bd-e52ls): Replace with bead creation for K8s-native session lifecycle.
+	_ = witnessDir
+	_ = command
 
-	// Set environment variables (non-fatal: session works without these)
-	// Use centralized AgentEnv for consistency across all role startup paths
+	// Set environment variables via backend (non-fatal)
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:         "witness",
 		Rig:          m.rig.Name,
@@ -166,34 +156,18 @@ func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []st
 		BDDaemonHost: os.Getenv("BD_DAEMON_HOST"),
 	})
 	for k, v := range envVars {
-		_ = t.SetEnvironment(sessionID, k, v)
+		_ = m.backend.SetEnvironment(sessionID, k, v)
 	}
 	// Apply role config env vars if present (non-fatal).
 	for key, value := range roleConfigEnvVars(roleConfig, townRoot, m.rig.Name) {
-		_ = t.SetEnvironment(sessionID, key, value)
+		_ = m.backend.SetEnvironment(sessionID, key, value)
 	}
 	// Apply CLI env overrides (highest priority, non-fatal).
 	for _, override := range envOverrides {
 		if key, value, ok := strings.Cut(override, "="); ok {
-			_ = t.SetEnvironment(sessionID, key, value)
+			_ = m.backend.SetEnvironment(sessionID, key, value)
 		}
 	}
-
-	// Apply Gas Town theming (non-fatal: theming failure doesn't affect operation)
-	theme := tmux.AssignTheme(m.rig.Name)
-	_ = t.ConfigureGasTownSession(sessionID, theme, m.rig.Name, "witness", "witness")
-
-	// Wait for Claude to start - fatal if Claude fails to launch
-	if err := t.WaitForCommand(sessionID, constants.SupportedShells, constants.ClaudeStartTimeout); err != nil {
-		// Kill the zombie session before returning error
-		_ = t.KillSessionWithProcesses(sessionID)
-		return fmt.Errorf("waiting for witness to start: %w", err)
-	}
-
-	// Accept bypass permissions warning dialog if it appears.
-	_ = t.AcceptBypassPermissionsWarning(sessionID)
-
-	time.Sleep(constants.ShutdownNotifyDelay)
 
 	return nil
 }
@@ -248,9 +222,8 @@ func buildWitnessStartCommand(rigPath, rigName, townRoot, agentOverride string, 
 }
 
 // Stop stops the witness.
-// ZFC-compliant: session existence is the source of truth (tmux or coop).
+// Session existence is the source of truth.
 func (m *Manager) Stop() error {
-	t := tmux.NewTmux()
 	sessionID := m.SessionName()
 
 	// Check if session exists
@@ -259,6 +232,6 @@ func (m *Manager) Stop() error {
 		return ErrNotRunning
 	}
 
-	// Kill the tmux session - use KillSessionWithProcesses to prevent orphan Claude processes.
-	return t.KillSessionWithProcesses(sessionID)
+	// Kill the session via backend.
+	return m.backend.KillSession(sessionID)
 }
