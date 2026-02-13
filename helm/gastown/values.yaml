@@ -506,8 +506,8 @@ coopBroker:
   credentials:
     accountName: "claude-max"
     provider: "claude"
-    clientId: "9d1c"
-    tokenUrl: "https://console.anthropic.com/v1/oauth/token"
+    clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+    tokenUrl: "https://platform.claude.com/v1/oauth/token"
     deviceAuthUrl: "https://console.anthropic.com/v1/oauth/device/code"
     refreshMarginSecs: 300
   # Additional accounts (list of {name, provider, clientId, tokenUrl, deviceAuthUrl, refreshMarginSecs})

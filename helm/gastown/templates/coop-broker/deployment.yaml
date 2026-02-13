@@ -200,10 +200,26 @@ spec:
                   echo "[seeder] WARNING: credentials file not found at $CREDS_FILE"
                   echo "[seeder] Use 'coop cred add' to seed credentials manually"
                 else
-                  # Extract tokens from Claude credentials JSON
-                  ACCESS_TOKEN=$(python3 -c "import json; c=json.load(open('$CREDS_FILE')); print(c.get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null)
-                  REFRESH_TOKEN=$(python3 -c "import json; c=json.load(open('$CREDS_FILE')); print(c.get('claudeAiOauth',{}).get('refreshToken',''))" 2>/dev/null)
-                  EXPIRES_AT=$(python3 -c "import json; c=json.load(open('$CREDS_FILE')); print(c.get('claudeAiOauth',{}).get('expiresAt',0))" 2>/dev/null)
+                  # Extract tokens from Claude credentials JSON.
+                  # Supports both nested (claudeAiOauth.accessToken) and flat (accessToken) formats.
+                  ACCESS_TOKEN=$(python3 -c "
+              import json
+              c=json.load(open('$CREDS_FILE'))
+              o=c.get('claudeAiOauth',{})
+              print(o.get('accessToken','') or c.get('accessToken',''))
+              " 2>/dev/null)
+                  REFRESH_TOKEN=$(python3 -c "
+              import json
+              c=json.load(open('$CREDS_FILE'))
+              o=c.get('claudeAiOauth',{})
+              print(o.get('refreshToken','') or c.get('refreshToken',''))
+              " 2>/dev/null)
+                  EXPIRES_AT=$(python3 -c "
+              import json
+              c=json.load(open('$CREDS_FILE'))
+              o=c.get('claudeAiOauth',{})
+              print(o.get('expiresAt',0) or c.get('expiresAt',0))
+              " 2>/dev/null)
 
                   if [ -n "$REFRESH_TOKEN" ]; then
                     # Calculate expires_in from expiresAt (ms epoch)
@@ -249,9 +265,24 @@ spec:
                 echo "[seeder] No healthy credentials, re-seeding from K8s secret..."
                 CREDS_FILE="/tmp/claude-credentials/credentials.json"
                 if [ -f "$CREDS_FILE" ]; then
-                  ACCESS_TOKEN=$(python3 -c "import json; c=json.load(open('$CREDS_FILE')); print(c.get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null)
-                  REFRESH_TOKEN=$(python3 -c "import json; c=json.load(open('$CREDS_FILE')); print(c.get('claudeAiOauth',{}).get('refreshToken',''))" 2>/dev/null)
-                  EXPIRES_AT=$(python3 -c "import json; c=json.load(open('$CREDS_FILE')); print(c.get('claudeAiOauth',{}).get('expiresAt',0))" 2>/dev/null)
+                  ACCESS_TOKEN=$(python3 -c "
+              import json
+              c=json.load(open('$CREDS_FILE'))
+              o=c.get('claudeAiOauth',{})
+              print(o.get('accessToken','') or c.get('accessToken',''))
+              " 2>/dev/null)
+                  REFRESH_TOKEN=$(python3 -c "
+              import json
+              c=json.load(open('$CREDS_FILE'))
+              o=c.get('claudeAiOauth',{})
+              print(o.get('refreshToken','') or c.get('refreshToken',''))
+              " 2>/dev/null)
+                  EXPIRES_AT=$(python3 -c "
+              import json
+              c=json.load(open('$CREDS_FILE'))
+              o=c.get('claudeAiOauth',{})
+              print(o.get('expiresAt',0) or c.get('expiresAt',0))
+              " 2>/dev/null)
                   NOW_MS=$(python3 -c "import time; print(int(time.time()*1000))")
                   EXPIRES_IN=$(python3 -c "print(max(0, ($EXPIRES_AT - $NOW_MS) // 1000))")
                   ACCOUNT_NAME="{{ .Values.coopBroker.credentials.accountName }}"
