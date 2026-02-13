@@ -75,6 +75,22 @@ type VersionChange struct {
 // versionChanges contains agent-actionable changes for recent versions
 var versionChanges = []VersionChange{
 	{
+		Version: "0.7.0",
+		Date:    "2026-02-13",
+		Changes: []string{
+			"REMOVED: internal/tmux/ package deleted — gastown is tmux-free",
+			"CHANGED: All sessions use terminal.Backend (CoopBackend) exclusively",
+			"CHANGED: dog.NewSessionManager takes terminal.Backend, not *tmux.Tmux",
+			"CHANGED: Theme relocated to internal/style/ package",
+			"CHANGED: All exec.Command(\"bd\",...) migrated to bdcmd.Command()",
+			"CHANGED: All exec.Command(\"gt\",...) replaced with direct calls",
+			"NEW: mol-gastown-release-deploy formula for release → deploy → validate",
+			"NEW: Bead-ID annotation on pods for canonical ID resolution",
+			"NEW: LSP support (gopls, rust-analyzer) in toolchain sidecar",
+			"FIX: Controller bead-id annotation fixes 500s for mayor/crew pods",
+		},
+	},
+	{
 		Version: "0.3.0",
 		Date:    "2026-02-10",
 		Changes: []string{

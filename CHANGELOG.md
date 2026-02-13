@@ -9,9 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-02-13
+
+### Removed
+- **Deleted `internal/tmux/` package entirely** — gastown is now tmux-free
+- Removed all 95 `tmux.NewTmux()` call sites across 53 files (-4,374 lines)
+- Deleted 6 tmux-only doctor checks (env, orphan, zombie, theme, tmux, linked-pane)
+- Deleted terminal integration test suite (tmux-specific)
+- Removed `TmuxBackend`, `SSHBackend`, `LocalConnection` from earlier sub-epics
+
 ### Changed
-- **Bump coop v0.4.0 → v0.5.0** in agent Dockerfile (session switch, usage tracking)
-- **Fix agent state check** in entrypoint: `waiting_for_input` → `idle` (coop v0.5.0 rename)
+- **All agent sessions use `terminal.Backend` (CoopBackend)** — sole execution path
+- `dog.NewSessionManager` now takes `terminal.Backend` instead of `*tmux.Tmux`
+- `session.StopTownSession` now takes `terminal.Backend` as first parameter
+- Relocated `Theme` type and palette to `internal/style/` package
+- Relocated `SessionInfo` type to `internal/terminal/` package
+- All `exec.Command("bd",...)` calls migrated to `bdcmd.Command()` for daemon env propagation
+- All `exec.Command("gt",...)` calls replaced with direct function calls
+- `NudgeAgent` RPC rewritten to use coop API instead of `exec gt nudge`
+- Bump coop v0.4.0 → v0.5.0 in agent Dockerfile (session switch, usage tracking)
+- Fix agent state check in entrypoint: `waiting_for_input` → `idle` (coop v0.5.0 rename)
+
+### Added
+- `mol-gastown-release-deploy` formula — end-to-end release → deploy → validate pipeline
+- Bead-ID annotation (`gastown.io/bead-id`) on pods for canonical ID resolution
+- Default sidecar profile applied when bead has no explicit setting
+- `gopls` and `rust-analyzer` LSP support in toolchain sidecar
+- Agent image drift detection with auto-bounce
+- Decision flow E2E lifecycle test (14 tests)
+
+### Fixed
+- Controller uses bead-id annotation for canonical ID resolution (fixes 500s for mayor/crew pods)
+- Rig identity beads used instead of config beads for rig registry
 
 ## [0.3.0] - 2026-02-10
 
