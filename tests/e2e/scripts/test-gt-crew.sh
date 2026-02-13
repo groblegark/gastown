@@ -63,7 +63,8 @@ BEAD_CREATED=false
 
 test_create_crew_bead() {
   # Create an agent bead mimicking what gt crew start would do.
-  # Use single-line description to avoid kube exec multiline issues.
+  # Notes field carries metadata the controller reads (sidecar_profile, etc.).
+  # Use single-line values to avoid kube exec multiline issues.
   local output
   output=$(daemon_bd create \
     --id="$CREW_BEAD_ID" \
@@ -75,7 +76,8 @@ test_create_crew_bead() {
     --label="rig:${CREW_RIG}" \
     --label="role:crew" \
     --label="agent:${CREW_NAME}" \
-    --description="role_type: crew, rig: ${CREW_RIG}, agent_state: spawning" 2>&1)
+    --description="role_type: crew, rig: ${CREW_RIG}, agent_state: spawning" \
+    --notes="sidecar_profile: toolchain-minimal" 2>&1)
 
   if echo "$output" | grep -q "Created issue"; then
     BEAD_CREATED=true
@@ -156,58 +158,84 @@ test_pod_running() {
 }
 run_test "Crew pod reaches Running state" test_pod_running
 
-# ── Test 5: Crew pod has at least one ready container ────────────────
+# ── Test 5: At least one container is ready ─────────────────────────────
+# Known limitation: AgentSpawn event path does NOT call resolveSidecar(),
+# so E2E test pods get single-container (agent only, no toolchain sidecar).
+# See beads-qq4j. The agent container may crash-loop due to entrypoint
+# running bd version against the daemon before coop starts.
+# This test checks both init and regular container statuses.
+CONTAINER_READY=false
+
 test_pod_containers() {
   if [[ "$POD_RUNNING" != "true" ]]; then return 1; fi
-  # Wait for at least one container to be ready.
-  # Full readiness may require valid OAuth credentials which
-  # the E2E test bead might not have (credential seeding is separate).
-  local deadline=$((SECONDS + 60))
+  local deadline=$((SECONDS + 90))
   while [[ $SECONDS -lt $deadline ]]; do
-    local status
-    status=$(kube get pod "$CREW_BEAD_ID" --no-headers 2>/dev/null | awk '{print $2}')
-    local ready
-    ready=$(echo "$status" | cut -d/ -f1)
-    if [[ "${ready:-0}" -gt 0 ]]; then
-      log "Pod readiness: $status"
-      return 0
+    local init_statuses
+    init_statuses=$(kube get pod "$CREW_BEAD_ID" -o jsonpath='{range .status.initContainerStatuses[*]}{.name}={.ready}{" "}{end}' 2>/dev/null)
+    local container_statuses
+    container_statuses=$(kube get pod "$CREW_BEAD_ID" -o jsonpath='{range .status.containerStatuses[*]}{.name}={.ready}{" "}{end}' 2>/dev/null)
+    local all_statuses="${init_statuses}${container_statuses}"
+    if [[ -n "$all_statuses" ]]; then
+      log "Container statuses: $all_statuses"
+      if echo "$all_statuses" | grep -q "=true"; then
+        CONTAINER_READY=true
+        return 0
+      fi
     fi
     sleep 5
   done
   local final_status
   final_status=$(kube get pod "$CREW_BEAD_ID" --no-headers 2>/dev/null | awk '{print $2}')
-  log "Pod readiness: $final_status (no containers ready after 60s)"
+  log "No containers ready after 90s (pod: $final_status)"
+  # Non-fatal: agent crash-loop is expected when entrypoint runs bd version
+  # before daemon connection is established. The pod lifecycle test (create/delete)
+  # is the primary validation.
   return 1
 }
-run_test "Crew pod has at least one ready container" test_pod_containers
+run_test "At least one container is ready" test_pod_containers
 
-# ── Test 6: Coop sidecar health on crew pod ──────────────────────────
+# ── Test 6: Coop health on crew pod (requires agent container ready) ────
+# Coop runs inside the agent container (ports 8080/9090 are on agent, not
+# toolchain sidecar). If the agent crashes, coop is unavailable.
 test_coop_health() {
   if [[ "$POD_RUNNING" != "true" ]]; then return 1; fi
-  # Port 9090 is coop health-only port (always responds, even without valid agent).
-  # Port 8080 is full API (requires agent to be running).
+  # Check if agent container is specifically ready (not just toolchain)
+  local agent_ready
+  agent_ready=$(kube get pod "$CREW_BEAD_ID" -o jsonpath='{.status.containerStatuses[?(@.name=="agent")].ready}' 2>/dev/null)
+  if [[ "$agent_ready" != "true" ]]; then
+    log "Agent container not ready (coop runs inside agent, not toolchain sidecar)"
+    return 1
+  fi
+  # Try port 9090 first (health-only, always responds).
   local port
-  port=$(start_port_forward "pod/$CREW_BEAD_ID" 9090) || return 1
+  port=$(start_port_forward "pod/$CREW_BEAD_ID" 9090) || port=""
+  if [[ -z "$port" ]]; then
+    # Fallback to port 8080 (full API)
+    port=$(start_port_forward "pod/$CREW_BEAD_ID" 8080) || port=""
+  fi
+  if [[ -z "$port" ]]; then
+    log "Port-forward failed for both 9090 and 8080"
+    return 1
+  fi
   local deadline=$((SECONDS + 30))
   while [[ $SECONDS -lt $deadline ]]; do
     local resp
-    resp=$(curl -sf --connect-timeout 5 "http://127.0.0.1:${port}/healthz" 2>/dev/null)
+    resp=$(curl -sf --connect-timeout 3 "http://127.0.0.1:${port}/healthz" 2>/dev/null)
     if [[ -n "$resp" ]]; then
-      log "Coop health-port responds"
+      log "Coop health responds on port $port"
       return 0
     fi
-    # Also try the full API port as fallback
-    resp=$(curl -sf --connect-timeout 5 "http://127.0.0.1:${port}/api/v1/health" 2>/dev/null)
+    resp=$(curl -sf --connect-timeout 3 "http://127.0.0.1:${port}/api/v1/health" 2>/dev/null)
     if [[ -n "$resp" ]]; then
-      log "Coop API responds"
+      log "Coop API responds on port $port"
       return 0
     fi
     sleep 3
   done
-  log "Coop health: no response within 30s"
+  log "Coop health: no response on port $port within 30s"
   return 1
 }
-run_test "Coop sidecar health responds on crew pod" test_coop_health
+run_test "Coop health responds on crew pod" test_coop_health
 
 # ── Test 7: Close bead triggers pod deletion ─────────────────────────
 test_close_bead() {
