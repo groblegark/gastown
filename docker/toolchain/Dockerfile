@@ -33,6 +33,10 @@ ARG GO_VERSION=1.24.1
 ARG TARGETARCH
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" | \
     tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:${PATH}" GOPATH="/tmp/go"
+RUN go install golang.org/x/tools/gopls@latest && \
+    mv /tmp/go/bin/gopls /usr/local/go/bin/gopls && \
+    rm -rf /tmp/go
 
 # ── Node.js ───────────────────────────────────────────────────────────
 FROM base AS node-builder
