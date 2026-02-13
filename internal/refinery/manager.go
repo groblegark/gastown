@@ -19,7 +19,6 @@ import (
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/util"
 )
 
@@ -98,7 +97,7 @@ func (m *Manager) IsRunning() (bool, error) {
 
 // Status returns information about the refinery session.
 // Uses the backend (coop) to check session existence.
-func (m *Manager) Status() (*tmux.SessionInfo, error) {
+func (m *Manager) Status() (*terminal.SessionInfo, error) {
 	sessionID := m.SessionName()
 
 	running, err := m.hasSession(sessionID)
@@ -109,7 +108,7 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 		return nil, ErrNotRunning
 	}
 
-	return &tmux.SessionInfo{Name: sessionID}, nil
+	return &terminal.SessionInfo{Name: sessionID}, nil
 }
 
 // Start starts the refinery.

@@ -176,7 +176,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 			}
 			continue
 		}
-		stopped, err := session.StopTownSession(nil, ts, downForce, backend)
+		stopped, err := session.StopTownSession(backend, ts, downForce)
 		if err != nil {
 			printDownStatus(ts.Name, false, err.Error())
 			allOK = false

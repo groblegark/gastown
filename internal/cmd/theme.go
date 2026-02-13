@@ -9,7 +9,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/config"
-	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -85,12 +85,12 @@ func runTheme(cmd *cobra.Command, args []string) error {
 	// List mode
 	if themeListFlag {
 		fmt.Println("Available themes:")
-		for _, name := range tmux.ListThemeNames() {
-			theme := tmux.GetThemeByName(name)
+		for _, name := range style.ListThemeNames() {
+			theme := style.GetThemeByName(name)
 			fmt.Printf("  %-10s  %s\n", name, theme.Style())
 		}
 		// Also show Mayor theme
-		mayor := tmux.MayorTheme()
+		mayor := style.MayorTheme()
 		fmt.Printf("  %-10s  %s (Mayor only)\n", mayor.Name, mayor.Style())
 		return nil
 	}
@@ -117,7 +117,7 @@ func runTheme(cmd *cobra.Command, args []string) error {
 
 	// Set theme
 	themeName := args[0]
-	theme := tmux.GetThemeByName(themeName)
+	theme := style.GetThemeByName(themeName)
 	if theme == nil {
 		return fmt.Errorf("unknown theme: %s (use --list to see available themes)", themeName)
 	}
@@ -184,15 +184,15 @@ func detectCurrentRig() string {
 }
 
 // getThemeForRig returns the theme for a rig, checking config first.
-func getThemeForRig(rigName string) tmux.Theme {
+func getThemeForRig(rigName string) style.Theme {
 	// Try to load configured theme
 	if themeName := loadRigTheme(rigName); themeName != "" {
-		if theme := tmux.GetThemeByName(themeName); theme != nil {
+		if theme := style.GetThemeByName(themeName); theme != nil {
 			return *theme
 		}
 	}
 	// Fall back to hash-based assignment
-	return tmux.AssignTheme(rigName)
+	return style.AssignTheme(rigName)
 }
 
 // getThemeForRole returns the theme for a specific role in a rig.
@@ -201,7 +201,7 @@ func getThemeForRig(rigName string) tmux.Theme {
 // 2. Global role default (mayor/config.json)
 // 3. Built-in role defaults (witness=rust, refinery=plum)
 // 4. Rig theme (config or hash-based)
-func getThemeForRole(rigName, role string) tmux.Theme {
+func getThemeForRole(rigName, role string) style.Theme {
 	townRoot, _ := workspace.FindFromCwd()
 
 	// 1. Check per-rig role override
@@ -210,7 +210,7 @@ func getThemeForRole(rigName, role string) tmux.Theme {
 		if settings, err := config.LoadRigSettings(settingsPath); err == nil {
 			if settings.Theme != nil && settings.Theme.RoleThemes != nil {
 				if themeName, ok := settings.Theme.RoleThemes[role]; ok {
-					if theme := tmux.GetThemeByName(themeName); theme != nil {
+					if theme := style.GetThemeByName(themeName); theme != nil {
 						return *theme
 					}
 				}
@@ -224,7 +224,7 @@ func getThemeForRole(rigName, role string) tmux.Theme {
 		if mayorCfg, err := config.LoadMayorConfig(mayorConfigPath); err == nil {
 			if mayorCfg.Theme != nil && mayorCfg.Theme.RoleDefaults != nil {
 				if themeName, ok := mayorCfg.Theme.RoleDefaults[role]; ok {
-					if theme := tmux.GetThemeByName(themeName); theme != nil {
+					if theme := style.GetThemeByName(themeName); theme != nil {
 						return *theme
 					}
 				}
@@ -235,7 +235,7 @@ func getThemeForRole(rigName, role string) tmux.Theme {
 	// 3. Check built-in role defaults
 	builtins := config.BuiltinRoleThemes()
 	if themeName, ok := builtins[role]; ok {
-		if theme := tmux.GetThemeByName(themeName); theme != nil {
+		if theme := style.GetThemeByName(themeName); theme != nil {
 			return *theme
 		}
 	}

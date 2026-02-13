@@ -10,7 +10,6 @@ import (
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
-	"github.com/steveyegge/gastown/internal/tmux"
 )
 
 // Common errors
@@ -209,7 +208,7 @@ func (m *Manager) IsRunning() (bool, error) {
 }
 
 // Status returns information about the mayor session.
-func (m *Manager) Status() (*tmux.SessionInfo, error) {
+func (m *Manager) Status() (*terminal.SessionInfo, error) {
 	sessionID := m.SessionName()
 
 	running, err := m.hasSession(sessionID)
@@ -220,5 +219,5 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 		return nil, ErrNotRunning
 	}
 
-	return &tmux.SessionInfo{Name: sessionID}, nil
+	return &terminal.SessionInfo{Name: sessionID}, nil
 }

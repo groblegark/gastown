@@ -1,12 +1,10 @@
-package tmux
+package style
 
-// Theme defines a color theme for tmux status bars.
-// This is a stub retained for API compatibility; themes are no longer applied
-// to tmux sessions in the K8s-only architecture.
+// Theme defines a color theme for agent status displays.
 type Theme struct {
 	Name string // Human-readable name
-	BG   string // Background color (hex or tmux color name)
-	FG   string // Foreground color (hex or tmux color name)
+	BG   string // Background color (hex)
+	FG   string // Foreground color (hex)
 }
 
 // Style returns a human-readable representation of the theme colors.
@@ -50,7 +48,6 @@ func GetThemeByName(name string) *Theme {
 			return &t
 		}
 	}
-	// Check named agent themes
 	switch name {
 	case "mayor":
 		th := MayorTheme()
@@ -75,7 +72,6 @@ func AssignThemeFromPalette(rigName string, palette []Theme) Theme {
 	if len(palette) == 0 {
 		return Theme{Name: "default", BG: "#1e3a5f", FG: "#e0e0e0"}
 	}
-	// Simple hash to deterministically assign themes
 	h := 0
 	for _, c := range rigName {
 		h = h*31 + int(c)

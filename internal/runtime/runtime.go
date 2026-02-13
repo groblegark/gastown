@@ -10,7 +10,7 @@ import (
 	"github.com/steveyegge/gastown/internal/claude"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/opencode"
-	"github.com/steveyegge/gastown/internal/tmux"
+	"github.com/steveyegge/gastown/internal/terminal"
 )
 
 // EnsureSettingsForRole installs runtime hook settings when supported.
@@ -145,11 +145,11 @@ func StartupFallbackCommands(role string, rc *config.RuntimeConfig) []string {
 	return []string{command}
 }
 
-// RunStartupFallback sends the startup fallback commands via tmux.
-func RunStartupFallback(t *tmux.Tmux, sessionID, role string, rc *config.RuntimeConfig) error {
+// RunStartupFallback sends the startup fallback commands via the terminal backend.
+func RunStartupFallback(backend terminal.Backend, sessionID, role string, rc *config.RuntimeConfig) error {
 	commands := StartupFallbackCommands(role, rc)
 	for _, cmd := range commands {
-		if err := t.NudgeSession(sessionID, cmd); err != nil {
+		if err := backend.NudgeSession(sessionID, cmd); err != nil {
 			return err
 		}
 	}

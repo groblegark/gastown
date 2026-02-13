@@ -13,7 +13,6 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
-	"github.com/steveyegge/gastown/internal/tmux"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -61,7 +60,7 @@ func (m *Manager) SessionName() string {
 
 // Status returns information about the witness session.
 // Uses the backend (coop) to check session existence.
-func (m *Manager) Status() (*tmux.SessionInfo, error) {
+func (m *Manager) Status() (*terminal.SessionInfo, error) {
 	sessionID := m.SessionName()
 
 	running, err := m.hasSession(sessionID)
@@ -72,7 +71,7 @@ func (m *Manager) Status() (*tmux.SessionInfo, error) {
 		return nil, ErrNotRunning
 	}
 
-	return &tmux.SessionInfo{Name: sessionID}, nil
+	return &terminal.SessionInfo{Name: sessionID}, nil
 }
 
 // witnessDir returns the working directory for the witness.
