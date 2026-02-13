@@ -563,6 +563,10 @@ func resolveSidecar(cfg *config.Config, metadata map[string]string, spec *podman
 	if len(cfg.SidecarProfiles) == 0 && metadata["sidecar_image"] == "" {
 		return
 	}
+	// Apply default sidecar profile when none is explicitly set in metadata.
+	if metadata["sidecar_profile"] == "" && metadata["sidecar_image"] == "" && cfg.DefaultSidecarProfile != "" {
+		metadata["sidecar_profile"] = cfg.DefaultSidecarProfile
+	}
 	profiles := make(map[string]podmanager.SidecarProfile)
 	for name, p := range cfg.SidecarProfiles {
 		sp := podmanager.SidecarProfile{
