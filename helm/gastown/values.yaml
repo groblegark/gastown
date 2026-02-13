@@ -340,6 +340,7 @@ bd-daemon:
       tag: ""  # defaults to daemon image tag if empty
       pullPolicy: Always
     secretName: "slack-bot-credentials"
+    coopBrokerURL: ""  # Coop broker URL for credential reauth (auto-wired in per-env values)
     resources:
       limits:
         cpu: 500m
