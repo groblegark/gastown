@@ -1,0 +1,409 @@
+formula = "mol-gastown-release-deploy"
+description = """
+Gastown Release → Deploy → Validate pipeline.
+
+End-to-end formula that cuts a gastown release, publishes the helm chart via
+GitHub Actions, bumps the chart dependency in fics-helm-chart, deploys to
+gastown-next, and validates with E2E tests.
+
+Usage:
+  gt formula run mol-gastown-release-deploy \
+    --var gt_version=0.7.0 \
+    --var chart_version=0.5.8
+
+The gt_version is the semver for the `gt` binary (tags as v0.7.0).
+The chart_version is the semver for helm/gastown/Chart.yaml.
+These are independent — chart_version tracks the chart structure, gt_version
+tracks the application.
+"""
+version = 1
+type = "workflow"
+
+[vars.gt_version]
+description = "Semantic version for gt binary release (e.g., 0.7.0)"
+required = true
+
+[vars.chart_version]
+description = "Semantic version for helm/gastown chart (e.g., 0.5.8)"
+required = true
+
+[vars.fics_chart_dir]
+description = "Path to fics-helm-chart gastown chart (default: ~/book/fics-helm-chart/charts/gastown)"
+required = false
+
+[vars.namespace]
+description = "K8s namespace to deploy to (default: gastown-next)"
+required = false
+
+# ── Phase 1: Release gastown ────────────────────────────────────────
+
+[[steps]]
+id = "preflight"
+title = "Preflight: verify repos and cluster access"
+description = """
+Verify all prerequisites before starting the release pipeline.
+
+Action:
+  1. Verify gastown repo is clean and on main:
+     cd ~/gastown3 && git status --short && git branch --show-current
+
+  2. Verify fics-helm-chart repo exists and is clean:
+     cd ${fics_chart_dir:-~/book/fics-helm-chart/charts/gastown} && git status --short
+
+  3. Verify cluster access:
+     kubectl cluster-info && kubectl get ns ${namespace:-gastown-next}
+
+  4. Verify helm is available:
+     helm version
+
+  5. Verify GHCR helm registry access:
+     helm registry login ghcr.io --username $GITHUB_USER
+
+  6. Check current versions:
+     grep '^version:' ~/gastown3/helm/gastown/Chart.yaml
+     grep 'Version = ' ~/gastown3/internal/cmd/version.go
+
+Verify:
+  All repos clean, cluster reachable, helm available, current versions noted.
+
+OnFail:
+  Do not proceed. Fix dirty repos, check kubeconfig/VPN, verify GHCR credentials.
+"""
+
+[[steps]]
+id = "bump-gt-version"
+title = "Bump gt version to {{gt_version}}"
+needs = ["preflight"]
+description = """
+Run the gastown release steps: version bump, changelog, info.go.
+
+Action:
+  cd ~/gastown3
+
+  1. Review changes since last release:
+     git log $(git describe --tags --abbrev=0)..HEAD --oneline
+
+  2. Update CHANGELOG.md with release notes under [Unreleased].
+
+  3. Update internal/cmd/info.go versionChanges with agent-facing changes.
+     Key changes for this release:
+     - REMOVED: internal/tmux/ package deleted entirely
+     - CHANGED: All agent sessions use terminal.Backend (CoopBackend)
+     - CHANGED: Theme relocated to internal/style/
+     - CHANGED: dog.NewSessionManager takes terminal.Backend (not *tmux.Tmux)
+     - CHANGED: session.StopTownSession takes terminal.Backend as first param
+
+  4. Run bump script:
+     ./scripts/bump-version.sh {{gt_version}}
+
+  5. Verify:
+     grep 'Version = ' internal/cmd/version.go
+     # Should show {{gt_version}}
+
+OnFail:
+  If bump-version.sh doesn't exist or fails, manually update:
+  - internal/cmd/version.go: Version = "{{gt_version}}"
+  - CHANGELOG.md: Add [{{gt_version}}] header
+"""
+
+[[steps]]
+id = "bump-chart-version"
+title = "Bump helm chart version to {{chart_version}}"
+needs = ["bump-gt-version"]
+description = """
+Update the gastown helm chart version and appVersion.
+
+Action:
+  cd ~/gastown3
+
+  1. Edit helm/gastown/Chart.yaml:
+     - version: {{chart_version}}
+     - appVersion: "{{gt_version}}"
+
+  2. If helm/agent-pod/Chart.yaml exists, bump its version too.
+
+  3. Verify:
+     grep '^version:' helm/gastown/Chart.yaml
+     grep '^appVersion:' helm/gastown/Chart.yaml
+
+OnFail:
+  Check Chart.yaml syntax. Version must be valid semver.
+"""
+
+[[steps]]
+id = "build-and-test"
+title = "Build and run tests"
+needs = ["bump-chart-version"]
+description = """
+Verify the release builds cleanly and tests pass.
+
+Action:
+  cd ~/gastown3
+  make build
+  make test
+
+  Ignore pre-existing integration test failures (beads, cmd advice tests,
+  configbeads, mail, rig — these require a running daemon).
+
+  The key packages to verify pass:
+  - internal/terminal, internal/style, internal/sling, internal/doctor
+  - internal/witness, internal/session, internal/statusline
+  - internal/dog, internal/runtime, internal/deacon, internal/refinery
+
+Verify:
+  Build succeeds. No NEW test failures.
+
+OnFail:
+  Fix build errors before proceeding. Do not release broken code.
+"""
+
+[[steps]]
+id = "commit-tag-push"
+title = "Commit, tag v{{gt_version}}, and push"
+needs = ["build-and-test"]
+description = """
+Create the release commit and tag, push to GitHub.
+
+Action:
+  cd ~/gastown3
+
+  1. Stage all changes:
+     git add -A
+
+  2. Commit:
+     git commit -m "chore: release v{{gt_version}} — tmux deleted, K8s-only"
+
+  3. Create annotated tag:
+     git tag -a v{{gt_version}} -m "Release v{{gt_version}}"
+
+  4. Push:
+     git push origin main
+     git push origin v{{gt_version}}
+
+  5. Monitor GitHub Actions:
+     gh run list --workflow=helm.yml --limit=3
+     The helm.yml workflow should trigger and publish:
+     - gastown chart v{{chart_version}} to oci://ghcr.io/groblegark/charts
+
+Verify:
+  Tag pushed. GitHub Actions helm workflow triggered.
+
+OnFail:
+  If push rejected: git pull --rebase, re-tag, retry.
+  If Actions fail: check workflow logs via gh run view.
+"""
+
+# ── Phase 2: Wait for chart publish ─────────────────────────────────
+
+[[steps]]
+id = "wait-chart-publish"
+title = "Wait for gastown chart v{{chart_version}} to be published"
+needs = ["commit-tag-push"]
+description = """
+Wait for GitHub Actions to publish the gastown helm chart to GHCR.
+
+Action:
+  1. Watch the helm workflow:
+     gh run list --workflow=helm.yml --limit=3
+     gh run watch <run-id>
+
+  2. Once complete, verify the chart is available:
+     helm pull oci://ghcr.io/groblegark/charts/gastown --version {{chart_version}}
+
+  3. If the pull succeeds, the chart is published. Clean up the downloaded .tgz.
+
+  Alternative: wait up to 5 minutes, polling every 30s:
+    for i in $(seq 1 10); do
+      if helm pull oci://ghcr.io/groblegark/charts/gastown --version {{chart_version}} 2>/dev/null; then
+        echo "Chart published!"
+        rm -f gastown-{{chart_version}}.tgz
+        break
+      fi
+      echo "Waiting for chart publish... ($i/10)"
+      sleep 30
+    done
+
+Verify:
+  helm pull succeeds for gastown:{{chart_version}}.
+
+OnFail:
+  Check GitHub Actions logs. Common issues:
+  - GHCR auth failure (check GITHUB_TOKEN permissions)
+  - Chart lint failure (check Chart.yaml syntax)
+  - Dependency build failure (bd-daemon chart not found)
+"""
+
+# ── Phase 3: Bump fics-helm-chart ───────────────────────────────────
+
+[[steps]]
+id = "bump-fics-chart"
+title = "Bump gastown dependency in fics-helm-chart"
+needs = ["wait-chart-publish"]
+description = """
+Update fics-helm-chart to use the new gastown chart version.
+
+Action:
+  FICS_DIR="${fics_chart_dir:-$HOME/book/fics-helm-chart/charts/gastown}"
+  cd "$FICS_DIR"
+
+  1. Pull latest:
+     git pull --rebase
+
+  2. Edit Chart.yaml:
+     - Update the gastown dependency version:
+       dependencies:
+         - name: gastown
+           version: "~{{chart_version}}"
+           repository: oci://ghcr.io/groblegark/charts
+
+     - Bump the wrapper chart version (e.g., 0.5.3 → 0.5.4 or match {{chart_version}}).
+
+  3. Update dependencies:
+     helm dependency update .
+
+  4. Verify the new chart was pulled:
+     ls charts/gastown-{{chart_version}}.tgz
+
+  5. Commit and push:
+     git add Chart.yaml Chart.lock charts/
+     git commit -m "chore: bump gastown chart to {{chart_version}}"
+     git push origin main
+
+Verify:
+  Chart.lock references gastown {{chart_version}}.
+  charts/ contains the new gastown .tgz.
+
+OnFail:
+  If helm dep update fails: check GHCR auth, verify chart exists in registry.
+  If version constraint doesn't match: adjust the ~X.Y.Z constraint.
+"""
+
+# ── Phase 4: Deploy to gastown-next ─────────────────────────────────
+
+[[steps]]
+id = "deploy"
+title = "Deploy to {{namespace}} via helm upgrade"
+needs = ["bump-fics-chart"]
+description = """
+Deploy the updated gastown stack to the target namespace.
+
+Action:
+  FICS_DIR="${fics_chart_dir:-$HOME/book/fics-helm-chart/charts/gastown}"
+  NS="${namespace:-gastown-next}"
+  cd "$FICS_DIR"
+
+  helm upgrade --install "$NS" ./ \
+    -n "$NS" \
+    --values values.yaml \
+    --values "values/${NS}.yaml" \
+    --timeout 600s --wait
+
+  IMPORTANT: If ExternalSecret remoteRefs are needed, pass them via --set.
+  These are NOT committed to git. Check the existing deployment for the
+  required --set flags:
+    helm get values "$NS" -n "$NS" | grep remoteRef
+
+Verify:
+  All pods reach Running state:
+    kubectl get pods -n $NS
+  Key pods to verify:
+    - dolt (2/2)
+    - bd-daemon (2/2)
+    - redis (1/1)
+    - nats (1/1)
+    - coop-broker (2/2)
+    - agent-controller (1/1)
+
+OnFail:
+  Check pod events: kubectl get events -n $NS --sort-by=.lastTimestamp
+  Check failing pod logs: kubectl logs -n $NS <pod> --tail=50
+  If image pull fails: verify the container images exist in GHCR.
+  Rollback if needed: helm rollback $NS -n $NS
+"""
+
+# ── Phase 5: Validate ───────────────────────────────────────────────
+
+[[steps]]
+id = "validate-infra"
+title = "Validate infrastructure health in {{namespace}}"
+needs = ["deploy"]
+description = """
+Run the E2E infrastructure health suite against the deployed namespace.
+
+Action:
+  cd ~/gastown3
+  NS="${namespace:-gastown-next}"
+
+  Run the bootstrap validation formula or script:
+    E2E_NAMESPACE=$NS ./tests/e2e/scripts/run-suite.sh \
+      --skip agent-spawn --skip agent-state --skip agent-io \
+      --skip agent-credentials --skip agent-resume --skip agent-multi \
+      --skip agent-coordination --skip agent-cleanup --skip agent-lifecycle
+
+  Or run individual modules:
+    E2E_NAMESPACE=$NS ./tests/e2e/scripts/test-dolt-health.sh
+    E2E_NAMESPACE=$NS ./tests/e2e/scripts/test-daemon-health.sh
+    E2E_NAMESPACE=$NS ./tests/e2e/scripts/test-nats-health.sh
+    E2E_NAMESPACE=$NS ./tests/e2e/scripts/test-coop-broker-health.sh
+    E2E_NAMESPACE=$NS ./tests/e2e/scripts/test-controller-health.sh
+
+Verify:
+  All infrastructure modules pass. NATS, daemon, controller, broker all healthy.
+
+OnFail:
+  File bugs for failures. Check if the new gastown image has startup issues.
+  Compare pod logs before/after the upgrade.
+"""
+
+[[steps]]
+id = "validate-agents"
+title = "Validate agent capabilities in {{namespace}}"
+needs = ["validate-infra"]
+description = """
+Run the E2E agent capability suite against the deployed namespace.
+
+Action:
+  cd ~/gastown3
+  NS="${namespace:-gastown-next}"
+
+  Run the agent validation:
+    E2E_NAMESPACE=$NS ./tests/e2e/scripts/run-suite.sh \
+      --skip dolt-health --skip redis-health --skip daemon-health \
+      --skip nats-health --skip coop-broker-health --skip controller-health \
+      --skip git-mirror-health --skip dolt-s3-sync --skip controller-failsafe \
+      --skip slack-bot-health
+
+Verify:
+  Agent spawn, state, I/O, credentials, lifecycle modules pass.
+
+OnFail:
+  This is the critical test — agents must work after the tmux deletion.
+  Key things to check:
+  - Do agent pods spawn? (controller + bead creation)
+  - Does coop respond on :8080? (agent sidecar health)
+  - Can the daemon reach agent pods? (backend.HasSession, IsAgentRunning)
+  If agents don't work, this is a release blocker. Do NOT proceed.
+"""
+
+[[steps]]
+id = "summary"
+title = "Release + deploy summary"
+needs = ["validate-infra", "validate-agents"]
+description = """
+Produce the final release + deploy report.
+
+Action:
+  Summarize:
+  - gt version: v{{gt_version}} — tagged and pushed
+  - Chart version: gastown {{chart_version}} — published to GHCR OCI
+  - fics-helm-chart: dependency bumped and committed
+  - Deployed to: ${namespace:-gastown-next}
+  - Infrastructure health: PASS/FAIL (X/10 modules)
+  - Agent capabilities: PASS/FAIL (X/9 modules)
+
+  If all pass: release is verified and deployed.
+  If any fail: list failures and associated bugs.
+
+Verify:
+  Report is complete and accurate.
+"""
