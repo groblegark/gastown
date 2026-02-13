@@ -94,6 +94,8 @@ MODULES=(
   "dolt-s3-sync"
   "controller-failsafe"
   "slack-bot-health"
+  "slack-bot-decisions"
+  "credential-refresh"
 )
 
 should_skip() {
