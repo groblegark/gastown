@@ -866,12 +866,12 @@ while true; do
     # an infinite loop of stale-session retirements.
     RESUME_FLAG=""
     MAX_STALE_RETRIES=2
-    STALE_COUNT=$(find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl.stale' -type f 2>/dev/null | wc -l | tr -d ' ')
+    STALE_COUNT=$( (find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl.stale' -type f 2>/dev/null || true) | wc -l | tr -d ' ')
     if [ "${SESSION_RESUME}" = "1" ] && [ -d "${CLAUDE_STATE}/projects" ] && [ "${STALE_COUNT:-0}" -lt "${MAX_STALE_RETRIES}" ]; then
         # Only look for top-level session logs, NOT subagent logs in subagents/ dirs.
         # Subagent .jsonl files cause Claude to show a "Resume Session" picker UI
         # which hangs because there's no user to interact with it.
-        LATEST_LOG=$(find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl' -not -path '*/subagents/*' -type f -printf '%T@ %p\n' 2>/dev/null \
+        LATEST_LOG=$( (find "${CLAUDE_STATE}/projects" -maxdepth 2 -name '*.jsonl' -not -path '*/subagents/*' -type f -printf '%T@ %p\n' 2>/dev/null || true) \
             | sort -rn | head -1 | cut -d' ' -f2-)
         if [ -n "${LATEST_LOG}" ]; then
             RESUME_FLAG="--resume ${LATEST_LOG}"
