@@ -55,9 +55,9 @@ var deaconStartCmd = &cobra.Command{
 	Use:     "start",
 	Aliases: []string{"spawn"},
 	Short:   "Start the Deacon session",
-	Long: `Start the Deacon tmux session.
+	Long: `Start the Deacon session.
 
-Creates a new detached tmux session for the Deacon and launches Claude.
+Creates a new detached session for the Deacon and launches Claude.
 The session runs in the workspace root directory.`,
 	RunE: runDeaconStart,
 }
@@ -65,9 +65,9 @@ The session runs in the workspace root directory.`,
 var deaconStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the Deacon session",
-	Long: `Stop the Deacon tmux session.
+	Long: `Stop the Deacon session.
 
-Attempts graceful shutdown first (Ctrl-C), then kills the tmux session.`,
+Attempts graceful shutdown first (Ctrl-C), then kills the session.`,
 	RunE: runDeaconStop,
 }
 
@@ -75,24 +75,23 @@ var deaconAttachCmd = &cobra.Command{
 	Use:     "attach",
 	Aliases: []string{"at"},
 	Short:   "Attach to the Deacon session",
-	Long: `Attach to the running Deacon tmux session.
+	Long: `Attach to the running Deacon session.
 
-Attaches the current terminal to the Deacon's tmux session.
-Detach with Ctrl-B D.`,
+Attaches the current terminal to the Deacon's session.`,
 	RunE: runDeaconAttach,
 }
 
 var deaconStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check Deacon session status",
-	Long:  `Check if the Deacon tmux session is currently running.`,
+	Long:  `Check if the Deacon session is currently running.`,
 	RunE:  runDeaconStatus,
 }
 
 var deaconRestartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Restart the Deacon session",
-	Long: `Restart the Deacon tmux session.
+	Long: `Restart the Deacon session.
 
 Stops the current session (if running) and starts a fresh one.`,
 	RunE: runDeaconRestart,
@@ -171,7 +170,7 @@ This command is used by the Deacon when an agent fails consecutive health checks
 It performs the force-kill protocol:
 
 1. Log the intervention (send mail to agent)
-2. Kill the tmux session
+2. Kill the session
 3. Update agent bead state to "killed"
 4. Notify mayor (optional, for visibility)
 
@@ -259,7 +258,7 @@ terminal. Legitimate claude instances in terminals have a TTY like "pts/0".
 This is safe because:
 - Processes in terminals (your personal sessions) have a TTY - won't be touched
 - Only kills processes that have no controlling terminal
-- These orphans are children of the tmux server with no TTY
+- These orphans are children of the session server with no TTY
 
 Example:
   gt deacon cleanup-orphans`,
@@ -268,21 +267,21 @@ Example:
 
 var deaconZombieScanCmd = &cobra.Command{
 	Use:   "zombie-scan",
-	Short: "Find and clean zombie Claude processes not in active tmux sessions",
-	Long: `Find and clean zombie Claude processes not in active tmux sessions.
+	Short: "Find and clean zombie Claude processes without active sessions",
+	Long: `Find and clean zombie Claude processes without active sessions.
 
-Unlike cleanup-orphans (which uses TTY detection), zombie-scan uses tmux
-verification: it checks if each Claude process is in an active tmux session
+Unlike cleanup-orphans (which uses TTY detection), zombie-scan uses session
+verification: it checks if each Claude process is in an active session
 by comparing against actual pane PIDs.
 
 A process is a zombie if:
 - It's a Claude/codex process
-- It's NOT the pane PID of any active tmux session
+- It's NOT the pane PID of any active session
 - It's NOT a child of any pane PID
 - It's older than 60 seconds
 
-This catches "ghost" processes that have a TTY (from a dead tmux session)
-but are no longer part of any active Gas Town session.
+This catches "ghost" processes that have a TTY but are no longer part
+of any active Gas Town session.
 
 Examples:
   gt deacon zombie-scan           # Find and kill zombies
@@ -363,7 +362,7 @@ func init() {
 		"List zombies without killing them")
 
 	deaconStartCmd.Flags().StringVar(&deaconAgentOverride, "agent", "", "Agent alias to run the Deacon with (overrides town default)")
-	deaconStartCmd.Flags().StringVar(&deaconTarget, "target", "", "Execution target: 'k8s' to run in Kubernetes (default: local tmux)")
+	deaconStartCmd.Flags().StringVar(&deaconTarget, "target", "", "Execution target: 'k8s' to run in Kubernetes (default: local)")
 	deaconAttachCmd.Flags().StringVar(&deaconAgentOverride, "agent", "", "Agent alias to run the Deacon with (overrides town default)")
 	deaconAttachCmd.Flags().BoolVarP(&deaconBrowser, "browser", "b", false, "Open web terminal in browser instead of attaching")
 	deaconRestartCmd.Flags().StringVar(&deaconAgentOverride, "agent", "", "Agent alias to run the Deacon with (overrides town default)")

@@ -92,14 +92,14 @@ These are processes that survived session termination and are now
 parented to init/launchd. They consume resources and should be killed.
 
 Use --aggressive to detect ALL orphaned Claude processes by cross-referencing
-against active tmux sessions. Any Claude process NOT in a gt-* or hq-* session
+against active sessions. Any Claude process NOT in a gt-* or hq-* session
 is considered an orphan. This catches processes that have been reparented to
 something other than init (PPID != 1).
 
 Examples:
   gt orphans procs              # List orphaned Claude processes (PPID=1 only)
   gt orphans procs list         # Same as above
-  gt orphans procs --aggressive # List ALL orphaned processes (tmux verification)
+  gt orphans procs --aggressive # List ALL orphaned processes (session verification)
   gt orphans procs kill         # Kill orphaned processes`,
 	RunE: runOrphansListProcesses, // Default to list
 }
@@ -113,16 +113,16 @@ These are processes that survived session termination and are now
 parented to init/launchd. They consume resources and should be killed.
 
 Use --aggressive to detect ALL orphaned Claude processes by cross-referencing
-against active tmux sessions. Any Claude process NOT in a gt-* or hq-* session
+against active sessions. Any Claude process NOT in a gt-* or hq-* session
 is considered an orphan.
 
 Excludes:
-- tmux server processes
+- Terminal multiplexer server processes
 - Claude.app desktop application processes
 
 Examples:
   gt orphans procs list             # Show orphans with PPID=1
-  gt orphans procs list --aggressive # Show ALL orphans (tmux verification)`,
+  gt orphans procs list --aggressive # Show ALL orphans (session verification)`,
 	RunE: runOrphansListProcesses,
 }
 
@@ -138,7 +138,7 @@ Use --aggressive to kill ALL orphaned processes (not just PPID=1).
 Examples:
   gt orphans procs kill             # Kill with confirmation
   gt orphans procs kill -f          # Force kill without confirmation
-  gt orphans procs kill --aggressive # Kill ALL orphans (tmux verification)`,
+  gt orphans procs kill --aggressive # Kill ALL orphans (session verification)`,
 	RunE: runOrphansKillProcesses,
 }
 
@@ -156,7 +156,7 @@ func init() {
 	orphansProcsKillCmd.Flags().BoolVarP(&orphansProcsForce, "force", "f", false, "Kill without confirmation")
 
 	// Aggressive flag for all procs commands (persistent so it applies to subcommands)
-	orphansProcsCmd.PersistentFlags().BoolVar(&orphansProcsAggressive, "aggressive", false, "Use tmux session verification to find ALL orphans (not just PPID=1)")
+	orphansProcsCmd.PersistentFlags().BoolVar(&orphansProcsAggressive, "aggressive", false, "Use session verification to find ALL orphans (not just PPID=1)")
 
 	// Wire up subcommands
 	orphansProcsCmd.AddCommand(orphansProcsListCmd)
@@ -614,7 +614,7 @@ func runOrphansListProcesses(cmd *cobra.Command, args []string) error {
 
 	if len(orphans) == 0 {
 		fmt.Printf("%s No orphaned Claude processes found (PPID=1)\n", style.Bold.Render("✓"))
-		fmt.Printf("%s Use --aggressive to find orphans via tmux session verification\n", style.Dim.Render("Hint:"))
+		fmt.Printf("%s Use --aggressive to find orphans via session verification\n", style.Dim.Render("Hint:"))
 		return nil
 	}
 
@@ -630,7 +630,7 @@ func runOrphansListProcesses(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\n%s\n", style.Dim.Render("Use 'gt orphans procs kill' to terminate these processes"))
-	fmt.Printf("%s\n", style.Dim.Render("Use --aggressive to find more orphans via tmux session verification"))
+	fmt.Printf("%s\n", style.Dim.Render("Use --aggressive to find more orphans via session verification"))
 
 	return nil
 }
@@ -648,7 +648,7 @@ func runOrphansListProcessesAggressive() error {
 		return nil
 	}
 
-	fmt.Printf("%s Found %d orphaned Claude process(es) not in any tmux session:\n\n", style.Warning.Render("⚠"), len(zombies))
+	fmt.Printf("%s Found %d orphaned Claude process(es) without active sessions:\n\n", style.Warning.Render("⚠"), len(zombies))
 
 	for _, z := range zombies {
 		ageStr := formatProcessAge(z.Age)
@@ -690,7 +690,7 @@ func runOrphansKillProcesses(cmd *cobra.Command, args []string) error {
 
 	if len(orphans) == 0 {
 		fmt.Printf("%s No orphaned Claude processes found (PPID=1)\n", style.Bold.Render("✓"))
-		fmt.Printf("%s Use --aggressive to find orphans via tmux session verification\n", style.Dim.Render("Hint:"))
+		fmt.Printf("%s Use --aggressive to find orphans via session verification\n", style.Dim.Render("Hint:"))
 		return nil
 	}
 
@@ -771,7 +771,7 @@ func runOrphansKillProcessesAggressive() error {
 	}
 
 	// Show what we're about to kill
-	fmt.Printf("%s Found %d orphaned Claude process(es) not in any tmux session:\n\n", style.Warning.Render("⚠"), len(zombies))
+	fmt.Printf("%s Found %d orphaned Claude process(es) without active sessions:\n\n", style.Warning.Render("⚠"), len(zombies))
 	for _, z := range zombies {
 		ageStr := formatProcessAge(z.Age)
 		fmt.Printf("  %s %s (age: %s, tty: %s)\n",

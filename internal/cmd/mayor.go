@@ -42,9 +42,9 @@ var mayorBrowser bool
 var mayorStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the Mayor session",
-	Long: `Start the Mayor tmux session.
+	Long: `Start the Mayor session.
 
-Creates a new detached tmux session for the Mayor and launches Claude.
+Creates a new detached session for the Mayor and launches Claude.
 The session runs in the workspace root directory.`,
 	RunE: runMayorStart,
 }
@@ -52,9 +52,9 @@ The session runs in the workspace root directory.`,
 var mayorStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the Mayor session",
-	Long: `Stop the Mayor tmux session.
+	Long: `Stop the Mayor session.
 
-Attempts graceful shutdown first (Ctrl-C), then kills the tmux session.`,
+Attempts graceful shutdown first (Ctrl-C), then kills the session.`,
 	RunE: runMayorStop,
 }
 
@@ -62,24 +62,23 @@ var mayorAttachCmd = &cobra.Command{
 	Use:     "attach",
 	Aliases: []string{"at"},
 	Short:   "Attach to the Mayor session",
-	Long: `Attach to the running Mayor tmux session.
+	Long: `Attach to the running Mayor session.
 
-Attaches the current terminal to the Mayor's tmux session.
-Detach with Ctrl-B D.`,
+Attaches the current terminal to the Mayor's session.`,
 	RunE: runMayorAttach,
 }
 
 var mayorStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Check Mayor session status",
-	Long:  `Check if the Mayor tmux session is currently running.`,
+	Long:  `Check if the Mayor session is currently running.`,
 	RunE:  runMayorStatus,
 }
 
 var mayorRestartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Restart the Mayor session",
-	Long: `Restart the Mayor tmux session.
+	Long: `Restart the Mayor session.
 
 Stops the current session (if running) and starts a fresh one.`,
 	RunE: runMayorRestart,
@@ -93,7 +92,7 @@ func init() {
 	mayorCmd.AddCommand(mayorRestartCmd)
 
 	mayorStartCmd.Flags().StringVar(&mayorAgentOverride, "agent", "", "Agent alias to run the Mayor with (overrides town default)")
-	mayorStartCmd.Flags().StringVar(&mayorTarget, "target", "", "Execution target: 'k8s' to run in Kubernetes (default: local tmux)")
+	mayorStartCmd.Flags().StringVar(&mayorTarget, "target", "", "Execution target: 'k8s' to run in Kubernetes (default: local)")
 	mayorAttachCmd.Flags().StringVar(&mayorAgentOverride, "agent", "", "Agent alias to run the Mayor with (overrides town default)")
 	mayorAttachCmd.Flags().BoolVarP(&mayorBrowser, "browser", "b", false, "Open web terminal in browser instead of attaching")
 	mayorRestartCmd.Flags().StringVar(&mayorAgentOverride, "agent", "", "Agent alias to run the Mayor with (overrides town default)")

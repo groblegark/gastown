@@ -53,7 +53,7 @@ witness, refinery, mayor, or deacon. Use this for real-time coordination when
 you need immediate attention from another worker.
 
 DELIVERY MODES:
-  Direct (default): Sends immediately via tmux. Use this to wake up idle agents
+  Direct (default): Sends immediately to the session. Use this to wake up idle agents
                     waiting for decisions, stale agents, or any agent you need to
                     respond immediately. May cause API 400 errors if the target is
                     actively processing tools (recoverable - message still arrives).
@@ -78,7 +78,7 @@ Uses a reliable delivery pattern:
 3. Sends Enter as a separate command
 
 This is the ONLY way to send messages to Claude sessions.
-Do not use raw tmux send-keys elsewhere.
+Do not use raw send-keys elsewhere.
 
 Role shortcuts (expand to session names):
   mayor     Maps to gt-mayor

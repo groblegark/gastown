@@ -25,8 +25,8 @@ var validCLIThemes = []string{"auto", "dark", "light"}
 var themeCmd = &cobra.Command{
 	Use:     "theme [name]",
 	GroupID: GroupConfig,
-	Short:   "View or set tmux theme for the current rig",
-	Long: `Manage tmux status bar themes for Gas Town sessions.
+	Short:   "View or set theme for the current rig",
+	Long: `Manage status bar themes for Gas Town sessions.
 
 Without arguments, shows the current theme assignment.
 With a name argument, sets the theme for this rig.
@@ -136,7 +136,7 @@ func runTheme(cmd *cobra.Command, args []string) error {
 func runThemeApply(cmd *cobra.Command, args []string) error {
 	// Theme apply is a tmux-only operation (status bar theming).
 	// In K8s/Coop there are no tmux status bars to theme.
-	return fmt.Errorf("theme apply requires tmux (not available in K8s)")
+	return fmt.Errorf("theme apply is not available in K8s environments")
 }
 
 // detectCurrentRig determines the rig from environment or cwd.

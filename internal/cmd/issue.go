@@ -16,7 +16,7 @@ var issueCmd = &cobra.Command{
 
 var issueSetCmd = &cobra.Command{
 	Use:   "set <issue-id>",
-	Short: "Set the current issue (shown in tmux status line)",
+	Short: "Set the current issue (shown in status line)",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runIssueSet,
 }
@@ -49,7 +49,7 @@ func runIssueSet(cmd *cobra.Command, args []string) error {
 		// Try to detect from GT env vars
 		session = detectCurrentSession()
 		if session == "" {
-			return fmt.Errorf("not in a tmux session")
+			return fmt.Errorf("not in an active session")
 		}
 	}
 
@@ -67,7 +67,7 @@ func runIssueClear(cmd *cobra.Command, args []string) error {
 	if session == "" {
 		session = detectCurrentSession()
 		if session == "" {
-			return fmt.Errorf("not in a tmux session")
+			return fmt.Errorf("not in an active session")
 		}
 	}
 
@@ -86,7 +86,7 @@ func runIssueShow(cmd *cobra.Command, args []string) error {
 	if session == "" {
 		session = detectCurrentSession()
 		if session == "" {
-			return fmt.Errorf("not in a tmux session")
+			return fmt.Errorf("not in an active session")
 		}
 	}
 

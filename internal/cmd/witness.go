@@ -90,10 +90,9 @@ var witnessAttachCmd = &cobra.Command{
 	Use:     "attach [rig]",
 	Aliases: []string{"at"},
 	Short:   "Attach to witness session",
-	Long: `Attach to the Witness tmux session for a rig.
+	Long: `Attach to the Witness session for a rig.
 
-Attaches the current terminal to the witness's tmux session.
-Detach with Ctrl-B D.
+Attaches the current terminal to the witness's session.
 
 If the witness is not running, this will start it first.
 If rig is not specified, infers it from the current directory.

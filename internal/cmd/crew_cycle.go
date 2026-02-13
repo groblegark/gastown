@@ -26,10 +26,10 @@ func cycleCrewSession(direction int, sessionOverride string) error {
 		// Get current session (uses existing function from handoff.go)
 		currentSession, err = getCurrentTmuxSession()
 		if err != nil {
-			return fmt.Errorf("not in a tmux session: %w", err)
+			return fmt.Errorf("not in an active session: %w", err)
 		}
 		if currentSession == "" {
-			return fmt.Errorf("not in a tmux session")
+			return fmt.Errorf("not in an active session")
 		}
 	}
 
@@ -78,7 +78,7 @@ func cycleCrewSession(direction int, sessionOverride string) error {
 	targetSession := sessions[targetIdx]
 
 	// SwitchClient is a tmux-only UI operation (no equivalent in K8s/Coop)
-	return fmt.Errorf("session cycling requires tmux (not available in K8s): target %s", targetSession)
+	return fmt.Errorf("session cycling is not available in K8s environments: target %s", targetSession)
 }
 
 func runCrewNext(cmd *cobra.Command, args []string) error {

@@ -48,7 +48,7 @@ Commands:
   gt context --circuit-breaker-reset   # Reset circuit breaker state
   gt context --check          # Comprehensive check: usage + errors + circuit breaker
 
-The command can optionally take a tmux session name as argument. If not provided,
+The command can optionally take a session name as argument. If not provided,
 it attempts to auto-detect the current session based on environment variables.
 
 Circuit Breaker Pattern:
@@ -71,7 +71,7 @@ State Storage:
 func init() {
 	rootCmd.AddCommand(contextCmd)
 
-	contextCmd.Flags().StringVar(&contextSession, "session", "", "tmux session name (default: auto-detect)")
+	contextCmd.Flags().StringVar(&contextSession, "session", "", "Session name (default: auto-detect)")
 	contextCmd.Flags().IntVar(&contextLines, "lines", 100, "number of lines to capture from session output")
 	contextCmd.Flags().BoolVar(&contextJSON, "json", false, "output as JSON")
 	contextCmd.Flags().BoolVar(&contextUsage, "usage", false, "check current context usage (stub)")

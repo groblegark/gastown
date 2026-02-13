@@ -21,14 +21,14 @@ var (
 
 var statusLineCmd = &cobra.Command{
 	Use:    "status-line",
-	Short:  "Output status line content for tmux (internal use)",
+	Short:  "Output status line content (internal use)",
 	Hidden: true, // Internal command called by tmux
 	RunE:   runStatusLine,
 }
 
 func init() {
 	rootCmd.AddCommand(statusLineCmd)
-	statusLineCmd.Flags().StringVar(&statusLineSession, "session", "", "Tmux session name")
+	statusLineCmd.Flags().StringVar(&statusLineSession, "session", "", "Session name")
 }
 
 func runStatusLine(cmd *cobra.Command, args []string) error {

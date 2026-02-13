@@ -48,7 +48,7 @@ Infrastructure checks:
   - boot-health              Check Boot watchdog health (vet mode)
 
 Cleanup checks (fixable):
-  - orphan-sessions          Detect orphaned tmux sessions
+  - orphan-sessions          Detect orphaned sessions
   - orphan-processes         Detect orphaned Claude processes
   - wisp-gc                  Detect and clean abandoned wisps (>1h)
 

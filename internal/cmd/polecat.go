@@ -264,7 +264,7 @@ var polecatStaleCmd = &cobra.Command{
 	Long: `Detect stale polecats in a rig that are candidates for cleanup.
 
 A polecat is considered stale if:
-  - No active tmux session
+  - No active session
   - Way behind main (>threshold commits) OR no agent bead
   - Has no uncommitted work that could be lost
 
@@ -285,8 +285,8 @@ Examples:
 
 var polecatOrphansCmd = &cobra.Command{
 	Use:   "orphans <rig>",
-	Short: "Detect polecats with hooked work but no active session",
-	Long: `Detect orphaned polecats that have hooked work but no running tmux session.
+	Short: "Detect polecats with hooked work but no running session",
+	Long: `Detect orphaned polecats that have hooked work but no running session.
 
 These are polecats whose sessions died (API errors, crashes, etc.) but still have
 work assigned to them. Without intervention, this work remains orphaned.

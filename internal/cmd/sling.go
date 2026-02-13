@@ -66,7 +66,7 @@ Spawning Options (when target is a rig):
   gt sling gp-abc greenplace --create               # Create polecat if missing
   gt sling gp-abc greenplace --force                # Ignore unread mail
   gt sling gp-abc greenplace --account work         # Use specific Claude account
-  gt sling gp-abc greenplace --target=k8s           # Dispatch to K8s (no local tmux)
+  gt sling gp-abc greenplace --target=k8s           # Dispatch to K8s (no local session)
 
 Natural Language Args:
   gt sling gt-abc --args "patch release"
@@ -865,7 +865,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 
 		if err := injectStartPrompt(targetPane, beadID, slingSubject, slingArgs); err != nil {
 			// Graceful fallback for no-tmux mode
-			fmt.Printf("%s Could not nudge (no tmux?): %v\n", style.Dim.Render("○"), err)
+			fmt.Printf("%s Could not nudge: %v\n", style.Dim.Render("○"), err)
 			fmt.Printf("  Agent will discover work via gt prime / bd show\n")
 		} else {
 			fmt.Printf("%s Start prompt sent\n", style.Bold.Render("▶"))

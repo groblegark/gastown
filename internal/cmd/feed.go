@@ -36,7 +36,7 @@ func init() {
 	feedCmd.Flags().StringVar(&feedMol, "mol", "", "Filter by molecule/issue ID prefix")
 	feedCmd.Flags().StringVar(&feedType, "type", "", "Filter by event type (create, update, delete, comment)")
 	feedCmd.Flags().StringVar(&feedRig, "rig", "", "Run from specific rig's beads directory")
-	feedCmd.Flags().BoolVarP(&feedWindow, "window", "w", false, "Open in dedicated tmux window (creates 'feed' window)")
+	feedCmd.Flags().BoolVarP(&feedWindow, "window", "w", false, "Open in dedicated window (creates 'feed' window)")
 	feedCmd.Flags().BoolVar(&feedPlain, "plain", false, "Use plain text output (bd activity) instead of TUI")
 }
 
@@ -59,8 +59,8 @@ The feed combines multiple event sources:
 
 Use --plain for simple text output (wraps bd activity only).
 
-Tmux Integration:
-  Use --window to open the feed in a dedicated tmux window named 'feed'.
+Window Integration:
+  Use --window to open the feed in a dedicated window named 'feed'.
   This creates a persistent window you can cycle to with C-b n/p.
 
 Event symbols:
@@ -83,7 +83,7 @@ MQ (Merge Queue) event symbols:
 Examples:
   gt feed                       # Launch TUI dashboard
   gt feed --plain               # Plain text output (bd activity)
-  gt feed --window              # Open in dedicated tmux window
+  gt feed --window              # Open in dedicated window
   gt feed --since 1h            # Events from last hour
   gt feed --rig greenplace         # Use gastown rig's beads`,
 	RunE: runFeed,
@@ -254,5 +254,5 @@ func runFeedTUI(workDir string) error {
 // runFeedInWindow opens the feed in a dedicated tmux window.
 // This is a tmux-only feature (windows are a tmux concept).
 func runFeedInWindow(_ string, _ []string) error {
-	return fmt.Errorf("--window requires tmux (not available in K8s)")
+	return fmt.Errorf("--window is not available in K8s environments")
 }

@@ -34,11 +34,11 @@ func init() {
 var recoverCmd = &cobra.Command{
 	Use:     "recover <target>",
 	GroupID: GroupAgents,
-	Short:   "Recover a stuck agent via tmux",
+	Short:   "Recover a stuck agent session",
 	Long: `Recover a stuck agent using escalating recovery techniques.
 
 When an agent hits an error loop, API issues, or stuck state, this command
-attempts to recover it via tmux commands without manual terminal access.
+attempts to recover it without manual terminal access.
 
 Recovery levels (in escalation order):
   1. Interrupt: Send Escape key to interrupt current execution

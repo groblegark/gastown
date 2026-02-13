@@ -72,7 +72,7 @@ var agentsCmd = &cobra.Command{
 Shows Mayor, Deacon, Witnesses, Refineries, and Crew workers.
 Polecats are hidden (use 'gt polecat list' to see them).
 
-The menu appears as a tmux popup for quick session switching.`,
+The menu appears as a popup for quick session switching.`,
 	RunE: runAgents,
 }
 
@@ -92,7 +92,7 @@ This command helps detect situations where multiple Claude processes
 think they own the same worker identity.
 
 Output shows:
-  - Active tmux sessions with gt- prefix
+  - Active sessions with gt- prefix
   - Identity locks in worker directories
   - Collisions (multiple agents claiming same identity)
   - Stale locks (dead PIDs)`,
@@ -625,7 +625,7 @@ func buildCollisionReport(townRoot string) (*CollisionReport, error) {
 				report.Issues = append(report.Issues, CollisionIssue{
 					Type:      "orphaned",
 					WorkerDir: workerDir,
-					Message:   fmt.Sprintf("Lock exists (PID %d) but no tmux session '%s'", lockInfo.PID, expectedSession),
+					Message:   fmt.Sprintf("Lock exists (PID %d) but session '%s' is not running", lockInfo.PID, expectedSession),
 					PID:       lockInfo.PID,
 					SessionID: lockInfo.SessionID,
 				})

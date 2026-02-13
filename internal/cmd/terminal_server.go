@@ -17,12 +17,12 @@ var terminalServerCmd = &cobra.Command{
 	Use:     "terminal-server",
 	GroupID: GroupServices,
 	Short:   "Manage K8s terminal connections",
-	Long: `Terminal server bridges local tmux sessions to K8s pod screen sessions.
+	Long: `Terminal server bridges local sessions to K8s pod screen sessions.
 
-It discovers agent pods via beads polling, creates local tmux sessions that
+It discovers agent pods via beads polling, creates local sessions that
 pipe to each pod's screen session via kubectl exec, and monitors connection
 health. Existing gt commands (nudge, peek) work unchanged because the
-terminal server creates tmux sessions with the expected naming convention.
+terminal server creates sessions with the expected naming convention.
 
 By default, discovers all agent pods across all rigs and town-level agents
 (mayor, deacon). Use --rig to filter to a single rig.`,

@@ -36,8 +36,8 @@ func init() {
 	townCmd.AddCommand(townNextCmd)
 	townCmd.AddCommand(townPrevCmd)
 
-	townNextCmd.Flags().StringVar(&townCycleSession, "session", "", "Override current session (used by tmux binding)")
-	townPrevCmd.Flags().StringVar(&townCycleSession, "session", "", "Override current session (used by tmux binding)")
+	townNextCmd.Flags().StringVar(&townCycleSession, "session", "", "Override current session (used by key binding)")
+	townPrevCmd.Flags().StringVar(&townCycleSession, "session", "", "Override current session (used by key binding)")
 }
 
 var townCmd = &cobra.Command{
@@ -84,10 +84,10 @@ func cycleTownSession(direction int, sessionOverride string) error {
 	} else {
 		currentSession, err = getCurrentTmuxSession()
 		if err != nil {
-			return fmt.Errorf("not in a tmux session: %w", err)
+			return fmt.Errorf("not in an active session: %w", err)
 		}
 		if currentSession == "" {
-			return fmt.Errorf("not in a tmux session")
+			return fmt.Errorf("not in an active session")
 		}
 	}
 
@@ -135,7 +135,7 @@ func cycleTownSession(direction int, sessionOverride string) error {
 	targetSession := sessions[targetIdx]
 
 	// SwitchClient is a tmux-only UI operation (no equivalent in K8s/Coop)
-	return fmt.Errorf("session cycling requires tmux (not available in K8s): target %s", targetSession)
+	return fmt.Errorf("session cycling is not available in K8s environments: target %s", targetSession)
 }
 
 // findRunningTownSessions returns a list of currently running town-level sessions.

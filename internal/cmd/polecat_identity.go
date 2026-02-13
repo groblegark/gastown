@@ -124,7 +124,7 @@ var polecatIdentityRemoveCmd = &cobra.Command{
 	Long: `Remove a polecat identity bead.
 
 Safety checks:
-  - No active tmux session
+  - No active session
   - No work on hook (unless using --force)
   - Warns if CV exists
 

@@ -48,7 +48,7 @@ want to keep uncommitted changes around.
 Features:
   - Gas Town integrated: Mail, nudge, handoff all work
   - Recognizable names: dave, emma, fred (not ephemeral pool names)
-  - Tmux optional: Can work in terminal directly without tmux session
+  - Session optional: Can work in terminal directly without a session
 
 Commands:
   gt crew start <name>     Start session (creates workspace if needed)
@@ -111,15 +111,15 @@ var crewAtCmd = &cobra.Command{
 	Use:     "at [name]",
 	Aliases: []string{"attach"},
 	Short:   "Attach to crew workspace session",
-	Long: `Start or attach to a tmux session for a crew workspace.
+	Long: `Start or attach to a session for a crew workspace.
 
-Creates a new tmux session if none exists, or attaches to existing.
-Use --no-tmux to just print the directory path instead.
+Creates a new session if none exists, or attaches to existing.
+Use --no-session to just print the directory path instead.
 
-When run from inside tmux, the session is started but you stay in your
-current pane. Use C-b s to switch to the new session.
+When a session is started, you can switch to it using the appropriate
+session management commands.
 
-When run from outside tmux, you are attached to the session (unless
+When run with no existing session, you are attached to the session (unless
 --detached is specified).
 
 Role Discovery:
@@ -131,7 +131,7 @@ Examples:
   gt crew at dave                 # Attach to dave's session
   gt crew at                      # Auto-detect from cwd
   gt crew at dave --detached      # Start session without attaching
-  gt crew at dave --no-tmux       # Just print path`,
+  gt crew at dave --no-session    # Just print path`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runCrewAt,
 }
@@ -198,13 +198,13 @@ var crewRestartCmd = &cobra.Command{
 	Use:     "restart [name...]",
 	Aliases: []string{"rs"},
 	Short:   "Kill and restart crew workspace session(s)",
-	Long: `Kill the tmux session and restart fresh with Claude.
+	Long: `Kill the session and restart fresh with Claude.
 
 Useful when a crew member gets confused or needs a clean slate.
 Unlike 'refresh', this does NOT send handoff mail - it's a clean start.
 
 The command will:
-1. Kill existing tmux session if running
+1. Kill existing session if running
 2. Start fresh session with Claude
 3. Run gt prime to reinitialize context
 
@@ -410,8 +410,8 @@ func init() {
 
 	// Add --session flag to next/prev commands for tmux key binding support
 	// When run via run-shell, tmux session context may be wrong, so we pass it explicitly
-	crewNextCmd.Flags().StringVarP(&crewCycleSession, "session", "s", "", "tmux session name (for key bindings)")
-	crewPrevCmd.Flags().StringVarP(&crewCycleSession, "session", "s", "", "tmux session name (for key bindings)")
+	crewNextCmd.Flags().StringVarP(&crewCycleSession, "session", "s", "", "Session name (for key bindings)")
+	crewPrevCmd.Flags().StringVarP(&crewCycleSession, "session", "s", "", "Session name (for key bindings)")
 	crewCmd.AddCommand(crewNextCmd)
 	crewCmd.AddCommand(crewPrevCmd)
 	crewCmd.AddCommand(crewStartCmd)

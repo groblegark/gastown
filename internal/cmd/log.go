@@ -54,10 +54,10 @@ Examples:
 
 var logCrashCmd = &cobra.Command{
 	Use:   "crash",
-	Short: "Record a crash event (called by tmux pane-died hook)",
+	Short: "Record a crash event (called on session exit)",
 	Long: `Record a crash event to the town log.
 
-This command is called automatically by tmux when a pane exits unexpectedly.
+This command is called automatically when a pane exits unexpectedly.
 It's not typically run manually.
 
 The exit code determines if this was a crash or expected exit:
@@ -78,7 +78,7 @@ func init() {
 
 	// crash subcommand flags
 	logCrashCmd.Flags().StringVar(&crashAgent, "agent", "", "Agent ID (e.g., greenplace/Toast)")
-	logCrashCmd.Flags().StringVar(&crashSession, "session", "", "Tmux session name")
+	logCrashCmd.Flags().StringVar(&crashSession, "session", "", "Session name")
 	logCrashCmd.Flags().IntVar(&crashExitCode, "exit-code", -1, "Exit code from pane")
 	_ = logCrashCmd.MarkFlagRequired("agent")
 

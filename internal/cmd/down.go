@@ -40,7 +40,7 @@ Shutdown levels (progressively more aggressive):
   gt down                    Stop infrastructure (default)
   gt down --polecats         Also stop all polecat sessions
   gt down --all              Also stop bd daemons/activity
-  gt down --nuke             Also kill the tmux server (DESTRUCTIVE)
+  gt down --nuke             Also kill the session server (DESTRUCTIVE)
 
 Infrastructure agents stopped:
   • Refineries - Per-rig work processors
@@ -74,7 +74,7 @@ func init() {
 	downCmd.Flags().BoolVarP(&downForce, "force", "f", false, "Force kill without graceful shutdown")
 	downCmd.Flags().BoolVarP(&downPolecats, "polecats", "p", false, "Also stop all polecat sessions")
 	downCmd.Flags().BoolVarP(&downAll, "all", "a", false, "Stop bd daemons/activity and verify shutdown")
-	downCmd.Flags().BoolVar(&downNuke, "nuke", false, "Kill entire tmux server (DESTRUCTIVE - kills non-GT sessions!)")
+	downCmd.Flags().BoolVar(&downNuke, "nuke", false, "Kill entire session server (DESTRUCTIVE - kills non-GT sessions!)")
 	downCmd.Flags().BoolVar(&downDryRun, "dry-run", false, "Preview what would be stopped without taking action")
 	rootCmd.AddCommand(downCmd)
 }
@@ -245,7 +245,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 	// Phase 6: Nuke tmux server (--nuke only, DESTRUCTIVE)
 	if downNuke {
 		// --nuke was a tmux-only operation (kill tmux server). In K8s, this is not applicable.
-		printDownStatus("Nuke", false, "not available in K8s (no tmux server)")
+		printDownStatus("Nuke", false, "not available in K8s environments")
 		allOK = false
 	}
 

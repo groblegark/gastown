@@ -137,7 +137,7 @@ func init() {
 
 	// Add record subcommand
 	costsCmd.AddCommand(costsRecordCmd)
-	costsRecordCmd.Flags().StringVar(&recordSession, "session", "", "Tmux session name to record")
+	costsRecordCmd.Flags().StringVar(&recordSession, "session", "", "Session name to record")
 	costsRecordCmd.Flags().StringVar(&recordWorkItem, "work-item", "", "Work item ID (bead) for attribution")
 
 	// Add digest subcommand

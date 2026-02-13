@@ -60,7 +60,7 @@ var bootSpawnCmd = &cobra.Command{
 	Long: `Spawn Boot to run the triage cycle.
 
 This is normally called by the daemon. It spawns Boot in a fresh
-tmux session (or subprocess in degraded mode) to observe and decide
+session (or subprocess in degraded mode) to observe and decide
 what action to take on the Deacon.
 
 Boot runs to completion and exits - it doesn't maintain state
@@ -73,7 +73,7 @@ var bootTriageCmd = &cobra.Command{
 	Short: "Run triage directly (degraded mode)",
 	Long: `Run Boot's triage logic directly without Claude.
 
-This is for degraded mode operation when tmux is unavailable.
+This is for degraded mode operation when sessions are unavailable.
 It performs basic observation and takes conservative action:
   - If Deacon is not running: start it
   - If Deacon appears stuck: attempt restart
@@ -85,7 +85,7 @@ Use --degraded flag when running in degraded mode.`,
 
 func init() {
 	bootStatusCmd.Flags().BoolVar(&bootStatusJSON, "json", false, "Output as JSON")
-	bootTriageCmd.Flags().BoolVar(&bootDegraded, "degraded", false, "Run in degraded mode (no tmux)")
+	bootTriageCmd.Flags().BoolVar(&bootDegraded, "degraded", false, "Run in degraded mode")
 	bootSpawnCmd.Flags().StringVar(&bootAgentOverride, "agent", "", "Agent alias to run Boot with (overrides town default)")
 
 	bootCmd.AddCommand(bootStatusCmd)

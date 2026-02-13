@@ -39,9 +39,9 @@ var sessionCmd = &cobra.Command{
 	GroupID: GroupAgents,
 	Short:   "Manage polecat sessions",
 	RunE:    requireSubcommand,
-	Long: `Manage tmux sessions for polecats.
+	Long: `Manage sessions for polecats.
 
-Sessions are tmux sessions running Claude for each polecat.
+Sessions are agent sessions running Claude for each polecat.
 Use the subcommands to start, stop, attach, and monitor sessions.
 
 TIP: To send messages to a running session, use 'gt nudge' (not 'session inject').
@@ -51,9 +51,9 @@ The nudge command uses reliable delivery that works correctly with Claude Code.`
 var sessionStartCmd = &cobra.Command{
 	Use:   "start <rig>/<polecat>",
 	Short: "Start a polecat session",
-	Long: `Start a new tmux session for a polecat.
+	Long: `Start a new session for a polecat.
 
-Creates a tmux session, navigates to the polecat's working directory,
+Creates a session, navigates to the polecat's working directory,
 and launches claude. Optionally inject an initial issue to work on.
 
 Examples:
@@ -68,7 +68,7 @@ var sessionStopCmd = &cobra.Command{
 	Short: "Stop a polecat session",
 	Long: `Stop a running polecat session.
 
-Attempts graceful shutdown first (Ctrl-C), then kills the tmux session.
+Attempts graceful shutdown first (Ctrl-C), then kills the session.
 Use --force to skip graceful shutdown.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSessionStop,
@@ -80,7 +80,7 @@ var sessionAtCmd = &cobra.Command{
 	Short:   "Attach to a running session",
 	Long: `Attach to a running polecat session.
 
-Attaches the current terminal to the tmux session. Detach with Ctrl-B D.`,
+Attaches the current terminal to the session.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSessionAttach,
 }
@@ -119,7 +119,7 @@ It uses reliable delivery (literal mode + timing) that works correctly
 with Claude Code's input handling.
 
 This command is a low-level primitive for file-based injection or
-cases where you need raw tmux send-keys behavior.
+cases where you need raw send-keys behavior.
 
 Examples:
   gt nudge greenplace/furiosa "Check your mail"     # Preferred
@@ -152,10 +152,10 @@ Displays running state, uptime, session info, and activity.`,
 var sessionCheckCmd = &cobra.Command{
 	Use:   "check [rig]",
 	Short: "Check session health for polecats",
-	Long: `Check if polecat tmux sessions are alive and healthy.
+	Long: `Check if polecat sessions are alive and healthy.
 
 This command validates that:
-1. Polecats with work-on-hook have running tmux sessions
+1. Polecats with work-on-hook have running sessions
 2. Sessions are responsive
 
 Use this for manual health checks or debugging session issues.

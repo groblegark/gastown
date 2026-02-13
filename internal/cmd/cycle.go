@@ -19,14 +19,14 @@ func init() {
 	cycleCmd.AddCommand(cycleNextCmd)
 	cycleCmd.AddCommand(cyclePrevCmd)
 
-	cycleNextCmd.Flags().StringVar(&cycleSession, "session", "", "Override current session (used by tmux binding)")
-	cyclePrevCmd.Flags().StringVar(&cycleSession, "session", "", "Override current session (used by tmux binding)")
+	cycleNextCmd.Flags().StringVar(&cycleSession, "session", "", "Override current session (used by key binding)")
+	cyclePrevCmd.Flags().StringVar(&cycleSession, "session", "", "Override current session (used by key binding)")
 }
 
 var cycleCmd = &cobra.Command{
 	Use:   "cycle",
 	Short: "Cycle between sessions in the same group",
-	Long: `Cycle between related tmux sessions based on the current session type.
+	Long: `Cycle between related sessions based on the current session type.
 
 Session groups:
 - Town sessions: Mayor ↔ Deacon
@@ -167,7 +167,7 @@ func cycleRigInfraSession(direction int, currentSession, rig string) error {
 	}
 
 	// SwitchClient is a tmux-only UI operation (no equivalent in K8s/Coop)
-	return fmt.Errorf("session cycling requires tmux (not available in K8s)")
+	return fmt.Errorf("session cycling is not available in K8s environments")
 }
 
 // listGTSessions returns all agent session names via the SessionRegistry.
