@@ -1,0 +1,139 @@
+on:
+  github:
+    push:
+      if: ${{ event.git.branch == 'main' || starts-with(event.git.tag, 'v') }}
+      init:
+        commit-sha: ${{ event.git.sha }}
+        ref-name: ${{ event.git.tag || event.git.branch }}
+      status-checks:
+        name: Docker
+    pull_request:
+      init:
+        commit-sha: ${{ event.git.sha }}
+        ref-name: pr
+      status-checks:
+        name: Docker
+
+base:
+  image: ubuntu:24.04
+  config: rwx/base 1.0.0
+
+tasks:
+  - key: code
+    call: git/clone 2.0.3
+    with:
+      repository: https://github.com/groblegark/gastown.git
+      ref: ${{ init.commit-sha }}
+
+  # ── gt CLI image ──────────────────────────────────────────────────────
+  - key: docker-gt
+    use: code
+    docker: true
+    run: |
+      docker build \
+        --build-arg VERSION=$REF_NAME \
+        --build-arg BUILD_COMMIT=$COMMIT_SHA \
+        -t ghcr.io/groblegark/gastown:sha-${COMMIT_SHA:0:7} \
+        -t ghcr.io/groblegark/gastown:latest \
+        .
+      docker run --rm ghcr.io/groblegark/gastown:sha-${COMMIT_SHA:0:7} version
+
+      if [ "$REF_NAME" != "pr" ]; then
+        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+        docker push ghcr.io/groblegark/gastown:sha-${COMMIT_SHA:0:7}
+        docker push ghcr.io/groblegark/gastown:latest
+        if [[ "$REF_NAME" == v* ]]; then
+          VERSION="${REF_NAME#v}"
+          docker tag ghcr.io/groblegark/gastown:sha-${COMMIT_SHA:0:7} ghcr.io/groblegark/gastown:${VERSION}
+          docker push ghcr.io/groblegark/gastown:${VERSION}
+        fi
+      fi
+    env:
+      COMMIT_SHA: ${{ init.commit-sha }}
+      REF_NAME: ${{ init.ref-name }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Agent controller image ───────────────────────────────────────────
+  - key: docker-controller
+    use: code
+    docker: true
+    run: |
+      docker build \
+        -t ghcr.io/groblegark/gastown/agent-controller:sha-${COMMIT_SHA:0:7} \
+        -t ghcr.io/groblegark/gastown/agent-controller:latest \
+        -f controller/Dockerfile \
+        controller/
+      docker run --rm ghcr.io/groblegark/gastown/agent-controller:sha-${COMMIT_SHA:0:7} --help || true
+
+      if [ "$REF_NAME" != "pr" ]; then
+        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+        docker push ghcr.io/groblegark/gastown/agent-controller:sha-${COMMIT_SHA:0:7}
+        docker push ghcr.io/groblegark/gastown/agent-controller:latest
+        if [[ "$REF_NAME" == v* ]]; then
+          VERSION="${REF_NAME#v}"
+          docker tag ghcr.io/groblegark/gastown/agent-controller:sha-${COMMIT_SHA:0:7} ghcr.io/groblegark/gastown/agent-controller:${VERSION}
+          docker push ghcr.io/groblegark/gastown/agent-controller:${VERSION}
+        fi
+      fi
+    env:
+      COMMIT_SHA: ${{ init.commit-sha }}
+      REF_NAME: ${{ init.ref-name }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Agent image (downloads coop + bd from releases) ──────────────────
+  - key: docker-agent
+    use: code
+    docker: true
+    run: |
+      docker build --platform linux/amd64 \
+        --build-arg VERSION=$REF_NAME \
+        --build-arg BUILD_COMMIT=$COMMIT_SHA \
+        -t ghcr.io/groblegark/gastown/gastown-agent:sha-${COMMIT_SHA:0:7} \
+        -t ghcr.io/groblegark/gastown/gastown-agent:latest \
+        -f deploy/agent/Dockerfile \
+        .
+
+      if [ "$REF_NAME" != "pr" ]; then
+        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+        docker push ghcr.io/groblegark/gastown/gastown-agent:sha-${COMMIT_SHA:0:7}
+        docker push ghcr.io/groblegark/gastown/gastown-agent:latest
+        if [[ "$REF_NAME" == v* ]]; then
+          VERSION="${REF_NAME#v}"
+          docker tag ghcr.io/groblegark/gastown/gastown-agent:sha-${COMMIT_SHA:0:7} ghcr.io/groblegark/gastown/gastown-agent:${VERSION}
+          docker push ghcr.io/groblegark/gastown/gastown-agent:${VERSION}
+        fi
+      fi
+    env:
+      COMMIT_SHA: ${{ init.commit-sha }}
+      REF_NAME: ${{ init.ref-name }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Toolchain image (full target) ────────────────────────────────────
+  - key: docker-toolchain
+    use: code
+    docker: true
+    run: |
+      docker build --platform linux/amd64 --target full \
+        -t ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7} \
+        -t ghcr.io/groblegark/gastown/gastown-toolchain:full \
+        -f docker/toolchain/Dockerfile \
+        docker/toolchain/
+
+      if [ "$REF_NAME" != "pr" ]; then
+        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+        docker push ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7}
+        docker push ghcr.io/groblegark/gastown/gastown-toolchain:full
+        if [[ "$REF_NAME" == v* ]]; then
+          VERSION="${REF_NAME#v}"
+          docker tag ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7} ghcr.io/groblegark/gastown/gastown-toolchain:${VERSION}
+          docker push ghcr.io/groblegark/gastown/gastown-toolchain:${VERSION}
+        fi
+      fi
+    env:
+      COMMIT_SHA: ${{ init.commit-sha }}
+      REF_NAME: ${{ init.ref-name }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
