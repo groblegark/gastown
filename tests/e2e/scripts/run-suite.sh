@@ -82,6 +82,11 @@ MODULES=(
   "agent-cleanup"
   # Phase 2.5: Decision flow
   "decision-flow"
+  # Phase 2.6: Command tests
+  "gt-peek"
+  "gt-attach"
+  "gt-crew"
+  "gt-rig"
   # Phase 3: Advanced health & lifecycle
   "agent-lifecycle"
   "controller-create-pod"
