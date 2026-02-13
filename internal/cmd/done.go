@@ -377,29 +377,35 @@ func runDone(cmd *cobra.Command, args []string) error {
 			if attachmentFields != nil && attachmentFields.MergeStrategy != "" {
 				mergeStrategy := attachmentFields.MergeStrategy
 				if mergeStrategy == "direct" || mergeStrategy == "local" {
-					fmt.Printf("%s Merge strategy: %s (direct push to main)\n", style.Bold.Render("→"), mergeStrategy)
-					fmt.Printf("  Branch: %s\n", branch)
-					fmt.Printf("  Issue: %s\n", issueID)
-					fmt.Println()
+					// Direct/local merge requires checkout + merge + push on the local worktree.
+					// In K8s mode this is not supported — agent pods use MR strategy only.
+					if isRunningInK8s() {
+						style.PrintWarning("merge_strategy %q not supported in K8s mode; falling through to MR strategy", mergeStrategy)
+					} else {
+						fmt.Printf("%s Merge strategy: %s (direct push to main)\n", style.Bold.Render("→"), mergeStrategy)
+						fmt.Printf("  Branch: %s\n", branch)
+						fmt.Printf("  Issue: %s\n", issueID)
+						fmt.Println()
 
-					// Checkout main, merge feature branch, push
-					if err := g.Checkout(defaultBranch); err != nil {
-						return fmt.Errorf("checkout %s: %w", defaultBranch, err)
-					}
-					if err := g.Pull("origin", defaultBranch); err != nil {
-						style.PrintWarning("could not pull latest %s: %v", defaultBranch, err)
-					}
-					if err := g.Merge(branch); err != nil {
-						return fmt.Errorf("merge %s into %s: %w\nResolve conflicts manually and retry.", branch, defaultBranch, err)
-					}
-					if err := g.Push("origin", defaultBranch, false); err != nil {
-						return fmt.Errorf("push %s to origin: %w", defaultBranch, err)
-					}
+						// Checkout main, merge feature branch, push
+						if err := g.Checkout(defaultBranch); err != nil {
+							return fmt.Errorf("checkout %s: %w", defaultBranch, err)
+						}
+						if err := g.Pull("origin", defaultBranch); err != nil {
+							style.PrintWarning("could not pull latest %s: %v", defaultBranch, err)
+						}
+						if err := g.Merge(branch); err != nil {
+							return fmt.Errorf("merge %s into %s: %w\nResolve conflicts manually and retry.", branch, defaultBranch, err)
+						}
+						if err := g.Push("origin", defaultBranch, false); err != nil {
+							return fmt.Errorf("push %s to origin: %w", defaultBranch, err)
+						}
 
-					fmt.Printf("%s Merged and pushed directly to %s\n", style.Bold.Render("✓"), defaultBranch)
+						fmt.Printf("%s Merged and pushed directly to %s\n", style.Bold.Render("✓"), defaultBranch)
 
-					// Skip MR creation, go to witness notification
-					goto notifyWitness
+						// Skip MR creation, go to witness notification
+						goto notifyWitness
+					}
 				}
 				// For "mr" strategy, fall through to normal MR creation
 			}
@@ -616,7 +622,8 @@ notifyWitness:
 		selfCleanAttempted = true
 
 		// Step 1: Nuke the worktree (only for COMPLETED - other statuses preserve work)
-		if exitType == ExitCompleted {
+		// Skip in K8s mode — no local worktrees exist; pod cleanup handles teardown.
+		if exitType == ExitCompleted && !isRunningInK8s() {
 			if err := selfNukePolecat(roleInfo, townRoot); err != nil {
 				// Non-fatal: Witness will clean up if we fail
 				style.PrintWarning("worktree nuke failed: %v (Witness will clean up)", err)
@@ -626,14 +633,14 @@ notifyWitness:
 		}
 
 		// Step 2: Kill our own session (this terminates Claude and the shell)
-		// This is the last thing we do - the process will be killed when tmux session dies
+		// This is the last thing we do - the process will be terminated via Coop signal
 		// All exit types kill the session - "done means gone"
 		fmt.Printf("%s Terminating session (done means gone)\n", style.Bold.Render("→"))
 		if err := selfKillSession(townRoot, roleInfo); err != nil {
 			// If session kill fails, fall through to os.Exit
 			style.PrintWarning("session kill failed: %v", err)
 		}
-		// If selfKillSession succeeds, we won't reach here (process killed by tmux)
+		// If selfKillSession succeeds, we won't reach here (process terminated via Coop)
 	}
 
 	// Fallback exit for non-polecats or if self-clean failed
@@ -649,9 +656,9 @@ notifyWitness:
 }
 
 // updateAgentStateOnDone clears the agent's hook and reports cleanup status.
-// Per gt-zecmc: observable states ("done", "idle") removed - use tmux to discover.
+// Per gt-zecmc: observable states ("done", "idle") removed - use session liveness to discover.
 // Non-observable states ("stuck", "awaiting-gate") are still set since they represent
-// intentional agent decisions that can't be observed from tmux.
+// intentional agent decisions that can't be observed from session state.
 //
 // Also self-reports cleanup_status for ZFC compliance (#10).
 //
@@ -769,7 +776,7 @@ func updateAgentStateOnDone(cwd, townRoot, exitType, _ string) { // issueID unus
 		if _, err := bd.Run("agent", "state", agentBeadID, "awaiting-gate"); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: couldn't set agent %s to awaiting-gate: %v\n", agentBeadID, err)
 		}
-	// ExitCompleted and ExitDeferred don't set state - observable from tmux
+	// ExitCompleted and ExitDeferred don't set state - observable from session liveness
 	}
 
 	// ZFC #10: Self-report cleanup status
@@ -865,6 +872,12 @@ func selfNukePolecat(roleInfo RoleInfo, _ string) error {
 	return nil
 }
 
+// isRunningInK8s returns true when the current process is running inside a K8s pod.
+// Every pod gets KUBERNETES_SERVICE_HOST injected by the kubelet.
+func isRunningInK8s() bool {
+	return os.Getenv("KUBERNETES_SERVICE_HOST") != ""
+}
+
 // isPolecatActor checks if a BD_ACTOR value represents a polecat.
 // Polecat actors have format: rigname/polecats/polecatname
 // Non-polecat actors have formats like: gastown/crew/name, rigname/witness, etc.
@@ -873,7 +886,7 @@ func isPolecatActor(actor string) bool {
 	return len(parts) >= 2 && parts[1] == "polecats"
 }
 
-// selfKillSession terminates the polecat's own tmux session after logging the event.
+// selfKillSession terminates the polecat's own session (via Coop backend) after logging the event.
 // This completes the self-cleaning model: "done means gone" - both worktree and session.
 //
 // The polecat determines its session from environment variables:

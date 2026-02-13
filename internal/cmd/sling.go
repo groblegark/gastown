@@ -656,7 +656,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 		// Wake witness and refinery to monitor the new polecat
 		wakeRigAgents(deferredRigName)
 	} else if deferredRigName != "" {
-		// Legacy tmux spawn path
+		// Standard spawn path (local tmux or K8s — resolved by SpawnPolecatForSling)
 		// Set HookBead atomically at spawn time to prevent race condition (GH #hq-3d01de).
 		// Without this, the polecat might start before bd update sets the hook.
 		deferredSpawnOpts.HookBead = beadID
