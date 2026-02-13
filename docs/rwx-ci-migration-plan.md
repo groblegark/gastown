@@ -1,6 +1,6 @@
 # RWX CI/CD Migration Plan
 
-**Bead**: bd-alyka | **Priority**: P1 | **Status**: Phases 0-3 Complete
+**Bead**: bd-alyka | **Priority**: P1 | **Status**: Phases 0-5 Complete
 **Date**: 2026-02-13 | **Updated**: 2026-02-13
 
 ## Problem
@@ -561,9 +561,14 @@ Phase 3: Helm ✅ COMPLETE
 ├── 3a. beads helm ✅  (bd-daemon:0.2.8 → oci://ghcr.io/groblegark/charts)
 └── 3b. gastown helm ✅ (gastown:0.5.12 → oci://ghcr.io/groblegark/charts)
 
-Phase 4: Releases — keep on GitHub Actions (low frequency, GoReleaser works well)
+Phase 4: Releases ✅ COMPLETE
+├── 4a. coop release ✅    (parallel linux amd64/arm64 Rust builds, gh CLI release)
+├── 4b. beads release ✅   (GoReleaser snapshot/release, dispatch to gastown)
+└── 4c. gastown release ✅ (GoReleaser snapshot/release)
 
-Phase 5: Cross-repo — keep repository_dispatch (already works)
+Phase 5: Cross-repo orchestration ✅ COMPLETE
+├── coop release → dispatch gastown agent rebuild ✅
+└── beads release → dispatch gastown agent rebuild ✅
 ```
 
 ### Implementation Notes
@@ -579,25 +584,33 @@ that `${{ init.ref-name }}` resolves correctly for local `rwx run` invocations.
 `rwx/base 1.0.0` sets `RUSTC_WRAPPER=sccache` which breaks Rust — unset it via
 `$RWX_ENV/RUSTC_WRAPPER`.
 
+**Release workflows**: `git/clone` strips `.git` by default. Release workflows need
+`preserve-git-dir: true` and `fetch-full-depth: true` for GoReleaser changelog.
+Install Go inline (not via `golang/install` package) to avoid layer merge issues
+that lose the git working directory. Use `--snapshot` flag for CLI dry runs.
+
+**sudo required**: `/usr/local/bin` is not writable by default in RWX containers.
+Use `sudo tar xz -C /usr/local/bin` for installing goreleaser, gh CLI, etc.
+
 ## What Stays on GitHub Actions
 
 | Workflow | Why |
 |----------|-----|
-| Release (all repos) | GoReleaser, npm/PyPI publish, macOS cross-compile |
-| fork-release.yml | Fork-specific, low frequency |
+| docker-agent.yml (gastown) | repository_dispatch for coop/beads release triggers |
 | deploy-docs.yml | GitHub Pages deployment |
 | mirror-ecr.yml | AWS ECR mirror |
 | nightly.yml | Cron — can move to RWX later |
 | block-internal-prs.yml | Simple PR label check |
 | Windows smoke tests | Windows runner needed |
 
-## What Moves to RWX
+## What Moved to RWX
 
 | Workflow | RWX File | Impact |
 |----------|----------|--------|
 | CI (all repos) | `.rwx/ci.yml` | **HIGH** — runs on every push/PR |
-| Docker builds (beads, gastown x3) | `.rwx/docker-*.yml` | **MEDIUM** — runs on main push |
+| Docker builds (beads, gastown x4, coop x3) | `.rwx/docker.yml` | **MEDIUM** — runs on main push |
 | Helm publish (beads, gastown) | `.rwx/helm.yml` | **LOW** — runs on main push |
+| Releases (all repos) | `.rwx/release.yml` | **LOW** — runs on tag push |
 
 ## Key RWX Concepts to Leverage
 
