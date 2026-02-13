@@ -90,6 +90,8 @@ MODULES=(
   # Phase 3: Advanced health & lifecycle
   "agent-lifecycle"
   "controller-create-pod"
+  "mux-visibility"
+  "mux-restart-persistence"
   "session-persistence"
   "dolt-s3-sync"
   "controller-failsafe"
