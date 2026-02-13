@@ -1,17 +1,7 @@
 name: Agent Docker
 
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
-    paths:
-      - 'deploy/agent/**'
-      - '.github/workflows/docker-agent.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'deploy/agent/**'
-      - '.github/workflows/docker-agent.yml'
+  # push/pull_request triggers moved to RWX (.rwx/docker.yml)
   repository_dispatch:
     types: [coop-release, beads-release]
   workflow_dispatch: {}
