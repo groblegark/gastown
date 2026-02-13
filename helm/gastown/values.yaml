@@ -522,13 +522,23 @@ coopBroker:
     remoteRef: ""
     refreshTokenProperty: "refresh_token"
 
-  # Ingress (Traefik IngressRoute)
+  # Ingress (Traefik IngressRoute for mux dashboard)
   ingress:
     enabled: false
     host: ""
+    # Expose broker API at / (default: mux-only at /mux, /ws/mux, /api/v1/sessions)
+    exposeAPI: false
+    # Bearer token injected into requests so coop-mux auth is satisfied.
+    # Must match the token in coopBroker.authTokenSecret.
+    bearerToken: ""
     ipWhitelist:
       enabled: false
       sourceRange: []
+      depth: 1
+    basicAuth:
+      enabled: false
+      # K8s secret name containing htpasswd-format 'users' key
+      secret: ""
 
   # Multiplexer sidecar (coop-mux)
   mux:

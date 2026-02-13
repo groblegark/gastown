@@ -1,41 +1,112 @@
 {{- if and .Values.coopBroker.enabled .Values.coopBroker.ingress.enabled }}
-apiVersion: traefik.io/v1alpha1
+{{- $fullname := include "gastown.coopBroker.fullname" . -}}
+{{- $host := .Values.coopBroker.ingress.host -}}
+{{- $muxPort := .Values.coopBroker.service.muxPort -}}
+{{- $brokerPort := .Values.coopBroker.service.port -}}
+# Coop Mux Ingress — exposes mux dashboard, WebSocket, and sessions API.
+# Basic auth protects browser-facing routes; bearer token is injected after
+# basic auth so coop-mux's own auth layer is satisfied transparently.
+apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: {{ include "gastown.coopBroker.fullname" . }}
+  name: {{ $fullname }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "gastown.coopBroker.labels" . | nindent 4 }}
 spec:
   entryPoints:
+    - web
     - websecure
   routes:
     {{- if .Values.coopBroker.mux.enabled }}
-    - match: Host(`{{ .Values.coopBroker.ingress.host }}`) && PathPrefix(`/mux`)
+    # Dashboard HTML
+    - match: Host(`{{ $host }}`) && PathPrefix(`/mux`)
       kind: Rule
+      priority: 100
       services:
-        - name: {{ include "gastown.coopBroker.fullname" . }}
-          port: {{ .Values.coopBroker.service.muxPort }}
-      {{- if .Values.coopBroker.ingress.ipWhitelist.enabled }}
+        - name: {{ $fullname }}
+          port: {{ $muxPort }}
       middlewares:
-        - name: {{ include "gastown.coopBroker.fullname" . }}-ipwhitelist
-      {{- end }}
+        {{- if .Values.coopBroker.ingress.ipWhitelist.enabled }}
+        - name: {{ $fullname }}-ipwhitelist
+        {{- end }}
+        {{- if .Values.coopBroker.ingress.basicAuth.enabled }}
+        - name: {{ $fullname }}-basicauth
+        {{- end }}
+        {{- if .Values.coopBroker.ingress.bearerToken }}
+        - name: {{ $fullname }}-inject-bearer
+        {{- end }}
+    # WebSocket feed (no basic auth — browser sends creds via query param)
+    - match: Host(`{{ $host }}`) && PathPrefix(`/ws/mux`)
+      kind: Rule
+      priority: 100
+      services:
+        - name: {{ $fullname }}
+          port: {{ $muxPort }}
+      middlewares:
+        {{- if .Values.coopBroker.ingress.ipWhitelist.enabled }}
+        - name: {{ $fullname }}-ipwhitelist
+        {{- end }}
+        {{- if .Values.coopBroker.ingress.bearerToken }}
+        - name: {{ $fullname }}-inject-bearer
+        {{- end }}
+    # Sessions API
+    - match: Host(`{{ $host }}`) && PathPrefix(`/api/v1/sessions`)
+      kind: Rule
+      priority: 100
+      services:
+        - name: {{ $fullname }}
+          port: {{ $muxPort }}
+      middlewares:
+        {{- if .Values.coopBroker.ingress.ipWhitelist.enabled }}
+        - name: {{ $fullname }}-ipwhitelist
+        {{- end }}
+        {{- if .Values.coopBroker.ingress.basicAuth.enabled }}
+        - name: {{ $fullname }}-basicauth
+        {{- end }}
+        {{- if .Values.coopBroker.ingress.bearerToken }}
+        - name: {{ $fullname }}-inject-bearer
+        {{- end }}
     {{- end }}
-    - match: Host(`{{ .Values.coopBroker.ingress.host }}`)
+    {{- if .Values.coopBroker.ingress.exposeAPI }}
+    # Broker API (optional — usually internal-only)
+    - match: Host(`{{ $host }}`)
       kind: Rule
       services:
-        - name: {{ include "gastown.coopBroker.fullname" . }}
-          port: {{ .Values.coopBroker.service.port }}
-      {{- if .Values.coopBroker.ingress.ipWhitelist.enabled }}
+        - name: {{ $fullname }}
+          port: {{ $brokerPort }}
       middlewares:
-        - name: {{ include "gastown.coopBroker.fullname" . }}-ipwhitelist
-      {{- end }}
+        {{- if .Values.coopBroker.ingress.ipWhitelist.enabled }}
+        - name: {{ $fullname }}-ipwhitelist
+        {{- end }}
+        {{- if .Values.coopBroker.ingress.basicAuth.enabled }}
+        - name: {{ $fullname }}-basicauth
+        {{- end }}
+        {{- if .Values.coopBroker.ingress.bearerToken }}
+        - name: {{ $fullname }}-inject-bearer
+        {{- end }}
+    {{- end }}
+{{- if .Values.coopBroker.ingress.bearerToken }}
 ---
-{{- if .Values.coopBroker.ingress.ipWhitelist.enabled }}
-apiVersion: traefik.io/v1alpha1
+# Injects bearer token so coop-mux's auth layer is satisfied after basic auth.
+apiVersion: traefik.containo.us/v1alpha1
 kind: Middleware
 metadata:
-  name: {{ include "gastown.coopBroker.fullname" . }}-ipwhitelist
+  name: {{ $fullname }}-inject-bearer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.coopBroker.labels" . | nindent 4 }}
+spec:
+  headers:
+    customRequestHeaders:
+      Authorization: "Bearer {{ .Values.coopBroker.ingress.bearerToken }}"
+{{- end }}
+{{- if .Values.coopBroker.ingress.ipWhitelist.enabled }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-ipwhitelist
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "gastown.coopBroker.labels" . | nindent 4 }}
@@ -43,5 +114,20 @@ spec:
   ipWhiteList:
     sourceRange:
       {{- toYaml .Values.coopBroker.ingress.ipWhitelist.sourceRange | nindent 6 }}
+    ipStrategy:
+      depth: {{ .Values.coopBroker.ingress.ipWhitelist.depth | default 1 }}
+{{- end }}
+{{- if .Values.coopBroker.ingress.basicAuth.enabled }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-basicauth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.coopBroker.labels" . | nindent 4 }}
+spec:
+  basicAuth:
+    secret: {{ .Values.coopBroker.ingress.basicAuth.secret }}
 {{- end }}
 {{- end }}
