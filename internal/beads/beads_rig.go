@@ -118,3 +118,17 @@ func RigBeadIDWithPrefix(prefix, name string) string {
 func RigBeadID(name string) string {
 	return RigBeadIDWithPrefix("gt", name)
 }
+
+// ListRigBeads returns all rig identity beads (type=rig, label=gt:rig).
+func (b *Beads) ListRigBeads() ([]*Issue, error) {
+	out, err := b.run("list", "--type=rig", "--label=gt:rig", "--json")
+	if err != nil {
+		return nil, err
+	}
+
+	var issues []*Issue
+	if err := json.Unmarshal(out, &issues); err != nil {
+		return nil, fmt.Errorf("parsing bd list output: %w", err)
+	}
+	return issues, nil
+}

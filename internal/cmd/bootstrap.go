@@ -277,20 +277,9 @@ func bootstrapRigBeads(bd *beads.Beads, townRoot string, stats *bootstrapStats) 
 		}
 		stats.add(c, s, u)
 
-		// Create rig registry config bead
-		rigScope := bootstrapTownName + "/" + name
-		rigMeta := map[string]interface{}{
-			"git_url":  gitURL,
-			"added_at": time.Now(),
-			"beads":    map[string]interface{}{"prefix": prefix},
-		}
-		c, s, u, err = bootstrapConfigBead(bd, "rig-"+bootstrapTownName+"-"+name,
-			beads.ConfigCategoryRigRegistry, rigScope, "", "",
-			rigMeta, "Rig registry: "+name)
-		if err != nil {
-			return fmt.Errorf("creating rig config bead for %s: %w", name, err)
-		}
-		stats.add(c, s, u)
+		// NOTE: Legacy config bead (type=config, config:rig-registry) is no
+		// longer created. The rig identity bead (type=rig) above is the
+		// canonical source. See gt-f68.
 
 		// Create route bead (type=route) — enables prefix-based routing via daemon
 		routeID := "hq-route-" + prefix

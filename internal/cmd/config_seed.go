@@ -468,29 +468,33 @@ func seedRigRegistryBeads(bd *beads.Beads, townRoot string) (created, skipped, u
 	for rigName, entry := range rigsCfg.Rigs {
 		rigScope := townName + "/" + rigName
 
-		// 1. Create rig registry bead from rigs.json entry
-		slug := "rig-" + townName + "-" + rigName
-		metadata := map[string]interface{}{
-			"git_url":    entry.GitURL,
-			"local_repo": entry.LocalRepo,
-			"added_at":   entry.AddedAt,
-		}
+		// 1. Create rig identity bead (type=rig) from rigs.json entry.
+		// Uses the canonical rig bead format instead of legacy config beads.
+		prefix := ""
 		if entry.BeadsConfig != nil {
-			metadata["beads"] = map[string]interface{}{
-				"repo":   entry.BeadsConfig.Repo,
-				"prefix": entry.BeadsConfig.Prefix,
-			}
+			prefix = entry.BeadsConfig.Prefix
+		}
+		rigID := fmt.Sprintf("hq-%s-rig-%s", prefix, rigName)
+		rigFields := &beads.RigFields{
+			Repo:   entry.GitURL,
+			Prefix: prefix,
+			State:  "active",
 		}
 
-		desc := fmt.Sprintf("Rig registry entry for %s", rigName)
-		c, s, u, seedErr := createOrSkipConfigBead(bd, slug, beads.ConfigCategoryRigRegistry,
-			rigScope, "", "", metadata, desc)
-		if seedErr != nil {
-			return created, skipped, updated, fmt.Errorf("seeding rig %s: %w", rigName, seedErr)
+		// Check if already exists before creating.
+		existing, _ := bd.Show(rigID)
+		var c, s int
+		if existing != nil {
+			s = 1 // Already seeded, skip
+		} else {
+			_, seedErr := bd.CreateRigBead(rigID, rigName, rigFields)
+			if seedErr != nil {
+				return created, skipped, updated, fmt.Errorf("seeding rig %s: %w", rigName, seedErr)
+			}
+			c = 1
 		}
 		created += c
 		skipped += s
-		updated += u
 
 		// 2. Create per-rig config bead from rig/config.json (if it exists)
 		rigConfigPath := filepath.Join(townRoot, rigName, "config.json")
@@ -517,14 +521,14 @@ func seedRigRegistryBeads(bd *beads.Beads, townRoot string) (created, skipped, u
 			}
 
 			rigcfgDesc := fmt.Sprintf("Rig config for %s", rigName)
-			c, s, u, seedErr = createOrSkipConfigBead(bd, rigcfgSlug, beads.ConfigCategoryRigRegistry,
+			rc, rs, ru, seedErr := createOrSkipConfigBead(bd, rigcfgSlug, beads.ConfigCategoryRigRegistry,
 				rigScope, "", "", rigcfgMetadata, rigcfgDesc)
 			if seedErr != nil {
 				return created, skipped, updated, fmt.Errorf("seeding rigcfg %s: %w", rigName, seedErr)
 			}
-			created += c
-			skipped += s
-			updated += u
+			created += rc
+			skipped += rs
+			updated += ru
 		}
 	}
 

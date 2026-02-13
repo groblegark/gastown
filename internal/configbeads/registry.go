@@ -11,68 +11,65 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 )
 
-// SeedRigRegistryBead creates a rig registry config bead when a rig is added.
-// The bead ID is hq-cfg-rig-<town>-<rigName>.
-// This stores the same data as the rigs.json entry, making beads the source of truth.
+// SeedRigRegistryBead creates a rig identity bead (type=rig) when a rig is added.
+// Uses the same format as `gt rig register`: type=rig with gt:rig label and
+// structured description containing repo, prefix, and state fields.
+//
+// Falls back to legacy config bead creation if rig bead creation fails,
+// for backwards compatibility during migration.
 func SeedRigRegistryBead(townRoot string, townName, rigName string, entry config.RigEntry) error {
 	bd := beads.New(townRoot)
 
-	slug := "rig-" + townName + "-" + rigName
-	rigScope := townName + "/" + rigName
-
-	// Check if already exists
-	existing, _, err := bd.GetConfigBeadBySlug(slug)
-	if err == nil && existing != nil {
-		return nil // Already seeded
+	// Check if a rig bead already exists (by title match via list).
+	rigBeads, err := bd.ListRigBeads()
+	if err == nil {
+		for _, issue := range rigBeads {
+			if issue.Title == rigName {
+				return nil // Already seeded
+			}
+		}
 	}
 
-	// Build metadata matching the rigs.json entry format
-	metadata := map[string]interface{}{
-		"git_url":  entry.GitURL,
-		"added_at": entry.AddedAt,
-	}
-	if entry.LocalRepo != "" {
-		metadata["local_repo"] = entry.LocalRepo
-	}
+	// Build rig bead fields.
+	prefix := ""
 	if entry.BeadsConfig != nil {
-		metadata["beads"] = map[string]interface{}{
-			"prefix": entry.BeadsConfig.Prefix,
-		}
-		if entry.BeadsConfig.Repo != "" {
-			beadsMap := metadata["beads"].(map[string]interface{})
-			beadsMap["repo"] = entry.BeadsConfig.Repo
-		}
+		prefix = entry.BeadsConfig.Prefix
+	}
+	rigFields := &beads.RigFields{
+		Repo:   entry.GitURL,
+		Prefix: prefix,
+		State:  "active",
 	}
 
-	metadataJSON, err := json.Marshal(metadata)
-	if err != nil {
-		return fmt.Errorf("marshaling rig registry metadata: %w", err)
-	}
-
-	fields := &beads.ConfigFields{
-		Rig:      rigScope,
-		Category: beads.ConfigCategoryRigRegistry,
-		Metadata: string(metadataJSON),
-	}
-
-	_, err = bd.CreateConfigBead(slug, fields, "", "")
+	// Use hq- prefix so it lives in the town beads, not a rig-specific DB.
+	id := fmt.Sprintf("hq-%s-rig-%s", prefix, rigName)
+	_, err = bd.CreateRigBead(id, rigName, rigFields)
 	return err
 }
 
-// DeleteRigRegistryBead removes the rig registry config bead when a rig is removed.
-// Deletes bead with ID hq-cfg-rig-<town>-<rigName>.
+// DeleteRigRegistryBead removes the rig identity bead when a rig is removed.
+// Tries both new rig bead format and legacy config bead format.
 func DeleteRigRegistryBead(townRoot, townName, rigName string) error {
 	bd := beads.New(townRoot)
 
+	// Try deleting rig identity bead (new format).
+	rigBeads, err := bd.ListRigBeads()
+	if err == nil {
+		for _, issue := range rigBeads {
+			if issue.Title == rigName {
+				_ = bd.Close(issue.ID)
+				return nil
+			}
+		}
+	}
+
+	// Fall back to legacy config bead deletion.
 	slug := "rig-" + townName + "-" + rigName
 	id := beads.ConfigBeadID(slug)
-
-	// Check if it exists before deleting
 	existing, _, err := bd.GetConfigBead(id)
 	if err != nil || existing == nil {
 		return nil // Nothing to delete
 	}
-
 	return bd.DeleteConfigBead(id)
 }
 
