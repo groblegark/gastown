@@ -24,6 +24,12 @@ const (
 	LabelRole  = "gastown.io/role"
 	LabelAgent = "gastown.io/agent"
 
+	// AnnotationBeadID is the canonical bead ID for this pod. When set,
+	// the status reporter uses it instead of constructing an ID from labels.
+	// This is required for pods whose bead ID doesn't follow the
+	// gt-{rig}-{role}-{agent} pattern (e.g. helm-managed mayor pods).
+	AnnotationBeadID = "gastown.io/bead-id"
+
 	// LabelAppValue is the app label value for all gastown pods.
 	LabelAppValue = "gastown"
 
@@ -87,6 +93,7 @@ type AgentPodSpec struct {
 	Rig       string
 	Role      string // polecat, crew, witness, refinery, mayor, deacon
 	AgentName string
+	BeadID    string // canonical bead ID (written to gastown.io/bead-id annotation)
 	Image     string
 	Namespace string
 	Env       map[string]string
@@ -404,6 +411,9 @@ func (m *K8sManager) buildPod(spec AgentPodSpec) *corev1.Pod {
 			Name:      spec.PodName(),
 			Namespace: spec.Namespace,
 			Labels:    spec.Labels(),
+			Annotations: map[string]string{
+				AnnotationBeadID: spec.BeadID,
+			},
 		},
 		Spec: podSpec,
 	}

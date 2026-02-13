@@ -111,6 +111,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 			} else {
 				// Pod is Running or Pending. Check if spec has drifted.
 				desiredSpec := r.specBuilder(r.cfg, bead.Rig, bead.Role, bead.AgentName, bead.Metadata)
+				desiredSpec.BeadID = bead.ID
 				reason := podDriftReason(desiredSpec, &pod)
 				if reason != "" {
 					r.logger.Info("spec drift detected, recreating pod",
@@ -127,6 +128,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 		// Create the pod.
 		spec := r.specBuilder(r.cfg, bead.Rig, bead.Role, bead.AgentName, bead.Metadata)
+		spec.BeadID = bead.ID
 		r.logger.Info("creating pod", "pod", name)
 		if err := r.pods.CreateAgentPod(ctx, spec); err != nil {
 			return fmt.Errorf("creating pod %s: %w", name, err)

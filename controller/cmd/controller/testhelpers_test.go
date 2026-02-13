@@ -110,14 +110,18 @@ func (r *recordingReporter) SyncAll(ctx context.Context) error {
 		if agent == "" || rig == "" || role == "" {
 			continue
 		}
-		agentBeadID := fmt.Sprintf("gt-%s-%s-%s", rig, role, agent)
+		// Prefer canonical bead ID from annotation, fall back to label construction.
+		beadID := pod.Annotations["gastown.io/bead-id"]
+		if beadID == "" {
+			beadID = fmt.Sprintf("gt-%s-%s-%s", rig, role, agent)
+		}
 		status := statusreporter.PodStatus{
 			PodName:   pod.Name,
 			Namespace: pod.Namespace,
 			Phase:     string(pod.Status.Phase),
 			Message:   pod.Status.Message,
 		}
-		_ = r.ReportPodStatus(ctx, agentBeadID, status)
+		_ = r.ReportPodStatus(ctx, beadID, status)
 	}
 	return nil
 }

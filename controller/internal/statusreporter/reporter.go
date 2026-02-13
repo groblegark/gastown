@@ -15,6 +15,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/steveyegge/gastown/controller/internal/podmanager"
 )
 
 // PodStatus represents the K8s pod state to report back to beads.
@@ -187,14 +189,14 @@ func (r *BdReporter) SyncAll(ctx context.Context) error {
 
 	var errs []string
 	for _, pod := range pods.Items {
-		agentLabel := pod.Labels["gastown.io/agent"]
-		rigLabel := pod.Labels["gastown.io/rig"]
-		roleLabel := pod.Labels["gastown.io/role"]
+		agentLabel := pod.Labels[podmanager.LabelAgent]
+		rigLabel := pod.Labels[podmanager.LabelRig]
+		roleLabel := pod.Labels[podmanager.LabelRole]
 		if agentLabel == "" || rigLabel == "" || roleLabel == "" {
 			continue
 		}
 
-		agentBeadID := fmt.Sprintf("gt-%s-%s-%s", rigLabel, roleLabel, agentLabel)
+		beadID := agentBeadID(&pod)
 		status := PodStatus{
 			PodName:   pod.Name,
 			Namespace: pod.Namespace,
@@ -203,14 +205,14 @@ func (r *BdReporter) SyncAll(ctx context.Context) error {
 			Message:   pod.Status.Message,
 		}
 
-		if err := r.ReportPodStatus(ctx, agentBeadID, status); err != nil {
+		if err := r.ReportPodStatus(ctx, beadID, status); err != nil {
 			errs = append(errs, err.Error())
 		}
 
 		// Write backend metadata for coop-enabled pods so ResolveBackend() works
 		// after controller restarts. Uses pod IP (no headless Service for DNS).
 		if coopPort := detectCoopPort(&pod); coopPort > 0 && pod.Status.PodIP != "" {
-			_ = r.ReportBackendMetadata(ctx, agentBeadID, BackendMetadata{
+			_ = r.ReportBackendMetadata(ctx, beadID, BackendMetadata{
 				PodName:   pod.Name,
 				Namespace: pod.Namespace,
 				Backend:   "coop",
@@ -285,6 +287,19 @@ func PhaseToAgentState(phase string) string {
 }
 
 // isPodReady checks if a pod has the Ready condition set to True.
+// agentBeadID returns the bead ID for a pod. It prefers the explicit
+// gastown.io/bead-id annotation (set by Helm or the controller). If absent,
+// it falls back to constructing gt-{rig}-{role}-{agent} from labels.
+func agentBeadID(pod *corev1.Pod) string {
+	if id := pod.Annotations[podmanager.AnnotationBeadID]; id != "" {
+		return id
+	}
+	rig := pod.Labels[podmanager.LabelRig]
+	role := pod.Labels[podmanager.LabelRole]
+	agent := pod.Labels[podmanager.LabelAgent]
+	return fmt.Sprintf("gt-%s-%s-%s", rig, role, agent)
+}
+
 func isPodReady(pod *corev1.Pod) bool {
 	for _, c := range pod.Status.Conditions {
 		if c.Type == corev1.PodReady {
@@ -408,14 +423,14 @@ func (r *HTTPReporter) SyncAll(ctx context.Context) error {
 	}
 
 	for _, pod := range pods.Items {
-		agentLabel := pod.Labels["gastown.io/agent"]
-		rigLabel := pod.Labels["gastown.io/rig"]
-		roleLabel := pod.Labels["gastown.io/role"]
+		agentLabel := pod.Labels[podmanager.LabelAgent]
+		rigLabel := pod.Labels[podmanager.LabelRig]
+		roleLabel := pod.Labels[podmanager.LabelRole]
 		if agentLabel == "" || rigLabel == "" || roleLabel == "" {
 			continue
 		}
 
-		agentBeadID := fmt.Sprintf("gt-%s-%s-%s", rigLabel, roleLabel, agentLabel)
+		beadID := agentBeadID(&pod)
 		status := PodStatus{
 			PodName:   pod.Name,
 			Namespace: pod.Namespace,
@@ -424,13 +439,13 @@ func (r *HTTPReporter) SyncAll(ctx context.Context) error {
 			Message:   pod.Status.Message,
 		}
 
-		_ = r.ReportPodStatus(ctx, agentBeadID, status)
+		_ = r.ReportPodStatus(ctx, beadID, status)
 
 		// Write backend metadata for coop-enabled pods so ResolveBackend() works
 		// after controller restarts. Detect coop by checking for port 8080 on any container.
 		// Uses pod IP because individual pods don't have DNS entries (no headless Service).
 		if coopPort := detectCoopPort(&pod); coopPort > 0 && pod.Status.PodIP != "" {
-			_ = r.ReportBackendMetadata(ctx, agentBeadID, BackendMetadata{
+			_ = r.ReportBackendMetadata(ctx, beadID, BackendMetadata{
 				PodName:   pod.Name,
 				Namespace: pod.Namespace,
 				Backend:   "coop",

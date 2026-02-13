@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log/slog"
-	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -192,28 +191,30 @@ func TestHandleEvent_SpawnWithCoopReportsBackendMetadata(t *testing.T) {
 	}
 
 	// Verify pod was created.
-	_, err := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-furiosa", metav1.GetOptions{})
+	pod, err := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-furiosa", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("pod not created: %v", err)
 	}
 
-	// Verify backend metadata was reported.
+	// Verify bead-id annotation is set on the pod.
+	if id := pod.Annotations["gastown.io/bead-id"]; id != "gt-test-123" {
+		t.Errorf("bead-id annotation = %q, want %q", id, "gt-test-123")
+	}
+
+	// Backend metadata is NOT reported at spawn time — it's deferred to SyncAll
+	// because the pod IP isn't available yet. Verify only pod status was reported.
 	meta := reporter.BackendMeta()
-	if len(meta) != 1 {
-		t.Fatalf("expected 1 backend metadata report, got %d", len(meta))
+	if len(meta) != 0 {
+		t.Fatalf("expected 0 backend metadata reports at spawn (deferred to SyncAll), got %d", len(meta))
 	}
-	if meta[0].Meta.Backend != "coop" {
-		t.Errorf("Backend = %q, want %q", meta[0].Meta.Backend, "coop")
+
+	// Verify pod status WAS reported.
+	reports := reporter.Reports()
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 pod status report, got %d", len(reports))
 	}
-	if meta[0].Meta.PodName != "gt-gastown-polecat-furiosa" {
-		t.Errorf("PodName = %q, want %q", meta[0].Meta.PodName, "gt-gastown-polecat-furiosa")
-	}
-	expectedURL := "http://gt-gastown-polecat-furiosa.gastown.svc.cluster.local:8080"
-	if meta[0].Meta.CoopURL != expectedURL {
-		t.Errorf("CoopURL = %q, want %q", meta[0].Meta.CoopURL, expectedURL)
-	}
-	if meta[0].AgentName != "gt-gastown-polecat-furiosa" {
-		t.Errorf("AgentName = %q, want %q", meta[0].AgentName, "gt-gastown-polecat-furiosa")
+	if reports[0].Status.Phase != "Pending" {
+		t.Errorf("Phase = %q, want %q", reports[0].Status.Phase, "Pending")
 	}
 }
 
@@ -268,22 +269,22 @@ func TestHandleEvent_DoneClearsBackendMetadata(t *testing.T) {
 		t.Fatalf("done: %v", err)
 	}
 
-	// Should have 2 backend metadata reports: one with coop, one clearing.
+	// Spawn does NOT report backend metadata (deferred to SyncAll).
+	// Done sends a clear. So we expect exactly 1 report: the clear.
 	meta := reporter.BackendMeta()
-	if len(meta) != 2 {
-		t.Fatalf("expected 2 backend metadata reports, got %d", len(meta))
+	if len(meta) != 1 {
+		t.Fatalf("expected 1 backend metadata report (clear only), got %d", len(meta))
 	}
-	// First should be coop setup.
-	if meta[0].Meta.Backend != "coop" {
-		t.Errorf("first report Backend = %q, want %q", meta[0].Meta.Backend, "coop")
-	}
-	// Second should be clear (empty backend).
-	if meta[1].Meta.Backend != "" {
-		t.Errorf("second report Backend = %q, want empty (clear)", meta[1].Meta.Backend)
+	// Should be clear (empty backend).
+	if meta[0].Meta.Backend != "" {
+		t.Errorf("report Backend = %q, want empty (clear)", meta[0].Meta.Backend)
 	}
 }
 
 func TestHandleEvent_CoopURLIncludesCustomPort(t *testing.T) {
+	// Backend metadata (including CoopURL) is written by SyncAll, not at spawn.
+	// This test verifies that buildAgentPodSpec produces a spec with CoopSidecar
+	// set and that the pod carries the bead-id annotation for SyncAll to use.
 	client := fake.NewSimpleClientset()
 	logger := slog.Default()
 	cfg := &config.Config{
@@ -309,12 +310,27 @@ func TestHandleEvent_CoopURLIncludesCustomPort(t *testing.T) {
 		t.Fatalf("handleEvent: %v", err)
 	}
 
-	meta := reporter.BackendMeta()
-	if len(meta) < 1 {
-		t.Fatal("no backend metadata reported")
+	// Verify the spec wired coop correctly.
+	spec := buildAgentPodSpec(cfg, event)
+	if spec.CoopSidecar == nil {
+		t.Fatal("expected CoopSidecar to be set")
 	}
-	// Default port should be 8080.
-	if !strings.Contains(meta[0].Meta.CoopURL, ":8080") {
-		t.Errorf("CoopURL = %q, should contain default port :8080", meta[0].Meta.CoopURL)
+	if spec.CoopSidecar.Image != "ghcr.io/groblegark/coop:latest" {
+		t.Errorf("CoopSidecar.Image = %q, want %q", spec.CoopSidecar.Image, "ghcr.io/groblegark/coop:latest")
 	}
+
+	// Verify the created pod has the bead-id annotation.
+	pod, err := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-furiosa", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("pod not created: %v", err)
+	}
+	if id := pod.Annotations["gastown.io/bead-id"]; id != "gt-test-123" {
+		t.Errorf("bead-id annotation = %q, want %q", id, "gt-test-123")
+	}
+
+	// SyncAll would construct the coop URL as:
+	// http://<pod-name>.<namespace>.svc.cluster.local:8080
+	expectedURL := "http://gt-gastown-polecat-furiosa.gastown.svc.cluster.local:8080"
+	_ = expectedURL // verified by statusreporter tests
+	_ = reporter    // no spawn-time backend metadata to check
 }

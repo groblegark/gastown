@@ -194,7 +194,12 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 		"type", event.Type, "rig", event.Rig, "role", event.Role,
 		"agent", event.AgentName, "bead", event.BeadID)
 
-	agentBeadID := fmt.Sprintf("gt-%s-%s-%s", event.Rig, event.Role, event.AgentName)
+	// Use the canonical bead ID from the event. Fall back to constructing
+	// from labels for backwards compatibility with older daemon versions.
+	agentBeadID := event.BeadID
+	if agentBeadID == "" {
+		agentBeadID = fmt.Sprintf("gt-%s-%s-%s", event.Rig, event.Role, event.AgentName)
+	}
 
 	switch event.Type {
 	case beadswatcher.AgentSpawn:
@@ -362,6 +367,7 @@ func buildAgentPodSpec(cfg *config.Config, event beadswatcher.Event) podmanager.
 		Rig:       event.Rig,
 		Role:      event.Role,
 		AgentName: event.AgentName,
+		BeadID:    event.BeadID,
 		Image:     event.Metadata["image"],
 		Namespace: ns,
 		Env: map[string]string{
