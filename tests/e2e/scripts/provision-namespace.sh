@@ -128,6 +128,33 @@ if [[ "$SKIP_INSTALL" == "false" ]]; then
   if [[ ${#HELM_SET_ARGS[@]} -gt 0 ]]; then
     log "  with ${#HELM_SET_ARGS[@]} --set args"
   fi
+
+  # Background pod monitor — shows what's happening while helm --wait blocks
+  _monitor_pods() {
+    sleep 15  # let helm submit resources first
+    while true; do
+      if kubectl get ns "$NAMESPACE" >/dev/null 2>&1; then
+        log "  [monitor] Pod status:"
+        kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null \
+          | while IFS= read -r line; do log "    $line"; done
+        # Show events for any non-Running pods
+        kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null \
+          | grep -v "Running\|Completed" \
+          | awk '{print $1}' \
+          | while IFS= read -r pod; do
+              log "  [monitor] Events for $pod:"
+              kubectl get events -n "$NAMESPACE" --field-selector "involvedObject.name=$pod" --no-headers 2>/dev/null \
+                | tail -5 \
+                | while IFS= read -r ev; do log "    $ev"; done
+            done
+      fi
+      sleep 30
+    done
+  }
+  _monitor_pods &
+  MONITOR_PID=$!
+
+  set +e  # Capture helm exit code for diagnostics
   helm upgrade --install "$NAMESPACE" "$CHART_DIR/" \
     -n "$NAMESPACE" --create-namespace \
     --values "$CHART_DIR/values.yaml" \
@@ -135,6 +162,30 @@ if [[ "$SKIP_INSTALL" == "false" ]]; then
     "${HELM_SET_ARGS[@]}" \
     --timeout "${TIMEOUT}s" \
     --wait 2>&1 | while IFS= read -r line; do log "  helm: $line"; done
+  HELM_EXIT=${PIPESTATUS[0]}
+  set -e
+
+  # Stop monitor
+  kill "$MONITOR_PID" 2>/dev/null || true
+  wait "$MONITOR_PID" 2>/dev/null || true
+
+  if [[ "$HELM_EXIT" -ne 0 ]]; then
+    # Capture final pod state on failure
+    err "Helm install failed (exit $HELM_EXIT). Final pod state:"
+    kubectl get pods -n "$NAMESPACE" -o wide 2>&1 | while IFS= read -r line; do err "  $line"; done
+    err "Recent events:"
+    kubectl get events -n "$NAMESPACE" --sort-by='.lastTimestamp' 2>/dev/null | tail -30 \
+      | while IFS= read -r line; do err "  $line"; done
+    err "Describing non-ready pods:"
+    kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null \
+      | grep -v "Running\|Completed" \
+      | awk '{print $1}' \
+      | while IFS= read -r pod; do
+          kubectl describe pod "$pod" -n "$NAMESPACE" 2>&1 | tail -30 \
+            | while IFS= read -r line; do err "  [$pod] $line"; done
+        done
+    die "Helm install failed (exit $HELM_EXIT)"
+  fi
 
   ok "Helm install completed"
 else
