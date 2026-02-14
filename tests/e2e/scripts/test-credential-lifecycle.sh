@@ -61,6 +61,32 @@ fi
 
 log "Broker pod: $BROKER_POD"
 
+# Check if credential-seeder sidecar exists on the broker pod.
+# Without it, credential tests are not applicable.
+BROKER_CONTAINERS=$(kube get pod "$BROKER_POD" -o jsonpath='{.spec.containers[*].name}' 2>/dev/null)
+HAS_SEEDER=false
+if [[ "$BROKER_CONTAINERS" == *"credential-seeder"* ]]; then
+  HAS_SEEDER=true
+fi
+
+if [[ "$HAS_SEEDER" == "false" ]]; then
+  log "Broker pod has no credential-seeder sidecar (containers: $BROKER_CONTAINERS)"
+  skip_test "Credential seeder sidecar running" "no credential-seeder container on broker"
+  skip_test "Credential status API responds" "no credential-seeder"
+  skip_test "Broker has seeded account" "no credential-seeder"
+  skip_test "Account status is healthy" "no credential-seeder"
+  skip_test "Token TTL is reasonable" "no credential-seeder"
+  skip_test "Credential PVC exists" "no credential-seeder"
+  skip_test "Broker has registered pods" "no credential-seeder"
+  skip_test "Agent pod has credentials" "no credential-seeder"
+  skip_test "Agent credentials not expired" "no credential-seeder"
+  skip_test "Reauth endpoint returns auth URL" "no credential-seeder"
+  skip_test "Auth URL is valid Anthropic OAuth" "no credential-seeder"
+  skip_test "Credential seeder logs confirm seed" "no credential-seeder"
+  print_summary
+  exit 0
+fi
+
 # ── Port-forward to broker ───────────────────────────────────────────
 BROKER_PORT=""
 

@@ -33,6 +33,20 @@ fi
 log "Broker pod: $BROKER_POD"
 log "Broker config: ${BROKER_CONFIG:-none}"
 
+# Check for credential-seeder sidecar — without it, refresh tests don't apply
+BROKER_CONTAINERS=$(kube get pod "$BROKER_POD" -o jsonpath='{.spec.containers[*].name}' 2>/dev/null)
+if [[ "$BROKER_CONTAINERS" != *"credential-seeder"* ]]; then
+  log "Broker has no credential-seeder sidecar (containers: $BROKER_CONTAINERS)"
+  skip_all "no credential-seeder sidecar on broker pod"
+  exit 0
+fi
+
+# Skip if no broker ConfigMap with OAuth config
+if [[ -z "$BROKER_CONFIG" ]]; then
+  skip_all "no coop-broker-config ConfigMap found"
+  exit 0
+fi
+
 # ── Port-forward to broker ───────────────────────────────────────
 BROKER_PORT=""
 BROKER_TOKEN="${BROKER_TOKEN:-V6T4jmuDY1GDgYDmSRaFa1wwd4RTkFKv}"

@@ -97,7 +97,11 @@ MODULES=(
   "agent-io-cycle"
   "decision-flow"
   "event-flow"
-  # Phase 2.6: Command tests
+  # Phase 2.6: Issue CRUD, hooks, mail
+  "issue-crud"
+  "hook-config"
+  "mail-delivery"
+  # Phase 2.7: Command tests
   "gt-peek"
   "gt-attach"
   "gt-crew"

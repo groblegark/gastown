@@ -229,6 +229,22 @@ if [[ $SECONDS -ge $deadline ]]; then
   die "Pod readiness timeout after ${TIMEOUT}s"
 fi
 
+# ── Post-provision: configure custom types on daemon ─────────────────
+# Beads core only allows built-in types (bug, task, feature, etc.).
+# Gas Town agent workflows require "agent" and other custom types.
+# Configure them on the daemon so E2E tests can create agent beads.
+log "Configuring custom types on daemon..."
+DAEMON_POD=$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null \
+  | grep "daemon" | grep -v "dolt\|nats" | grep "Running" | head -1 | awk '{print $1}')
+if [[ -n "$DAEMON_POD" ]]; then
+  kubectl exec -n "$NAMESPACE" "$DAEMON_POD" -c bd-daemon -- \
+    bd config set types.custom "agent,role,rig,convoy,slot,gate" >/dev/null 2>&1 \
+    && ok "Custom types configured (agent, role, rig, convoy, slot, gate)" \
+    || warn "Could not configure custom types on daemon"
+else
+  warn "No daemon pod found — custom types not configured"
+fi
+
 # ── Summary ──────────────────────────────────────────────────────────
 echo ""
 ok "Namespace $NAMESPACE is ready"

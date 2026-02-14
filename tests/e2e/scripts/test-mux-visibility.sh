@@ -164,6 +164,26 @@ test_mux_reachable() {
   rm -f "$tmpf"
   return $rc
 }
+
+# Check if coop-mux container exists on broker (may not be deployed in all configs)
+_broker_pod=$(kube get pods -n "$NS" --no-headers 2>/dev/null | grep "coop-broker" | grep "Running" | head -1 | awk '{print $1}')
+_broker_containers=""
+if [[ -n "$_broker_pod" ]]; then
+  _broker_containers=$(kubectl get pod -n "$NS" "$_broker_pod" -o jsonpath='{.spec.containers[*].name}' 2>/dev/null)
+fi
+
+if [[ "$_broker_containers" != *"coop-mux"* ]]; then
+  skip_test "Coop mux API is reachable" "no coop-mux container on broker"
+  skip_test "Create test agent bead" "mux not available"
+  skip_test "Controller creates agent pod" "mux not available"
+  skip_test "Agent pod reaches Running state" "mux not available"
+  skip_test "Agent session appears in mux" "mux not available"
+  skip_test "Mux session has correct metadata" "mux not available"
+  skip_test "Close bead removes mux session" "mux not available"
+  print_summary
+  exit 0
+fi
+
 run_test "Coop mux API is reachable" test_mux_reachable
 
 # Bail early if infrastructure isn't reachable

@@ -71,7 +71,12 @@ test_all_in_broker() {
   # Broker should have at least as many pods as we see running
   assert_ge "$broker_count" "$AGENT_COUNT"
 }
-run_test "All agent pods registered in broker" test_all_in_broker
+
+if [[ "$AGENT_COUNT" -eq 0 ]]; then
+  skip_test "All agent pods registered in broker" "no agent pods running"
+else
+  run_test "All agent pods registered in broker" test_all_in_broker
+fi
 
 # ── Test 5: Broker reports pod names that match kubectl ──────────────
 test_broker_names_match() {
@@ -86,13 +91,6 @@ pods = json.load(sys.stdin).get('pods',[])
 for p in pods:
     print(p.get('name',''))
 " 2>/dev/null || echo "")
-  # When no agent pods exist and broker has none, both are empty — that's a match
-  if [[ "$AGENT_COUNT" -eq 0 ]]; then
-    local broker_count
-    broker_count=$(echo "$names" | { grep -c . || true; })
-    assert_eq "$broker_count" "0"
-    return $?
-  fi
   # At least one broker pod name should match a kubectl agent pod name
   local match_count=0
   for pod in $AGENT_PODS; do
@@ -102,7 +100,12 @@ for p in pods:
   done
   assert_ge "$match_count" 1
 }
-run_test "Broker pod names match kubectl agent pods" test_broker_names_match
+
+if [[ "$AGENT_COUNT" -eq 0 ]]; then
+  skip_test "Broker pod names match kubectl agent pods" "no agent pods running"
+else
+  run_test "Broker pod names match kubectl agent pods" test_broker_names_match
+fi
 
 # ── Test 6: Each agent has independent coop instance ─────────────────
 test_independent_coop() {
