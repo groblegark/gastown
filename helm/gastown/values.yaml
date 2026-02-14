@@ -340,7 +340,7 @@ bd-daemon:
       tag: ""  # defaults to daemon image tag if empty
       pullPolicy: Always
     secretName: "slack-bot-credentials"
-    coopBrokerURL: ""  # Coop broker URL for credential reauth (auto-wired in per-env values)
+    coopBrokerURL: ""  # Coopmux URL for credential reauth (auto-wired in per-env values)
     resources:
       limits:
         cpu: 500m
@@ -434,7 +434,7 @@ agentController:
       cpu: 500m
       memory: 256Mi
 
-  # Broker coop URL (set when coopBroker is enabled in this chart)
+  # Coopmux URL (set when coopBroker is enabled in this chart)
   # Agent pods will receive COOP_BROKER_URL + COOP_BROKER_TOKEN env vars
   coopBrokerURL: ""
   coopBrokerTokenSecret: ""
@@ -489,10 +489,6 @@ coopBroker:
   # If empty, uses the daemon token secret
   authTokenSecret: ""
 
-  # K8s secret with Claude OAuth credentials (credentials.json key)
-  # Used to seed the broker with initial refresh token on startup
-  credentialsSecret: ""
-
   # NATS connection (auto-wired from bd-daemon NATS if empty)
   natsURL: ""
 
@@ -523,13 +519,13 @@ coopBroker:
     remoteRef: ""
     refreshTokenProperty: "refresh_token"
 
-  # Ingress (Traefik IngressRoute for mux dashboard)
+  # Ingress (Traefik IngressRoute for coopmux dashboard)
   ingress:
     enabled: false
     host: ""
-    # Expose broker API at / (default: mux-only at /mux, /ws/mux, /api/v1/sessions)
+    # Expose full API at / (default: mux-only at /mux, /ws/mux, /api/v1/sessions)
     exposeAPI: false
-    # Bearer token injected into requests so coop-mux auth is satisfied.
+    # Bearer token injected into requests so coopmux auth is satisfied.
     # Must match the token in coopBroker.authTokenSecret.
     bearerToken: ""
     ipWhitelist:
@@ -541,30 +537,20 @@ coopBroker:
       # K8s secret name containing htpasswd-format 'users' key
       secret: ""
 
-  # Multiplexer sidecar (coop-mux)
+  # Coopmux settings (mux + broker + distributor in single binary)
   mux:
-    enabled: false
     port: 9800
     screenPollMs: 500
     statusPollMs: 2000
     healthCheckMs: 10000
     maxHealthFailures: 3
-    resources:
-      requests:
-        cpu: 50m
-        memory: 64Mi
-      limits:
-        cpu: 250m
-        memory: 128Mi
 
   # Service
   service:
     type: ClusterIP
-    port: 8080
-    healthPort: 9090
-    muxPort: 9800
+    port: 9800
 
-  # Resources (light — no PTY, no agent)
+  # Resources
   resources:
     requests:
       cpu: 100m

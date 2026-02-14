@@ -167,10 +167,10 @@ externalSecrets:
     tokenProperty: "token"
 
 # =============================================================================
-# Coop Broker (credential broker + multiplexer)
+# Coopmux (credential broker + multiplexer + distributor)
 # =============================================================================
 coopBroker:
-  # Broker URL for auto-registration (e.g., http://gastown-next-coop-broker:8080)
+  # Coopmux URL for auto-registration (e.g., http://gastown-next-coop-broker:9800)
   url: ""
   # Auth token secret name (K8s Secret with 'token' key)
   authTokenSecret: ""

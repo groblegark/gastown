@@ -139,15 +139,15 @@ Coop Broker NATS URL — auto-wire from bd-daemon NATS if not set
 {{- end }}
 
 {{/*
-Coop Broker service URL (for agent pods to register with)
+Coopmux service URL (broker + mux + distributor on single port)
 */}}
 {{- define "gastown.coopBroker.serviceURL" -}}
 {{- printf "http://%s:%d" (include "gastown.coopBroker.fullname" .) (int .Values.coopBroker.service.port) }}
 {{- end }}
 
 {{/*
-Coop Mux service URL (for dashboard and session management)
+Coopmux service URL (alias for backward compatibility with agent-controller)
 */}}
 {{- define "gastown.coopBroker.muxServiceURL" -}}
-{{- printf "http://%s:%d" (include "gastown.coopBroker.fullname" .) (int .Values.coopBroker.service.muxPort) }}
+{{- printf "http://%s:%d" (include "gastown.coopBroker.fullname" .) (int .Values.coopBroker.service.port) }}
 {{- end }}
