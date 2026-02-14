@@ -28,7 +28,7 @@ on:
           description: Comma-separated modules to skip
           default: ""
           required: false
-      title: E2E Tests (${{ init.namespace || 'ephemeral' }})
+      title: E2E Tests
       start: manually
   cli:
     init:
