@@ -21,6 +21,7 @@
 #   --with-mux          Include Playwright mux.spec.js tests
 #   --timeout SECS      Provision timeout (default: 600)
 #   --json              Output JSON results
+#   --junit-dir DIR     Write JUnit XML per module to DIR (for Captain/CI)
 #   --epic ID           Link auto-filed bugs to this beads epic
 #   --set KEY=VAL       Passthrough to helm --set (repeatable)
 #
@@ -83,6 +84,7 @@ CHART_DIR=""
 KEEP=false
 TIMEOUT=900
 JSON_OUTPUT=false
+JUNIT_DIR=""
 EPIC_ID=""
 PROVISION_ARGS=()    # args for provision-namespace.sh
 SUITE_ARGS=()        # args for run-suite.sh
@@ -110,6 +112,7 @@ while [[ $# -gt 0 ]]; do
     --keep)       KEEP=true; shift ;;
     --timeout)    TIMEOUT="$2"; shift 2 ;;
     --json)       JSON_OUTPUT=true; SUITE_ARGS+=("--json"); shift ;;
+    --junit-dir)  JUNIT_DIR="$2"; SUITE_ARGS+=("--junit-dir" "$2"); shift 2 ;;
     --epic)       EPIC_ID="$2"; shift 2 ;;
     --skip)       SUITE_ARGS+=("--skip" "$2"); shift 2 ;;
     --only)       SUITE_ARGS+=("--only" "$2"); shift 2 ;;

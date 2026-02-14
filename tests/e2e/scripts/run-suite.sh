@@ -13,6 +13,7 @@
 #   --skip MODULE       Skip a module (can repeat, e.g. --skip git-mirror)
 #   --only MODULE       Run only this module
 #   --with-mux          Also run Playwright mux.spec.js tests
+#   --junit-dir DIR     Write JUnit XML per module to DIR (for Captain/CI)
 #   --json              Output results as JSON (for CI)
 
 set -euo pipefail
@@ -26,6 +27,7 @@ SKIP_MODULES=""
 ONLY_MODULE=""
 WITH_MUX=false
 JSON_OUTPUT=false
+JUNIT_DIR=""
 
 # ── Colors ───────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -43,6 +45,7 @@ while [[ $# -gt 0 ]]; do
     --only)       ONLY_MODULE="$2"; shift 2 ;;
     --with-mux)   WITH_MUX=true; shift ;;
     --json)       JSON_OUTPUT=true; shift ;;
+    --junit-dir)  JUNIT_DIR="$2"; shift 2 ;;
     *)
       # Positional argument = namespace
       if [[ -z "${E2E_NAMESPACE_SET:-}" ]]; then
@@ -55,6 +58,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 export E2E_NAMESPACE
+
+# Export JUnit dir so lib.sh writes XML per module
+if [[ -n "$JUNIT_DIR" ]]; then
+  mkdir -p "$JUNIT_DIR"
+  export E2E_JUNIT_DIR="$JUNIT_DIR"
+fi
 
 # ── Module list ──────────────────────────────────────────────────────
 # Order matters: foundational services first, then dependent services

@@ -91,8 +91,12 @@ tasks:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
+  # ── Captain ───────────────────────────────────────────────────────────
+  - key: captain
+    call: rwx/install-captain 1.1.3
+
   - key: e2e
-    use: helm-deps
+    use: [helm-deps, captain]
     timeout: 30m
     run: |
       ARGS=()
@@ -112,11 +116,15 @@ tasks:
         done
       fi
       ARGS+=("--json")
+      ARGS+=("--junit-dir" "/tmp/junit-results")
       ARGS+=("--set" "bd-daemon.externalSecrets.doltRootPassword.remoteRef=$DOLT_ROOT_PASSWORD_REF")
       ARGS+=("--set" "bd-daemon.externalSecrets.daemonToken.remoteRef=$DAEMON_TOKEN_REF")
       ARGS+=("--set" "bd-daemon.externalSecrets.doltS3Credentials.remoteRef=$DOLT_S3_CREDENTIALS_REF")
 
-      ./tests/e2e/scripts/e2e-formula.sh "${ARGS[@]}"
+      captain run gastown-e2e \
+        -c "./tests/e2e/scripts/e2e-formula.sh ${ARGS[*]}" \
+        --test-results "/tmp/junit-results/TEST-*.xml" \
+        --print-summary
     env:
       NAMESPACE: ${{ init.namespace }}
       KEEP: ${{ init.keep }}
@@ -128,3 +136,9 @@ tasks:
       AWS_ACCESS_KEY_ID: ${{ secrets.E2E_AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.E2E_AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: us-east-1
+    outputs:
+      test-results:
+        - path: /tmp/captain-results/captain.json
+      artifacts:
+        - key: junit-results
+          path: /tmp/junit-results

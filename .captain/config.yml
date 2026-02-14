@@ -1,0 +1,19 @@
+test-suites:
+  gastown-e2e:
+    # The e2e formula handles provisioning, test execution, and teardown.
+    # run-suite.sh writes JUnit XML per test module when --junit-dir is set.
+    # The actual command is overridden via captain run -c flag in the RWX
+    # workflow so it can pass dynamic args. This default works for local use.
+    command: >-
+      ./tests/e2e/scripts/e2e-formula.sh
+        --namespace "${E2E_NAMESPACE:-gastown-next}"
+        --keep
+        --junit-dir /tmp/junit-results
+    results:
+      path: /tmp/junit-results/TEST-*.xml
+      language: Bash
+      framework: JUnit
+    output:
+      print-summary: true
+      reporters:
+        rwx-v1-json: /tmp/captain-results/captain.json

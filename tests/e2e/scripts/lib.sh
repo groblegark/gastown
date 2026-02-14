@@ -21,6 +21,11 @@ _SKIPPED=0
 _TOTAL=0
 _MODULE_NAME="${MODULE_NAME:-unknown}"
 
+# ── JUnit XML state ─────────────────────────────────────────────────
+# When E2E_JUNIT_DIR is set, each module writes a JUnit XML file.
+_JUNIT_CASES=""
+_TEST_START_TIME=""
+
 # ── Namespace ────────────────────────────────────────────────────────
 # Namespace can come from:
 #   1. E2E_NAMESPACE env var
@@ -46,12 +51,21 @@ run_test() {
   shift
   _TOTAL=$((_TOTAL + 1))
 
+  local t_start t_end duration
+  t_start=$(date +%s%N 2>/dev/null || date +%s)
+
   if "$@" 2>/dev/null; then
     ok "$name"
     _PASSED=$((_PASSED + 1))
+    t_end=$(date +%s%N 2>/dev/null || date +%s)
+    duration=$(_elapsed_secs "$t_start" "$t_end")
+    _junit_add_pass "$name" "$duration"
   else
     fail "$name"
     _FAILED=$((_FAILED + 1))
+    t_end=$(date +%s%N 2>/dev/null || date +%s)
+    duration=$(_elapsed_secs "$t_start" "$t_end")
+    _junit_add_fail "$name" "$duration"
   fi
   # Always return 0 so set -e doesn't abort on first failure
   return 0
@@ -64,6 +78,7 @@ skip_test() {
   _TOTAL=$((_TOTAL + 1))
   _SKIPPED=$((_SKIPPED + 1))
   skip "$name${reason:+ ($reason)}"
+  _junit_add_skip "$name" "$reason"
 }
 
 # Usage: skip_all "reason" — mark entire module as skipped and print summary
@@ -166,6 +181,65 @@ stop_port_forwards() {
   _PF_PIDS=()
 }
 
+# ── JUnit XML helpers ────────────────────────────────────────────────
+# Escape XML special characters
+_xml_escape() {
+  local s="$1"
+  s="${s//&/&amp;}"
+  s="${s//</&lt;}"
+  s="${s//>/&gt;}"
+  s="${s//\"/&quot;}"
+  s="${s//\'/&apos;}"
+  printf '%s' "$s"
+}
+
+# Compute elapsed seconds from nanosecond timestamps (or fallback to seconds)
+_elapsed_secs() {
+  local start="$1" end="$2"
+  if [[ ${#start} -gt 10 ]]; then
+    # nanoseconds
+    printf '%.3f' "$(echo "($end - $start) / 1000000000" | bc -l 2>/dev/null || echo 0)"
+  else
+    echo "$(( end - start ))"
+  fi
+}
+
+_junit_add_pass() {
+  local name="$1" duration="${2:-0}"
+  local ename
+  ename=$(_xml_escape "$name")
+  _JUNIT_CASES="${_JUNIT_CASES}    <testcase classname=\"$_MODULE_NAME\" name=\"${ename}\" time=\"${duration}\"/>\n"
+}
+
+_junit_add_fail() {
+  local name="$1" duration="${2:-0}"
+  local ename
+  ename=$(_xml_escape "$name")
+  _JUNIT_CASES="${_JUNIT_CASES}    <testcase classname=\"$_MODULE_NAME\" name=\"${ename}\" time=\"${duration}\">\n      <failure message=\"Test failed\"/>\n    </testcase>\n"
+}
+
+_junit_add_skip() {
+  local name="$1" reason="${2:-}"
+  local ename ereason
+  ename=$(_xml_escape "$name")
+  ereason=$(_xml_escape "$reason")
+  _JUNIT_CASES="${_JUNIT_CASES}    <testcase classname=\"$_MODULE_NAME\" name=\"${ename}\" time=\"0\">\n      <skipped${ereason:+ message=\"${ereason}\"}/>\n    </testcase>\n"
+}
+
+# Write JUnit XML for this module (called from print_summary)
+_write_junit_xml() {
+  local dir="${E2E_JUNIT_DIR:-}"
+  [[ -n "$dir" ]] || return 0
+  mkdir -p "$dir"
+  local file="${dir}/TEST-${_MODULE_NAME}.xml"
+  {
+    echo '<?xml version="1.0" encoding="UTF-8"?>'
+    echo "<testsuite name=\"$_MODULE_NAME\" tests=\"$_TOTAL\" failures=\"$_FAILED\" skipped=\"$_SKIPPED\" time=\"0\">"
+    printf '%b' "$_JUNIT_CASES"
+    echo '</testsuite>'
+  } > "$file"
+}
+
 # ── Summary ──────────────────────────────────────────────────────────
 print_summary() {
   echo ""
@@ -179,6 +253,9 @@ print_summary() {
     echo -e "  ${YELLOW}Skipped: $_SKIPPED${NC}"
   fi
   echo ""
+
+  # Write JUnit XML if configured
+  _write_junit_xml
 
   if [[ $_FAILED -gt 0 ]]; then
     return 1
