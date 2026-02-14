@@ -53,7 +53,6 @@ type Daemon struct {
 	doltServer     *DoltServerManager
 	krcPruner          *KRCPruner
 	statusCache        *statusline.CacheManager
-	credentialWatcher  *CredentialWatcher
 
 	// Mass death detection: track recent session deaths
 	deathsMu     sync.Mutex
@@ -221,16 +220,6 @@ func (d *Daemon) Run() error {
 		d.logger.Printf("Warning: failed to start status cache: %v", err)
 	} else {
 		d.logger.Println("Status line cache started")
-	}
-
-	// Start credential watcher for coop broker events (NATS)
-	d.credentialWatcher = NewCredentialWatcher(d, d.logger.Printf)
-	if d.credentialWatcher != nil {
-		if err := d.credentialWatcher.Start(); err != nil {
-			d.logger.Printf("Warning: failed to start credential watcher: %v", err)
-		} else {
-			d.logger.Println("Credential watcher started")
-		}
 	}
 
 	// Initial heartbeat
@@ -789,12 +778,6 @@ func (d *Daemon) shutdown(state *State) error { //nolint:unparam // error return
 	if d.krcPruner != nil {
 		d.krcPruner.Stop()
 		d.logger.Println("KRC pruner stopped")
-	}
-
-	// Stop credential watcher
-	if d.credentialWatcher != nil {
-		d.credentialWatcher.Stop()
-		d.logger.Println("Credential watcher stopped")
 	}
 
 	// Stop status line cache manager
