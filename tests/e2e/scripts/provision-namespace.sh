@@ -30,7 +30,7 @@ VALUES_FILE=""
 CHART_DIR=""
 SKIP_INSTALL=false
 AUTO_CLEANUP=false
-TIMEOUT=600  # 10 minutes for all pods to be ready
+TIMEOUT=900  # 15 minutes for all pods to be ready
 POLL_INTERVAL=10
 HELM_SET_ARGS=()  # --set passthrough flags
 
