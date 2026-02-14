@@ -200,15 +200,16 @@ log "Waiting for all pods to be ready (timeout: ${TIMEOUT}s)..."
 deadline=$((SECONDS + TIMEOUT))
 while [[ $SECONDS -lt $deadline ]]; do
   # Count pods that are not Running/Completed (exclude CronJob completed pods)
+  # Note: grep -v returns exit 1 when no lines match; use || true to avoid set -e
   not_ready=$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null \
-    | grep -v Completed \
-    | grep -v "1/1\|2/2\|3/3" \
-    | grep -v "^$" \
+    | { grep -v Completed || true; } \
+    | { grep -v "1/1\|2/2\|3/3" || true; } \
+    | { grep -v "^$" || true; } \
     | wc -l | tr -d ' ')
 
   total=$(kubectl get pods -n "$NAMESPACE" --no-headers 2>/dev/null \
-    | grep -v Completed \
-    | grep -v "^$" \
+    | { grep -v Completed || true; } \
+    | { grep -v "^$" || true; } \
     | wc -l | tr -d ' ')
 
   ready=$((total - not_ready))
