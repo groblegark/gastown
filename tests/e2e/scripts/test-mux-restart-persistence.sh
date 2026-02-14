@@ -125,15 +125,22 @@ with open('$tmpfile', 'w') as f:
 check_session_in_mux() {
   local sessions
   sessions=$(mux_sessions 2>/dev/null) || return 1
+  local tmpf
+  tmpf=$(mktemp)
+  printf '%s' "$sessions" > "$tmpf"
   python3 -c "
 import json
-sessions = json.loads('''$sessions''')
+with open('$tmpf') as f:
+    sessions = json.load(f)
 for s in sessions:
     if s.get('id') == '$TEST_POD_NAME':
         print('found')
         exit(0)
 exit(1)
 " 2>/dev/null
+  local rc=$?
+  rm -f "$tmpf"
+  return $rc
 }
 
 # ── Cleanup trap ─────────────────────────────────────────────────────
@@ -165,7 +172,13 @@ test_mux_reachable() {
   MUX_PORT=$(start_port_forward "svc/$BROKER_SVC" 9800) || return 1
   local resp
   resp=$(mux_sessions) || return 1
-  python3 -c "import json; json.loads('$resp')" 2>/dev/null
+  local tmpf
+  tmpf=$(mktemp)
+  printf '%s' "$resp" > "$tmpf"
+  python3 -c "import json; json.load(open('$tmpf'))" 2>/dev/null
+  local rc=$?
+  rm -f "$tmpf"
+  return $rc
 }
 run_test "Coop mux API is reachable" test_mux_reachable
 

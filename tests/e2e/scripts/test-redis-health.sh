@@ -60,8 +60,8 @@ test_redis_port() {
     pong=$(redis-cli -h 127.0.0.1 -p "$REDIS_PORT" PING 2>/dev/null)
     assert_eq "$pong" "PONG"
   else
-    # TCP connection test
-    echo "PING" | nc -w 3 127.0.0.1 "$REDIS_PORT" 2>/dev/null | grep -q "PONG"
+    # TCP connection test — Redis inline commands need \r\n line ending
+    printf "PING\r\n" | nc -w 3 127.0.0.1 "$REDIS_PORT" 2>/dev/null | grep -q "PONG"
   fi
 }
 run_test "Redis port (6379) reachable via port-forward" test_redis_port

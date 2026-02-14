@@ -156,7 +156,13 @@ test_mux_reachable() {
   local resp
   resp=$(mux_sessions) || return 1
   # Should return valid JSON (possibly empty array)
-  python3 -c "import json; json.loads('$resp')" 2>/dev/null
+  local tmpf
+  tmpf=$(mktemp)
+  printf '%s' "$resp" > "$tmpf"
+  python3 -c "import json; json.load(open('$tmpf'))" 2>/dev/null
+  local rc=$?
+  rm -f "$tmpf"
+  return $rc
 }
 run_test "Coop mux API is reachable" test_mux_reachable
 
@@ -299,11 +305,14 @@ test_mux_session_appears() {
     sessions=$(mux_sessions 2>/dev/null) || { sleep 5; continue; }
 
     # Check if our pod name appears in the sessions list
-    local found
+    local tmpf found
+    tmpf=$(mktemp)
+    printf '%s' "$sessions" > "$tmpf"
     found=$(python3 -c "
-import json, sys
+import json
 try:
-    sessions = json.loads('''$sessions''')
+    with open('$tmpf') as f:
+        sessions = json.load(f)
     for s in sessions:
         if s.get('id') == '$TEST_POD_NAME':
             print('found')
@@ -311,6 +320,7 @@ try:
 except:
     pass
 " 2>/dev/null)
+    rm -f "$tmpf"
 
     if [[ "$found" == "found" ]]; then
       log "Agent session $TEST_POD_NAME visible in mux"
@@ -333,11 +343,14 @@ test_mux_session_metadata() {
   local sessions
   sessions=$(mux_sessions 2>/dev/null) || return 1
 
-  local meta
+  local tmpf meta
+  tmpf=$(mktemp)
+  printf '%s' "$sessions" > "$tmpf"
   meta=$(python3 -c "
-import json, sys
+import json
 try:
-    sessions = json.loads('''$sessions''')
+    with open('$tmpf') as f:
+        sessions = json.load(f)
     for s in sessions:
         if s.get('id') == '$TEST_POD_NAME':
             m = s.get('metadata', {})
@@ -355,6 +368,7 @@ try:
 except Exception as e:
     print(f'error: {e}')
 " 2>/dev/null)
+  rm -f "$tmpf"
 
   if [[ "$meta" == "ok" ]]; then
     return 0
@@ -381,11 +395,14 @@ test_close_removes_session() {
     local sessions
     sessions=$(mux_sessions 2>/dev/null) || { sleep 5; continue; }
 
-    local found
+    local tmpf found
+    tmpf=$(mktemp)
+    printf '%s' "$sessions" > "$tmpf"
     found=$(python3 -c "
 import json
 try:
-    sessions = json.loads('''$sessions''')
+    with open('$tmpf') as f:
+        sessions = json.load(f)
     for s in sessions:
         if s.get('id') == '$TEST_POD_NAME':
             print('found')
@@ -395,6 +412,7 @@ try:
 except:
     print('gone')
 " 2>/dev/null)
+    rm -f "$tmpf"
 
     if [[ "$found" == "gone" ]]; then
       log "Mux session removed after bead close"

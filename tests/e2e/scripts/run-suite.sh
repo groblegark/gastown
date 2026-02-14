@@ -93,8 +93,10 @@ MODULES=(
   "agent-multi"
   "agent-coordination"
   "agent-cleanup"
-  # Phase 2.5: Decision flow
+  # Phase 2.5: I/O round-trip & decision flow
+  "agent-io-cycle"
   "decision-flow"
+  "event-flow"
   # Phase 2.6: Command tests
   "gt-peek"
   "gt-attach"

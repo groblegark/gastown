@@ -134,4 +134,4 @@ test_claude_state() {
 }
 run_test "Claude state directory accessible" test_claude_state
 
-log "Session persistence tests complete"
+print_summary
