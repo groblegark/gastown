@@ -13,6 +13,19 @@ on:
         ref-name: pr
       status-checks:
         name: Docker
+  dispatch:
+    - key: gastown-agent-rebuild
+      init:
+        commit-sha: ${{ event.git.sha }}
+        ref-name: ${{ event.dispatch.params.trigger-source }}
+      params:
+        - key: trigger-source
+          name: Trigger source
+          description: What triggered the rebuild (e.g. coop-release, beads-release)
+          default: manual
+          required: false
+      title: Agent rebuild (${{ init.ref-name }})
+      target: docker-agent
   cli:
     init:
       commit-sha: ${{ event.git.sha }}
