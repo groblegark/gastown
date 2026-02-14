@@ -112,7 +112,9 @@ tasks:
         done
       fi
       ARGS+=("--json")
-      ARGS+=("--junit-dir" "/tmp/junit-results")
+      JUNIT_DIR="$PWD/junit-results"
+      mkdir -p "$JUNIT_DIR"
+      ARGS+=("--junit-dir" "$JUNIT_DIR")
       ARGS+=("--set" "bd-daemon.externalSecrets.doltRootPassword.remoteRef=$DOLT_ROOT_PASSWORD_REF")
       ARGS+=("--set" "bd-daemon.externalSecrets.daemonToken.remoteRef=$DAEMON_TOKEN_REF")
       ARGS+=("--set" "bd-daemon.externalSecrets.doltS3Credentials.remoteRef=$DOLT_S3_CREDENTIALS_REF")
@@ -132,4 +134,4 @@ tasks:
     outputs:
       artifacts:
         - key: junit-results
-          path: /tmp/junit-results
+          path: junit-results
