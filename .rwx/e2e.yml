@@ -55,20 +55,22 @@ tasks:
       ref: ${{ init.commit-sha }}
 
   - key: aws-cli
-    use: code
     run: |
       curl -sSf "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
       unzip -q /tmp/awscliv2.zip -d /tmp
       sudo /tmp/aws/install
+      aws --version
 
   - key: helm-setup
     run: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
   - key: kubectl-setup
     run: |
-      curl -sSfL "https://dl.k8s.io/release/$(curl -sSfL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
-        -o /usr/local/bin/kubectl
-      chmod +x /usr/local/bin/kubectl
+      KUBE_VERSION=$(curl -sSfL https://dl.k8s.io/release/stable.txt)
+      echo "Installing kubectl $KUBE_VERSION"
+      curl -sSfL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
+      sudo install /tmp/kubectl /usr/local/bin/kubectl
+      kubectl version --client
 
   - key: kubeconfig
     use: [aws-cli, kubectl-setup]
