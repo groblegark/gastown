@@ -107,6 +107,7 @@ MODULES=(
   "controller-create-pod"
   "mux-visibility"
   "mux-restart-persistence"
+  "ws-reconnect"
   "session-persistence"
   "dolt-s3-sync"
   "controller-failsafe"
