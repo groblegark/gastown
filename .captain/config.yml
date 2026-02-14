@@ -11,8 +11,6 @@ test-suites:
         --junit-dir /tmp/junit-results
     results:
       path: /tmp/junit-results/TEST-*.xml
-      language: Bash
-      framework: JUnit
     output:
       print-summary: true
       reporters:
