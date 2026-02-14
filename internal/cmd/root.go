@@ -56,6 +56,8 @@ var beadsExemptCommands = map[string]bool{
 	"krc":        true, // KRC doesn't require beads
 	"connect":    true,
 	"toolchain":  true, // Runs inside K8s agent pod, no local beads
+	"preflight":  true,
+	"postflight": true,
 }
 
 // Commands exempt from the town root branch warning.
