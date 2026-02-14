@@ -150,60 +150,40 @@ run_test "Mux has at least one registered session" test_mux_sessions
 ACCOUNT_NAME=""
 
 test_broker_healthy() {
-  setup_broker || return 1
+  # In collapsed deployment, credentials are on the mux (port 9800), not separate broker
+  setup_mux || return 1
 
-  # The credential status endpoint is on the broker (not mux) via login-reauth
-  # Check if credential status is available on broker or mux
   local status
-  status=$(broker_api "/api/v1/credentials/status") || \
   status=$(mux_api "/api/v1/credentials/status") || true
 
-  if [[ -n "$status" ]] && ! echo "$status" | grep -q "error"; then
-    ACCOUNT_NAME=$(echo "$status" | python3 -c "
+  if [[ -z "$status" ]] || echo "$status" | grep -q '"error"'; then
+    log "Could not get credential status"
+    return 1
+  fi
+
+  # API returns either [{name, status, ...}] (array) or {accounts: [{...}]}
+  ACCOUNT_NAME=$(echo "$status" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-for a in d.get('accounts', []):
+accounts = d if isinstance(d, list) else d.get('accounts', [])
+for a in accounts:
     print(a.get('name', ''))
     break
 " 2>/dev/null)
 
-    local acct_status
-    acct_status=$(echo "$status" | python3 -c "
+  local acct_status
+  acct_status=$(echo "$status" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-for a in d.get('accounts', []):
+accounts = d if isinstance(d, list) else d.get('accounts', [])
+for a in accounts:
     print(a.get('status', 'unknown'))
     break
 " 2>/dev/null)
 
-    log "Account: $ACCOUNT_NAME, status: $acct_status"
-    [[ "$acct_status" == "healthy" ]]
-    return $?
-  fi
-
-  # Fallback: check broker logs for recent successful refresh
-  local logs
-  logs=$(kube logs "$BROKER_POD" -c coop-broker --tail=100 2>/dev/null)
-  if echo "$logs" | grep -q "credentials refreshed successfully"; then
-    # Extract account name from logs
-    ACCOUNT_NAME=$(echo "$logs" | grep "credentials refreshed successfully" | tail -1 \
-      | python3 -c "
-import sys, json
-for line in sys.stdin:
-    try:
-        d = json.loads(line)
-        print(d.get('fields',{}).get('account','claude-max'))
-        break
-    except: pass
-" 2>/dev/null)
-    ACCOUNT_NAME="${ACCOUNT_NAME:-claude-max}"
-    log "Account: $ACCOUNT_NAME (from broker logs: refresh succeeded)"
-    return 0
-  fi
-
-  log "Could not determine credential status (separate broker+mux containers)"
-  ACCOUNT_NAME="claude-max"  # reasonable default
-  return 1
+  log "Account: $ACCOUNT_NAME, status: $acct_status"
+  [[ "$acct_status" == "healthy" ]]
+  return $?
 }
 run_test "Broker credentials are healthy" test_broker_healthy
 
@@ -237,7 +217,6 @@ test_mux_credential_broker() {
 
   if [[ -z "$status" ]] || echo "$status" | grep -q "credential broker not configured"; then
     log "Mux does not have credential broker embedded (separate containers)"
-    dim "  This is expected until bd-ib85z (merge broker into mux) is completed"
     return 1
   fi
 
@@ -255,14 +234,33 @@ test_distribute() {
   fi
 
   setup_mux || return 1
-  [[ -n "$ACCOUNT_NAME" ]] || { log "No account name"; return 1; }
+  ACCOUNT_NAME="${ACCOUNT_NAME:-claude-max}"
+
+  # Use -s (not -sf) so we get error response bodies
+  local args=(-s --connect-timeout 5 -X POST)
+  if [[ -n "$BROKER_TOKEN" ]]; then
+    args+=(-H "Authorization: Bearer $BROKER_TOKEN")
+  fi
+  args+=(-H "Content-Type: application/json")
+  args+=(-d "{\"account\":\"$ACCOUNT_NAME\",\"switch\":true}")
 
   local result
-  result=$(mux_api "/api/v1/credentials/distribute" "POST" \
-    "{\"account\":\"$ACCOUNT_NAME\",\"switch\":true}")
+  result=$(curl "${args[@]}" "http://127.0.0.1:${MUX_PORT}/api/v1/credentials/distribute" 2>/dev/null)
 
   if [[ -z "$result" ]]; then
     log "Distribute call returned empty"
+    return 1
+  fi
+
+  # Check for error response (e.g. "no credentials available")
+  if echo "$result" | grep -q '"error"'; then
+    local err_msg
+    err_msg=$(echo "$result" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(d.get('error',{}).get('message', str(d)))
+" 2>/dev/null)
+    log "Distribute error: $err_msg"
     return 1
   fi
 
