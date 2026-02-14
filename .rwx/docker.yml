@@ -4,7 +4,7 @@ on:
       if: ${{ event.git.branch == 'main' || starts-with(event.git.tag, 'v') }}
       init:
         commit-sha: ${{ event.git.sha }}
-        ref-name: ${{ event.git.tag || event.git.branch }}
+        ref-name: ${{ event.git.ref }}
       status-checks:
         name: Docker
     pull_request:
@@ -47,6 +47,10 @@ tasks:
     use: code
     docker: true
     run: |
+      # Normalize ref: refs/tags/v1.0 → v1.0, refs/heads/main → main
+      REF_NAME="${REF_NAME#refs/tags/}"
+      REF_NAME="${REF_NAME#refs/heads/}"
+
       docker build \
         --build-arg VERSION=$REF_NAME \
         --build-arg BUILD_COMMIT=$COMMIT_SHA \
@@ -76,6 +80,9 @@ tasks:
     use: code
     docker: true
     run: |
+      REF_NAME="${REF_NAME#refs/tags/}"
+      REF_NAME="${REF_NAME#refs/heads/}"
+
       docker build \
         -t ghcr.io/groblegark/gastown/agent-controller:sha-${COMMIT_SHA:0:7} \
         -t ghcr.io/groblegark/gastown/agent-controller:latest \
@@ -104,6 +111,9 @@ tasks:
     use: code
     docker: true
     run: |
+      REF_NAME="${REF_NAME#refs/tags/}"
+      REF_NAME="${REF_NAME#refs/heads/}"
+
       docker build --platform linux/amd64 \
         --build-arg VERSION=$REF_NAME \
         --build-arg BUILD_COMMIT=$COMMIT_SHA \
@@ -133,6 +143,9 @@ tasks:
     use: code
     docker: true
     run: |
+      REF_NAME="${REF_NAME#refs/tags/}"
+      REF_NAME="${REF_NAME#refs/heads/}"
+
       docker build --platform linux/amd64 --target full \
         -t ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7} \
         -t ghcr.io/groblegark/gastown/gastown-toolchain:full \
