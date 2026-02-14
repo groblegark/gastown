@@ -31,8 +31,6 @@ tasks:
 
   - key: helm-setup
     run: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-    filter:
-      - /usr/local/bin/helm
 
   - key: helm-login
     use: helm-setup
@@ -54,9 +52,6 @@ tasks:
           helm template "$(basename $chart)" "$chart" > /dev/null
         fi
       done
-    filter:
-      - helm/*/Chart.yaml
-      - helm/*/Chart.lock
 
   - key: helm-publish
     use: helm-lint

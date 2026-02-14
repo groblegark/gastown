@@ -1,12 +1,6 @@
 # OCI image builds for gastown services.
 # Go binaries compile natively in parallel, then docker: true tasks
 # assemble and push minimal runtime images to GHCR.
-#
-# OPTIMIZATIONS:
-# - Filter directives on Go mod downloads (cached by go.mod/go.sum)
-# - Parallel builds with filter caching for dependency stability
-# - Docker BuildKit layer caching for efficient image rebuilds
-# - Version-locked coop and bd downloads with monthly cache refresh
 
 on:
   github:
@@ -70,7 +64,7 @@ tasks:
     with:
       go-version: "1.25"
 
-  # ── Go mod download (cached by go.mod/go.sum) ──────────────────────
+  # ── Go mod download (cached) ───────────────────────────────────────
   - key: go-deps
     use: [code, go]
     run: go mod download
@@ -78,7 +72,7 @@ tasks:
       - go.mod
       - go.sum
 
-  # ── Build gt CLI binary → artifact ──────────────────────────────────
+  # ── Build gt CLI binary → artifact ────────────────────────────────
   - key: build-gt
     use: go-deps
     run: |
@@ -99,7 +93,7 @@ tasks:
         - key: gt-binary
           path: gt
 
-  # ── Build controller binary → artifact (separate Go module) ─────────
+  # ── Build controller binary → artifact (separate Go module) ───────
   - key: build-controller
     use: [code, go]
     run: |
@@ -111,18 +105,14 @@ tasks:
     env:
       COMMIT_SHA: ${{ init.commit-sha }}
       REF_NAME: ${{ init.ref-name }}
-    filter:
-      - controller/go.mod
-      - controller/go.sum
     outputs:
       artifacts:
         - key: controller-binary
           path: controller-bin
 
-  # ── Download coop from releases → artifact (parallel, cached monthly) ─
+  # ── Download coop from releases → artifact (parallel) ─────────────
   # When dispatched from a coop release, COOP_VERSION is the exact tag.
   # Otherwise resolves latest from the GitHub API.
-  # Cache invalidates monthly to catch security updates.
   - key: download-coop
     run: |
       set -ex
@@ -138,16 +128,12 @@ tasks:
       ls -la coop-bin/
     env:
       COOP_VERSION: ${{ init.coop-version }}
-    filter:
-      - coop-bin/coop
-      - coop-bin/coop-mux
     outputs:
       artifacts:
         - key: coop-binaries
           path: coop-bin
 
-  # ── Download bd from releases → artifact (parallel, cached monthly) ──
-  # Cache invalidates monthly to catch security updates.
+  # ── Download bd from releases → artifact (parallel) ────────────────
   - key: download-bd
     run: |
       set -ex
@@ -159,8 +145,6 @@ tasks:
       mkdir -p bd-bin
       tar -xzf /tmp/bd.tar.gz -C bd-bin
       ls -la bd-bin/
-    filter:
-      - bd-bin/bd
     outputs:
       artifacts:
         - key: bd-binaries

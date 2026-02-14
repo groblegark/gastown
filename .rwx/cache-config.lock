@@ -1,0 +1,27 @@
+# RWX Workflow Cache Configuration and Version Lock
+# This file tracks dependency versions for cache stability and security updates
+# Format: key=version (timestamp indicates when cache should be refreshed)
+
+# Go dependencies (from go.mod across all modules)
+go-version=1.25
+go-deps-last-update=2026-02-14
+
+# Coop binary releases
+coop-version-latest=v0.11.20
+coop-cache-refresh=2026-03-14
+
+# Beads (bd) binary releases
+beads-version-latest=v0.47.1
+beads-cache-refresh=2026-03-14
+
+# Tool versions for reproducibility
+golangci-lint=latest
+goreleaser=v2.8.2
+helm=3-latest
+kubectl=latest
+aws-cli=2-latest
+
+# Cache invalidation schedule (monthly recommended for security)
+# Monthly refresh allows patch updates for security while reducing daily API calls
+cache-refresh-interval=monthly
+last-refresh=2026-02-14

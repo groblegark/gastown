@@ -46,8 +46,6 @@ tasks:
     run: |
       sudo apt-get update
       sudo apt-get install -y curl unzip
-    filter:
-      - /etc/os-release
 
   - key: code
     use: system-deps
@@ -62,13 +60,9 @@ tasks:
       unzip -q /tmp/awscliv2.zip -d /tmp
       sudo /tmp/aws/install
       aws --version
-    filter:
-      - /usr/local/bin/aws
 
   - key: helm-setup
     run: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-    filter:
-      - /usr/local/bin/helm
 
   - key: kubectl-setup
     run: |
@@ -77,8 +71,6 @@ tasks:
       curl -sSfL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
       sudo install /tmp/kubectl /usr/local/bin/kubectl
       kubectl version --client
-    filter:
-      - /usr/local/bin/kubectl
 
   - key: kubeconfig
     use: [aws-cli, kubectl-setup]
@@ -98,8 +90,6 @@ tasks:
     env:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
-    filter:
-      - helm/gastown/Chart.lock
 
   - key: e2e
     use: helm-deps
