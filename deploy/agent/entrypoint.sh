@@ -890,7 +890,7 @@ while true; do
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT}) with resume"
         ${COOP_CMD} ${RESUME_FLAG} -- claude --dangerously-skip-permissions &
         COOP_PID=$!
-        (auto_bypass_startup && register_with_mux && inject_initial_prompt) &
+        (auto_bypass_startup && inject_initial_prompt) &
         monitor_agent_exit &
         wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
         COOP_PID=""
@@ -907,7 +907,7 @@ while true; do
         echo "[entrypoint] Starting coop + claude (${ROLE}/${AGENT})"
         ${COOP_CMD} -- claude --dangerously-skip-permissions &
         COOP_PID=$!
-        (auto_bypass_startup && register_with_mux && inject_initial_prompt) &
+        (auto_bypass_startup && inject_initial_prompt) &
         monitor_agent_exit &
         wait "${COOP_PID}" 2>/dev/null && exit_code=0 || exit_code=$?
         COOP_PID=""
