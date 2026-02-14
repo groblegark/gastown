@@ -29,7 +29,6 @@ on:
           default: ""
           required: false
       title: E2E Tests
-      start: manually
   cli:
     init:
       commit-sha: ${{ event.git.sha }}
