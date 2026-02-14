@@ -23,11 +23,17 @@ on:
       init:
         commit-sha: ${{ event.git.sha }}
         ref-name: ${{ event.dispatch.params.trigger-source }}
+        coop-version: ${{ event.dispatch.params.coop-version }}
       params:
         - key: trigger-source
           name: Trigger source
           description: What triggered the rebuild (e.g. coop-release, beads-release)
           default: manual
+          required: false
+        - key: coop-version
+          name: Coop version
+          description: Coop release tag to pin (e.g. v0.11.20). Defaults to latest.
+          default: latest
           required: false
       title: Agent rebuild (${{ init.ref-name }})
       target: push-agent
@@ -105,16 +111,23 @@ tasks:
           path: controller-bin
 
   # ── Download coop from releases → artifact (parallel) ─────────────
+  # When dispatched from a coop release, COOP_VERSION is the exact tag.
+  # Otherwise resolves latest from the GitHub API.
   - key: download-coop
     run: |
       set -ex
-      COOP_VERSION=$(curl -fsSL https://api.github.com/repos/groblegark/coop/releases/latest | jq -r .tag_name)
-      echo "Downloading coop ${COOP_VERSION} for linux-amd64"
-      curl -fsSL "https://github.com/groblegark/coop/releases/download/${COOP_VERSION}/coop-linux-amd64.tar.gz" \
+      COOP_VER="${COOP_VERSION:-latest}"
+      if [ "$COOP_VER" = "latest" ] || [ -z "$COOP_VER" ]; then
+        COOP_VER=$(curl -fsSL https://api.github.com/repos/groblegark/coop/releases/latest | jq -r .tag_name)
+      fi
+      echo "Downloading coop ${COOP_VER} for linux-amd64"
+      curl -fsSL "https://github.com/groblegark/coop/releases/download/${COOP_VER}/coop-linux-amd64.tar.gz" \
         -o /tmp/coop.tar.gz
       mkdir -p coop-bin
       tar -xzf /tmp/coop.tar.gz -C coop-bin
       ls -la coop-bin/
+    env:
+      COOP_VERSION: ${{ init.coop-version }}
     outputs:
       artifacts:
         - key: coop-binaries
