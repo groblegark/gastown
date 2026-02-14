@@ -63,6 +63,10 @@ spec:
                   key: token
             - name: RUST_LOG
               value: "info"
+            {{- if .Values.coopBroker.persistence.enabled }}
+            - name: COOP_MUX_STATE_DIR
+              value: {{ dir .Values.coopBroker.persistence.path }}
+            {{- end }}
             {{- if $natsURL }}
             - name: COOP_MUX_NATS_URL
               value: {{ $natsURL }}
