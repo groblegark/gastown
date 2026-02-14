@@ -61,13 +61,17 @@ export E2E_NAMESPACE
 MODULES=(
   # Phase 1: Infrastructure health
   "dolt-health"
+  "dolt-schema"
   "redis-health"
   "daemon-health"
+  "daemon-rpc"
   "nats-health"
   "coop-broker-health"
   "controller-health"
   "git-mirror-health"
+  "git-mirror-clone"
   # Phase 2: Agent capabilities
+  "agent-entrypoint"
   "agent-spawn"
   "agent-state"
   "agent-io"
