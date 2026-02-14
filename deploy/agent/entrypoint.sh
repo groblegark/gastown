@@ -784,9 +784,11 @@ register_with_mux() {
 
     # Use pod hostname as session ID (stable across coop restarts within same pod)
     local session_id="${HOSTNAME:-$(hostname)}"
-    local coop_url="http://$(hostname -i 2>/dev/null || echo localhost):8080"
+    local coop_url="http://${POD_IP:-$(hostname -i 2>/dev/null || echo localhost)}:8080"
     local auth_token="${COOP_AUTH_TOKEN:-${COOP_BROKER_TOKEN:-}}"
     local mux_auth="${COOP_MUX_AUTH_TOKEN:-${auth_token}}"
+
+    echo "[entrypoint] Registering with mux: id=${session_id} url=${coop_url}"
 
     # Build registration payload
     local payload
@@ -795,7 +797,9 @@ register_with_mux() {
         --arg id "${session_id}" \
         --arg role "${GT_ROLE:-unknown}" \
         --arg agent "${GT_AGENT:-unknown}" \
-        '{url: $url, id: $id, metadata: {role: $role, agent: $agent}}')
+        --arg pod "${HOSTNAME:-}" \
+        --arg ip "${POD_IP:-}" \
+        '{url: $url, id: $id, metadata: {role: $role, agent: $agent, k8s: {pod: $pod, ip: $ip}}}')
 
     # Add auth_token to payload if set
     if [ -n "${auth_token}" ]; then
