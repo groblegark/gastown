@@ -1197,33 +1197,41 @@ func (r *Router) GetMailbox(address string) (*Mailbox, error) {
 	return NewMailboxWithTownRoot(address, workDir, beadsDir, r.townRoot), nil
 }
 
-// notifyRecipient sends a notification to a recipient's tmux session.
-// Uses NudgeSession to add the notification to the agent's conversation history.
-// Supports mayor/, deacon/, rig/crew/name, rig/polecats/name, and rig/name addresses.
+// notifyRecipient sends a notification to a recipient's session (Coop or legacy).
+// Uses terminal.ResolveBackend to discover the recipient's Coop sidecar from bead
+// metadata (coop_url, pod_name). Falls back to session ID matching for backwards
+// compatibility. Works in both local and K8s modes.
 func (r *Router) notifyRecipient(msg *Message) error {
-	sessionIDs := addressToSessionIDs(msg.To)
-	if len(sessionIDs) == 0 {
-		return nil // Unable to determine session ID
+	// Convert mail address to agent identity for backend resolution
+	target := AddressToIdentity(msg.To)
+	if target == "" {
+		return nil
 	}
 
-	// Try each possible session ID until we find one that exists.
-	// This handles the ambiguity where canonical addresses (rig/name) don't
-	// distinguish between crew workers (gt-rig-crew-name) and polecats (gt-rig-name).
-	for _, sessionID := range sessionIDs {
-		hasSession, err := r.backend.HasSession(sessionID)
-		if err != nil || !hasSession {
-			continue
-		}
+	notification := fmt.Sprintf("📬 You have new mail from %s. Subject: %s. Run 'gt mail inbox' to read.", msg.From, msg.Subject)
 
-		// Send notification to the agent's conversation history
-		notification := fmt.Sprintf("📬 You have new mail from %s. Subject: %s. Run 'gt mail inbox' to read.", msg.From, msg.Subject)
-		return r.backend.NudgeSession(sessionID, notification)
+	// Resolve backend from agent bead metadata (discovers Coop URL in K8s)
+	resolved := terminal.ResolveBackend(target)
+	switch b := resolved.(type) {
+	case *terminal.CoopBackend:
+		// Coop agent: session name is always "claude" for Coop agents
+		return b.NudgeSession("claude", notification)
+	default:
+		// Fallback: try session ID matching (legacy path)
+		sessionIDs := addressToSessionIDs(msg.To)
+		for _, sessionID := range sessionIDs {
+			hasSession, err := r.backend.HasSession(sessionID)
+			if err != nil || !hasSession {
+				continue
+			}
+			return r.backend.NudgeSession(sessionID, notification)
+		}
 	}
 
 	return nil // No active session found
 }
 
-// addressToSessionIDs converts a mail address to possible tmux session IDs.
+// addressToSessionIDs converts a mail address to possible session IDs (legacy path).
 // Returns multiple candidates since the canonical address format (rig/name)
 // doesn't distinguish between crew workers (gt-rig-crew-name) and polecats
 // (gt-rig-name). The caller should try each and use the one that exists.
@@ -1271,7 +1279,7 @@ func addressToSessionIDs(address string) []string {
 	}
 }
 
-// addressToSessionID converts a mail address to a tmux session ID.
+// addressToSessionID converts a mail address to a session ID (legacy path).
 // Returns empty string if address format is not recognized.
 // Deprecated: Use addressToSessionIDs for proper crew/polecat handling.
 func addressToSessionID(address string) string {
