@@ -61,7 +61,8 @@ discover_mux() {
   broker_pod=$(kube get pods --no-headers 2>/dev/null | grep "coop-broker" | grep "Running" | head -1 | awk '{print $1}')
   [[ -n "$broker_pod" ]] || return 1
 
-  MUX_TOKEN=$(kube exec "$broker_pod" -c coop-mux -- printenv COOP_MUX_AUTH_TOKEN 2>/dev/null) || true
+  # Container is "coopmux" (single all-in-one binary, NOT "coop-mux")
+  MUX_TOKEN=$(kube exec "$broker_pod" -c coopmux -- printenv COOP_MUX_AUTH_TOKEN 2>/dev/null) || true
   [[ -n "$MUX_TOKEN" ]] || return 1
 
   BROKER_SVC=$(kube get svc --no-headers 2>/dev/null | grep "coop-broker" | head -1 | awk '{print $1}')
@@ -180,24 +181,6 @@ test_mux_reachable() {
   rm -f "$tmpf"
   return $rc
 }
-# Check if coop-mux container exists on broker
-_broker_pod=$(kube get pods --no-headers 2>/dev/null | grep "coop-broker" | grep "Running" | head -1 | awk '{print $1}')
-_broker_containers=""
-if [[ -n "$_broker_pod" ]]; then
-  _broker_containers=$(kube get pod "$_broker_pod" -o jsonpath='{.spec.containers[*].name}' 2>/dev/null)
-fi
-
-if [[ "$_broker_containers" != *"coop-mux"* ]]; then
-  skip_test "Coop mux API is reachable" "no coop-mux container on broker"
-  skip_test "Create test agent bead" "mux not available"
-  skip_test "Agent session appears in mux" "mux not available"
-  skip_test "Restart coop broker pod" "mux not available"
-  skip_test "Mux session restored after broker restart" "mux not available"
-  skip_test "Close bead and cleanup" "mux not available"
-  print_summary
-  exit 0
-fi
-
 run_test "Coop mux API is reachable" test_mux_reachable
 
 if [[ -z "$DAEMON_PORT" || -z "$MUX_PORT" ]]; then

@@ -229,6 +229,22 @@ if [[ $SECONDS -ge $deadline ]]; then
   die "Pod readiness timeout after ${TIMEOUT}s"
 fi
 
+# ── Post-provision: create dummy claude-credentials secret ────────────
+# Agent pods mount a volume from secret "claude-credentials". If no
+# ExternalSecret provisions it, pods get stuck in ContainerCreating.
+# Create a placeholder so agent lifecycle tests can run.
+if ! kubectl get secret claude-credentials -n "$NAMESPACE" >/dev/null 2>&1; then
+  log "Creating placeholder claude-credentials secret..."
+  kubectl create secret generic claude-credentials \
+    -n "$NAMESPACE" \
+    --from-literal=credentials.json='{"claudeAiOauth":{"accessToken":"e2e-placeholder","refreshToken":"e2e-placeholder","expiresAt":0}}' \
+    >/dev/null 2>&1 \
+    && ok "Created placeholder claude-credentials secret" \
+    || warn "Could not create claude-credentials secret"
+else
+  ok "claude-credentials secret already exists"
+fi
+
 # ── Post-provision: configure custom types on daemon ─────────────────
 # Beads core only allows built-in types (bug, task, feature, etc.).
 # Gas Town agent workflows require "agent" and other custom types.

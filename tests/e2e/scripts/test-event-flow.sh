@@ -214,43 +214,34 @@ for c in d.get('connections', []):
 }
 run_test "Daemon is connected to NATS" test_daemon_connected
 
-# ── Test 9: Slack-bot or other sidecar connected to NATS ──────────────
-# Optional sidecars (slack-bot, credential-seeder) may not be deployed in E2E.
-# Skip gracefully when no sidecars are found.
-test_sidecar_connected() {
+# ── Test 9: Non-daemon component connected to NATS ───────────────────
+# Check that at least one component besides bd-daemon is connected.
+# Coopmux connects via Rust (may have empty name). Controller uses gRPC
+# to daemon, not direct NATS. Look for any connection besides bd-daemon.
+test_other_component_connected() {
   _fetch_connz
   [[ -n "$CONNZ_RESP" ]] || return 1
 
   local tmpf
   tmpf=$(mktemp)
   printf '%s' "$CONNZ_RESP" > "$tmpf"
-  local sidecar_found
-  sidecar_found=$(python3 -c "
+  local non_daemon_count
+  non_daemon_count=$(python3 -c "
 import json
 with open('$tmpf') as f:
     d = json.load(f)
+count = 0
 for c in d.get('connections', []):
     name = c.get('name', '').lower()
-    if 'slack' in name or 'cred' in name or 'controller' in name:
-        print('found')
-        break
+    if name != 'bd-daemon':
+        count += 1
+print(count)
 " 2>/dev/null)
   rm -f "$tmpf"
-  [[ "$sidecar_found" == "found" ]]
+  log "Non-daemon NATS connections: $non_daemon_count"
+  [[ "${non_daemon_count:-0}" -ge 1 ]]
 }
-
-# Check if optional sidecars (slack-bot, credential-seeder) are deployed
-_has_optional_sidecars() {
-  local pods
-  pods=$(kube get pods --no-headers 2>/dev/null)
-  echo "$pods" | grep -qE "slack|credential-seeder" 2>/dev/null
-}
-
-if _has_optional_sidecars; then
-  run_test "Sidecar connected to NATS (slack-bot/cred)" test_sidecar_connected
-else
-  skip_test "Sidecar connected to NATS (slack-bot/cred)" "no optional sidecars deployed"
-fi
+run_test "Non-daemon component connected to NATS" test_other_component_connected
 
 # ── Test 10: At least N NATS connections ──────────────────────────────
 # Minimum connections depend on what's deployed. Core services (daemon + NATS

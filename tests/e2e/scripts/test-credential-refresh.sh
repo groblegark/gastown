@@ -33,17 +33,10 @@ fi
 log "Broker pod: $BROKER_POD"
 log "Broker config: ${BROKER_CONFIG:-none}"
 
-# Check for credential-seeder sidecar — without it, refresh tests don't apply
-BROKER_CONTAINERS=$(kube get pod "$BROKER_POD" -o jsonpath='{.spec.containers[*].name}' 2>/dev/null)
-if [[ "$BROKER_CONTAINERS" != *"credential-seeder"* ]]; then
-  log "Broker has no credential-seeder sidecar (containers: $BROKER_CONTAINERS)"
-  skip_all "no credential-seeder sidecar on broker pod"
-  exit 0
-fi
-
-# Skip if no broker ConfigMap with OAuth config
+# Coopmux is a single all-in-one binary handling mux + broker + credentials.
+# Check the broker ConfigMap exists (needed for OAuth tests)
 if [[ -z "$BROKER_CONFIG" ]]; then
-  skip_all "no coop-broker-config ConfigMap found"
+  skip_all "no coop-broker-config ConfigMap found (OAuth not configured)"
   exit 0
 fi
 
@@ -184,7 +177,7 @@ run_test "Seeder can extract refresh token from secret format" test_seeder_extra
 # ── Test 5: Broker logs show successful refresh (no error loop) ──
 test_refresh_no_errors() {
   local logs
-  logs=$(kube logs "$BROKER_POD" -c coop-broker --tail=200 2>/dev/null)
+  logs=$(kube logs "$BROKER_POD" -c coopmux --tail=200 2>/dev/null)
   [[ -n "$logs" ]] || return 1
 
   # Count refresh errors in the last 200 lines
@@ -200,7 +193,7 @@ run_test "Broker has <= 2 refresh failure cycles (not stuck)" test_refresh_no_er
 # ── Test 6: Broker has had at least one successful refresh ───────
 test_refresh_success() {
   local logs
-  logs=$(kube logs "$BROKER_POD" -c coop-broker 2>/dev/null)
+  logs=$(kube logs "$BROKER_POD" -c coopmux 2>/dev/null)
   [[ -n "$logs" ]] || return 1
 
   # Look for evidence of successful refresh OR healthy seeded credentials
