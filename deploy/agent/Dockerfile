@@ -96,6 +96,7 @@ RUN usermod -l agent -d /home/agent -m ubuntu \
 COPY --from=gt-builder /gt /usr/local/bin/gt
 COPY --from=downloader /usr/local/bin/coop /usr/local/bin/coop
 COPY --from=downloader /usr/local/bin/coop-mux /usr/local/bin/coop-mux
+RUN ln -sf /usr/local/bin/coop-mux /usr/local/bin/coopmux
 COPY --from=downloader /usr/local/bin/bd /usr/local/bin/bd
 
 # Copy entrypoint script
