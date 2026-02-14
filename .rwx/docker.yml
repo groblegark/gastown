@@ -87,20 +87,22 @@ tasks:
         - key: gt-binary
           path: gt
 
-  # ── Build controller binary → artifact ────────────────────────────
+  # ── Build controller binary → artifact (separate Go module) ───────
   - key: build-controller
-    use: go-deps
+    use: [code, go]
     run: |
+      cd controller
+      go mod download
       CGO_ENABLED=0 GOOS=linux go build \
         -ldflags="-s -w -X main.version=${REF_NAME} -X main.commit=${COMMIT_SHA}" \
-        -o controller ./cmd/controller/
+        -o ../controller-bin ./cmd/controller/
     env:
       COMMIT_SHA: ${{ init.commit-sha }}
       REF_NAME: ${{ init.ref-name }}
     outputs:
       artifacts:
         - key: controller-binary
-          path: controller
+          path: controller-bin
 
   # ── Download coop from releases → artifact (parallel) ─────────────
   - key: download-coop
