@@ -549,10 +549,20 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		}
 	}
 
-	// Wire mux registration URL. Agent pods auto-register with the mux
-	// on startup so they appear in the aggregated dashboard.
+	// Wire mux registration URL and auth token. Agent pods auto-register
+	// with the mux on startup and re-register via heartbeat after restarts.
 	if cfg.CoopMuxURL != "" {
 		spec.Env["COOP_MUX_URL"] = cfg.CoopMuxURL
+		// Inject COOP_MUX_TOKEN so coop's internal mux_client can authenticate
+		// with the mux on heartbeat re-registration. Uses the same secret as
+		// the broker token since mux shares the broker's auth token.
+		if cfg.CoopBrokerTokenSecret != "" {
+			spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
+				EnvName:    "COOP_MUX_TOKEN",
+				SecretName: cfg.CoopBrokerTokenSecret,
+				SecretKey:  "token",
+			})
+		}
 	}
 }
 
