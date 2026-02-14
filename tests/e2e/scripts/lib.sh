@@ -234,9 +234,11 @@ _write_junit_xml() {
   local file="${dir}/TEST-${_MODULE_NAME}.xml"
   {
     echo '<?xml version="1.0" encoding="UTF-8"?>'
-    echo "<testsuite name=\"$_MODULE_NAME\" tests=\"$_TOTAL\" failures=\"$_FAILED\" skipped=\"$_SKIPPED\" time=\"0\">"
+    echo "<testsuites>"
+    echo "  <testsuite name=\"$_MODULE_NAME\" tests=\"$_TOTAL\" failures=\"$_FAILED\" skipped=\"$_SKIPPED\" time=\"0\">"
     printf '%b' "$_JUNIT_CASES"
-    echo '</testsuite>'
+    echo '  </testsuite>'
+    echo '</testsuites>'
   } > "$file"
 }
 
