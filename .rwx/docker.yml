@@ -1,3 +1,7 @@
+# OCI image builds for gastown services.
+# Go binaries compile natively in parallel, then docker: true tasks
+# assemble and push minimal runtime images to GHCR.
+
 on:
   github:
     push:
@@ -12,7 +16,8 @@ on:
         commit-sha: ${{ event.git.sha }}
         ref-name: pr
       status-checks:
-        name: Docker
+        - tasks: [build-gt, build-controller, download-coop, download-bd]
+          name: Docker
   dispatch:
     - key: gastown-agent-rebuild
       init:
@@ -25,7 +30,7 @@ on:
           default: manual
           required: false
       title: Agent rebuild (${{ init.ref-name }})
-      target: docker-agent
+      target: push-agent
   cli:
     init:
       commit-sha: ${{ event.git.sha }}
@@ -36,38 +41,138 @@ base:
   config: rwx/base 1.0.0
 
 tasks:
+  # ═══════════════════════════════════════════════════════════════════════
+  # Build tasks — compile and download in parallel, output binary artifacts
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # ── Clone gastown repo ─────────────────────────────────────────────
   - key: code
     call: git/clone 2.0.3
     with:
       repository: https://github.com/groblegark/gastown.git
       ref: ${{ init.commit-sha }}
 
-  # ── gt CLI image ──────────────────────────────────────────────────────
-  - key: docker-gt
-    use: code
+  # ── Go toolchain ───────────────────────────────────────────────────
+  - key: go
+    call: golang/install 1.2.0
+    with:
+      go-version: "1.25"
+
+  # ── Go mod download (cached) ───────────────────────────────────────
+  - key: go-deps
+    use: [code, go]
+    run: go mod download
+    filter:
+      - go.mod
+      - go.sum
+
+  # ── Build gt CLI binary → artifact ────────────────────────────────
+  - key: build-gt
+    use: go-deps
+    run: |
+      REF_NAME="${REF_NAME#refs/tags/}"
+      REF_NAME="${REF_NAME#refs/heads/}"
+      CGO_ENABLED=0 GOOS=linux go build \
+        -ldflags="-s -w \
+          -X github.com/steveyegge/gastown/internal/cmd.Version=${REF_NAME} \
+          -X github.com/steveyegge/gastown/internal/cmd.Commit=${COMMIT_SHA} \
+          -X github.com/steveyegge/gastown/internal/cmd.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+          -X github.com/steveyegge/gastown/internal/cmd.BuiltProperly=1" \
+        -o gt ./cmd/gt
+    env:
+      COMMIT_SHA: ${{ init.commit-sha }}
+      REF_NAME: ${{ init.ref-name }}
+    outputs:
+      artifacts:
+        - key: gt-binary
+          path: gt
+
+  # ── Build controller binary → artifact ────────────────────────────
+  - key: build-controller
+    use: go-deps
+    run: |
+      CGO_ENABLED=0 GOOS=linux go build \
+        -ldflags="-s -w -X main.version=${REF_NAME} -X main.commit=${COMMIT_SHA}" \
+        -o controller ./cmd/controller/
+    env:
+      COMMIT_SHA: ${{ init.commit-sha }}
+      REF_NAME: ${{ init.ref-name }}
+    outputs:
+      artifacts:
+        - key: controller-binary
+          path: controller
+
+  # ── Download coop from releases → artifact (parallel) ─────────────
+  - key: download-coop
+    run: |
+      set -ex
+      COOP_VERSION=$(curl -fsSL https://api.github.com/repos/groblegark/coop/releases/latest | jq -r .tag_name)
+      echo "Downloading coop ${COOP_VERSION} for linux-amd64"
+      curl -fsSL "https://github.com/groblegark/coop/releases/download/${COOP_VERSION}/coop-linux-amd64.tar.gz" \
+        -o /tmp/coop.tar.gz
+      mkdir -p coop-bin
+      tar -xzf /tmp/coop.tar.gz -C coop-bin
+      ls -la coop-bin/
+    outputs:
+      artifacts:
+        - key: coop-binaries
+          path: coop-bin
+
+  # ── Download bd from releases → artifact (parallel) ────────────────
+  - key: download-bd
+    run: |
+      set -ex
+      BD_VERSION=$(curl -fsSL https://api.github.com/repos/groblegark/beads/releases/latest | jq -r .tag_name)
+      VERSION_NUM=${BD_VERSION#v}
+      echo "Downloading bd ${BD_VERSION} for linux_amd64"
+      curl -fsSL "https://github.com/groblegark/beads/releases/download/${BD_VERSION}/beads_${VERSION_NUM}_linux_amd64.tar.gz" \
+        -o /tmp/bd.tar.gz
+      mkdir -p bd-bin
+      tar -xzf /tmp/bd.tar.gz -C bd-bin
+      ls -la bd-bin/
+    outputs:
+      artifacts:
+        - key: bd-binaries
+          path: bd-bin
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Push tasks — assemble runtime images from artifacts, push to GHCR.
+  # Skipped on PRs (build tasks validate compilation).
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # ── Push gt CLI image ──────────────────────────────────────────────
+  - key: push-gt
+    use: [build-gt]
+    if: ${{ init.ref-name != 'pr' }}
     docker: true
     run: |
-      # Normalize ref: refs/tags/v1.0 → v1.0, refs/heads/main → main
       REF_NAME="${REF_NAME#refs/tags/}"
       REF_NAME="${REF_NAME#refs/heads/}"
 
+      mkdir -p /tmp/image-ctx
+      cp ${{ tasks.build-gt.artifacts.gt-binary }} /tmp/image-ctx/gt
+
+      printf '%s\n' \
+        'FROM alpine:3.22' \
+        'RUN apk add --no-cache ca-certificates git' \
+        'COPY gt /usr/local/bin/gt' \
+        'ENTRYPOINT ["gt"]' \
+        > /tmp/image-ctx/Dockerfile
+
+      SHORT_SHA="${COMMIT_SHA:0:7}"
       docker build \
-        --build-arg VERSION=$REF_NAME \
-        --build-arg BUILD_COMMIT=$COMMIT_SHA \
-        -t ghcr.io/groblegark/gastown:sha-${COMMIT_SHA:0:7} \
+        -t ghcr.io/groblegark/gastown:sha-${SHORT_SHA} \
         -t ghcr.io/groblegark/gastown:latest \
-        .
-      docker run --rm ghcr.io/groblegark/gastown:sha-${COMMIT_SHA:0:7} version
+        /tmp/image-ctx
+      docker run --rm ghcr.io/groblegark/gastown:sha-${SHORT_SHA} version
 
-      if [ "$REF_NAME" != "pr" ]; then
-        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
-        docker push ghcr.io/groblegark/gastown:sha-${COMMIT_SHA:0:7}
-        docker push ghcr.io/groblegark/gastown:latest
-        if [[ "$REF_NAME" == v* ]]; then
-          VERSION="${REF_NAME#v}"
-          docker tag ghcr.io/groblegark/gastown:sha-${COMMIT_SHA:0:7} ghcr.io/groblegark/gastown:${VERSION}
-          docker push ghcr.io/groblegark/gastown:${VERSION}
-        fi
+      echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+      docker push ghcr.io/groblegark/gastown:sha-${SHORT_SHA}
+      docker push ghcr.io/groblegark/gastown:latest
+      if [[ "$REF_NAME" == v* ]]; then
+        VERSION="${REF_NAME#v}"
+        docker tag ghcr.io/groblegark/gastown:sha-${SHORT_SHA} ghcr.io/groblegark/gastown:${VERSION}
+        docker push ghcr.io/groblegark/gastown:${VERSION}
       fi
     env:
       COMMIT_SHA: ${{ init.commit-sha }}
@@ -75,30 +180,39 @@ tasks:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
-  # ── Agent controller image ───────────────────────────────────────────
-  - key: docker-controller
-    use: code
+  # ── Push controller image ──────────────────────────────────────────
+  - key: push-controller
+    use: [build-controller]
+    if: ${{ init.ref-name != 'pr' }}
     docker: true
     run: |
       REF_NAME="${REF_NAME#refs/tags/}"
       REF_NAME="${REF_NAME#refs/heads/}"
 
+      mkdir -p /tmp/image-ctx
+      cp ${{ tasks.build-controller.artifacts.controller-binary }} /tmp/image-ctx/controller
+
+      printf '%s\n' \
+        'FROM gcr.io/distroless/static-debian12:nonroot' \
+        'COPY controller /controller' \
+        'USER nonroot:nonroot' \
+        'ENTRYPOINT ["/controller"]' \
+        > /tmp/image-ctx/Dockerfile
+
+      SHORT_SHA="${COMMIT_SHA:0:7}"
       docker build \
-        -t ghcr.io/groblegark/gastown/agent-controller:sha-${COMMIT_SHA:0:7} \
+        -t ghcr.io/groblegark/gastown/agent-controller:sha-${SHORT_SHA} \
         -t ghcr.io/groblegark/gastown/agent-controller:latest \
-        -f controller/Dockerfile \
-        controller/
-      docker run --rm ghcr.io/groblegark/gastown/agent-controller:sha-${COMMIT_SHA:0:7} --help || true
+        /tmp/image-ctx
+      docker run --rm ghcr.io/groblegark/gastown/agent-controller:sha-${SHORT_SHA} --help || true
 
-      if [ "$REF_NAME" != "pr" ]; then
-        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
-        docker push ghcr.io/groblegark/gastown/agent-controller:sha-${COMMIT_SHA:0:7}
-        docker push ghcr.io/groblegark/gastown/agent-controller:latest
-        if [[ "$REF_NAME" == v* ]]; then
-          VERSION="${REF_NAME#v}"
-          docker tag ghcr.io/groblegark/gastown/agent-controller:sha-${COMMIT_SHA:0:7} ghcr.io/groblegark/gastown/agent-controller:${VERSION}
-          docker push ghcr.io/groblegark/gastown/agent-controller:${VERSION}
-        fi
+      echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+      docker push ghcr.io/groblegark/gastown/agent-controller:sha-${SHORT_SHA}
+      docker push ghcr.io/groblegark/gastown/agent-controller:latest
+      if [[ "$REF_NAME" == v* ]]; then
+        VERSION="${REF_NAME#v}"
+        docker tag ghcr.io/groblegark/gastown/agent-controller:sha-${SHORT_SHA} ghcr.io/groblegark/gastown/agent-controller:${VERSION}
+        docker push ghcr.io/groblegark/gastown/agent-controller:${VERSION}
       fi
     env:
       COMMIT_SHA: ${{ init.commit-sha }}
@@ -106,31 +220,61 @@ tasks:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
-  # ── Agent image (downloads coop + bd from releases) ──────────────────
-  - key: docker-agent
-    use: code
+  # ── Push agent image ───────────────────────────────────────────────
+  - key: push-agent
+    use: [build-gt, download-coop, download-bd, code]
+    if: ${{ init.ref-name != 'pr' }}
     docker: true
     run: |
       REF_NAME="${REF_NAME#refs/tags/}"
       REF_NAME="${REF_NAME#refs/heads/}"
 
-      docker build --platform linux/amd64 \
-        --build-arg VERSION=$REF_NAME \
-        --build-arg BUILD_COMMIT=$COMMIT_SHA \
-        -t ghcr.io/groblegark/gastown/gastown-agent:sha-${COMMIT_SHA:0:7} \
-        -t ghcr.io/groblegark/gastown/gastown-agent:latest \
-        -f deploy/agent/Dockerfile \
-        .
+      mkdir -p /tmp/image-ctx/bin
+      cp ${{ tasks.build-gt.artifacts.gt-binary }} /tmp/image-ctx/bin/gt
+      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /tmp/image-ctx/bin/coop
+      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux /tmp/image-ctx/bin/coop-mux 2>/dev/null || true
+      cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd /tmp/image-ctx/bin/bd
+      cp deploy/agent/entrypoint.sh /tmp/image-ctx/entrypoint.sh
 
-      if [ "$REF_NAME" != "pr" ]; then
-        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
-        docker push ghcr.io/groblegark/gastown/gastown-agent:sha-${COMMIT_SHA:0:7}
-        docker push ghcr.io/groblegark/gastown/gastown-agent:latest
-        if [[ "$REF_NAME" == v* ]]; then
-          VERSION="${REF_NAME#v}"
-          docker tag ghcr.io/groblegark/gastown/gastown-agent:sha-${COMMIT_SHA:0:7} ghcr.io/groblegark/gastown/gastown-agent:${VERSION}
-          docker push ghcr.io/groblegark/gastown/gastown-agent:${VERSION}
-        fi
+      printf '%s\n' \
+        'FROM ubuntu:24.04' \
+        'ENV DEBIAN_FRONTEND=noninteractive' \
+        'RUN apt-get update && apt-get install -y --no-install-recommends \' \
+        '        git curl ca-certificates jq nodejs npm \' \
+        '    && rm -rf /var/lib/apt/lists/* \' \
+        '    && npm install -g @anthropic-ai/claude-code' \
+        'RUN userdel -r ubuntu 2>/dev/null; true \' \
+        '    && groupadd -g 1000 agent \' \
+        '    && useradd -u 1000 -g agent -s /bin/sh -m agent \' \
+        '    && mkdir -p /home/agent/gt \' \
+        '    && chown -R agent:agent /home/agent' \
+        'COPY bin/gt bin/coop bin/bd /usr/local/bin/' \
+        'COPY bin/coop-mux /usr/local/bin/coop-mux' \
+        'RUN ln -sf /usr/local/bin/coop-mux /usr/local/bin/coopmux \' \
+        '    && chmod +x /usr/local/bin/gt /usr/local/bin/coop /usr/local/bin/bd \' \
+        '       /usr/local/bin/coop-mux 2>/dev/null || true' \
+        'COPY entrypoint.sh /entrypoint.sh' \
+        'RUN chmod +x /entrypoint.sh' \
+        'VOLUME /home/agent/gt' \
+        'USER agent' \
+        'WORKDIR /home/agent/gt' \
+        'ENV HOME=/home/agent GT_ROLE=unknown GT_AGENT=unknown' \
+        'ENTRYPOINT ["/entrypoint.sh"]' \
+        > /tmp/image-ctx/Dockerfile
+
+      SHORT_SHA="${COMMIT_SHA:0:7}"
+      docker build --platform linux/amd64 \
+        -t ghcr.io/groblegark/gastown/gastown-agent:sha-${SHORT_SHA} \
+        -t ghcr.io/groblegark/gastown/gastown-agent:latest \
+        /tmp/image-ctx
+
+      echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+      docker push ghcr.io/groblegark/gastown/gastown-agent:sha-${SHORT_SHA}
+      docker push ghcr.io/groblegark/gastown/gastown-agent:latest
+      if [[ "$REF_NAME" == v* ]]; then
+        VERSION="${REF_NAME#v}"
+        docker tag ghcr.io/groblegark/gastown/gastown-agent:sha-${SHORT_SHA} ghcr.io/groblegark/gastown/gastown-agent:${VERSION}
+        docker push ghcr.io/groblegark/gastown/gastown-agent:${VERSION}
       fi
     env:
       COMMIT_SHA: ${{ init.commit-sha }}
@@ -138,9 +282,11 @@ tasks:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
-  # ── Toolchain image (full target) ────────────────────────────────────
-  - key: docker-toolchain
+  # ── Toolchain image (full target, uses existing Dockerfile) ────────
+  # Toolchain has many download stages — keep Dockerfile approach for now.
+  - key: push-toolchain
     use: code
+    if: ${{ init.ref-name != 'pr' }}
     docker: true
     run: |
       REF_NAME="${REF_NAME#refs/tags/}"
@@ -152,15 +298,13 @@ tasks:
         -f docker/toolchain/Dockerfile \
         docker/toolchain/
 
-      if [ "$REF_NAME" != "pr" ]; then
-        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
-        docker push ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7}
-        docker push ghcr.io/groblegark/gastown/gastown-toolchain:full
-        if [[ "$REF_NAME" == v* ]]; then
-          VERSION="${REF_NAME#v}"
-          docker tag ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7} ghcr.io/groblegark/gastown/gastown-toolchain:${VERSION}
-          docker push ghcr.io/groblegark/gastown/gastown-toolchain:${VERSION}
-        fi
+      echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+      docker push ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7}
+      docker push ghcr.io/groblegark/gastown/gastown-toolchain:full
+      if [[ "$REF_NAME" == v* ]]; then
+        VERSION="${REF_NAME#v}"
+        docker tag ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7} ghcr.io/groblegark/gastown/gastown-toolchain:${VERSION}
+        docker push ghcr.io/groblegark/gastown/gastown-toolchain:${VERSION}
       fi
     env:
       COMMIT_SHA: ${{ init.commit-sha }}
