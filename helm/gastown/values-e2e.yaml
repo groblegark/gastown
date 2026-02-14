@@ -176,8 +176,6 @@ coopBroker:
     enabled: true
     storageClass: "gp2"
     size: 100Mi
-  mux:
-    enabled: true
   resources:
     requests:
       cpu: 100m

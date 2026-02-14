@@ -29,54 +29,57 @@ spec:
         fsGroup: 1000
       {{- end }}
       containers:
-        - name: coop-broker
+        - name: coopmux
           image: "{{ .Values.coopBroker.image.repository }}:{{ .Values.coopBroker.image.tag }}"
           imagePullPolicy: {{ .Values.coopBroker.image.pullPolicy }}
-          command: ["coop"]
+          command: ["coopmux"]
           args:
-            - "--agent=claude"
-            - "--agent-config"
-            - "/etc/coop-broker/config.json"
+            - "--host"
+            - "0.0.0.0"
             - "--port"
-            - "8080"
-            - "--port-health"
-            - "9090"
+            - "{{ .Values.coopBroker.mux.port }}"
+            - "--credential-config"
+            - "/etc/coop-broker/config.json"
+            - "--screen-poll-ms"
+            - "{{ .Values.coopBroker.mux.screenPollMs }}"
+            - "--status-poll-ms"
+            - "{{ .Values.coopBroker.mux.statusPollMs }}"
+            - "--health-check-ms"
+            - "{{ .Values.coopBroker.mux.healthCheckMs }}"
+            - "--max-health-failures"
+            - "{{ .Values.coopBroker.mux.maxHealthFailures }}"
             {{- $natsURL := include "gastown.coopBroker.natsURL" . }}
             {{- if $natsURL }}
             - "--nats-url"
-            - "$(COOP_NATS_URL)"
+            - "$(COOP_MUX_NATS_URL)"
             - "--nats-token"
-            - "$(COOP_NATS_TOKEN)"
+            - "$(COOP_MUX_NATS_TOKEN)"
             {{- end }}
-            - "--"
-            - "sleep"
-            - "infinity"
           env:
+            - name: COOP_MUX_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gastown.coopBroker.authTokenSecretName" . }}
+                  key: token
+            - name: RUST_LOG
+              value: "info"
             {{- if $natsURL }}
-            - name: COOP_NATS_URL
+            - name: COOP_MUX_NATS_URL
               value: {{ $natsURL }}
-            - name: COOP_NATS_TOKEN
+            - name: COOP_MUX_NATS_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ include "gastown.coopBroker.authTokenSecretName" . }}
                   key: token
             {{- end }}
-            - name: COOP_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "gastown.coopBroker.authTokenSecretName" . }}
-                  key: token
           ports:
             - name: http
-              containerPort: 8080
-              protocol: TCP
-            - name: health
-              containerPort: 9090
+              containerPort: {{ .Values.coopBroker.mux.port }}
               protocol: TCP
           startupProbe:
             httpGet:
               path: /api/v1/health
-              port: health
+              port: http
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
@@ -84,7 +87,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /api/v1/health
-              port: health
+              port: http
             initialDelaySeconds: 5
             periodSeconds: 15
             timeoutSeconds: 5
@@ -92,7 +95,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /api/v1/health
-              port: health
+              port: http
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5
@@ -107,209 +110,6 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.coopBroker.resources | nindent 12 }}
-        {{- if .Values.coopBroker.mux.enabled }}
-        - name: coop-mux
-          image: "{{ .Values.coopBroker.image.repository }}:{{ .Values.coopBroker.image.tag }}"
-          imagePullPolicy: {{ .Values.coopBroker.image.pullPolicy }}
-          command: ["coop-mux"]
-          args:
-            - "--host"
-            - "0.0.0.0"
-            - "--port"
-            - "{{ .Values.coopBroker.mux.port }}"
-            - "--screen-poll-ms"
-            - "{{ .Values.coopBroker.mux.screenPollMs }}"
-            - "--status-poll-ms"
-            - "{{ .Values.coopBroker.mux.statusPollMs }}"
-            - "--health-check-ms"
-            - "{{ .Values.coopBroker.mux.healthCheckMs }}"
-            - "--max-health-failures"
-            - "{{ .Values.coopBroker.mux.maxHealthFailures }}"
-          env:
-            - name: COOP_MUX_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "gastown.coopBroker.authTokenSecretName" . }}
-                  key: token
-            - name: RUST_LOG
-              value: "info"
-          ports:
-            - name: mux
-              containerPort: {{ .Values.coopBroker.mux.port }}
-              protocol: TCP
-          startupProbe:
-            httpGet:
-              path: /api/v1/health
-              port: mux
-            initialDelaySeconds: 2
-            periodSeconds: 3
-            timeoutSeconds: 3
-            failureThreshold: 10
-          livenessProbe:
-            httpGet:
-              path: /api/v1/health
-              port: mux
-            periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /api/v1/health
-              port: mux
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          resources:
-            {{- toYaml .Values.coopBroker.mux.resources | nindent 12 }}
-        {{- end }}
-        {{- if .Values.coopBroker.credentialsSecret }}
-        - name: credential-seeder
-          image: "{{ .Values.coopBroker.image.repository }}:{{ .Values.coopBroker.image.tag }}"
-          imagePullPolicy: {{ .Values.coopBroker.image.pullPolicy }}
-          command: ["sh", "-c"]
-          args:
-            - |
-              # Wait for coop broker to be healthy
-              echo "[seeder] Waiting for coop broker health..."
-              until curl -sf http://localhost:8080/api/v1/health >/dev/null 2>&1; do
-                sleep 2
-              done
-              echo "[seeder] Broker healthy, checking credentials..."
-
-              # Check if broker already has healthy credentials (loaded from PVC)
-              STATUS=$(curl -sf http://localhost:8080/api/v1/credentials/status \
-                -H "Authorization: Bearer $COOP_AUTH_TOKEN" 2>/dev/null || echo "{}")
-              HEALTHY=$(echo "$STATUS" | python3 -c "
-              import json, sys
-              try:
-                  data = json.load(sys.stdin)
-                  healthy = [a['name'] for a in data.get('accounts', []) if a.get('status') == 'healthy']
-                  print(','.join(healthy))
-              except: print('')
-              " 2>/dev/null)
-
-              if [ -n "$HEALTHY" ]; then
-                echo "[seeder] Broker already has healthy credentials from PVC: $HEALTHY"
-                echo "[seeder] Skipping K8s secret seed, entering watch loop..."
-              else
-                echo "[seeder] No healthy credentials from PVC, seeding from K8s secret..."
-
-                # Read Claude credentials from mounted secret
-                CREDS_FILE="/tmp/claude-credentials/credentials.json"
-                if [ ! -f "$CREDS_FILE" ]; then
-                  echo "[seeder] WARNING: credentials file not found at $CREDS_FILE"
-                  echo "[seeder] Use 'coop cred add' to seed credentials manually"
-                else
-                  # Extract tokens from Claude credentials JSON.
-                  # Supports both nested (claudeAiOauth.accessToken) and flat (accessToken) formats.
-                  ACCESS_TOKEN=$(python3 -c "
-              import json
-              c=json.load(open('$CREDS_FILE'))
-              o=c.get('claudeAiOauth',{})
-              print(o.get('accessToken','') or c.get('accessToken',''))
-              " 2>/dev/null)
-                  REFRESH_TOKEN=$(python3 -c "
-              import json
-              c=json.load(open('$CREDS_FILE'))
-              o=c.get('claudeAiOauth',{})
-              print(o.get('refreshToken','') or c.get('refreshToken',''))
-              " 2>/dev/null)
-                  EXPIRES_AT=$(python3 -c "
-              import json
-              c=json.load(open('$CREDS_FILE'))
-              o=c.get('claudeAiOauth',{})
-              print(o.get('expiresAt',0) or c.get('expiresAt',0))
-              " 2>/dev/null)
-
-                  if [ -n "$REFRESH_TOKEN" ]; then
-                    # Calculate expires_in from expiresAt (ms epoch)
-                    NOW_MS=$(python3 -c "import time; print(int(time.time()*1000))")
-                    EXPIRES_IN=$(python3 -c "print(max(0, ($EXPIRES_AT - $NOW_MS) // 1000))")
-
-                    # Seed the broker account
-                    ACCOUNT_NAME="{{ .Values.coopBroker.credentials.accountName }}"
-                    echo "[seeder] Seeding account '$ACCOUNT_NAME' (expires_in=${EXPIRES_IN}s)..."
-
-                    RESULT=$(curl -sf -X POST http://localhost:8080/api/v1/credentials/seed \
-                      -H "Content-Type: application/json" \
-                      -H "Authorization: Bearer $COOP_AUTH_TOKEN" \
-                      -d "{\"account\":\"$ACCOUNT_NAME\",\"access_token\":\"$ACCESS_TOKEN\",\"refresh_token\":\"$REFRESH_TOKEN\",\"expires_in\":$EXPIRES_IN}")
-
-                    echo "[seeder] Seed result: $RESULT"
-                  else
-                    echo "[seeder] WARNING: no refresh token in K8s secret"
-                    echo "[seeder] Use 'coop cred add' to seed credentials manually"
-                  fi
-                fi
-              fi
-
-              # Stay alive — re-seed from K8s secret every 6h if broker has no healthy creds
-              echo "[seeder] Entering watch loop (check every 6h)..."
-              while true; do
-                sleep 21600
-                # Only re-seed if broker has no healthy credentials
-                STATUS=$(curl -sf http://localhost:8080/api/v1/credentials/status \
-                  -H "Authorization: Bearer $COOP_AUTH_TOKEN" 2>/dev/null || echo "{}")
-                HEALTHY=$(echo "$STATUS" | python3 -c "
-              import json, sys
-              try:
-                  data = json.load(sys.stdin)
-                  healthy = [a['name'] for a in data.get('accounts', []) if a.get('status') == 'healthy']
-                  print(','.join(healthy))
-              except: print('')
-                " 2>/dev/null)
-                if [ -n "$HEALTHY" ]; then
-                  echo "[seeder] Broker healthy ($HEALTHY), skipping re-seed"
-                  continue
-                fi
-                echo "[seeder] No healthy credentials, re-seeding from K8s secret..."
-                CREDS_FILE="/tmp/claude-credentials/credentials.json"
-                if [ -f "$CREDS_FILE" ]; then
-                  ACCESS_TOKEN=$(python3 -c "
-              import json
-              c=json.load(open('$CREDS_FILE'))
-              o=c.get('claudeAiOauth',{})
-              print(o.get('accessToken','') or c.get('accessToken',''))
-              " 2>/dev/null)
-                  REFRESH_TOKEN=$(python3 -c "
-              import json
-              c=json.load(open('$CREDS_FILE'))
-              o=c.get('claudeAiOauth',{})
-              print(o.get('refreshToken','') or c.get('refreshToken',''))
-              " 2>/dev/null)
-                  EXPIRES_AT=$(python3 -c "
-              import json
-              c=json.load(open('$CREDS_FILE'))
-              o=c.get('claudeAiOauth',{})
-              print(o.get('expiresAt',0) or c.get('expiresAt',0))
-              " 2>/dev/null)
-                  NOW_MS=$(python3 -c "import time; print(int(time.time()*1000))")
-                  EXPIRES_IN=$(python3 -c "print(max(0, ($EXPIRES_AT - $NOW_MS) // 1000))")
-                  ACCOUNT_NAME="{{ .Values.coopBroker.credentials.accountName }}"
-                  curl -sf -X POST http://localhost:8080/api/v1/credentials/seed \
-                    -H "Content-Type: application/json" \
-                    -H "Authorization: Bearer $COOP_AUTH_TOKEN" \
-                    -d "{\"account\":\"$ACCOUNT_NAME\",\"access_token\":\"$ACCESS_TOKEN\",\"refresh_token\":\"$REFRESH_TOKEN\",\"expires_in\":$EXPIRES_IN}" || true
-                fi
-              done
-          env:
-            - name: COOP_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "gastown.coopBroker.authTokenSecretName" . }}
-                  key: token
-          volumeMounts:
-            - name: claude-creds
-              mountPath: /tmp/claude-credentials
-              readOnly: true
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-            limits:
-              cpu: 100m
-              memory: 64Mi
-        {{- end }}
       volumes:
         - name: broker-config
           configMap:
@@ -318,11 +118,6 @@ spec:
         - name: credentials-data
           persistentVolumeClaim:
             claimName: {{ include "gastown.coopBroker.fullname" . }}-credentials
-        {{- end }}
-        {{- if .Values.coopBroker.credentialsSecret }}
-        - name: claude-creds
-          secret:
-            secretName: {{ .Values.coopBroker.credentialsSecret }}
         {{- end }}
       {{- with .Values.coopBroker.nodeSelector }}
       nodeSelector:

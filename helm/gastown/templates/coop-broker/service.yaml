@@ -13,16 +13,6 @@ spec:
       port: {{ .Values.coopBroker.service.port }}
       targetPort: http
       protocol: TCP
-    - name: health
-      port: {{ .Values.coopBroker.service.healthPort }}
-      targetPort: health
-      protocol: TCP
-    {{- if .Values.coopBroker.mux.enabled }}
-    - name: mux
-      port: {{ .Values.coopBroker.service.muxPort }}
-      targetPort: mux
-      protocol: TCP
-    {{- end }}
   selector:
     {{- include "gastown.coopBroker.selectorLabels" . | nindent 4 }}
 {{- end }}
