@@ -129,6 +129,31 @@ spec:
               value: {{ .maxChangesPerHour | quote }}
             {{- end }}
             {{- end }}
+          ports:
+            - name: health
+              containerPort: {{ .Values.agentController.healthPort | default 8081 }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            failureThreshold: 12
           resources:
             {{- toYaml .Values.agentController.resources | nindent 12 }}
       {{- with .Values.agentController.nodeSelector }}

@@ -12,9 +12,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -98,6 +100,11 @@ func main() {
 
 	rec := reconciler.New(daemon, pods, cfg, logger, BuildSpecFromBeadInfo)
 
+	// Start health server for liveness/readiness probes.
+	if cfg.HealthPort > 0 {
+		startHealthServer(cfg.HealthPort, logger)
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
@@ -131,6 +138,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient
 	}
 	go runPeriodicSync(ctx, logger, k8sClient, status, rec, daemon, cfg, syncInterval)
 
+	controllerReady.Store(true)
 	logger.Info("controller ready, waiting for beads events",
 		"sync_interval", syncInterval)
 
@@ -670,6 +678,37 @@ func refreshRigCache(ctx context.Context, logger *slog.Logger, daemon *daemoncli
 		}
 	}
 	logger.Info("refreshed rig cache", "count", len(rigs))
+}
+
+// controllerReady is set to true once the main event loop starts.
+var controllerReady atomic.Bool
+
+// startHealthServer runs an HTTP server with /healthz (liveness) and /readyz
+// (readiness) endpoints. The liveness endpoint always returns 200; the
+// readiness endpoint returns 200 only after the controller event loop starts.
+func startHealthServer(port int, logger *slog.Logger) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if controllerReady.Load() {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("not ready"))
+		}
+	})
+
+	addr := fmt.Sprintf(":%d", port)
+	go func() {
+		logger.Info("health server listening", "addr", addr)
+		if err := http.ListenAndServe(addr, mux); err != nil {
+			logger.Error("health server failed", "error", err)
+		}
+	}()
 }
 
 func setupLogger(level string) *slog.Logger {
