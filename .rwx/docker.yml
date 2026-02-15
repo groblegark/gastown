@@ -226,10 +226,16 @@ tasks:
       # Install Claude CLI
       sudo npm install -g @anthropic-ai/claude-code
 
-      # Create agent user
-      sudo userdel -r ubuntu 2>/dev/null || true
-      sudo groupadd -g 1000 agent 2>/dev/null || true
-      sudo useradd -u 1000 -g agent -s /bin/sh -m agent 2>/dev/null || true
+      # Create agent user (UID/GID 1000 may already exist as 'ubuntu')
+      if id -u agent &>/dev/null; then
+        echo "agent user already exists"
+      elif id -u ubuntu &>/dev/null; then
+        sudo usermod -l agent -d /home/agent -m ubuntu
+        sudo groupmod -n agent ubuntu
+      else
+        sudo groupadd -g 1000 agent
+        sudo useradd -u 1000 -g agent -s /bin/sh -m agent
+      fi
       sudo mkdir -p /home/agent/gt
       sudo chown -R agent:agent /home/agent
 
@@ -299,9 +305,16 @@ tasks:
       sudo apt-get clean
       sudo rm -rf /var/lib/apt/lists/*
 
-      # Create agent user
-      sudo groupadd -g 1000 agent 2>/dev/null || true
-      sudo useradd -u 1000 -g 1000 -m -s /bin/bash agent 2>/dev/null || true
+      # Create agent user (UID/GID 1000 may already exist as 'ubuntu')
+      if id -u agent &>/dev/null; then
+        echo "agent user already exists"
+      elif id -u ubuntu &>/dev/null; then
+        sudo usermod -l agent -d /home/agent -m -s /bin/bash ubuntu
+        sudo groupmod -n agent ubuntu
+      else
+        sudo groupadd -g 1000 agent
+        sudo useradd -u 1000 -g agent -s /bin/bash -m agent
+      fi
 
       # Install entrypoint
       sudo cp docker/toolchain/entrypoint.sh /usr/local/bin/toolchain-entrypoint.sh
