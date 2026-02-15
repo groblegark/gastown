@@ -15,7 +15,6 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/terminal"
 	crewTUI "github.com/steveyegge/gastown/internal/tui/crew"
 	"github.com/steveyegge/gastown/internal/util"
@@ -254,18 +253,9 @@ type Model struct {
 	townRoot     string
 	currentRig   string
 
-	// RPC mode - when set, uses RPC client instead of gt CLI commands
-	rpcClient    *rpcclient.Client
-	rpcConnected bool // tracks whether RPC connection is healthy
-
 	// Polling
 	pollTicker *time.Ticker
 	done       chan struct{}
-
-	// RPC streaming
-	streamCtx    context.Context
-	streamCancel context.CancelFunc
-	streamChan   chan streamMsg
 }
 
 // New creates a new decision TUI model
@@ -305,23 +295,8 @@ func (m *Model) SetNotify(notify bool) {
 	m.notify = notify
 }
 
-// SetRPCClient configures the model to use RPC calls instead of CLI commands.
-// When set, the model will use the RPC client for fetching and resolving decisions.
-func (m *Model) SetRPCClient(client *rpcclient.Client) {
-	m.rpcClient = client
-}
-
 // Init initializes the model
 func (m *Model) Init() tea.Cmd {
-	// Use RPC streaming when client is configured
-	if m.rpcClient != nil {
-		return tea.Batch(
-			m.watchDecisionsRPC(),
-			tea.SetWindowTitle("GT Decision Watch"),
-		)
-	}
-
-	// Fall back to CLI polling
 	return tea.Batch(
 		m.fetchDecisions(),
 		m.startPolling(),
@@ -352,14 +327,6 @@ type dismissedMsg struct {
 	err    error
 }
 
-// streamMsg is sent when decisions arrive via RPC streaming
-type streamMsg struct {
-	decision  *DecisionItem
-	decisions []DecisionItem // Full list for refresh
-	err       error
-	reconnect bool // True if stream needs reconnection
-}
-
 // peekMsg is sent when terminal content is captured
 type peekMsg struct {
 	sessionName string
@@ -367,48 +334,12 @@ type peekMsg struct {
 	err         error
 }
 
-// fetchDecisions fetches pending decisions from bd or RPC server
+// fetchDecisions fetches pending decisions via CLI
 func (m *Model) fetchDecisions() tea.Cmd {
-	// Capture rpcClient for closure
-	rpcClient := m.rpcClient
-
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		// Use RPC if client is configured
-		if rpcClient != nil {
-			rpcDecisions, err := rpcClient.ListPendingDecisions(ctx)
-			if err != nil {
-				return fetchDecisionsMsg{err: fmt.Errorf("RPC fetch failed: %w", err)}
-			}
-
-			// Convert rpcclient.Decision to DecisionItem
-			var decisions []DecisionItem
-			for _, d := range rpcDecisions {
-				var opts []Option
-				for i, o := range d.Options {
-					opts = append(opts, Option{
-						ID:          fmt.Sprintf("%d", i+1),
-						Label:       o.Label,
-						Description: o.Description,
-					})
-				}
-				requestedAt, _ := time.Parse(time.RFC3339, d.RequestedAt)
-				decisions = append(decisions, DecisionItem{
-					ID:          d.ID,
-					Prompt:      d.Question,
-					Options:     opts,
-					Urgency:     d.Urgency,
-					RequestedBy: d.RequestedBy,
-					RequestedAt: requestedAt,
-					Context:     d.Context,
-				})
-			}
-			return fetchDecisionsMsg{decisions: decisions}
-		}
-
-		// Fall back to CLI command
 		cmd := exec.CommandContext(ctx, "gt", "decision", "list", "--json")
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
@@ -440,121 +371,12 @@ func (m *Model) startPolling() tea.Cmd {
 	})
 }
 
-// watchDecisionsRPC starts an RPC stream to watch for decisions.
-// It runs the stream in a goroutine and returns a command that listens for updates.
-func (m *Model) watchDecisionsRPC() tea.Cmd {
-	// Create context and channel for streaming
-	m.streamCtx, m.streamCancel = context.WithCancel(context.Background())
-	m.streamChan = make(chan streamMsg, 10)
-
-	// Capture client for closure
-	rpcClient := m.rpcClient
-	ctx := m.streamCtx
-	ch := m.streamChan
-
-	// Start the streaming goroutine
-	go func() {
-		seenDecisions := make(map[string]DecisionItem)
-
-		err := rpcClient.WatchDecisions(ctx, func(d rpcclient.Decision) error {
-			// Convert rpcclient.Decision to DecisionItem
-			var opts []Option
-			for i, o := range d.Options {
-				opts = append(opts, Option{
-					ID:          fmt.Sprintf("%d", i+1),
-					Label:       o.Label,
-					Description: o.Description,
-				})
-			}
-			requestedAt, _ := time.Parse(time.RFC3339, d.RequestedAt)
-			item := DecisionItem{
-				ID:          d.ID,
-				Prompt:      d.Question,
-				Options:     opts,
-				Urgency:     d.Urgency,
-				RequestedBy: d.RequestedBy,
-				RequestedAt: requestedAt,
-				Context:     d.Context,
-			}
-
-			// Track seen decisions and send update
-			seenDecisions[d.ID] = item
-
-			// Convert map to slice
-			var decisions []DecisionItem
-			for _, dec := range seenDecisions {
-				decisions = append(decisions, dec)
-			}
-
-			select {
-			case ch <- streamMsg{decision: &item, decisions: decisions}:
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-			return nil
-		})
-
-		// Stream ended - send error for reconnection
-		if err != nil && err != context.Canceled {
-			select {
-			case ch <- streamMsg{err: err, reconnect: true}:
-			case <-ctx.Done():
-			}
-		}
-	}()
-
-	// Return command that listens on the channel
-	return m.listenForStream()
-}
-
-// listenForStream returns a command that waits for the next stream message
-func (m *Model) listenForStream() tea.Cmd {
-	ch := m.streamChan
-	if ch == nil {
-		return nil
-	}
-
-	return func() tea.Msg {
-		msg, ok := <-ch
-		if !ok {
-			return streamMsg{err: fmt.Errorf("stream channel closed")}
-		}
-		return msg
-	}
-}
-
-// reconnectStream attempts to reconnect the RPC stream after an error
-func (m *Model) reconnectStream() tea.Cmd {
-	// Cancel existing stream if any
-	if m.streamCancel != nil {
-		m.streamCancel()
-	}
-
-	// Wait a bit before reconnecting
-	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-		return streamMsg{reconnect: true}
-	})
-}
-
 // resolveDecision resolves a decision with the given option
 func (m *Model) resolveDecision(decisionID, prompt string, choice int, rationale string) tea.Cmd {
-	// Capture rpcClient for closure
-	rpcClient := m.rpcClient
-
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// Use RPC if client is configured
-		if rpcClient != nil {
-			_, err := rpcClient.ResolveDecision(ctx, decisionID, choice, rationale, "tui")
-			if err != nil {
-				return resolvedMsg{id: decisionID, prompt: prompt, err: fmt.Errorf("RPC resolve failed: %w", err)}
-			}
-			return resolvedMsg{id: decisionID, prompt: prompt}
-		}
-
-		// Fall back to CLI command
 		args := []string{"decision", "resolve", decisionID, "--choice", fmt.Sprintf("%d", choice)}
 		if rationale != "" {
 			args = append(args, "--rationale", rationale)
@@ -574,23 +396,10 @@ func (m *Model) resolveDecision(decisionID, prompt string, choice int, rationale
 
 // dismissDecision cancels/dismisses a decision
 func (m *Model) dismissDecision(decisionID, prompt, reason string) tea.Cmd {
-	// Capture rpcClient for closure
-	rpcClient := m.rpcClient
-
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		// Use RPC if client is configured
-		if rpcClient != nil {
-			err := rpcClient.CancelDecision(ctx, decisionID, reason)
-			if err != nil {
-				return dismissedMsg{id: decisionID, prompt: prompt, err: fmt.Errorf("RPC cancel failed: %w", err)}
-			}
-			return dismissedMsg{id: decisionID, prompt: prompt}
-		}
-
-		// Fall back to CLI command
 		args := []string{"decision", "cancel", decisionID}
 		if reason != "" {
 			args = append(args, "--reason", reason)
@@ -719,10 +528,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Cancel):
 			close(m.done)
-			// Cancel RPC stream if active
-			if m.streamCancel != nil {
-				m.streamCancel()
-			}
 			return m, tea.Quit
 
 		case key.Matches(msg, m.keys.Help):
@@ -820,10 +625,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchDecisionsMsg:
 		if msg.err != nil {
 			m.err = msg.err
-			// Update RPC connection status on failure
-			if m.rpcClient != nil {
-				m.rpcConnected = false
-			}
 		} else {
 			m.err = nil
 			m.decisions = m.filterDecisions(msg.decisions)
@@ -831,10 +632,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = max(0, len(m.decisions)-1)
 			}
 			m.status = fmt.Sprintf("Updated: %d pending", len(m.decisions))
-			// Update RPC connection status on success
-			if m.rpcClient != nil {
-				m.rpcConnected = true
-			}
 		}
 
 	case tickMsg:
@@ -877,27 +674,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.peekViewport.SetContent(msg.content)
 			m.peekViewport.GotoBottom()
 			m.status = fmt.Sprintf("Peeking: %s (↑/↓ scroll, any other key to close)", msg.sessionName)
-		}
-
-	case streamMsg:
-		if msg.reconnect && msg.err == nil {
-			// Reconnection timer fired - restart streaming
-			cmds = append(cmds, m.watchDecisionsRPC())
-			m.status = "Reconnecting to RPC stream..."
-		} else if msg.err != nil {
-			m.err = msg.err
-			m.status = fmt.Sprintf("Stream error: %v (reconnecting...)", msg.err)
-			cmds = append(cmds, m.reconnectStream())
-		} else if msg.decisions != nil {
-			// Update decisions from stream
-			m.err = nil
-			m.decisions = m.filterDecisions(msg.decisions)
-			if m.selected >= len(m.decisions) {
-				m.selected = max(0, len(m.decisions)-1)
-			}
-			m.status = fmt.Sprintf("Streaming: %d pending", len(m.decisions))
-			// Continue listening for more stream messages
-			cmds = append(cmds, m.listenForStream())
 		}
 
 	default:

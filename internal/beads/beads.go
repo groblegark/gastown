@@ -26,7 +26,7 @@ var (
 )
 
 // resolvedBdPath caches the resolved absolute path to the bd binary.
-// This ensures subprocesses (e.g. gtmobile) find the correct bd version
+// This ensures subprocesses find the correct bd version
 // even when their PATH doesn't include ~/.local/bin.
 var resolvedBdPath string
 

@@ -397,9 +397,6 @@ Examples:
 // Watch-specific flags
 var decisionWatchUrgentOnly bool
 var decisionWatchNotify bool
-var decisionWatchRPC bool
-var decisionWatchRPCAddr string
-
 // Turn-check flags
 var decisionTurnCheckSoft bool
 var decisionTurnCheckVerbose bool
@@ -480,8 +477,6 @@ func init() {
 	// Watch subcommand flags
 	decisionWatchCmd.Flags().BoolVar(&decisionWatchUrgentOnly, "urgent-only", false, "Show only high urgency decisions")
 	decisionWatchCmd.Flags().BoolVar(&decisionWatchNotify, "notify", false, "Enable desktop notifications for new decisions")
-	decisionWatchCmd.Flags().BoolVar(&decisionWatchRPC, "rpc", false, "Use RPC layer instead of local beads (test harness)")
-	decisionWatchCmd.Flags().StringVar(&decisionWatchRPCAddr, "rpc-addr", "http://localhost:8443", "RPC server address")
 
 	// Turn-check flags
 	decisionTurnCheckCmd.Flags().BoolVar(&decisionTurnCheckSoft, "soft", false, "Soft mode: don't block, just allow")

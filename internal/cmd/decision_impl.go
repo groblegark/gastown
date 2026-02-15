@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,7 +19,7 @@ import (
 	"github.com/steveyegge/gastown/internal/inject"
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/notify"
-	"github.com/steveyegge/gastown/internal/rpcclient"
+
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/style"
 	decisionTUI "github.com/steveyegge/gastown/internal/tui/decision"
@@ -260,58 +259,15 @@ func runDecisionRequest(cmd *cobra.Command, args []string) error {
 		fields.Blockers = []string{decisionBlocks}
 	}
 
-	// Try RPC first if gtmobile is available (enables real-time event bus notifications)
-	var issue *beads.Issue
-	rpcUsed := false
-
-	rpcClient := rpcclient.NewClient("http://localhost:8443")
-	if rpcClient.IsAvailable(context.Background()) {
-		// Convert options for RPC
-		var rpcOptions []rpcclient.DecisionOption
-		for _, opt := range options {
-			rpcOptions = append(rpcOptions, rpcclient.DecisionOption{
-				Label:       opt.Label,
-				Description: opt.Description,
-				Recommended: opt.Recommended,
-			})
-		}
-
-		decision, rpcErr := rpcClient.CreateDecision(context.Background(), rpcclient.CreateDecisionRequest{
-			Question:      decisionPrompt,
-			Context:       contextToStore,
-			Options:       rpcOptions,
-			RequestedBy:   agentID,
-			Urgency:       urgency,
-			Blockers:      fields.Blockers,
-			PredecessorID: fields.PredecessorID,
-			ParentBead:    decisionParent,
-		})
-		if rpcErr == nil {
-			// RPC succeeded - use the returned decision
-			issue = &beads.Issue{ID: decision.ID}
-			rpcUsed = true
-		} else {
-			// Log RPC error for debugging (hq-3p8p76)
-			style.PrintWarning("RPC CreateDecision failed (falling back to direct DB): %v", rpcErr)
-		}
-	} else {
-		style.PrintWarning("gtmobile RPC not available (falling back to direct DB)")
+	// Create decision via direct BD (canonical decision_points table storage)
+	issue, err := bd.CreateBdDecision(fields)
+	if err != nil {
+		return fmt.Errorf("creating decision: %w", err)
 	}
 
-	// Fall back to bd decision create if RPC not available or failed
-	// This uses the canonical decision_points table storage (hq-946577.39)
-	if !rpcUsed {
-		bd := beads.New(beads.ResolveBeadsDir(townRoot))
-		var err error
-		issue, err = bd.CreateBdDecision(fields)
-		if err != nil {
-			return fmt.Errorf("creating decision: %w", err)
-		}
-
-		// Verify the decision was persisted (gt-3vqgi4: guard against false success)
-		if _, verifyErr := bd.Show(issue.ID); verifyErr != nil {
-			return fmt.Errorf("decision created but not persisted: %s (verify error: %w)", issue.ID, verifyErr)
-		}
+	// Verify the decision was persisted (gt-3vqgi4: guard against false success)
+	if _, verifyErr := bd.Show(issue.ID); verifyErr != nil {
+		return fmt.Errorf("decision created but not persisted: %s (verify error: %w)", issue.ID, verifyErr)
 	}
 
 	// Note: blocker dependency is now handled by bd decision create --blocks flag
@@ -619,24 +575,9 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 		effectiveRationale = chosenOption.Description
 	}
 
-	// Try RPC first if gtmobile is available (enables real-time event bus notifications)
-	rpcUsed := false
-	rpcClient := rpcclient.NewClient("http://localhost:8443")
-	if rpcClient.IsAvailable(context.Background()) {
-		_, rpcErr := rpcClient.ResolveDecision(context.Background(), decisionID, decisionChoice, effectiveRationale, resolvedBy)
-		if rpcErr == nil {
-			rpcUsed = true
-		} else {
-			// Log RPC error for debugging
-			style.PrintWarning("RPC Resolve failed (falling back to direct BD): %v", rpcErr)
-		}
-	}
-
-	// Fall back to direct BD if RPC not available or failed
-	if !rpcUsed {
-		if err := bd.ResolveDecision(decisionID, decisionChoice, effectiveRationale, resolvedBy); err != nil {
-			return fmt.Errorf("resolving decision: %w", err)
-		}
+	// Resolve decision via direct BD
+	if err := bd.ResolveDecision(decisionID, decisionChoice, effectiveRationale, resolvedBy); err != nil {
+		return fmt.Errorf("resolving decision: %w", err)
 	}
 
 	// Notify requestor: mail + nudge + unblock + activity log
@@ -1137,11 +1078,6 @@ func formatDecisionReminder(workIndicators []string) string {
 }
 
 func runDecisionWatch(cmd *cobra.Command, args []string) error {
-	// Handle RPC mode - simple streaming watcher for testing the RPC layer
-	if decisionWatchRPC {
-		return runDecisionWatchRPC()
-	}
-
 	// Verify we're in a Gas Town workspace
 	townRoot, err := workspace.FindFromCwdOrError()
 	if err != nil {
@@ -1177,43 +1113,6 @@ func runDecisionWatch(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// runDecisionWatchRPC runs the decision TUI backed by RPC calls.
-// This provides the same interactive experience as the TUI mode but
-// communicates with a remote RPC server instead of using local beads.
-func runDecisionWatchRPC() error {
-	// Check RPC server availability first
-	client := rpcclient.NewClient(decisionWatchRPCAddr)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if !client.IsAvailable(ctx) {
-		cancel()
-		return fmt.Errorf("RPC server not available at %s", decisionWatchRPCAddr)
-	}
-	cancel()
-
-	// Create the TUI model configured for RPC mode
-	m := decisionTUI.New()
-	m.SetRPCClient(client)
-
-	// Apply flags (same as non-RPC mode)
-	if decisionWatchUrgentOnly {
-		m.SetFilter("high")
-	}
-	if decisionWatchNotify {
-		m.SetNotify(true)
-	}
-
-	// Note: workspace/rig info not available in pure RPC mode,
-	// so crew creation will be disabled
-
-	// Run the TUI
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("error running decision watch: %w", err)
-	}
-
-	return nil
-}
 
 // --- Turn enforcement functions ---
 

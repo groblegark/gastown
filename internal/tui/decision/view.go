@@ -29,15 +29,7 @@ func (m *Model) renderView() string {
 		return m.renderPeekMode()
 	}
 
-	// Title with RPC status indicator
 	title := "🎯 Decision Watch"
-	if m.rpcClient != nil {
-		if m.rpcConnected {
-			title += " [RPC]"
-		} else {
-			title += " [RPC ⚠]"
-		}
-	}
 	b.WriteString(titleStyle.Render(title))
 	b.WriteString("\n")
 
