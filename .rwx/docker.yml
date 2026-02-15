@@ -1,12 +1,19 @@
-# OCI image builds for gastown services.
-# Go binaries compile natively in parallel, then docker: true tasks
-# assemble and push minimal runtime images to GHCR.
+# OCI image builds for gastown services — RWX native (no Dockerfiles).
+#
+# Uses $RWX_IMAGE for image metadata instead of inline Dockerfiles.
+# Images are pushed via `rwx image build --push-to` from the CLI,
+# or via `docker: true` tasks for images that need apt-get layers
+# (RWX native images inherit the task filesystem directly).
+#
+# Architecture:
+#   build-* tasks → compile binaries as artifacts (cached by filters)
+#   image-*  tasks → install runtime deps + configure $RWX_IMAGE metadata
+#   Push is handled by rwx image build --target <task> --push-to <registry>
 #
 # OPTIMIZATIONS:
 # - Filter directives on Go mod downloads (cached by go.mod/go.sum)
 # - Parallel builds with filter caching for dependency stability
-# - Docker BuildKit layer caching for efficient image rebuilds
-# - Version-locked coop and bd downloads with monthly cache refresh
+# - RWX native layer caching replaces Docker BuildKit
 
 on:
   github:
@@ -42,7 +49,7 @@ on:
           default: latest
           required: false
       title: Agent rebuild (${{ init.ref-name }})
-      target: push-agent
+      target: image-agent
   cli:
     init:
       commit-sha: ${{ event.git.sha }}
@@ -50,7 +57,7 @@ on:
 
 base:
   image: ubuntu:24.04
-  config: rwx/base 1.0.0
+  config: none
 
 tasks:
   # ═══════════════════════════════════════════════════════════════════════
@@ -120,9 +127,6 @@ tasks:
           path: controller-bin
 
   # ── Download coop from releases → artifact (parallel, cached monthly) ─
-  # When dispatched from a coop release, COOP_VERSION is the exact tag.
-  # Otherwise resolves latest from the GitHub API.
-  # Cache invalidates monthly to catch security updates.
   - key: download-coop
     run: |
       set -ex
@@ -147,7 +151,6 @@ tasks:
           path: coop-bin
 
   # ── Download bd from releases → artifact (parallel, cached monthly) ──
-  # Cache invalidates monthly to catch security updates.
   - key: download-bd
     run: |
       set -ex
@@ -167,178 +170,140 @@ tasks:
           path: bd-bin
 
   # ═══════════════════════════════════════════════════════════════════════
-  # Push tasks — assemble runtime images from artifacts, push to GHCR.
-  # Skipped on PRs (build tasks validate compilation).
+  # Image tasks — RWX native images via $RWX_IMAGE.
+  # These define the container filesystem and metadata.
+  # Push via: rwx image build -f .rwx/docker.yml --target <key> --push-to <ref>
   # ═══════════════════════════════════════════════════════════════════════
 
-  # ── Push gt CLI image ──────────────────────────────────────────────
-  - key: push-gt
+  # ── gt CLI image (alpine + git + binary) ───────────────────────────
+  - key: image-gt
     use: [build-gt]
     if: ${{ init.ref-name != 'pr' }}
-    docker: true
     run: |
-      REF_NAME="${REF_NAME#refs/tags/}"
-      REF_NAME="${REF_NAME#refs/heads/}"
+      # Install minimal runtime deps
+      sudo apt-get -y update
+      sudo apt-get -y install --no-install-recommends ca-certificates git
+      sudo apt-get clean
+      sudo rm -rf /var/lib/apt/lists/*
 
-      mkdir -p /tmp/image-ctx
-      cp ${{ tasks.build-gt.artifacts.gt-binary }} /tmp/image-ctx/gt
+      # Install binary
+      sudo cp ${{ tasks.build-gt.artifacts.gt-binary }} /usr/local/bin/gt
+      sudo chmod 755 /usr/local/bin/gt
 
-      printf '%s\n' \
-        'FROM alpine:3.22' \
-        'RUN apk add --no-cache ca-certificates git' \
-        'COPY gt /usr/local/bin/gt' \
-        'ENTRYPOINT ["gt"]' \
-        > /tmp/image-ctx/Dockerfile
+      # Configure image metadata
+      jq -n '["gt"]' > $RWX_IMAGE/entrypoint.json
+      echo "1000" > $RWX_IMAGE/user
 
-      SHORT_SHA="${COMMIT_SHA:0:7}"
-      docker build \
-        -t ghcr.io/groblegark/gastown:sha-${SHORT_SHA} \
-        -t ghcr.io/groblegark/gastown:latest \
-        /tmp/image-ctx
-      docker run --rm ghcr.io/groblegark/gastown:sha-${SHORT_SHA} version
-
-      echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
-      docker push ghcr.io/groblegark/gastown:sha-${SHORT_SHA}
-      docker push ghcr.io/groblegark/gastown:latest
-      if [[ "$REF_NAME" == v* ]]; then
-        VERSION="${REF_NAME#v}"
-        docker tag ghcr.io/groblegark/gastown:sha-${SHORT_SHA} ghcr.io/groblegark/gastown:${VERSION}
-        docker push ghcr.io/groblegark/gastown:${VERSION}
-      fi
-    env:
-      COMMIT_SHA: ${{ init.commit-sha }}
-      REF_NAME: ${{ init.ref-name }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-      GITHUB_USER: ${{ secrets.GITHUB_USER }}
-
-  # ── Push controller image ──────────────────────────────────────────
-  - key: push-controller
+  # ── Controller image (minimal static binary) ───────────────────────
+  - key: image-controller
     use: [build-controller]
     if: ${{ init.ref-name != 'pr' }}
-    docker: true
     run: |
-      REF_NAME="${REF_NAME#refs/tags/}"
-      REF_NAME="${REF_NAME#refs/heads/}"
+      # Install binary
+      sudo cp ${{ tasks.build-controller.artifacts.controller-binary }} /controller
+      sudo chmod 755 /controller
 
-      mkdir -p /tmp/image-ctx
-      cp ${{ tasks.build-controller.artifacts.controller-binary }} /tmp/image-ctx/controller
+      # Configure image metadata
+      jq -n '["/controller"]' > $RWX_IMAGE/entrypoint.json
+      echo "65534" > $RWX_IMAGE/user
 
-      printf '%s\n' \
-        'FROM gcr.io/distroless/static-debian12:nonroot' \
-        'COPY controller /controller' \
-        'USER nonroot:nonroot' \
-        'ENTRYPOINT ["/controller"]' \
-        > /tmp/image-ctx/Dockerfile
-
-      SHORT_SHA="${COMMIT_SHA:0:7}"
-      docker build \
-        -t ghcr.io/groblegark/gastown/agent-controller:sha-${SHORT_SHA} \
-        -t ghcr.io/groblegark/gastown/agent-controller:latest \
-        /tmp/image-ctx
-      docker run --rm ghcr.io/groblegark/gastown/agent-controller:sha-${SHORT_SHA} --help || true
-
-      echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
-      docker push ghcr.io/groblegark/gastown/agent-controller:sha-${SHORT_SHA}
-      docker push ghcr.io/groblegark/gastown/agent-controller:latest
-      if [[ "$REF_NAME" == v* ]]; then
-        VERSION="${REF_NAME#v}"
-        docker tag ghcr.io/groblegark/gastown/agent-controller:sha-${SHORT_SHA} ghcr.io/groblegark/gastown/agent-controller:${VERSION}
-        docker push ghcr.io/groblegark/gastown/agent-controller:${VERSION}
-      fi
-    env:
-      COMMIT_SHA: ${{ init.commit-sha }}
-      REF_NAME: ${{ init.ref-name }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-      GITHUB_USER: ${{ secrets.GITHUB_USER }}
-
-  # ── Push agent image ───────────────────────────────────────────────
-  - key: push-agent
+  # ── Agent image (ubuntu + apt packages + gt/coop/bd/claude) ────────
+  - key: image-agent
     use: [build-gt, download-coop, download-bd, code]
     if: ${{ init.ref-name != 'pr' }}
-    docker: true
     run: |
-      REF_NAME="${REF_NAME#refs/tags/}"
-      REF_NAME="${REF_NAME#refs/heads/}"
+      # Install runtime dependencies
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get -y update
+      sudo apt-get -y install --no-install-recommends \
+        git curl ca-certificates jq nodejs npm
+      sudo rm -rf /var/lib/apt/lists/*
 
-      mkdir -p /tmp/image-ctx/bin
-      cp ${{ tasks.build-gt.artifacts.gt-binary }} /tmp/image-ctx/bin/gt
-      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /tmp/image-ctx/bin/coop
-      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux /tmp/image-ctx/bin/coop-mux 2>/dev/null || true
-      cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd /tmp/image-ctx/bin/bd
-      cp deploy/agent/entrypoint.sh /tmp/image-ctx/entrypoint.sh
+      # Install Claude CLI
+      sudo npm install -g @anthropic-ai/claude-code
 
-      printf '%s\n' \
-        'FROM ubuntu:24.04' \
-        'ENV DEBIAN_FRONTEND=noninteractive' \
-        'RUN apt-get update && apt-get install -y --no-install-recommends \' \
-        '        git curl ca-certificates jq nodejs npm \' \
-        '    && rm -rf /var/lib/apt/lists/* \' \
-        '    && npm install -g @anthropic-ai/claude-code' \
-        'RUN userdel -r ubuntu 2>/dev/null; true \' \
-        '    && groupadd -g 1000 agent \' \
-        '    && useradd -u 1000 -g agent -s /bin/sh -m agent \' \
-        '    && mkdir -p /home/agent/gt \' \
-        '    && chown -R agent:agent /home/agent' \
-        'COPY bin/gt bin/coop bin/bd /usr/local/bin/' \
-        'COPY bin/coop-mux /usr/local/bin/coop-mux' \
-        'RUN ln -sf /usr/local/bin/coop-mux /usr/local/bin/coopmux \' \
-        '    && chmod +x /usr/local/bin/gt /usr/local/bin/coop /usr/local/bin/bd \' \
-        '       /usr/local/bin/coop-mux 2>/dev/null || true' \
-        'COPY entrypoint.sh /entrypoint.sh' \
-        'RUN chmod +x /entrypoint.sh' \
-        'VOLUME /home/agent/gt' \
-        'USER agent' \
-        'WORKDIR /home/agent/gt' \
-        'ENV HOME=/home/agent GT_ROLE=unknown GT_AGENT=unknown' \
-        'ENTRYPOINT ["/entrypoint.sh"]' \
-        > /tmp/image-ctx/Dockerfile
+      # Create agent user
+      sudo userdel -r ubuntu 2>/dev/null; true
+      sudo groupadd -g 1000 agent
+      sudo useradd -u 1000 -g agent -s /bin/sh -m agent
+      sudo mkdir -p /home/agent/gt
+      sudo chown -R agent:agent /home/agent
 
-      SHORT_SHA="${COMMIT_SHA:0:7}"
-      docker build --platform linux/amd64 \
-        -t ghcr.io/groblegark/gastown/gastown-agent:sha-${SHORT_SHA} \
-        -t ghcr.io/groblegark/gastown/gastown-agent:latest \
-        /tmp/image-ctx
+      # Install binaries
+      sudo cp ${{ tasks.build-gt.artifacts.gt-binary }} /usr/local/bin/gt
+      sudo cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /usr/local/bin/coop
+      sudo cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux /usr/local/bin/coop-mux 2>/dev/null || true
+      sudo cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd /usr/local/bin/bd
+      sudo ln -sf /usr/local/bin/coop-mux /usr/local/bin/coopmux
+      sudo chmod +x /usr/local/bin/gt /usr/local/bin/coop /usr/local/bin/bd \
+        /usr/local/bin/coop-mux 2>/dev/null || true
 
-      echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
-      docker push ghcr.io/groblegark/gastown/gastown-agent:sha-${SHORT_SHA}
-      docker push ghcr.io/groblegark/gastown/gastown-agent:latest
-      if [[ "$REF_NAME" == v* ]]; then
-        VERSION="${REF_NAME#v}"
-        docker tag ghcr.io/groblegark/gastown/gastown-agent:sha-${SHORT_SHA} ghcr.io/groblegark/gastown/gastown-agent:${VERSION}
-        docker push ghcr.io/groblegark/gastown/gastown-agent:${VERSION}
-      fi
-    env:
-      COMMIT_SHA: ${{ init.commit-sha }}
-      REF_NAME: ${{ init.ref-name }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+      # Install entrypoint
+      sudo cp deploy/agent/entrypoint.sh /entrypoint.sh
+      sudo chmod +x /entrypoint.sh
 
-  # ── Toolchain image (full target, uses existing Dockerfile) ────────
-  # Toolchain has many download stages — keep Dockerfile approach for now.
-  - key: push-toolchain
+      # Configure image metadata
+      jq -n '["/entrypoint.sh"]' > $RWX_IMAGE/entrypoint.json
+      echo "agent" > $RWX_IMAGE/user
+      echo "/home/agent/gt" > $RWX_IMAGE/workspace
+
+  # ── Toolchain image (Go + Node + Python + AWS CLI + Docker CLI) ────
+  - key: image-toolchain
     use: code
     if: ${{ init.ref-name != 'pr' }}
-    docker: true
     run: |
-      REF_NAME="${REF_NAME#refs/tags/}"
-      REF_NAME="${REF_NAME#refs/heads/}"
+      export DEBIAN_FRONTEND=noninteractive
 
-      docker build --platform linux/amd64 --target full \
-        -t ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7} \
-        -t ghcr.io/groblegark/gastown/gastown-toolchain:full \
-        -f docker/toolchain/Dockerfile \
-        docker/toolchain/
+      # Base tools
+      sudo apt-get -y update
+      sudo apt-get -y install --no-install-recommends \
+        curl git jq make unzip ca-certificates
 
-      echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
-      docker push ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7}
-      docker push ghcr.io/groblegark/gastown/gastown-toolchain:full
-      if [[ "$REF_NAME" == v* ]]; then
-        VERSION="${REF_NAME#v}"
-        docker tag ghcr.io/groblegark/gastown/gastown-toolchain:sha-${COMMIT_SHA:0:7} ghcr.io/groblegark/gastown/gastown-toolchain:${VERSION}
-        docker push ghcr.io/groblegark/gastown/gastown-toolchain:${VERSION}
-      fi
-    env:
-      COMMIT_SHA: ${{ init.commit-sha }}
-      REF_NAME: ${{ init.ref-name }}
-      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+      # Go
+      curl -fsSL "https://go.dev/dl/go1.24.1.linux-amd64.tar.gz" | sudo tar -C /usr/local -xz
+      export PATH="/usr/local/go/bin:$PATH"
+      GOPATH="/tmp/go" go install golang.org/x/tools/gopls@latest
+      sudo mv /tmp/go/bin/gopls /usr/local/go/bin/gopls
+      rm -rf /tmp/go
+
+      # Node.js
+      curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+      sudo apt-get -y install --no-install-recommends nodejs
+
+      # Python
+      sudo apt-get -y install --no-install-recommends \
+        python3 python3-pip python3-venv
+      sudo ln -sf /usr/bin/python3 /usr/bin/python
+
+      # AWS CLI
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      unzip -q /tmp/awscli.zip -d /tmp
+      sudo /tmp/aws/install --install-dir /opt/aws-cli --bin-dir /opt/aws-cli/bin
+      sudo ln -sf /opt/aws-cli/bin/aws /usr/local/bin/aws
+      rm -rf /tmp/awscli.zip /tmp/aws
+
+      # Docker CLI (client only)
+      curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" | \
+        sudo tar -xz --strip-components=1 -C /usr/local/bin docker/docker
+
+      # Rust Analyzer
+      curl -fsSL "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" | \
+        gunzip | sudo tee /usr/local/bin/rust-analyzer > /dev/null
+      sudo chmod +x /usr/local/bin/rust-analyzer
+
+      # Clean up
+      sudo apt-get clean
+      sudo rm -rf /var/lib/apt/lists/*
+
+      # Create agent user
+      sudo groupadd -g 1000 agent 2>/dev/null || true
+      sudo useradd -u 1000 -g 1000 -m -s /bin/bash agent 2>/dev/null || true
+
+      # Install entrypoint
+      sudo cp docker/toolchain/entrypoint.sh /usr/local/bin/toolchain-entrypoint.sh
+      sudo chmod +x /usr/local/bin/toolchain-entrypoint.sh
+
+      # Configure image metadata
+      echo "/usr/local/bin/toolchain-entrypoint.sh" > $RWX_IMAGE/command
+      echo "1000:1000" > $RWX_IMAGE/user
+      echo "/home/agent/gt" > $RWX_IMAGE/workspace

@@ -2,23 +2,20 @@
 
 Base image for K8s agent pod toolchain sidecars.
 
-## Targets
-
-| Target | Tools | Size |
-|--------|-------|------|
-| `full` | Go, Node, Python, AWS CLI, Docker CLI, kaniko | ~1.5 GB |
-| `minimal` | git, jq, make, curl | ~200 MB |
-
 ## Build
 
+Images are built via RWX native tasks (no Dockerfile). See `.rwx/docker.yml` task `image-toolchain`.
+
 ```bash
-docker build --platform linux/amd64 --target full -t gastown-toolchain:full docker/toolchain/
-docker build --platform linux/amd64 --target minimal -t gastown-toolchain:minimal docker/toolchain/
+# Build and push via RWX CLI
+rwx image build -f .rwx/docker.yml --target image-toolchain \
+  --push-to ghcr.io/groblegark/gastown/gastown-toolchain:latest
+
+# Or run locally
+rwx image build -f .rwx/docker.yml --target image-toolchain \
+  --tag gastown-toolchain:full
 ```
 
-## Fork
+## Tools included
 
-Override build ARGs to customize versions:
-```bash
-docker build --build-arg GO_VERSION=1.23.5 --build-arg NODE_MAJOR=20 --target full ...
-```
+Go, Node.js, Python, AWS CLI, Docker CLI (client only), Rust Analyzer, gopls, git, jq, make, curl.
