@@ -22,12 +22,14 @@ on:
       init:
         commit-sha: ${{ event.git.sha }}
         ref-name: ${{ event.git.ref }}
+        coop-version: latest
       status-checks:
         name: Docker
     pull_request:
       init:
         commit-sha: ${{ event.git.sha }}
         ref-name: pr
+        coop-version: latest
       status-checks:
         - tasks: [build-gt, build-controller, download-coop, download-bd]
           name: Docker
@@ -54,6 +56,7 @@ on:
     init:
       commit-sha: ${{ event.git.sha }}
       ref-name: cli
+      coop-version: latest
 
 base:
   image: ubuntu:24.04
@@ -265,7 +268,7 @@ tasks:
       export PATH="/usr/local/go/bin:$PATH"
       GOPATH="/tmp/go" go install golang.org/x/tools/gopls@latest
       sudo mv /tmp/go/bin/gopls /usr/local/go/bin/gopls
-      rm -rf /tmp/go
+      sudo rm -rf /tmp/go
 
       # Node.js
       curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
