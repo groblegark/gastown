@@ -47,7 +47,7 @@ tasks:
       sudo apt-get update
       sudo apt-get install -y curl unzip
     filter:
-      - /etc/os-release
+      - .rwx/e2e-system-deps.lock
 
   - key: code
     use: system-deps
@@ -63,12 +63,12 @@ tasks:
       sudo /tmp/aws/install
       aws --version
     filter:
-      - /usr/local/bin/aws
+      - .rwx/e2e-system-deps.lock
 
   - key: helm-setup
     run: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
     filter:
-      - /usr/local/bin/helm
+      - .rwx/e2e-system-deps.lock
 
   - key: kubectl-setup
     run: |
@@ -78,7 +78,7 @@ tasks:
       sudo install /tmp/kubectl /usr/local/bin/kubectl
       kubectl version --client
     filter:
-      - /usr/local/bin/kubectl
+      - .rwx/e2e-system-deps.lock
 
   - key: kubeconfig
     use: [aws-cli, kubectl-setup]

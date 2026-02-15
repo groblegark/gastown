@@ -32,7 +32,7 @@ tasks:
   - key: helm-setup
     run: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
     filter:
-      - /usr/local/bin/helm
+      - .rwx/helm-version.lock
 
   - key: helm-login
     use: helm-setup

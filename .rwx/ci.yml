@@ -54,11 +54,10 @@ tasks:
     use: git-config
     run: go build -v ./cmd/gt
 
-  # ── Check embedded formulas (parallel with build) ─────────────────────
+  # ── Check embedded formulas (after build, reuses cached binary) ────────
   - key: embedded-formulas
-    use: git-config
+    use: build
     run: |
-      go build -v ./cmd/gt
       go generate ./internal/formula/...
       if ! git diff --exit-code internal/formula/formulas/; then
         echo "ERROR: Committed formulas out of sync"

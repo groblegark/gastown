@@ -147,8 +147,7 @@ tasks:
     env:
       COOP_VERSION: ${{ init.coop-version }}
     filter:
-      - coop-bin/coop
-      - coop-bin/coop-mux
+      - .rwx/cache-config.lock
     outputs:
       artifacts:
         - key: coop-binaries
@@ -167,7 +166,7 @@ tasks:
       tar -xzf /tmp/bd.tar.gz -C bd-bin
       ls -la bd-bin/
     filter:
-      - bd-bin/bd
+      - .rwx/cache-config.lock
     outputs:
       artifacts:
         - key: bd-binaries
@@ -278,7 +277,7 @@ tasks:
           curl git jq make unzip ca-certificates
 
         # Go
-        curl -fsSL "https://go.dev/dl/go1.24.1.linux-amd64.tar.gz" | tar -C /usr/local -xz
+        curl -fsSL "https://go.dev/dl/go1.25.7.linux-amd64.tar.gz" | tar -C /usr/local -xz
         export PATH="/usr/local/go/bin:$PATH"
         GOPATH="/tmp/go" go install golang.org/x/tools/gopls@latest
         mv /tmp/go/bin/gopls /usr/local/go/bin/gopls
