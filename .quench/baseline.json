@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-02-11T21:59:03Z",
+  "passed": false,
+  "checks": [
+    {
+      "name": "tests",
+      "passed": false,
+      "violations": [
+        {
+          "file": "<suite:go>",
+          "type": "test_suite_failed",
+          "advice": "tests failed"
+        }
+      ],
+      "metrics": {
+        "avg_ms": 129,
+        "max_ms": 36490,
+        "max_test": "github.com/steveyegge/gastown/internal/cmd/TestPrimeFlagCombinations",
+        "suites": [
+          {
+            "avg_ms": 129,
+            "error": "tests failed",
+            "max_ms": 36490,
+            "max_test": "github.com/steveyegge/gastown/internal/cmd/TestPrimeFlagCombinations",
+            "name": "go",
+            "p50_ms": 0,
+            "p90_ms": 40,
+            "p99_ms": 4170,
+            "passed": false,
+            "runner": "go",
+            "test_count": 5537,
+            "total_ms": 109344
+          }
+        ],
+        "test_count": 5537,
+        "total_ms": 109344
+      },
+      "duration_ms": 109393
+    }
+  ]
+}

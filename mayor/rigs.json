@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "rigs": {
+    "beads": {
+      "git_url": "https://github.com/steveyegge/beads.git",
+      "added_at": "2026-02-10T20:43:23.393272-08:00",
+      "beads": {
+        "repo": "",
+        "prefix": "bd"
+      }
+    },
+    "gastown": {
+      "git_url": "https://github.com/steveyegge/gastown.git",
+      "added_at": "2026-02-10T20:43:29.587493-08:00",
+      "beads": {
+        "repo": "",
+        "prefix": "gt"
+      }
+    }
+  }
+}

@@ -1,0 +1,839 @@
+{
+  "updated": "2026-02-11T22:02:02.458052Z",
+  "commit": "bda49a33",
+  "output": {
+    "timestamp": "2026-02-11T22:02:02Z",
+    "passed": false,
+    "checks": [
+      {
+        "name": "cloc",
+        "passed": true,
+        "violations": [],
+        "metrics": {
+          "ratio": 0.54,
+          "source_files": 560,
+          "source_lines": 182913,
+          "source_tokens": 1608856,
+          "test_files": 275,
+          "test_lines": 98068,
+          "test_tokens": 765971
+        },
+        "by_package": {
+          "opencode": {
+            "ratio": 1.57,
+            "source_files": 2,
+            "source_lines": 84,
+            "source_tokens": 690,
+            "test_files": 1,
+            "test_lines": 132,
+            "test_tokens": 1029
+          },
+          "version": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 143,
+            "source_tokens": 1187,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "mail": {
+            "ratio": 0.88,
+            "source_files": 5,
+            "source_lines": 2831,
+            "source_tokens": 24210,
+            "test_files": 5,
+            "test_lines": 2501,
+            "test_tokens": 17648
+          },
+          "doltserver": {
+            "ratio": 0.19,
+            "source_files": 1,
+            "source_lines": 503,
+            "source_tokens": 4265,
+            "test_files": 1,
+            "test_lines": 96,
+            "test_tokens": 795
+          },
+          "v1": {
+            "ratio": 0.0,
+            "source_files": 19,
+            "source_lines": 13329,
+            "source_tokens": 131773,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "deacon": {
+            "ratio": 0.85,
+            "source_files": 5,
+            "source_lines": 719,
+            "source_tokens": 6309,
+            "test_files": 2,
+            "test_lines": 612,
+            "test_tokens": 3968
+          },
+          "tmux": {
+            "ratio": 0.78,
+            "source_files": 4,
+            "source_lines": 1778,
+            "source_tokens": 17390,
+            "test_files": 2,
+            "test_lines": 1384,
+            "test_tokens": 11908
+          },
+          "terminal": {
+            "ratio": 1.98,
+            "source_files": 10,
+            "source_lines": 2203,
+            "source_tokens": 18110,
+            "test_files": 9,
+            "test_lines": 4353,
+            "test_tokens": 32633
+          },
+          "ratelimit": {
+            "ratio": 0.75,
+            "source_files": 1,
+            "source_lines": 217,
+            "source_tokens": 1541,
+            "test_files": 1,
+            "test_lines": 163,
+            "test_tokens": 1280
+          },
+          "shell": {
+            "ratio": 0.45,
+            "source_files": 1,
+            "source_lines": 247,
+            "source_tokens": 1891,
+            "test_files": 1,
+            "test_lines": 111,
+            "test_tokens": 764
+          },
+          "doctor": {
+            "ratio": 0.6,
+            "source_files": 48,
+            "source_lines": 11538,
+            "source_tokens": 94626,
+            "test_files": 20,
+            "test_lines": 6874,
+            "test_tokens": 57975
+          },
+          "hooks": {
+            "ratio": 0.94,
+            "source_files": 1,
+            "source_lines": 249,
+            "source_tokens": 1729,
+            "test_files": 1,
+            "test_lines": 235,
+            "test_tokens": 1866
+          },
+          "checkpoint": {
+            "ratio": 1.98,
+            "source_files": 1,
+            "source_lines": 177,
+            "source_tokens": 1463,
+            "test_files": 1,
+            "test_lines": 351,
+            "test_tokens": 2375
+          },
+          "refinery": {
+            "ratio": 0.78,
+            "source_files": 4,
+            "source_lines": 2158,
+            "source_tokens": 20753,
+            "test_files": 4,
+            "test_lines": 1688,
+            "test_tokens": 12333
+          },
+          "controller": {
+            "ratio": 2.66,
+            "source_files": 2,
+            "source_lines": 734,
+            "source_tokens": 6537,
+            "test_files": 3,
+            "test_lines": 1951,
+            "test_tokens": 17477
+          },
+          "inject": {
+            "ratio": 0.35,
+            "source_files": 3,
+            "source_lines": 354,
+            "source_tokens": 2632,
+            "test_files": 1,
+            "test_lines": 123,
+            "test_tokens": 827
+          },
+          "statusline": {
+            "ratio": 0.24,
+            "source_files": 3,
+            "source_lines": 602,
+            "source_tokens": 5056,
+            "test_files": 1,
+            "test_lines": 142,
+            "test_tokens": 896
+          },
+          "wisp": {
+            "ratio": 1.22,
+            "source_files": 3,
+            "source_lines": 311,
+            "source_tokens": 2158,
+            "test_files": 3,
+            "test_lines": 378,
+            "test_tokens": 2742
+          },
+          "crew": {
+            "ratio": 0.0,
+            "source_files": 2,
+            "source_lines": 828,
+            "source_tokens": 6112,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "swarm": {
+            "ratio": 0.43,
+            "source_files": 4,
+            "source_lines": 803,
+            "source_tokens": 6432,
+            "test_files": 3,
+            "test_lines": 342,
+            "test_tokens": 2257
+          },
+          "rpcclient": {
+            "ratio": 0.43,
+            "source_files": 1,
+            "source_lines": 3055,
+            "source_tokens": 22338,
+            "test_files": 1,
+            "test_lines": 1317,
+            "test_tokens": 10945
+          },
+          "advice": {
+            "ratio": 2.25,
+            "source_files": 4,
+            "source_lines": 429,
+            "source_tokens": 3330,
+            "test_files": 1,
+            "test_lines": 967,
+            "test_tokens": 7747
+          },
+          "slackbot": {
+            "ratio": 1.04,
+            "source_files": 7,
+            "source_lines": 4740,
+            "source_tokens": 41703,
+            "test_files": 11,
+            "test_lines": 4917,
+            "test_tokens": 38176
+          },
+          "witness": {
+            "ratio": 0.62,
+            "source_files": 4,
+            "source_lines": 1688,
+            "source_tokens": 16547,
+            "test_files": 6,
+            "test_lines": 1050,
+            "test_tokens": 8685
+          },
+          "rpcserver": {
+            "ratio": 0.0,
+            "source_files": 5,
+            "source_lines": 4396,
+            "source_tokens": 35164,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "config": {
+            "ratio": 0.25,
+            "source_files": 1,
+            "source_lines": 159,
+            "source_tokens": 1966,
+            "test_files": 1,
+            "test_lines": 40,
+            "test_tokens": 281
+          },
+          "util": {
+            "ratio": 0.7,
+            "source_files": 7,
+            "source_lines": 1214,
+            "source_tokens": 10040,
+            "test_files": 5,
+            "test_lines": 846,
+            "test_tokens": 5912
+          },
+          "boot": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 255,
+            "source_tokens": 2277,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "reconciler": {
+            "ratio": 3.8,
+            "source_files": 1,
+            "source_lines": 110,
+            "source_tokens": 937,
+            "test_files": 1,
+            "test_lines": 418,
+            "test_tokens": 3794
+          },
+          "session": {
+            "ratio": 1.63,
+            "source_files": 5,
+            "source_lines": 439,
+            "source_tokens": 4127,
+            "test_files": 5,
+            "test_lines": 715,
+            "test_tokens": 4440
+          },
+          "rig": {
+            "ratio": 0.96,
+            "source_files": 5,
+            "source_lines": 1883,
+            "source_tokens": 18025,
+            "test_files": 4,
+            "test_lines": 1814,
+            "test_tokens": 14633
+          },
+          "events": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 330,
+            "source_tokens": 2635,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "portutil": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 12,
+            "source_tokens": 81,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "eventbus": {
+            "ratio": 1.08,
+            "source_files": 2,
+            "source_lines": 310,
+            "source_tokens": 2388,
+            "test_files": 2,
+            "test_lines": 335,
+            "test_tokens": 2249
+          },
+          "sling": {
+            "ratio": 0.03,
+            "source_files": 10,
+            "source_lines": 1968,
+            "source_tokens": 16383,
+            "test_files": 1,
+            "test_lines": 51,
+            "test_tokens": 515
+          },
+          "suggest": {
+            "ratio": 0.49,
+            "source_files": 1,
+            "source_lines": 225,
+            "source_tokens": 1510,
+            "test_files": 1,
+            "test_lines": 110,
+            "test_tokens": 698
+          },
+          "templates": {
+            "ratio": 1.06,
+            "source_files": 1,
+            "source_lines": 250,
+            "source_tokens": 2100,
+            "test_files": 1,
+            "test_lines": 264,
+            "test_tokens": 1904
+          },
+          "daemon": {
+            "ratio": 0.3,
+            "source_files": 12,
+            "source_lines": 3259,
+            "source_tokens": 29684,
+            "test_files": 6,
+            "test_lines": 971,
+            "test_tokens": 7263
+          },
+          "v1alpha1": {
+            "ratio": 0.0,
+            "source_files": 2,
+            "source_lines": 334,
+            "source_tokens": 3700,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "mq": {
+            "ratio": 2.52,
+            "source_files": 1,
+            "source_lines": 48,
+            "source_tokens": 525,
+            "test_files": 1,
+            "test_lines": 121,
+            "test_tokens": 933
+          },
+          "git": {
+            "ratio": 0.39,
+            "source_files": 3,
+            "source_lines": 1268,
+            "source_tokens": 11612,
+            "test_files": 1,
+            "test_lines": 491,
+            "test_tokens": 3721
+          },
+          "ui": {
+            "ratio": 0.66,
+            "source_files": 4,
+            "source_lines": 766,
+            "source_tokens": 5899,
+            "test_files": 2,
+            "test_lines": 505,
+            "test_tokens": 3439
+          },
+          "slack": {
+            "ratio": 0.95,
+            "source_files": 2,
+            "source_lines": 981,
+            "source_tokens": 7913,
+            "test_files": 3,
+            "test_lines": 928,
+            "test_tokens": 7145
+          },
+          "statusreporter": {
+            "ratio": 1.0,
+            "source_files": 1,
+            "source_lines": 382,
+            "source_tokens": 3475,
+            "test_files": 1,
+            "test_lines": 381,
+            "test_tokens": 2882
+          },
+          "dog": {
+            "ratio": 2.02,
+            "source_files": 3,
+            "source_lines": 750,
+            "source_tokens": 5977,
+            "test_files": 4,
+            "test_lines": 1516,
+            "test_tokens": 11953
+          },
+          "daemonclient": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 279,
+            "source_tokens": 2186,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "keepalive": {
+            "ratio": 0.9,
+            "source_files": 1,
+            "source_lines": 120,
+            "source_tokens": 1130,
+            "test_files": 1,
+            "test_lines": 108,
+            "test_tokens": 911
+          },
+          "decision": {
+            "ratio": 0.66,
+            "source_files": 4,
+            "source_lines": 1486,
+            "source_tokens": 11770,
+            "test_files": 2,
+            "test_lines": 985,
+            "test_tokens": 7582
+          },
+          "formula": {
+            "ratio": 0.99,
+            "source_files": 11,
+            "source_lines": 1303,
+            "source_tokens": 10219,
+            "test_files": 6,
+            "test_lines": 1295,
+            "test_tokens": 9202
+          },
+          "podmanager": {
+            "ratio": 1.55,
+            "source_files": 2,
+            "source_lines": 985,
+            "source_tokens": 8337,
+            "test_files": 2,
+            "test_lines": 1523,
+            "test_tokens": 13174
+          },
+          "workspace": {
+            "ratio": 1.16,
+            "source_files": 1,
+            "source_lines": 206,
+            "source_tokens": 1878,
+            "test_files": 1,
+            "test_lines": 239,
+            "test_tokens": 1816
+          },
+          "activity": {
+            "ratio": 1.35,
+            "source_files": 1,
+            "source_lines": 117,
+            "source_tokens": 900,
+            "test_files": 1,
+            "test_lines": 158,
+            "test_tokens": 1117
+          },
+          "bdcmd": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 168,
+            "source_tokens": 1431,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "claude": {
+            "ratio": 1.82,
+            "source_files": 2,
+            "source_lines": 481,
+            "source_tokens": 4285,
+            "test_files": 2,
+            "test_lines": 876,
+            "test_tokens": 6929
+          },
+          "constants": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 216,
+            "source_tokens": 2263,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "wrappers": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 87,
+            "source_tokens": 645,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "cmd": {
+            "ratio": 0.37,
+            "source_files": 184,
+            "source_lines": 64963,
+            "source_tokens": 569239,
+            "test_files": 77,
+            "test_lines": 24016,
+            "test_tokens": 191256
+          },
+          "gtmobile": {
+            "ratio": 1.99,
+            "source_files": 2,
+            "source_lines": 2508,
+            "source_tokens": 19673,
+            "test_files": 10,
+            "test_lines": 5001,
+            "test_tokens": 40172
+          },
+          "beads": {
+            "ratio": 0.98,
+            "source_files": 26,
+            "source_lines": 7859,
+            "source_tokens": 70344,
+            "test_files": 14,
+            "test_lines": 7693,
+            "test_tokens": 57993
+          },
+          "web": {
+            "ratio": 0.42,
+            "source_files": 7,
+            "source_lines": 5090,
+            "source_tokens": 45303,
+            "test_files": 5,
+            "test_lines": 2163,
+            "test_tokens": 15460
+          },
+          "convoy": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 103,
+            "source_tokens": 987,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "configbeads": {
+            "ratio": 4.37,
+            "source_files": 6,
+            "source_lines": 437,
+            "source_tokens": 3970,
+            "test_files": 6,
+            "test_lines": 1910,
+            "test_tokens": 15923
+          },
+          "lock": {
+            "ratio": 1.54,
+            "source_files": 3,
+            "source_lines": 372,
+            "source_tokens": 2772,
+            "test_files": 1,
+            "test_lines": 573,
+            "test_tokens": 4149
+          },
+          "beadswatcher": {
+            "ratio": 0.66,
+            "source_files": 2,
+            "source_lines": 586,
+            "source_tokens": 4531,
+            "test_files": 1,
+            "test_lines": 388,
+            "test_tokens": 3232
+          },
+          "notify": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 113,
+            "source_tokens": 1230,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "polecat": {
+            "ratio": 0.52,
+            "source_files": 5,
+            "source_lines": 2663,
+            "source_tokens": 26002,
+            "test_files": 3,
+            "test_lines": 1383,
+            "test_tokens": 11007
+          },
+          "protocol": {
+            "ratio": 0.43,
+            "source_files": 5,
+            "source_lines": 770,
+            "source_tokens": 7426,
+            "test_files": 1,
+            "test_lines": 330,
+            "test_tokens": 2533
+          },
+          "registry": {
+            "ratio": 1.63,
+            "source_files": 1,
+            "source_lines": 383,
+            "source_tokens": 3228,
+            "test_files": 1,
+            "test_lines": 626,
+            "test_tokens": 4544
+          },
+          "agent": {
+            "ratio": 2.63,
+            "source_files": 1,
+            "source_lines": 62,
+            "source_tokens": 506,
+            "test_files": 1,
+            "test_lines": 163,
+            "test_tokens": 1215
+          },
+          "townlog": {
+            "ratio": 0.65,
+            "source_files": 1,
+            "source_lines": 338,
+            "source_tokens": 2386,
+            "test_files": 1,
+            "test_lines": 221,
+            "test_tokens": 1375
+          },
+          "state": {
+            "ratio": 0.64,
+            "source_files": 1,
+            "source_lines": 170,
+            "source_tokens": 1144,
+            "test_files": 1,
+            "test_lines": 108,
+            "test_tokens": 852
+          },
+          "feed": {
+            "ratio": 0.51,
+            "source_files": 1,
+            "source_lines": 331,
+            "source_tokens": 2713,
+            "test_files": 1,
+            "test_lines": 168,
+            "test_tokens": 1237
+          },
+          "plugin": {
+            "ratio": 0.55,
+            "source_files": 3,
+            "source_lines": 513,
+            "source_tokens": 4217,
+            "test_files": 2,
+            "test_lines": 281,
+            "test_tokens": 2121
+          },
+          "krc": {
+            "ratio": 0.54,
+            "source_files": 1,
+            "source_lines": 426,
+            "source_tokens": 3335,
+            "test_files": 1,
+            "test_lines": 228,
+            "test_tokens": 1648
+          },
+          "style": {
+            "ratio": 0.49,
+            "source_files": 2,
+            "source_lines": 290,
+            "source_tokens": 2090,
+            "test_files": 1,
+            "test_lines": 142,
+            "test_tokens": 897
+          },
+          "mayor": {
+            "ratio": 0.0,
+            "source_files": 1,
+            "source_lines": 223,
+            "source_tokens": 2218,
+            "test_files": 0,
+            "test_lines": 0,
+            "test_tokens": 0
+          },
+          "validator": {
+            "ratio": 1.33,
+            "source_files": 4,
+            "source_lines": 543,
+            "source_tokens": 4444,
+            "test_files": 3,
+            "test_lines": 720,
+            "test_tokens": 5218
+          },
+          "runtime": {
+            "ratio": 2.21,
+            "source_files": 1,
+            "source_lines": 219,
+            "source_tokens": 2140,
+            "test_files": 1,
+            "test_lines": 484,
+            "test_tokens": 3716
+          },
+          "connection": {
+            "ratio": 0.69,
+            "source_files": 5,
+            "source_lines": 886,
+            "source_tokens": 7202,
+            "test_files": 2,
+            "test_lines": 612,
+            "test_tokens": 3669
+          },
+          "deps": {
+            "ratio": 0.43,
+            "source_files": 1,
+            "source_lines": 122,
+            "source_tokens": 961,
+            "test_files": 1,
+            "test_lines": 52,
+            "test_tokens": 365
+          }
+        },
+        "duration_ms": 69
+      },
+      {
+        "name": "escapes",
+        "passed": true,
+        "violations": [],
+        "metrics": {
+          "source": {
+            "go_linkname": 0,
+            "go_noescape": 0,
+            "unsafe_pointer": 0
+          },
+          "test": {
+            "go_linkname": 0,
+            "go_noescape": 0,
+            "unsafe_pointer": 0
+          }
+        },
+        "duration_ms": 69
+      },
+      {
+        "name": "agents",
+        "passed": true,
+        "violations": [],
+        "duration_ms": 0
+      },
+      {
+        "name": "docs",
+        "passed": true,
+        "violations": [],
+        "duration_ms": 0
+      },
+      {
+        "name": "tests",
+        "passed": false,
+        "violations": [
+          {
+            "file": "internal/cmd/mayor.go",
+            "type": "missing_tests",
+            "advice": "Add tests in mayor_test.go",
+            "change_type": "modified",
+            "lines_changed": 16
+          },
+          {
+            "file": "internal/cmd/peek.go",
+            "type": "missing_tests",
+            "advice": "Add tests in peek_test.go",
+            "change_type": "modified",
+            "lines_changed": 56
+          }
+        ],
+        "metrics": {
+          "placeholders": {
+            "javascript": {
+              "fixme": 0,
+              "skip": 0,
+              "todo": 0
+            },
+            "rust": {
+              "ignore": 0,
+              "todo": 0
+            }
+          },
+          "scope": "branch",
+          "source_files_changed": 2,
+          "with_test_changes": 0,
+          "without_test_changes": 2
+        },
+        "duration_ms": 52
+      },
+      {
+        "name": "git",
+        "passed": true,
+        "violations": [],
+        "metrics": {
+          "commits_checked": 2,
+          "commits_skipped": 0,
+          "commits_valid": 2
+        },
+        "duration_ms": 1
+      },
+      {
+        "name": "build",
+        "passed": true,
+        "stub": true,
+        "violations": [],
+        "duration_ms": 0
+      },
+      {
+        "name": "license",
+        "passed": true,
+        "violations": [],
+        "duration_ms": 0
+      }
+    ]
+  }
+}
