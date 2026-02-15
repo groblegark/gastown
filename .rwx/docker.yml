@@ -223,10 +223,9 @@ tasks:
         git curl ca-certificates jq
       sudo rm -rf /var/lib/apt/lists/*
 
-      # Install Node.js (binary distribution, not apt — avoids npm breaking sudo)
-      curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
-      sudo apt-get -y install --no-install-recommends nodejs
-      sudo rm -rf /var/lib/apt/lists/*
+      # Install Node.js from binary tarball (apt nodejs packages break sudo)
+      curl -fsSL "https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz" \
+        | sudo tar -xJ --strip-components=1 -C /usr/local
 
       # Install Claude CLI (npm install can break sudo, so do binaries first)
 
