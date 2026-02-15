@@ -542,10 +542,7 @@ func runRefineryAttach(cmd *cobra.Command, args []string) error {
 	if refineryBrowser {
 		if _, ok := backend.(*terminal.CoopBackend); ok {
 			podName := fmt.Sprintf("gt-%s-refinery-hq", rigName)
-			ns := os.Getenv("GT_K8S_NAMESPACE")
-			if ns == "" {
-				ns = "gastown"
-			}
+			ns := getConnectedNamespace()
 			return attachToCoopPodWithBrowser(podName, ns, true)
 		}
 	}

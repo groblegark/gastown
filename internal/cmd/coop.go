@@ -109,7 +109,7 @@ func runCoop(cmd *cobra.Command, args []string) error {
 //   - Role paths: "gastown/polecats/nux", "gastown/witness", "mayor"
 //   - Short forms: "mayor", "deacon"
 func resolveCoopTarget(target string) (string, string) {
-	ns := os.Getenv("GT_K8S_NAMESPACE")
+	ns := getConnectedNamespace()
 	if ns == "" {
 		return "", ""
 	}

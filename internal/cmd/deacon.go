@@ -577,10 +577,7 @@ func runDeaconAttach(cmd *cobra.Command, args []string) error {
 	if deaconBrowser {
 		if _, ok := backend.(*terminal.CoopBackend); ok {
 			podName := "gt-town-deacon-hq"
-			ns := os.Getenv("GT_K8S_NAMESPACE")
-			if ns == "" {
-				ns = "gastown"
-			}
+			ns := getConnectedNamespace()
 			return attachToCoopPodWithBrowser(podName, ns, true)
 		}
 	}

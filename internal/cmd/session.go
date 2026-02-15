@@ -327,10 +327,9 @@ func runSessionAttach(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// When GT_K8S_NAMESPACE is set and --browser, try K8s attach.
-	if sessionBrowser && os.Getenv("GT_K8S_NAMESPACE") != "" {
+	// When connected to a K8s namespace and --browser, try K8s attach.
+	if ns := getConnectedNamespace(); sessionBrowser && ns != "" {
 		podName := fmt.Sprintf("gt-%s-polecat-%s", rigName, polecatName)
-		ns := os.Getenv("GT_K8S_NAMESPACE")
 		fmt.Printf("%s Attaching to K8s polecat pod via coop...\n",
 			style.Bold.Render("☸"))
 		return attachToCoopPodWithBrowser(podName, ns, true)

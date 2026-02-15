@@ -43,9 +43,9 @@ func init() {
 }
 
 func runMux(cmd *cobra.Command, args []string) error {
-	ns := os.Getenv("GT_K8S_NAMESPACE")
+	ns := getConnectedNamespace()
 	if ns == "" {
-		return fmt.Errorf("GT_K8S_NAMESPACE not set — required for K8s pod discovery")
+		return fmt.Errorf("not connected to a K8s namespace — run 'gt connect <namespace>' first")
 	}
 
 	// Find the coop-broker pod.

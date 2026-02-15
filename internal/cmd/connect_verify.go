@@ -130,9 +130,10 @@ func readDaemonConfig(townRoot string) (daemonHost, daemonToken, configPath stri
 
 // GlobalDaemonConfig holds the parsed global daemon configuration.
 type GlobalDaemonConfig struct {
-	DaemonHost string
+	DaemonHost  string
 	DaemonToken string
 	TownName    string
+	Namespace   string // K8s namespace the daemon runs in
 	ConfigPath  string
 }
 
@@ -181,10 +182,24 @@ func readGlobalDaemonConfigFull() (*GlobalDaemonConfig, error) {
 			if v, ok := item.Value.(string); ok {
 				cfg.TownName = v
 			}
+		case "namespace":
+			if v, ok := item.Value.(string); ok {
+				cfg.Namespace = v
+			}
 		}
 	}
 
 	return cfg, nil
+}
+
+// getConnectedNamespace returns the K8s namespace from the daemon config.
+// Falls back to GT_K8S_NAMESPACE env var, then returns "" if neither is set.
+func getConnectedNamespace() string {
+	cfg, err := readGlobalDaemonConfigFull()
+	if err == nil && cfg.Namespace != "" {
+		return cfg.Namespace
+	}
+	return os.Getenv("GT_K8S_NAMESPACE")
 }
 
 // maskToken returns a display-safe representation of a token.
@@ -225,9 +240,15 @@ func runConnectStatus(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Read full config to get namespace.
+	namespace := getConnectedNamespace()
+
 	fmt.Println("Remote Daemon Connection")
 	fmt.Printf("  URL:     %s\n", daemonHost)
 	fmt.Printf("  Token:   %s\n", maskToken(daemonToken))
+	if namespace != "" {
+		fmt.Printf("  K8s NS:  %s\n", namespace)
+	}
 	fmt.Printf("  Config:  %s\n", configPath)
 	fmt.Println()
 

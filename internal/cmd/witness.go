@@ -310,16 +310,16 @@ func runWitnessAttach(cmd *cobra.Command, args []string) error {
 	}
 
 	// When GT_K8S_NAMESPACE is set, try K8s attach via bead metadata first.
-	if os.Getenv("GT_K8S_NAMESPACE") != "" {
+	if ns := getConnectedNamespace(); ns != "" {
 		target := fmt.Sprintf("%s/witness", rigName)
 		if info, err := terminal.ResolveAgentPodInfo(target); err == nil && info.PodName != "" {
-			ns := info.Namespace
-			if ns == "" {
-				ns = os.Getenv("GT_K8S_NAMESPACE")
+			namespace := info.Namespace
+			if namespace == "" {
+				namespace = ns
 			}
 			fmt.Printf("%s Attaching to K8s Witness pod via coop...\n",
 				style.Bold.Render("☸"))
-			return attachToCoopPodWithBrowser(info.PodName, ns, witnessBrowser)
+			return attachToCoopPodWithBrowser(info.PodName, namespace, witnessBrowser)
 		}
 	}
 

@@ -304,7 +304,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		if err := os.MkdirAll(beadsDir, 0755); err != nil {
 			return fmt.Errorf("creating .beads directory: %w", err)
 		}
-		if err := writeBeadsConfig(installDaemonHost, installDaemonToken); err != nil {
+		if err := writeBeadsConfig(installDaemonHost, installDaemonToken, ""); err != nil {
 			return fmt.Errorf("writing daemon config: %w", err)
 		}
 		fmt.Printf("   ✓ Connected to remote daemon at %s\n", installDaemonHost)

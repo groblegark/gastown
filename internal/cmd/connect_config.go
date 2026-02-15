@@ -16,7 +16,7 @@ import (
 // Writes to both workspace-level (.beads/config.yaml) and global
 // (~/.config/gastown/daemon.yaml) locations. The global config allows
 // gt connect to work without being in a workspace directory.
-func writeBeadsConfig(daemonURL, token string) error {
+func writeBeadsConfig(daemonURL, token, namespace string) error {
 	// Determine town name if we're in a workspace.
 	var townName string
 	townRoot, _ := workspace.FindFromCwd()
@@ -25,7 +25,7 @@ func writeBeadsConfig(daemonURL, token string) error {
 	}
 
 	// Always write to global config so commands work outside workspace.
-	if err := writeGlobalDaemonConfig(daemonURL, token, townName); err != nil {
+	if err := writeGlobalDaemonConfig(daemonURL, token, townName, namespace); err != nil {
 		return fmt.Errorf("writing global daemon config: %w", err)
 	}
 	fmt.Printf("Wrote daemon config to %s\n", state.DaemonConfigPath())
@@ -48,9 +48,9 @@ func writeBeadsConfig(daemonURL, token string) error {
 	return nil
 }
 
-// writeGlobalDaemonConfig writes daemon-host, daemon-token, and town-name
+// writeGlobalDaemonConfig writes daemon-host, daemon-token, town-name, and namespace
 // to the global daemon config file.
-func writeGlobalDaemonConfig(daemonURL, token, townName string) error {
+func writeGlobalDaemonConfig(daemonURL, token, townName, namespace string) error {
 	configPath := state.DaemonConfigPath()
 	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
@@ -69,6 +69,9 @@ func writeGlobalDaemonConfig(daemonURL, token, townName string) error {
 	config = setMapSliceKey(config, "daemon-token", token)
 	if townName != "" {
 		config = setMapSliceKey(config, "town-name", townName)
+	}
+	if namespace != "" {
+		config = setMapSliceKey(config, "namespace", namespace)
 	}
 
 	out, err := yaml.Marshal(config)
@@ -152,6 +155,7 @@ func removeDaemonKeysFromPath(configPath string) (bool, error) {
 
 	config = removeMapSliceKey(config, "daemon-host")
 	config = removeMapSliceKey(config, "daemon-token")
+	config = removeMapSliceKey(config, "namespace")
 
 	if len(config) == 0 {
 		if err := os.Remove(configPath); err != nil && !os.IsNotExist(err) {

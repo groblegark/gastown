@@ -85,8 +85,14 @@ func runConnect(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Determine namespace (from args or empty for direct URL connection).
+	namespace := ""
+	if len(args) > 0 {
+		namespace = args[0]
+	}
+
 	// Persist connection config
-	if err := writeBeadsConfig(daemonURL, token); err != nil {
+	if err := writeBeadsConfig(daemonURL, token, namespace); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
 
