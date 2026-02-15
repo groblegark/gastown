@@ -264,7 +264,7 @@ func bootstrapRigBeads(bd *beads.Beads, townRoot string, stats *bootstrapStats) 
 			fmt.Sprintf("git_url:%s", gitURL),
 			"state:active",
 		}
-		title := fmt.Sprintf("Rig: %s", name)
+		title := name
 		desc := beads.FormatRigDescription(name, &beads.RigFields{
 			Repo:   gitURL,
 			Prefix: prefix,
@@ -657,8 +657,8 @@ func bootstrapBead(bd *beads.Beads, id, title, description string, labels []stri
 				fmt.Printf("  %s Would update %s\n", style.Warning.Render("~"), id)
 				return 0, 0, 1, nil
 			}
-			// Update description
-			if err := bd.Update(id, beads.UpdateOptions{Description: &description}); err != nil {
+			// Update title and description
+			if err := bd.Update(id, beads.UpdateOptions{Title: &title, Description: &description}); err != nil {
 				return 0, 0, 0, fmt.Errorf("updating %s: %w", id, err)
 			}
 			fmt.Printf("  %s Updated %s\n", style.Success.Render("✓"), id)

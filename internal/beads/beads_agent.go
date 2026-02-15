@@ -360,6 +360,17 @@ func (b *Beads) CreateOrReopenAgentBead(id, title string, fields *AgentFields) (
 		return nil, fmt.Errorf("updating reopened agent bead: %w", err)
 	}
 
+	// Reset the agent_state column to match the requested state.
+	// The description text is not authoritative for the K8s controller —
+	// it reads agent_state from the database column. Without this update,
+	// the column retains the old value (e.g., "exited") from the previous
+	// lifecycle, and the controller skips spawning. (Fix: gt-n95)
+	if fields != nil && fields.AgentState != "" {
+		if _, stateErr := b.run("agent", "state", id, fields.AgentState); stateErr != nil {
+			fmt.Printf("Warning: could not update agent_state column: %v\n", stateErr)
+		}
+	}
+
 	// Ensure structured labels exist on reopened beads (may be missing from older agent beads).
 	// The controller uses these to set GT_ROLE correctly. See bd-puds.8.
 	if fields != nil {
@@ -378,6 +389,17 @@ func (b *Beads) CreateOrReopenAgentBead(id, title string, fields *AgentFields) (
 					_ = b.AddLabel(id, "agent:"+agentName)
 				}
 			}
+		}
+		// Reset agent_state label to match the new state. When reusing a polecat
+		// name, the old label (e.g., agent_state:completed) persists and the K8s
+		// controller skips spawning. Remove stale labels before adding the new one.
+		if fields.AgentState != "" {
+			for _, old := range []string{"spawning", "running", "exited", "completed", "failed"} {
+				if old != fields.AgentState {
+					_, _ = b.run("label", "remove", id, "agent_state:"+old)
+				}
+			}
+			_ = b.AddLabel(id, "agent_state:"+fields.AgentState)
 		}
 	}
 

@@ -273,8 +273,10 @@ func (b *Beads) CreateBdDecision(fields *DecisionFields) (*Issue, error) {
 		return nil, fmt.Errorf("marshaling options: %w", err)
 	}
 
-	// Build bd decision create command
-	args := []string{"decision", "create", "--json",
+	// Build bd decision create command.
+	// --wait=false prevents bd from blocking for a response (up to 1h default).
+	// The caller handles awaiting/notification separately via mail routing. (Fix: gt-elt)
+	args := []string{"decision", "create", "--json", "--wait=false",
 		"--prompt=" + fields.Question,
 		"--options=" + string(optionsJSON),
 	}
