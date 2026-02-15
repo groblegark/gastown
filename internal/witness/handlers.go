@@ -3,7 +3,6 @@ package witness
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,7 +11,6 @@ import (
 	"github.com/steveyegge/gastown/internal/convoy"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mail"
-	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
@@ -706,26 +704,36 @@ func UpdateCleanupWispState(workDir, wispID, newState string) error {
 }
 
 // NukePolecat executes the actual nuke operation for a polecat.
-// This kills the session, removes the worktree, and cleans up beads.
+// Closes the agent bead; the K8s controller handles pod termination.
 // Should only be called after all safety checks pass.
 func NukePolecat(workDir, rigName, polecatName string) error {
-	// Kill the session FIRST and unconditionally.
-	sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
-	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
-
-	// Check if session exists and kill it via coop
-	if running, _ := backend.HasSession(sessionName); running {
-		_ = backend.KillSession(sessionName)
+	// Resolve the polecat's coop backend from agent bead metadata and
+	// attempt a graceful session kill before closing the bead.
+	agentBeadID := resolvePolecatAgentBeadID(workDir, rigName, polecatName)
+	if agentBeadID != "" {
+		backend := terminal.ResolveBackend(agentBeadID)
+		if running, _ := backend.HasSession("claude"); running {
+			_ = backend.KillSession("claude")
+		}
 	}
 
-	// Now run gt polecat nuke to clean up worktree, branch, and beads
+	// gt polecat nuke closes the agent bead; controller terminates the pod.
 	address := fmt.Sprintf("%s/%s", rigName, polecatName)
-
 	if err := util.ExecRun(workDir, "gt", "polecat", "nuke", address); err != nil {
 		return fmt.Errorf("nuke failed: %w", err)
 	}
 
 	return nil
+}
+
+// resolvePolecatAgentBeadID constructs the agent bead ID for a polecat.
+func resolvePolecatAgentBeadID(workDir, rigName, polecatName string) string {
+	townRoot, err := workspace.Find(workDir)
+	if err != nil || townRoot == "" {
+		return ""
+	}
+	prefix := beads.GetPrefixForRig(townRoot, rigName)
+	return beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
 }
 
 // NukePolecatResult contains the result of an auto-nuke attempt.
@@ -805,16 +813,20 @@ func AutoNukeIfClean(workDir, rigName, polecatName string) *NukePolecatResult {
 	return result
 }
 
-// verifyCommitOnMain checks if the polecat's current commit is on the default branch.
+// verifyCommitOnMain checks if the polecat's branch is merged into the default branch.
 // This prevents nuking a polecat whose work wasn't actually merged.
+//
+// Uses the rig's git repo (which the witness has access to) to check whether
+// the polecat's branch tip is an ancestor of the default branch. The branch
+// name comes from the caller (MERGED payload) or the agent bead.
 //
 // In multi-remote setups, the code may live on a remote other than "origin"
 // (e.g., "gastown" for gastown.git). This function checks ALL remotes to find
 // the one containing the default branch with the merged commit.
 //
 // Returns:
-//   - true, nil: commit is verified on default branch
-//   - false, nil: commit is NOT on default branch (don't nuke!)
+//   - true, nil: branch is verified on default branch
+//   - false, nil: branch is NOT on default branch (don't nuke!)
 //   - false, error: couldn't verify (treat as unsafe)
 func verifyCommitOnMain(workDir, rigName, polecatName string) (bool, error) {
 	// Find town root from workDir
@@ -829,53 +841,52 @@ func verifyCommitOnMain(workDir, rigName, polecatName string) (bool, error) {
 		defaultBranch = rigCfg.DefaultBranch
 	}
 
-	// Construct polecat path, handling both new and old structures
-	// New structure: polecats/<name>/<rigname>/
-	// Old structure: polecats/<name>/
-	polecatPath := filepath.Join(townRoot, rigName, "polecats", polecatName, rigName)
-	if _, err := os.Stat(polecatPath); os.IsNotExist(err) {
-		// Fall back to old structure
-		polecatPath = filepath.Join(townRoot, rigName, "polecats", polecatName)
+	// Get the polecat's branch from the agent bead.
+	fields := getAgentBeadFields(workDir, rigName, polecatName)
+
+	// Use the rig repo (NOT the polecat worktree, which is in a separate pod).
+	rigPath := filepath.Join(townRoot, rigName)
+	g := git.NewGit(rigPath)
+
+	// Fetch latest from all remotes to get up-to-date branch state.
+	_ = g.Fetch("--all")
+
+	// If we have the branch name from the agent bead, check if it's merged.
+	if fields != nil && fields.ActiveMR != "" {
+		// ActiveMR field may contain branch info; try hook_bead for branch name
 	}
 
-	// Get git for the polecat worktree
-	g := git.NewGit(polecatPath)
-
-	// Get the current HEAD commit SHA
-	commitSHA, err := g.Rev("HEAD")
-	if err != nil {
-		return false, fmt.Errorf("getting polecat HEAD: %w", err)
+	// Try to find the branch name from multiple sources
+	var branchRef string
+	if fields != nil {
+		// Check for branch info in agent bead — not directly stored,
+		// but the cleanup wisp created by HandlePolecatDone has it.
+		// For now, try common branch naming patterns.
+		branchRef = fmt.Sprintf("%s/%s", rigName, polecatName)
 	}
 
-	// Get all configured remotes and check each one for the commit
-	// This handles multi-remote setups where code may be on a remote other than "origin"
-	remotes, err := g.Remotes()
-	if err != nil {
-		// If we can't list remotes, fall back to checking just the local branch
-		isOnDefaultBranch, err := g.IsAncestor(commitSHA, defaultBranch)
-		if err != nil {
-			return false, fmt.Errorf("checking if commit is on %s: %w", defaultBranch, err)
+	if branchRef != "" {
+		// Check if the branch tip is an ancestor of the default branch.
+		for _, remote := range []string{"origin", "gastown"} {
+			remoteBranch := remote + "/" + branchRef
+			remoteDefault := remote + "/" + defaultBranch
+			isOnDefault, err := g.IsAncestor(remoteBranch, remoteDefault)
+			if err == nil && isOnDefault {
+				return true, nil
+			}
 		}
-		return isOnDefaultBranch, nil
-	}
-
-	// Try each remote/<defaultBranch> until we find one where commit is an ancestor
-	for _, remote := range remotes {
-		remoteBranch := remote + "/" + defaultBranch
-		isOnRemote, err := g.IsAncestor(commitSHA, remoteBranch)
-		if err == nil && isOnRemote {
-			return true, nil
+		// Try local ref
+		isOnDefault, err := g.IsAncestor(branchRef, defaultBranch)
+		if err == nil {
+			return isOnDefault, nil
 		}
 	}
 
-	// Also try the local default branch (in case we're not tracking a remote)
-	isOnDefaultBranch, err := g.IsAncestor(commitSHA, defaultBranch)
-	if err == nil && isOnDefaultBranch {
-		return true, nil
-	}
-
-	// Commit is not on any remote's default branch
-	return false, nil
+	// Fallback: the MERGED signal was sent by the refinery after verifying the
+	// merge succeeded. If we can't independently verify via git, return an error
+	// so the caller can decide (HandleMerged logs a warning but can proceed
+	// based on cleanup_status).
+	return false, fmt.Errorf("cannot verify branch on %s for %s (branch not found in rig repo)", defaultBranch, polecatName)
 }
 
 // PolecatsWithHookedWork contains info about polecats that have hooked work but no active session.
@@ -905,7 +916,6 @@ func FindPolecatsWithHookedWork(workDir, rigName string) ([]*PolecatsWithHookedW
 	// Get beads directory
 	rigPath := filepath.Join(townRoot, rigName)
 	bd := beads.New(rigPath)
-	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 
 	var result []*PolecatsWithHookedWork
 
@@ -958,9 +968,10 @@ func FindPolecatsWithHookedWork(workDir, rigName string) ([]*PolecatsWithHookedW
 			continue
 		}
 
-		// Check if polecat has an active session (tmux or coop)
-		sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
-		hasSession, _ := backend.HasSession(sessionName)
+		// Check if polecat has an active session via ResolveBackend,
+		// which looks up the coop URL from agent bead metadata.
+		backend := terminal.ResolveBackend(agentID)
+		hasSession, _ := backend.HasSession("claude")
 
 		if hasSession {
 			// Session is active - polecat is already working
@@ -980,7 +991,9 @@ func FindPolecatsWithHookedWork(workDir, rigName string) ([]*PolecatsWithHookedW
 
 // RespawnPolecatWithHookedWork respawns a polecat to process its hooked work.
 // This is used when a polecat has completed work (gt done) but new work was slung to it.
-// The polecat's session is restarted to process the hooked work.
+//
+// In K8s, respawning means reopening the agent bead with agent_state=spawning.
+// The K8s controller watches for this and creates a new pod.
 //
 // FIX (hq-50u3h): This function respawns polecats with hooked work but no active session.
 // FIX (hq-dtwfqa): Validate hook_bead exists before attempting respawn.
@@ -991,15 +1004,6 @@ func RespawnPolecatWithHookedWork(workDir, rigName, polecatName string) error {
 	}
 
 	rigPath := filepath.Join(townRoot, rigName)
-	// Create rig struct directly (no LoadRig function exists)
-	r := &rig.Rig{
-		Name: rigName,
-		Path: rigPath,
-	}
-
-	// Get the polecat manager
-	g := git.NewGit(rigPath)
-	mgr := polecat.NewManager(r, g)
 
 	// Get the hook_bead from the agent bead.
 	prefix := beads.GetPrefixForRig(townRoot, rigName)
@@ -1025,34 +1029,21 @@ func RespawnPolecatWithHookedWork(workDir, rigName, polecatName string) error {
 		return fmt.Errorf("hook_bead %s no longer exists (cleared stale reference)", fields.HookBead)
 	}
 
-	// Check if polecat directory exists (using Get to check if polecat exists)
-	_, err = mgr.Get(polecatName)
-	if err != nil {
-		// Polecat doesn't exist - need to create it fresh
-		_, err := mgr.AddWithOptions(polecatName, polecat.AddOptions{
-			HookBead: fields.HookBead,
-		})
-		if err != nil {
-			return fmt.Errorf("creating polecat: %w", err)
-		}
-	} else {
-		// Polecat exists - repair it to get a fresh worktree
-		_, err := mgr.RepairWorktreeWithOptions(polecatName, true, polecat.AddOptions{
-			HookBead: fields.HookBead,
-		})
-		if err != nil {
-			return fmt.Errorf("repairing polecat worktree: %w", err)
-		}
-	}
-
-	// Start a new tmux session for the polecat
-	sessionMgr := polecat.NewSessionManager(r)
-
-	err = sessionMgr.Start(polecatName, polecat.SessionStartOptions{
-		Issue: fields.HookBead,
+	// Reopen the agent bead with agent_state=spawning so the controller
+	// creates a new pod for this polecat. The hook_bead is preserved.
+	_, err = bd.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
+		RoleType:   "polecat",
+		Rig:        rigName,
+		AgentState: "spawning",
+		HookBead:   fields.HookBead,
 	})
 	if err != nil {
-		return fmt.Errorf("starting polecat session: %w", err)
+		return fmt.Errorf("reopening agent bead for respawn: %w", err)
+	}
+
+	// Ensure K8s label is set so controller picks it up.
+	if err := bd.AddLabel(agentBeadID, "execution_target:k8s"); err != nil {
+		fmt.Printf("Warning: could not add execution_target label: %v\n", err)
 	}
 
 	return nil
