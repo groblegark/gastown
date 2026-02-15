@@ -216,18 +216,15 @@ tasks:
     use: [build-gt, download-coop, download-bd, code]
     if: ${{ init.ref-name != 'pr' }}
     run: |
-      # Install runtime dependencies
-      export DEBIAN_FRONTEND=noninteractive
-      sudo apt-get -y update
-      sudo apt-get -y install --no-install-recommends \
-        git curl ca-certificates jq
-      sudo rm -rf /var/lib/apt/lists/*
+      # WORKAROUND: Do NOT run apt-get update/install here.
+      # On multi-layer overlayfs (4 dependency layers), apt-get update
+      # corrupts /etc/shadow visibility, breaking all subsequent sudo calls.
+      # The base image (rwx/base 1.0.0) already provides git, curl,
+      # ca-certificates, and jq — verified by "0 newly installed" in logs.
 
-      # Install Node.js from binary tarball (apt nodejs packages break sudo)
+      # Install Node.js from binary tarball (no sudo needed for curl)
       curl -fsSL "https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz" \
         | sudo tar -xJ --strip-components=1 -C /usr/local
-
-      # Install Claude CLI (npm install can break sudo, so do binaries first)
 
       # Install binaries
       sudo cp ${{ tasks.build-gt.artifacts.gt-binary }} /usr/local/bin/gt
@@ -246,14 +243,14 @@ tasks:
       sudo mkdir -p /home/agent/gt
       sudo chown -R 1000:1000 /home/agent
 
-      # Rename ubuntu→agent in passwd/group (breaks sudo for running process)
+      # Install Claude CLI while sudo still works (npm install -g can
+      # also break sudo, so this must come before the passwd rename)
+      sudo npm install -g @anthropic-ai/claude-code
+
+      # Rename ubuntu→agent in passwd/group LAST (breaks sudo for running process)
       sudo sed -i 's/^ubuntu:/agent:/' /etc/passwd
       sudo sed -i 's|/home/ubuntu|/home/agent|' /etc/passwd
       sudo sed -i 's/^ubuntu:/agent:/' /etc/group
-
-      # Install Claude CLI LAST — npm install -g breaks sudo for the
-      # running user, so no sudo commands can follow this
-      sudo npm install -g @anthropic-ai/claude-code
 
       # Configure image metadata (no sudo needed)
       jq -n '["/entrypoint.sh"]' > $RWX_IMAGE/entrypoint.json
