@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -22,12 +23,13 @@ type SpecBuilder func(cfg *config.Config, rig, role, agentName string, metadata 
 // Reconciler diffs desired state (agent beads) against actual state (K8s pods)
 // and creates/deletes pods to converge.
 type Reconciler struct {
-	lister      daemonclient.BeadLister
-	pods        podmanager.Manager
-	cfg         *config.Config
-	logger      *slog.Logger
-	specBuilder SpecBuilder
-	mu          sync.Mutex // prevent concurrent reconciles
+	lister       daemonclient.BeadLister
+	pods         podmanager.Manager
+	cfg          *config.Config
+	logger       *slog.Logger
+	specBuilder  SpecBuilder
+	mu           sync.Mutex // prevent concurrent reconciles
+	digestTracker *ImageDigestTracker
 }
 
 // New creates a Reconciler.
@@ -39,12 +41,19 @@ func New(
 	specBuilder SpecBuilder,
 ) *Reconciler {
 	return &Reconciler{
-		lister:      lister,
-		pods:        pods,
-		cfg:         cfg,
-		logger:      logger,
-		specBuilder: specBuilder,
+		lister:        lister,
+		pods:          pods,
+		cfg:           cfg,
+		logger:        logger,
+		specBuilder:   specBuilder,
+		digestTracker: NewImageDigestTracker(logger, 5*time.Minute),
 	}
+}
+
+// DigestTracker returns the image digest tracker for external callers
+// (e.g., periodic registry refresh from the main loop).
+func (r *Reconciler) DigestTracker() *ImageDigestTracker {
+	return r.digestTracker
 }
 
 // Reconcile performs a single reconciliation pass:
@@ -112,7 +121,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				// Pod is Running or Pending. Check if spec has drifted.
 				desiredSpec := r.specBuilder(r.cfg, bead.Rig, bead.Role, bead.AgentName, bead.Metadata)
 				desiredSpec.BeadID = bead.ID
-				reason := podDriftReason(desiredSpec, &pod)
+				reason := podDriftReason(desiredSpec, &pod, r.digestTracker)
 				if reason != "" {
 					r.logger.Info("spec drift detected, recreating pod",
 						"pod", name, "reason", reason)
@@ -140,14 +149,47 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 // podDriftReason returns a non-empty string describing why the pod needs
 // recreation, or "" if the pod matches the desired spec.
-func podDriftReason(desired podmanager.AgentPodSpec, actual *corev1.Pod) string {
-	// Check agent image drift.
+func podDriftReason(desired podmanager.AgentPodSpec, actual *corev1.Pod, tracker *ImageDigestTracker) string {
+	// Check agent image drift (tag changed).
 	if agentChanged(desired.Image, actual) {
 		return fmt.Sprintf("agent image changed: %s", desired.Image)
 	}
 	// Check toolchain sidecar drift.
 	if sidecarChanged(desired.ToolchainSidecar, actual) {
 		return fmt.Sprintf("toolchain sidecar changed: %s", sidecarImage(desired.ToolchainSidecar))
+	}
+	// Check image digest drift (same tag, different digest — e.g. :latest updated).
+	if tracker != nil {
+		if reason := digestDrift(desired.Image, actual, tracker); reason != "" {
+			return reason
+		}
+	}
+	return ""
+}
+
+// digestDrift checks whether the running pod's image digest differs from the
+// latest known digest for the same image tag. This detects :latest updates
+// that tag-only comparison misses.
+func digestDrift(desiredImage string, actual *corev1.Pod, tracker *ImageDigestTracker) string {
+	for _, cs := range actual.Status.ContainerStatuses {
+		if cs.Name != "agent" {
+			continue
+		}
+		runningDigest := extractDigestFromImageID(cs.ImageID)
+		if runningDigest == "" {
+			return ""
+		}
+		// Record this pod's digest. If it's the first pod seen for this image,
+		// this becomes the baseline. If it differs from a previously recorded
+		// digest, RecordDigest returns true (meaning an update was detected
+		// from a registry check or a newer pod).
+		tracker.RecordDigest(desiredImage, runningDigest)
+
+		latestDigest := tracker.LatestDigest(desiredImage)
+		if latestDigest != "" && latestDigest != runningDigest {
+			return fmt.Sprintf("image digest changed: running %s, latest %s",
+				truncDigest(runningDigest), truncDigest(latestDigest))
+		}
 	}
 	return ""
 }
