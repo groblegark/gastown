@@ -2697,7 +2697,7 @@ func (c *Client) CreateCrew(ctx context.Context, req CreateCrewRequest) (*Create
 	if err != nil {
 		// If the bead already exists (UNIQUE constraint), try to reopen it.
 		errStr := err.Error()
-		if strings.Contains(errStr, "UNIQUE") || strings.Contains(errStr, "Duplicate") || strings.Contains(errStr, "already exists") {
+		if strings.Contains(errStr, "UNIQUE") || strings.Contains(strings.ToLower(errStr), "duplicate") || strings.Contains(errStr, "already exists") {
 			updateBody := map[string]interface{}{
 				"id":     beadID,
 				"status": "open",
@@ -2883,7 +2883,7 @@ func (c *Client) SpawnSingleton(ctx context.Context, role string) (*Agent, error
 	if err != nil {
 		// If the bead already exists, reopen it with spawning state.
 		errStr := err.Error()
-		if strings.Contains(errStr, "UNIQUE") || strings.Contains(errStr, "Duplicate") || strings.Contains(errStr, "already exists") {
+		if strings.Contains(errStr, "UNIQUE") || strings.Contains(strings.ToLower(errStr), "duplicate") || strings.Contains(errStr, "already exists") {
 			updateBody := map[string]interface{}{
 				"id":          beadID,
 				"status":      "in_progress",
