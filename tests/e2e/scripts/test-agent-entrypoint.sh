@@ -22,8 +22,8 @@ log "Testing agent entrypoint in namespace: $E2E_NAMESPACE"
 # ── Discover agent pod ─────────────────────────────────────────────────
 # Look for any agent pod (crew, polecat, mayor)
 AGENT_POD=$(kube get pods --no-headers 2>/dev/null \
-  | grep -E "^gt-" \
-  | grep -v "Completed\|Error\|Init" \
+  | { grep -E "^gt-" || true; } \
+  | { grep -v "Completed\|Error\|Init" || true; } \
   | head -1 | awk '{print $1}')
 
 if [[ -z "$AGENT_POD" ]]; then

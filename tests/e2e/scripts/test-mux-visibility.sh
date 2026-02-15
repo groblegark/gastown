@@ -316,7 +316,9 @@ try:
     with open('$tmpf') as f:
         sessions = json.load(f)
     for s in sessions:
-        if s.get('id') == '$TEST_POD_NAME':
+        # Session ID is a UUID; pod name is in metadata.k8s.pod
+        pod = s.get('metadata', {}).get('k8s', {}).get('pod', '')
+        if pod == '$TEST_POD_NAME' or s.get('id') == '$TEST_POD_NAME':
             print('found')
             break
 except:
@@ -354,7 +356,9 @@ try:
     with open('$tmpf') as f:
         sessions = json.load(f)
     for s in sessions:
-        if s.get('id') == '$TEST_POD_NAME':
+        # Session ID is a UUID; pod name is in metadata.k8s.pod
+        pod = s.get('metadata', {}).get('k8s', {}).get('pod', '')
+        if pod == '$TEST_POD_NAME' or s.get('id') == '$TEST_POD_NAME':
             m = s.get('metadata', {})
             agent = m.get('agent', '')
             role = m.get('role', '')
@@ -406,7 +410,8 @@ try:
     with open('$tmpf') as f:
         sessions = json.load(f)
     for s in sessions:
-        if s.get('id') == '$TEST_POD_NAME':
+        pod = s.get('metadata', {}).get('k8s', {}).get('pod', '')
+        if pod == '$TEST_POD_NAME' or s.get('id') == '$TEST_POD_NAME':
             print('found')
             break
     else:
