@@ -89,18 +89,19 @@ func (w *NATSWatcher) Events() <-chan Event {
 
 // mutationPayload mirrors the eventbus.MutationEventPayload from the beads daemon.
 type mutationPayload struct {
-	Type      string   `json:"type"`
-	IssueID   string   `json:"issue_id"`
-	Title     string   `json:"title,omitempty"`
-	Assignee  string   `json:"assignee,omitempty"`
-	Actor     string   `json:"actor,omitempty"`
-	Timestamp string   `json:"timestamp"`
-	OldStatus string   `json:"old_status,omitempty"`
-	NewStatus string   `json:"new_status,omitempty"`
-	ParentID  string   `json:"parent_id,omitempty"`
-	IssueType string   `json:"issue_type,omitempty"`
-	Labels    []string `json:"labels,omitempty"`
-	AwaitType string   `json:"await_type,omitempty"`
+	Type       string   `json:"type"`
+	IssueID    string   `json:"issue_id"`
+	Title      string   `json:"title,omitempty"`
+	Assignee   string   `json:"assignee,omitempty"`
+	Actor      string   `json:"actor,omitempty"`
+	Timestamp  string   `json:"timestamp"`
+	OldStatus  string   `json:"old_status,omitempty"`
+	NewStatus  string   `json:"new_status,omitempty"`
+	ParentID   string   `json:"parent_id,omitempty"`
+	IssueType  string   `json:"issue_type,omitempty"`
+	Labels     []string `json:"labels,omitempty"`
+	AwaitType  string   `json:"await_type,omitempty"`
+	AgentState string   `json:"agent_state,omitempty"`
 }
 
 // subscribe connects to NATS and subscribes to MUTATION_EVENTS via JetStream.
@@ -184,16 +185,17 @@ func (w *NATSWatcher) processMessage(msg *nats.Msg) {
 	// Convert to the mutationEvent format used by the shared mapping logic.
 	ts, _ := time.Parse(time.RFC3339Nano, payload.Timestamp)
 	raw := mutationEvent{
-		Type:      payload.Type,
-		IssueID:   payload.IssueID,
-		Title:     payload.Title,
-		Assignee:  payload.Assignee,
-		Actor:     payload.Actor,
-		Timestamp: ts,
-		OldStatus: payload.OldStatus,
-		NewStatus: payload.NewStatus,
-		IssueType: payload.IssueType,
-		Labels:    payload.Labels,
+		Type:       payload.Type,
+		IssueID:    payload.IssueID,
+		Title:      payload.Title,
+		Assignee:   payload.Assignee,
+		Actor:      payload.Actor,
+		Timestamp:  ts,
+		OldStatus:  payload.OldStatus,
+		NewStatus:  payload.NewStatus,
+		IssueType:  payload.IssueType,
+		Labels:     payload.Labels,
+		AgentState: payload.AgentState,
 	}
 
 	if !isAgentBead(raw) {

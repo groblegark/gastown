@@ -218,7 +218,7 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 		})
 		return nil
 
-	case beadswatcher.AgentDone, beadswatcher.AgentKill:
+	case beadswatcher.AgentDone, beadswatcher.AgentKill, beadswatcher.AgentStop:
 		podName := fmt.Sprintf("gt-%s-%s-%s", event.Rig, event.Role, event.AgentName)
 		ns := namespaceFromEvent(event, cfg.Namespace)
 		err := pods.DeleteAgentPod(ctx, podName, ns)
@@ -228,6 +228,9 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 		phase := "Succeeded"
 		if event.Type == beadswatcher.AgentKill {
 			phase = "Failed"
+		}
+		if event.Type == beadswatcher.AgentStop {
+			phase = "Stopped"
 		}
 		_ = status.ReportPodStatus(ctx, agentBeadID, statusreporter.PodStatus{
 			PodName:   podName,

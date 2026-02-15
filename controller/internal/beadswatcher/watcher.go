@@ -38,6 +38,9 @@ const (
 
 	// AgentUpdate means agent bead metadata was changed (e.g., sidecar profile).
 	AgentUpdate EventType = "agent_update"
+
+	// AgentStop means an agent should be gracefully stopped (agent_state=stopping).
+	AgentStop EventType = "agent_stop"
 )
 
 // Event represents a beads lifecycle event that requires a pod operation.
@@ -83,16 +86,17 @@ type Config struct {
 // mutationEvent mirrors the daemon's MutationEvent JSON structure.
 // We define it here to avoid importing the beads module.
 type mutationEvent struct {
-	Type      string    `json:"Type"`
-	IssueID   string    `json:"IssueID"`
-	Title     string    `json:"Title,omitempty"`
-	Assignee  string    `json:"Assignee,omitempty"`
-	Actor     string    `json:"Actor,omitempty"`
-	Timestamp time.Time `json:"Timestamp"`
-	OldStatus string    `json:"old_status,omitempty"`
-	NewStatus string    `json:"new_status,omitempty"`
-	IssueType string    `json:"issue_type,omitempty"`
-	Labels    []string  `json:"labels,omitempty"`
+	Type       string    `json:"Type"`
+	IssueID    string    `json:"IssueID"`
+	Title      string    `json:"Title,omitempty"`
+	Assignee   string    `json:"Assignee,omitempty"`
+	Actor      string    `json:"Actor,omitempty"`
+	Timestamp  time.Time `json:"Timestamp"`
+	OldStatus  string    `json:"old_status,omitempty"`
+	NewStatus  string    `json:"new_status,omitempty"`
+	IssueType  string    `json:"issue_type,omitempty"`
+	Labels     []string  `json:"labels,omitempty"`
+	AgentState string    `json:"agent_state,omitempty"`
 }
 
 // SSEWatcher connects to the daemon's HTTP /events SSE endpoint and translates
@@ -291,6 +295,10 @@ func (w *SSEWatcher) mapMutation(raw mutationEvent) (Event, bool) {
 	case "delete":
 		return w.buildEvent(AgentKill, raw)
 	case "update":
+		// Check if this update sets agent_state to stopping — that means delete the pod.
+		if raw.AgentState == "stopping" {
+			return w.buildEvent(AgentStop, raw)
+		}
 		// Metadata change on agent bead → may need pod update (e.g., sidecar change).
 		return w.buildEvent(AgentUpdate, raw)
 	default:

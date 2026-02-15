@@ -502,12 +502,12 @@ func detectDeaconK8sPod() (string, string) {
 }
 
 func runDeaconStop(cmd *cobra.Command, args []string) error {
-	// Remote daemon mode: stop via RPC.
+	// Remote daemon mode: stop via RPC (sets agent_state=stopping, controller deletes pod).
 	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
 		return runDeaconStopRemote(rpcClient)
 	}
 
-	// K8s mode: detect K8s pod and delete it.
+	// K8s mode (no daemon config): detect K8s pod and delete it directly.
 	if os.Getenv("GT_K8S_NAMESPACE") != "" {
 		if podName, ns := detectDeaconK8sPod(); podName != "" {
 			return stopK8sPod(podName, ns, "Deacon")

@@ -187,12 +187,12 @@ func runMayorStartK8s() error {
 }
 
 func runMayorStop(cmd *cobra.Command, args []string) error {
-	// Remote daemon mode: stop via RPC (sets agent_state=stopping, controller handles pod).
+	// Remote daemon mode: stop via RPC (sets agent_state=stopping, controller deletes pod).
 	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
 		return runMayorStopRemote(rpcClient)
 	}
 
-	// K8s mode: detect K8s pod and delete it.
+	// K8s mode (no daemon config): detect K8s pod and delete it directly.
 	if os.Getenv("GT_K8S_NAMESPACE") != "" {
 		if podName, ns := detectMayorK8sPod(""); podName != "" {
 			return stopK8sPod(podName, ns, "Mayor")
@@ -337,13 +337,12 @@ func runMayorRestart(cmd *cobra.Command, args []string) error {
 		return runMayorStart(cmd, args)
 	}
 
-	// K8s mode: delete pod (controller will recreate if bead still spawning).
+	// K8s mode (no daemon config): delete pod, then start.
 	if os.Getenv("GT_K8S_NAMESPACE") != "" {
 		if podName, ns := detectMayorK8sPod(""); podName != "" {
 			if err := stopK8sPod(podName, ns, "Mayor"); err != nil {
 				return err
 			}
-			fmt.Println("Starting Mayor...")
 			return runMayorStart(cmd, args)
 		}
 	}
