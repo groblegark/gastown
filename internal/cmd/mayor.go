@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
@@ -219,7 +217,7 @@ func runMayorStop(cmd *cobra.Command, args []string) error {
 // runMayorStopRemote stops the mayor via daemon RPC.
 func runMayorStopRemote(client *rpcclient.Client) error {
 	fmt.Println("Stopping Mayor via remote daemon...")
-	// Use the bead ID directly since StopAgent passes non-3-part addresses as-is.
+	// Pass the bead ID directly — StopAgent parses it via ParseAgentBeadID.
 	_, _, err := client.StopAgent(context.Background(), beads.MayorBeadIDTown(), false, "gt mayor stop")
 	if err != nil {
 		return fmt.Errorf("stopping mayor: %w", err)
@@ -363,25 +361,17 @@ func runMayorRestart(cmd *cobra.Command, args []string) error {
 
 // detectMayorK8sPod checks if the mayor is running as a K8s pod.
 // Returns (podName, namespace) if found, or ("", "") if not.
-//
-// Detection is simple: check if the well-known pod name exists and is Running.
-// The pod name follows the controller convention: gt-town-mayor-hq.
+// Uses bead metadata written by the controller's status reporter
+// instead of shelling out to kubectl.
 func detectMayorK8sPod(_ string) (string, string) {
-	podName := "gt-town-mayor-hq"
-
-	ns := os.Getenv("GT_K8S_NAMESPACE")
-	if ns == "" {
+	if os.Getenv("GT_K8S_NAMESPACE") == "" {
 		return "", ""
 	}
 
-	out, err := exec.Command("kubectl", "get", "pod", podName, "-n", ns,
-		"-o", "jsonpath={.status.phase}").Output()
-	if err != nil {
-		return "", ""
-	}
-	if strings.TrimSpace(string(out)) != "Running" {
+	info, err := terminal.ResolveAgentPodInfo("mayor")
+	if err != nil || info.PodName == "" {
 		return "", ""
 	}
 
-	return podName, ns
+	return info.PodName, info.Namespace
 }

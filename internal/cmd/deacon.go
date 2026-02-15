@@ -481,24 +481,19 @@ func runDeaconStartK8s() error {
 
 // detectDeaconK8sPod checks if the deacon is running as a K8s pod.
 // Returns (podName, namespace) if found, or ("", "") if not.
+// Uses bead metadata written by the controller's status reporter
+// instead of shelling out to kubectl.
 func detectDeaconK8sPod() (string, string) {
-	podName := "gt-town-deacon-hq"
-
-	ns := os.Getenv("GT_K8S_NAMESPACE")
-	if ns == "" {
+	if os.Getenv("GT_K8S_NAMESPACE") == "" {
 		return "", ""
 	}
 
-	out, err := exec.Command("kubectl", "get", "pod", podName, "-n", ns,
-		"-o", "jsonpath={.status.phase}").Output()
-	if err != nil {
-		return "", ""
-	}
-	if strings.TrimSpace(string(out)) != "Running" {
+	info, err := terminal.ResolveAgentPodInfo("deacon")
+	if err != nil || info.PodName == "" {
 		return "", ""
 	}
 
-	return podName, ns
+	return info.PodName, info.Namespace
 }
 
 func runDeaconStop(cmd *cobra.Command, args []string) error {

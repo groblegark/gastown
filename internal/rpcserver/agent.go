@@ -481,7 +481,13 @@ func (s *AgentServer) StopAgent(
 		prefix := beads.GetPrefixForRig(s.townRoot, parts[0])
 		beadID = beads.PolecatBeadIDWithPrefix(prefix, parts[0], parts[2])
 	default:
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("cannot stop agent: %s", address))
+		// Address may be a bead ID directly (e.g., "hq-mayor", "hq-deacon",
+		// "gt-gastown-witness"). Try parsing it as an agent bead ID.
+		if _, role, _, ok := beads.ParseAgentBeadID(address); ok && role != "" {
+			beadID = address
+		} else {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("cannot stop agent: %s", address))
+		}
 	}
 
 	// Check if bead has incomplete work before closing.

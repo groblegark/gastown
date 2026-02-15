@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -115,107 +114,21 @@ func resolveCoopTarget(target string) (string, string) {
 		return "", ""
 	}
 
-	var podName string
+	// Try resolving via bead metadata (written by the controller's status reporter).
+	info, err := terminal.ResolveAgentPodInfo(target)
+	if err == nil && info.PodName != "" {
+		namespace := info.Namespace
+		if namespace == "" {
+			namespace = ns
+		}
+		return info.PodName, namespace
+	}
 
+	// If target is a direct pod name (gt-* prefix), use it with the env namespace.
 	if strings.HasPrefix(target, "gt-") {
-		// Direct pod name.
-		podName = target
-	} else {
-		podName = targetToPodName(target)
+		return target, ns
 	}
 
-	if podName == "" {
-		return "", ""
-	}
-
-	// Verify pod is running.
-	out, err := exec.Command("kubectl", "get", "pod", podName, "-n", ns,
-		"-o", "jsonpath={.status.phase}").Output()
-	if err != nil {
-		// Pod not found — try listing pods with label match.
-		return resolveByLabel(target, ns)
-	}
-	if strings.TrimSpace(string(out)) != "Running" {
-		return "", ""
-	}
-
-	return podName, ns
+	return "", ""
 }
 
-// targetToPodName converts a role path to a K8s pod name.
-func targetToPodName(target string) string {
-	parts := strings.Split(target, "/")
-
-	switch len(parts) {
-	case 1:
-		// Simple role: "mayor", "deacon"
-		switch parts[0] {
-		case "mayor":
-			return "gt-town-mayor-hq"
-		case "deacon":
-			return "gt-town-deacon-hq"
-		default:
-			// Could be a rig name — can't resolve without more info.
-			return ""
-		}
-	case 2:
-		// rig/role: "gastown/witness", "gastown/refinery"
-		rig, role := parts[0], parts[1]
-		switch role {
-		case "witness":
-			return fmt.Sprintf("gt-%s-witness-hq", rig)
-		case "refinery":
-			return fmt.Sprintf("gt-%s-refinery-hq", rig)
-		default:
-			return ""
-		}
-	case 3:
-		// rig/type/name: "gastown/polecats/nux", "gastown/crew/max"
-		rig, roleType, name := parts[0], parts[1], parts[2]
-		switch roleType {
-		case "polecats", "polecat":
-			return fmt.Sprintf("gt-%s-polecat-%s", rig, name)
-		case "crew":
-			return fmt.Sprintf("gt-%s-crew-%s", rig, name)
-		default:
-			return ""
-		}
-	}
-
-	return ""
-}
-
-// resolveByLabel tries to find a pod by gt.* labels.
-func resolveByLabel(target string, ns string) (string, string) {
-	parts := strings.Split(target, "/")
-
-	var labelSelector string
-	switch len(parts) {
-	case 1:
-		labelSelector = fmt.Sprintf("gt.role=%s", parts[0])
-	case 2:
-		labelSelector = fmt.Sprintf("gt.rig=%s,gt.role=%s", parts[0], parts[1])
-	case 3:
-		role := parts[1]
-		if role == "polecats" {
-			role = "polecat"
-		}
-		labelSelector = fmt.Sprintf("gt.rig=%s,gt.role=%s,gt.agent=%s", parts[0], role, parts[2])
-	default:
-		return "", ""
-	}
-
-	out, err := exec.Command("kubectl", "get", "pods", "-n", ns,
-		"-l", labelSelector,
-		"--field-selector=status.phase=Running",
-		"-o", "jsonpath={.items[0].metadata.name}").Output()
-	if err != nil {
-		return "", ""
-	}
-
-	name := strings.TrimSpace(string(out))
-	if name == "" {
-		return "", ""
-	}
-	return name, ns
-}

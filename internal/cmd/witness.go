@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -309,15 +309,17 @@ func runWitnessAttach(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// When GT_K8S_NAMESPACE is set, try K8s attach first.
+	// When GT_K8S_NAMESPACE is set, try K8s attach via bead metadata first.
 	if os.Getenv("GT_K8S_NAMESPACE") != "" {
-		podName := fmt.Sprintf("gt-%s-witness-hq", rigName)
-		ns := os.Getenv("GT_K8S_NAMESPACE")
-		if out, err := exec.Command("kubectl", "get", "pod", podName, "-n", ns,
-			"-o", "jsonpath={.status.phase}").Output(); err == nil && strings.TrimSpace(string(out)) == "Running" {
+		target := fmt.Sprintf("%s/witness", rigName)
+		if info, err := terminal.ResolveAgentPodInfo(target); err == nil && info.PodName != "" {
+			ns := info.Namespace
+			if ns == "" {
+				ns = os.Getenv("GT_K8S_NAMESPACE")
+			}
 			fmt.Printf("%s Attaching to K8s Witness pod via coop...\n",
 				style.Bold.Render("☸"))
-			return attachToCoopPodWithBrowser(podName, ns, witnessBrowser)
+			return attachToCoopPodWithBrowser(info.PodName, ns, witnessBrowser)
 		}
 	}
 
