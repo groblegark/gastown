@@ -109,10 +109,12 @@ func runWorktree(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("already in rig '%s' - use gt worktree to work in a different rig", targetRig)
 	}
 
-	// Verify target rig exists
-	_, targetRigInfo, err := getRig(targetRig)
-	if err != nil {
-		return fmt.Errorf("rig '%s' not found - run 'gt rig list' to see available rigs", targetRig)
+	// Try to get rig info. In K8s mode the target rig directory may not
+	// exist on disk (only the agent's own rig is cloned by init container).
+	_, targetRigInfo, rigErr := getRig(targetRig)
+	if rigErr != nil {
+		// Rig directory doesn't exist — try clone-based cross-rig (K8s mode).
+		return runWorktreeClone(targetRig, sourceRig, crewName)
 	}
 
 	// Compute worktree path: ~/gt/<target-rig>/crew/<source-rig>-<name>/
@@ -175,6 +177,7 @@ func runWorktree(cmd *cobra.Command, args []string) error {
 	if err := worktreeGit.Pull("origin", "main"); err != nil {
 		fmt.Printf("%s Warning: could not pull latest: %v\n", style.Warning.Render("⚠"), err)
 	}
+
 
 	if worktreeNoCD {
 		fmt.Println(worktreePath)
@@ -333,6 +336,79 @@ func runWorktreeRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%s Removed worktree at %s\n", style.Success.Render("✓"), worktreePath)
+
+	return nil
+}
+
+// runWorktreeClone handles cross-rig work in K8s mode where the target rig's
+// directory doesn't exist locally. Instead of git worktree add (which requires
+// a local repo), it does a fresh git clone from the rig's git URL.
+func runWorktreeClone(targetRig, sourceRig, crewName string) error {
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	// Look up the target rig's git URL from rigs.json.
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
+	if err != nil {
+		return fmt.Errorf("loading rig config: %w", err)
+	}
+
+	entry, ok := rigsConfig.Rigs[targetRig]
+	if !ok {
+		return fmt.Errorf("rig '%s' not found in registry - run 'gt rig list' to see available rigs", targetRig)
+	}
+	if entry.GitURL == "" {
+		return fmt.Errorf("rig '%s' has no git URL configured", targetRig)
+	}
+
+	// Clone path: {workspace}/{target-rig}/crew/{source-rig}-{name}/
+	rigDir := filepath.Join(townRoot, targetRig)
+	crewDir := filepath.Join(rigDir, "crew")
+	worktreeName := fmt.Sprintf("%s-%s", sourceRig, crewName)
+	clonePath := filepath.Join(crewDir, worktreeName)
+
+	// Check if already cloned.
+	if _, err := os.Stat(clonePath); err == nil {
+		if worktreeNoCD {
+			fmt.Println(clonePath)
+		} else {
+			fmt.Printf("%s Cross-rig clone already exists at %s\n", style.Success.Render("✓"), clonePath)
+			fmt.Printf("cd %s\n", clonePath)
+		}
+		return nil
+	}
+
+	if err := os.MkdirAll(crewDir, 0755); err != nil {
+		return fmt.Errorf("creating crew directory: %w", err)
+	}
+
+	fmt.Printf("Cloning %s for cross-rig work...\n", targetRig)
+
+	// Use git clone (shallow for speed).
+	cloneCmd := exec.Command("git", "clone", "--depth", "1", entry.GitURL, clonePath)
+	cloneCmd.Stdout = os.Stdout
+	cloneCmd.Stderr = os.Stderr
+	if err := cloneCmd.Run(); err != nil {
+		return fmt.Errorf("cloning %s: %w", entry.GitURL, err)
+	}
+
+	// Configure git author for identity preservation.
+	bdActor := fmt.Sprintf("%s/crew/%s", sourceRig, crewName)
+	_ = setGitConfig(clonePath, "user.name", bdActor)
+
+	fmt.Printf("%s Cloned %s for cross-rig work\n", style.Success.Render("✓"), targetRig)
+	fmt.Printf("  Source: %s/crew/%s\n", sourceRig, crewName)
+	fmt.Printf("  Target: %s\n", clonePath)
+	fmt.Println()
+
+	if worktreeNoCD {
+		fmt.Println(clonePath)
+	} else {
+		fmt.Printf("To enter the clone:\n")
+		fmt.Printf("  cd %s\n", clonePath)
+	}
 
 	return nil
 }
