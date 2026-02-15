@@ -288,7 +288,7 @@ broker_credentials_configured() {
   count=$(echo "$config" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-accts = d.get('credentials', {}).get('accounts', [])
+accts = d.get('credentials', {}).get('accounts', []) or d.get('accounts', [])
 print(len(accts))
 " 2>/dev/null)
   [[ "${count:-0}" -gt 0 ]]

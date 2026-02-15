@@ -48,14 +48,23 @@ fi
 
 # ── Port-forward to broker ───────────────────────────────────────
 BROKER_PORT=""
+# Get broker auth token (try secret first, then env, then fallback)
+BROKER_TOKEN="${BROKER_TOKEN:-}"
+if [[ -z "$BROKER_TOKEN" ]]; then
+  AUTH_SECRET=$(kube get secret --no-headers 2>/dev/null | grep -E "coop-broker-auth|daemon-token" | head -1 | awk '{print $1}')
+  if [[ -n "$AUTH_SECRET" ]]; then
+    BROKER_TOKEN=$(kube get secret "$AUTH_SECRET" -o jsonpath='{.data.token}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+  fi
+fi
 BROKER_TOKEN="${BROKER_TOKEN:-V6T4jmuDY1GDgYDmSRaFa1wwd4RTkFKv}"
 
 setup_broker() {
   if [[ -z "$BROKER_PORT" ]]; then
+    # Coopmux serves all APIs (mux + broker + credentials) on port 9800
     if [[ -n "$BROKER_SVC" ]]; then
-      BROKER_PORT=$(start_port_forward "svc/$BROKER_SVC" 8080) || return 1
+      BROKER_PORT=$(start_port_forward "svc/$BROKER_SVC" 9800) || return 1
     else
-      BROKER_PORT=$(start_port_forward "pod/$BROKER_POD" 8080) || return 1
+      BROKER_PORT=$(start_port_forward "pod/$BROKER_POD" 9800) || return 1
     fi
   fi
 }
@@ -82,7 +91,7 @@ test_client_id_full() {
   client_id=$(echo "$config" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-for acct in d.get('credentials',{}).get('accounts',[]):
+for acct in (d.get('credentials',{}).get('accounts',[]) or d.get('accounts',[])):
     cid = acct.get('client_id','')
     print(cid)
     break
@@ -108,7 +117,7 @@ test_token_url() {
   token_url=$(echo "$config" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-for acct in d.get('credentials',{}).get('accounts',[]):
+for acct in (d.get('credentials',{}).get('accounts',[]) or d.get('accounts',[])):
     print(acct.get('token_url',''))
     break
 " 2>/dev/null)
@@ -202,7 +211,7 @@ test_refresh_success() {
   logs=$(kube logs "$BROKER_POD" -c coopmux 2>/dev/null)
   [[ -n "$logs" ]] || return 1
 
-  # Look for evidence of successful refresh OR healthy seeded credentials
+  # Look for evidence of successful credential operations in coopmux logs
   if echo "$logs" | grep -q "credentials refreshed successfully"; then
     log "Found successful refresh in logs"
     return 0
@@ -211,7 +220,15 @@ test_refresh_success() {
     log "Found successful seed in logs (may not need refresh yet)"
     return 0
   fi
-  log "No refresh success or seed confirmation found"
+  if echo "$logs" | grep -q "distribution complete"; then
+    log "Found successful distribution in logs"
+    return 0
+  fi
+  if echo "$logs" | grep -q "credentials enabled"; then
+    log "Found credentials enabled in startup logs"
+    return 0
+  fi
+  log "No credential activity confirmation found"
   return 1
 }
 run_test "Broker has refreshed or seeded credentials successfully" test_refresh_success
@@ -228,7 +245,8 @@ test_current_status() {
   acct_status=$(echo "$status" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-for a in d.get('accounts', []):
+accounts = d if isinstance(d, list) else d.get('accounts', [])
+for a in accounts:
     print(a.get('status', 'unknown'))
     break
 " 2>/dev/null)

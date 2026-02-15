@@ -41,10 +41,17 @@ fi
 BROKER_POD=$(kube get pods --no-headers 2>/dev/null | grep "coop-broker" | head -1 | awk '{print $1}')
 BROKER_SVC=$(kube get svc --no-headers 2>/dev/null | grep "coop-broker" | head -1 | awk '{print $1}')
 
-# Get broker auth token
-BROKER_TOKEN=$(kube get configmap --no-headers 2>/dev/null | grep "coop-broker" | head -1 | awk '{print $1}')
-if [[ -n "$BROKER_TOKEN" ]]; then
-  BROKER_TOKEN=$(kube get configmap "$BROKER_TOKEN" -o jsonpath='{.data.BROKER_TOKEN}' 2>/dev/null || echo "")
+# Get broker auth token (try secret first, then configmap, then fallback)
+BROKER_TOKEN=""
+AUTH_SECRET=$(kube get secret --no-headers 2>/dev/null | grep -E "coop-broker-auth|daemon-token" | head -1 | awk '{print $1}')
+if [[ -n "$AUTH_SECRET" ]]; then
+  BROKER_TOKEN=$(kube get secret "$AUTH_SECRET" -o jsonpath='{.data.token}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+fi
+if [[ -z "$BROKER_TOKEN" ]]; then
+  CM=$(kube get configmap --no-headers 2>/dev/null | grep "coop-broker" | head -1 | awk '{print $1}')
+  if [[ -n "$CM" ]]; then
+    BROKER_TOKEN=$(kube get configmap "$CM" -o jsonpath='{.data.BROKER_TOKEN}' 2>/dev/null || echo "")
+  fi
 fi
 BROKER_TOKEN="${BROKER_TOKEN:-V6T4jmuDY1GDgYDmSRaFa1wwd4RTkFKv}"
 
@@ -75,10 +82,11 @@ BROKER_PORT=""
 
 setup_broker() {
   if [[ -z "$BROKER_PORT" ]]; then
+    # Coopmux serves all APIs (mux + broker + credentials) on port 9800
     if [[ -n "$BROKER_SVC" ]]; then
-      BROKER_PORT=$(start_port_forward "svc/$BROKER_SVC" 8080) || return 1
+      BROKER_PORT=$(start_port_forward "svc/$BROKER_SVC" 9800) || return 1
     else
-      BROKER_PORT=$(start_port_forward "pod/$BROKER_POD" 8080) || return 1
+      BROKER_PORT=$(start_port_forward "pod/$BROKER_POD" 9800) || return 1
     fi
   fi
 }
@@ -133,8 +141,9 @@ test_cred_api_responds() {
   setup_broker || return 1
   CRED_STATUS=$(broker_api "/api/v1/credentials/status")
   [[ -n "$CRED_STATUS" ]] || return 1
-  # Should have "accounts" array
-  assert_contains "$CRED_STATUS" "accounts"
+  # API returns either [{...}] (array) or {"accounts": [{...}]}
+  # Both are valid — just check we got JSON with credential data
+  assert_contains "$CRED_STATUS" "name" || assert_contains "$CRED_STATUS" "accounts"
 }
 run_test "Credential status API responds (with auth)" test_cred_api_responds
 
@@ -144,7 +153,7 @@ ACCOUNT_COUNT=0
 test_has_account() {
   [[ -n "$CRED_STATUS" ]] || return 1
   ACCOUNT_COUNT=$(json_extract "$CRED_STATUS" "
-accts = d.get('accounts', [])
+accts = d if isinstance(d, list) else d.get('accounts', [])
 print(len(accts))
 ")
   log "Account count: $ACCOUNT_COUNT"
@@ -179,7 +188,7 @@ test_account_healthy() {
   [[ -n "$CRED_STATUS" ]] || return 1
   local result
   result=$(json_extract "$CRED_STATUS" "
-accts = d.get('accounts', [])
+accts = d if isinstance(d, list) else d.get('accounts', [])
 if accts:
     a = accts[0]
     print(f\"{a.get('name','?')}|{a.get('status','?')}|{a.get('provider','?')}\")
@@ -199,7 +208,7 @@ test_token_ttl() {
   [[ -n "$CRED_STATUS" ]] || return 1
   local ttl
   ttl=$(json_extract "$CRED_STATUS" "
-accts = d.get('accounts', [])
+accts = d if isinstance(d, list) else d.get('accounts', [])
 if accts:
     print(accts[0].get('expires_in_secs', 0))
 else:
@@ -229,16 +238,25 @@ REGISTERED_POD_COUNT=0
 
 test_registered_pods() {
   [[ -n "$BROKER_PORT" ]] || return 1
-  REGISTERED_PODS=$(broker_api "/api/v1/broker/pods")
-  [[ -n "$REGISTERED_PODS" ]] || return 1
-  REGISTERED_POD_COUNT=$(json_extract "$REGISTERED_PODS" "
+  # Coopmux uses sessions (not pods) — try /api/v1/sessions first, fall back to /api/v1/broker/pods
+  REGISTERED_PODS=$(broker_api "/api/v1/sessions")
+  if [[ -n "$REGISTERED_PODS" ]]; then
+    REGISTERED_POD_COUNT=$(json_extract "$REGISTERED_PODS" "
+sessions = d if isinstance(d, list) else d.get('sessions', [])
+print(len(sessions))
+")
+  else
+    REGISTERED_PODS=$(broker_api "/api/v1/broker/pods")
+    [[ -n "$REGISTERED_PODS" ]] || return 1
+    REGISTERED_POD_COUNT=$(json_extract "$REGISTERED_PODS" "
 pods = d.get('pods', [])
 print(len(pods))
 ")
-  log "Registered pods: $REGISTERED_POD_COUNT"
+  fi
+  log "Registered sessions/pods: $REGISTERED_POD_COUNT"
   [[ "${REGISTERED_POD_COUNT:-0}" -gt 0 ]]
 }
-run_test "Broker has registered agent pods" test_registered_pods
+run_test "Broker has registered agent sessions" test_registered_pods
 
 # ── Test 8: Agent pod has credentials on filesystem ───────────────────
 AGENT_POD=$(kube get pods --no-headers 2>/dev/null | { grep "^gt-" || true; } | { grep "Running" || true; } | head -1 | awk '{print $1}')
