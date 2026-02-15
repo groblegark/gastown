@@ -220,7 +220,12 @@ tasks:
       export DEBIAN_FRONTEND=noninteractive
       sudo apt-get -y update
       sudo apt-get -y install --no-install-recommends \
-        git curl ca-certificates jq nodejs npm
+        git curl ca-certificates jq
+      sudo rm -rf /var/lib/apt/lists/*
+
+      # Install Node.js (binary distribution, not apt — avoids npm breaking sudo)
+      curl -fsSL https://deb.nodesource.com/setup_22.x | sudo bash -
+      sudo apt-get -y install --no-install-recommends nodejs
       sudo rm -rf /var/lib/apt/lists/*
 
       # Install Claude CLI
