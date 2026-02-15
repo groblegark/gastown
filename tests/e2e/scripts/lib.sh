@@ -265,6 +265,35 @@ print_summary() {
   return 0
 }
 
+# ── Precondition helpers ──────────────────────────────────────────────
+# Check if OAuth credentials are configured in this namespace.
+# Returns 0 if the claude-credentials secret exists, 1 otherwise.
+# Use this in credential test modules to skip gracefully in fresh namespaces.
+credentials_configured() {
+  kube get secret claude-credentials >/dev/null 2>&1
+}
+
+# Check if the broker credential pipeline is configured.
+# Returns 0 if the coop-broker configmap has non-empty credential accounts.
+# Use this in credential-lifecycle/refresh tests that depend on broker-managed OAuth.
+broker_credentials_configured() {
+  local cm
+  cm=$(kube get configmap --no-headers 2>/dev/null | grep "coop-broker-config" | head -1 | awk '{print $1}')
+  [[ -n "$cm" ]] || return 1
+  local config
+  config=$(kube get configmap "$cm" -o jsonpath='{.data.config\.json}' 2>/dev/null)
+  [[ -n "$config" ]] || return 1
+  # Check that credentials.accounts is non-empty
+  local count
+  count=$(echo "$config" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+accts = d.get('credentials', {}).get('accounts', [])
+print(len(accts))
+" 2>/dev/null)
+  [[ "${count:-0}" -gt 0 ]]
+}
+
 # ── Cleanup trap ─────────────────────────────────────────────────────
 _cleanup() {
   stop_port_forwards

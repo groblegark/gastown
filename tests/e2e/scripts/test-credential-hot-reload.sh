@@ -23,6 +23,12 @@ source "$(dirname "$0")/lib.sh"
 
 log "Testing credential hot-reload in $E2E_NAMESPACE"
 
+# ── Check credentials are configured ──────────────────────────────────
+if ! broker_credentials_configured; then
+  skip_all "broker credential pipeline not configured (no accounts in configmap)"
+  exit 0
+fi
+
 # ── Discover components ──────────────────────────────────────────
 BROKER_POD=$(kube get pods --no-headers 2>/dev/null | grep "coop-broker" | head -1 | awk '{print $1}')
 BROKER_SVC=$(kube get svc --no-headers 2>/dev/null | grep "coop-broker" | head -1 | awk '{print $1}')

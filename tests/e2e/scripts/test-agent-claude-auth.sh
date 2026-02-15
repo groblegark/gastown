@@ -23,6 +23,12 @@ source "$(dirname "$0")/lib.sh"
 
 log "Testing Claude Code authentication through coop in namespace: $E2E_NAMESPACE"
 
+# ── Check credentials are configured ──────────────────────────────────
+if ! credentials_configured; then
+  skip_all "no claude-credentials secret in namespace (credentials not configured)"
+  exit 0
+fi
+
 # ── Discover agent pods ──────────────────────────────────────────────
 AGENT_PODS=$(kube get pods --no-headers 2>/dev/null | { grep "^gt-" || true; } | { grep "Running" || true; } | awk '{print $1}')
 AGENT_POD=$(echo "$AGENT_PODS" | head -1)
