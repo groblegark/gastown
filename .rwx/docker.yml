@@ -226,14 +226,6 @@ tasks:
       # Install Claude CLI
       sudo npm install -g @anthropic-ai/claude-code
 
-      # Create agent user in image filesystem
-      # Can't modify running ubuntu user (PID 1), so edit passwd/group directly
-      sudo sed -i 's/^ubuntu:/agent:/' /etc/passwd
-      sudo sed -i 's|/home/ubuntu|/home/agent|' /etc/passwd
-      sudo sed -i 's/^ubuntu:/agent:/' /etc/group
-      sudo mkdir -p /home/agent/gt
-      sudo chown -R 1000:1000 /home/agent
-
       # Install binaries
       sudo cp ${{ tasks.build-gt.artifacts.gt-binary }} /usr/local/bin/gt
       sudo cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /usr/local/bin/coop
@@ -247,7 +239,16 @@ tasks:
       sudo cp deploy/agent/entrypoint.sh /entrypoint.sh
       sudo chmod +x /entrypoint.sh
 
-      # Configure image metadata
+      # Create home directory while we still have sudo
+      sudo mkdir -p /home/agent/gt
+      sudo chown -R 1000:1000 /home/agent
+
+      # Rename ubuntu→agent in passwd/group LAST (breaks sudo for running process)
+      sudo sed -i 's/^ubuntu:/agent:/' /etc/passwd
+      sudo sed -i 's|/home/ubuntu|/home/agent|' /etc/passwd
+      sudo sed -i 's/^ubuntu:/agent:/' /etc/group
+
+      # Configure image metadata (no sudo needed)
       jq -n '["/entrypoint.sh"]' > $RWX_IMAGE/entrypoint.json
       echo "agent" > $RWX_IMAGE/user
       echo "/home/agent/gt" > $RWX_IMAGE/workspace
@@ -300,19 +301,19 @@ tasks:
       sudo apt-get clean
       sudo rm -rf /var/lib/apt/lists/*
 
-      # Create agent user in image filesystem
+      # Install entrypoint and create home dir while sudo still works
+      sudo cp docker/toolchain/entrypoint.sh /usr/local/bin/toolchain-entrypoint.sh
+      sudo chmod +x /usr/local/bin/toolchain-entrypoint.sh
+      sudo mkdir -p /home/agent
+      sudo chown -R 1000:1000 /home/agent
+
+      # Rename ubuntu→agent in passwd/group LAST (breaks sudo for running process)
       sudo sed -i 's/^ubuntu:/agent:/' /etc/passwd
       sudo sed -i 's|/home/ubuntu|/home/agent|' /etc/passwd
       sudo sed -i 's|/bin/sh|/bin/bash|' /etc/passwd
       sudo sed -i 's/^ubuntu:/agent:/' /etc/group
-      sudo mkdir -p /home/agent
-      sudo chown -R 1000:1000 /home/agent
 
-      # Install entrypoint
-      sudo cp docker/toolchain/entrypoint.sh /usr/local/bin/toolchain-entrypoint.sh
-      sudo chmod +x /usr/local/bin/toolchain-entrypoint.sh
-
-      # Configure image metadata
+      # Configure image metadata (no sudo needed)
       echo "/usr/local/bin/toolchain-entrypoint.sh" > $RWX_IMAGE/command
       echo "1000:1000" > $RWX_IMAGE/user
       echo "/home/agent/gt" > $RWX_IMAGE/workspace
