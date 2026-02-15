@@ -226,18 +226,13 @@ tasks:
       # Install Claude CLI
       sudo npm install -g @anthropic-ai/claude-code
 
-      # Create agent user (UID/GID 1000 may already exist as 'ubuntu')
-      if id -u agent &>/dev/null; then
-        echo "agent user already exists"
-      elif id -u ubuntu &>/dev/null; then
-        sudo usermod -l agent -d /home/agent -m ubuntu
-        sudo groupmod -n agent ubuntu
-      else
-        sudo groupadd -g 1000 agent
-        sudo useradd -u 1000 -g agent -s /bin/sh -m agent
-      fi
+      # Create agent user in image filesystem
+      # Can't modify running ubuntu user (PID 1), so edit passwd/group directly
+      sudo sed -i 's/^ubuntu:/agent:/' /etc/passwd
+      sudo sed -i 's|/home/ubuntu|/home/agent|' /etc/passwd
+      sudo sed -i 's/^ubuntu:/agent:/' /etc/group
       sudo mkdir -p /home/agent/gt
-      sudo chown -R agent:agent /home/agent
+      sudo chown -R 1000:1000 /home/agent
 
       # Install binaries
       sudo cp ${{ tasks.build-gt.artifacts.gt-binary }} /usr/local/bin/gt
@@ -305,16 +300,13 @@ tasks:
       sudo apt-get clean
       sudo rm -rf /var/lib/apt/lists/*
 
-      # Create agent user (UID/GID 1000 may already exist as 'ubuntu')
-      if id -u agent &>/dev/null; then
-        echo "agent user already exists"
-      elif id -u ubuntu &>/dev/null; then
-        sudo usermod -l agent -d /home/agent -m -s /bin/bash ubuntu
-        sudo groupmod -n agent ubuntu
-      else
-        sudo groupadd -g 1000 agent
-        sudo useradd -u 1000 -g agent -s /bin/bash -m agent
-      fi
+      # Create agent user in image filesystem
+      sudo sed -i 's/^ubuntu:/agent:/' /etc/passwd
+      sudo sed -i 's|/home/ubuntu|/home/agent|' /etc/passwd
+      sudo sed -i 's|/bin/sh|/bin/bash|' /etc/passwd
+      sudo sed -i 's/^ubuntu:/agent:/' /etc/group
+      sudo mkdir -p /home/agent
+      sudo chown -R 1000:1000 /home/agent
 
       # Install entrypoint
       sudo cp docker/toolchain/entrypoint.sh /usr/local/bin/toolchain-entrypoint.sh
