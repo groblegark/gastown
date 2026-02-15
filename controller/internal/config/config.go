@@ -131,6 +131,10 @@ type Config struct {
 	// Default: hostname.
 	LeaderElectionIdentity string
 
+	// HealthPort is the port for the HTTP health endpoint (env: HEALTH_PORT).
+	// Default: 8081. Set to 0 to disable.
+	HealthPort int
+
 	// RigCache maps rig name → metadata, populated at runtime from rig beads
 	// in the daemon. Not parsed from env/flags.
 	RigCache map[string]RigCacheEntry
@@ -181,6 +185,7 @@ func Parse() *Config {
 		LeaderElection:         envBoolOr("ENABLE_LEADER_ELECTION", false),
 		LeaderElectionID:       envOr("LEADER_ELECTION_ID", "agent-controller-leader"),
 		LeaderElectionIdentity: envOr("POD_NAME", hostname()),
+		HealthPort:             envIntOr("HEALTH_PORT", 8081),
 	}
 
 	flag.StringVar(&cfg.DaemonHost, "daemon-host", cfg.DaemonHost, "BD Daemon hostname")
@@ -212,6 +217,7 @@ func Parse() *Config {
 	flag.IntVar(&cfg.SpawnBurstLimit, "spawn-burst-limit", cfg.SpawnBurstLimit, "Max pods to create per reconcile pass")
 	flag.BoolVar(&cfg.LeaderElection, "leader-election", cfg.LeaderElection, "Enable K8s lease-based leader election")
 	flag.StringVar(&cfg.LeaderElectionID, "leader-election-id", cfg.LeaderElectionID, "Name of the Lease resource for leader election")
+	flag.IntVar(&cfg.HealthPort, "health-port", cfg.HealthPort, "HTTP health endpoint port (0 to disable)")
 	flag.Parse()
 
 	return cfg
