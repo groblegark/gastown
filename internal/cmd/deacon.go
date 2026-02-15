@@ -18,6 +18,7 @@ import (
 	"github.com/steveyegge/gastown/internal/deacon"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/polecat"
+	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
@@ -501,6 +502,18 @@ func detectDeaconK8sPod() (string, string) {
 }
 
 func runDeaconStop(cmd *cobra.Command, args []string) error {
+	// Remote daemon mode: stop via RPC.
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		return runDeaconStopRemote(rpcClient)
+	}
+
+	// K8s mode: detect K8s pod and delete it.
+	if os.Getenv("GT_K8S_NAMESPACE") != "" {
+		if podName, ns := detectDeaconK8sPod(); podName != "" {
+			return stopK8sPod(podName, ns, "Deacon")
+		}
+	}
+
 	sessionName := getDeaconSessionName()
 	backend, sessionKey := resolveBackendForSession(sessionName)
 
@@ -525,6 +538,17 @@ func runDeaconStop(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%s Deacon session stopped.\n", style.Bold.Render("✓"))
+	return nil
+}
+
+// runDeaconStopRemote stops the deacon via daemon RPC.
+func runDeaconStopRemote(client *rpcclient.Client) error {
+	fmt.Println("Stopping Deacon via remote daemon...")
+	_, _, err := client.StopAgent(context.Background(), beads.DeaconBeadIDTown(), false, "gt deacon stop")
+	if err != nil {
+		return fmt.Errorf("stopping deacon: %w", err)
+	}
+	fmt.Printf("%s Deacon stop requested (agent_state → stopping).\n", style.Bold.Render("✓"))
 	return nil
 }
 
@@ -571,6 +595,28 @@ func runDeaconAttach(cmd *cobra.Command, args []string) error {
 }
 
 func runDeaconStatus(cmd *cobra.Command, args []string) error {
+	// Remote daemon mode: query via RPC.
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		return runAgentStatusRemote(rpcClient, "deacon", "Deacon", beads.DeaconBeadIDTown())
+	}
+
+	// K8s mode: check for K8s pod first (no workspace required).
+	if os.Getenv("GT_K8S_NAMESPACE") != "" {
+		if podName, ns := detectDeaconK8sPod(); podName != "" {
+			fmt.Printf("%s Deacon is running in %s\n",
+				style.Bold.Render("☸"),
+				style.Bold.Render("Kubernetes"))
+			fmt.Printf("  Pod: %s (namespace: %s, coop)\n", podName, ns)
+			fmt.Printf("\nAttach with: %s\n", style.Dim.Render("gt deacon attach"))
+			return nil
+		}
+		fmt.Printf("%s Deacon is %s in %s\n",
+			style.Dim.Render("○"),
+			"not running",
+			os.Getenv("GT_K8S_NAMESPACE"))
+		return nil
+	}
+
 	sessionName := getDeaconSessionName()
 	backend, sessionKey := resolveBackendForSession(sessionName)
 
@@ -602,16 +648,6 @@ func runDeaconStatus(cmd *cobra.Command, args []string) error {
 			style.Bold.Render("running"))
 		fmt.Printf("\nAttach with: %s\n", style.Dim.Render("gt deacon attach"))
 	} else {
-		// Check for K8s pod.
-		if podName, ns := detectDeaconK8sPod(); podName != "" {
-			fmt.Printf("%s Deacon is running in %s\n",
-				style.Bold.Render("☸"),
-				style.Bold.Render("Kubernetes"))
-			fmt.Printf("  Pod: %s (namespace: %s, coop)\n", podName, ns)
-			fmt.Printf("\nAttach with: %s\n", style.Dim.Render("gt deacon attach"))
-			return nil
-		}
-
 		fmt.Printf("%s Deacon session is %s\n",
 			style.Dim.Render("○"),
 			"not running")
@@ -622,6 +658,24 @@ func runDeaconStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runDeaconRestart(cmd *cobra.Command, args []string) error {
+	// Remote daemon mode: stop via RPC, then start.
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		fmt.Println("Restarting Deacon via remote daemon...")
+		_ = runDeaconStopRemote(rpcClient)
+		return runDeaconStart(cmd, args)
+	}
+
+	// K8s mode: delete pod, then start.
+	if os.Getenv("GT_K8S_NAMESPACE") != "" {
+		if podName, ns := detectDeaconK8sPod(); podName != "" {
+			if err := stopK8sPod(podName, ns, "Deacon"); err != nil {
+				return err
+			}
+			fmt.Println("Starting Deacon...")
+			return runDeaconStart(cmd, args)
+		}
+	}
+
 	sessionName := getDeaconSessionName()
 	backend, sessionKey := resolveBackendForSession(sessionName)
 

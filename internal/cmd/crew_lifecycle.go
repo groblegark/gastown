@@ -507,6 +507,11 @@ func runCrewRestart(cmd *cobra.Command, args []string) error {
 		return runCrewRestartAll()
 	}
 
+	// Remote daemon mode: stop then start via RPC.
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		return runCrewRestartRemote(rpcClient, args)
+	}
+
 	var lastErr error
 
 	for _, arg := range args {
@@ -544,6 +549,60 @@ func runCrewRestart(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s Restarted crew workspace: %s/%s\n",
 			style.Bold.Render("✓"), r.Name, name)
 		fmt.Printf("Attach with: %s\n", style.Dim.Render(fmt.Sprintf("gt crew at %s", name)))
+	}
+
+	return lastErr
+}
+
+// runCrewRestartRemote restarts crew workers via the daemon: stop then start.
+func runCrewRestartRemote(client *rpcclient.Client, args []string) error {
+	var lastErr error
+
+	for _, arg := range args {
+		name := arg
+		rigName := crewRig
+
+		if rig, crewName, ok := parseRigSlashName(name); ok {
+			if rigName == "" {
+				rigName = rig
+			}
+			name = crewName
+		}
+
+		if rigName == "" {
+			townRoot, err := workspace.FindFromCwdOrError()
+			if err != nil {
+				fmt.Printf("Error restarting %s: not in a Gas Town workspace: %v\n", arg, err)
+				lastErr = err
+				continue
+			}
+			var inferErr error
+			rigName, inferErr = inferRigFromCwd(townRoot)
+			if inferErr != nil {
+				fmt.Printf("Error restarting %s: could not determine rig (use --rig flag): %v\n", arg, inferErr)
+				lastErr = inferErr
+				continue
+			}
+		}
+
+		// Stop first (best effort)
+		agentAddr := fmt.Sprintf("%s/crew/%s", rigName, name)
+		_, _, _ = client.StopAgent(context.Background(), agentAddr, false, "gt crew restart")
+
+		// Then start
+		resp, err := client.StartCrew(context.Background(), rpcclient.StartCrewRequest{
+			Name:          name,
+			Rig:           rigName,
+			AgentOverride: crewAgentOverride,
+			Create:        true,
+		})
+		if err != nil {
+			fmt.Printf("  %s %s/%s: %v\n", style.ErrorPrefix, rigName, name, err)
+			lastErr = err
+			continue
+		}
+		_ = resp
+		fmt.Printf("  %s %s/%s: restarted (remote)\n", style.SuccessPrefix, rigName, name)
 	}
 
 	return lastErr

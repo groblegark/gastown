@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/mayor"
+	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/workspace"
@@ -185,6 +187,18 @@ func runMayorStartK8s() error {
 }
 
 func runMayorStop(cmd *cobra.Command, args []string) error {
+	// Remote daemon mode: stop via RPC (sets agent_state=stopping, controller handles pod).
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		return runMayorStopRemote(rpcClient)
+	}
+
+	// K8s mode: detect K8s pod and delete it.
+	if os.Getenv("GT_K8S_NAMESPACE") != "" {
+		if podName, ns := detectMayorK8sPod(""); podName != "" {
+			return stopK8sPod(podName, ns, "Mayor")
+		}
+	}
+
 	mgr, err := getMayorManager()
 	if err != nil {
 		return err
@@ -199,6 +213,18 @@ func runMayorStop(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("%s Mayor session stopped.\n", style.Bold.Render("✓"))
+	return nil
+}
+
+// runMayorStopRemote stops the mayor via daemon RPC.
+func runMayorStopRemote(client *rpcclient.Client) error {
+	fmt.Println("Stopping Mayor via remote daemon...")
+	// Use the bead ID directly since StopAgent passes non-3-part addresses as-is.
+	_, _, err := client.StopAgent(context.Background(), beads.MayorBeadIDTown(), false, "gt mayor stop")
+	if err != nil {
+		return fmt.Errorf("stopping mayor: %w", err)
+	}
+	fmt.Printf("%s Mayor stop requested (agent_state → stopping).\n", style.Bold.Render("✓"))
 	return nil
 }
 
@@ -250,6 +276,28 @@ func runMayorAttach(cmd *cobra.Command, args []string) error {
 }
 
 func runMayorStatus(cmd *cobra.Command, args []string) error {
+	// Remote daemon mode: query via RPC.
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		return runAgentStatusRemote(rpcClient, "mayor", "Mayor", beads.MayorBeadIDTown())
+	}
+
+	// K8s mode: check for K8s pod first (no workspace required).
+	if os.Getenv("GT_K8S_NAMESPACE") != "" {
+		if podName, ns := detectMayorK8sPod(""); podName != "" {
+			fmt.Printf("%s Mayor is running in %s\n",
+				style.Bold.Render("☸"),
+				style.Bold.Render("Kubernetes"))
+			fmt.Printf("  Pod: %s (namespace: %s, coop)\n", podName, ns)
+			fmt.Printf("\nAttach with: %s\n", style.Dim.Render("gt mayor attach"))
+			return nil
+		}
+		fmt.Printf("%s Mayor is %s in %s\n",
+			style.Dim.Render("○"),
+			"not running",
+			os.Getenv("GT_K8S_NAMESPACE"))
+		return nil
+	}
+
 	mgr, err := getMayorManager()
 	if err != nil {
 		return err
@@ -258,17 +306,6 @@ func runMayorStatus(cmd *cobra.Command, args []string) error {
 	info, err := mgr.Status()
 	if err != nil {
 		if err == mayor.ErrNotRunning {
-			// Check for K8s coop pod.
-			townRoot, _ := workspace.FindFromCwdOrError()
-			if podName, ns := detectMayorK8sPod(townRoot); podName != "" {
-				fmt.Printf("%s Mayor is running in %s\n",
-					style.Bold.Render("☸"),
-					style.Bold.Render("Kubernetes"))
-				fmt.Printf("  Pod: %s (namespace: %s, coop)\n", podName, ns)
-				fmt.Printf("\nAttach with: %s\n", style.Dim.Render("gt mayor attach"))
-				return nil
-			}
-
 			fmt.Printf("%s Mayor session is %s\n",
 				style.Dim.Render("○"),
 				"not running")
@@ -293,6 +330,24 @@ func runMayorStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runMayorRestart(cmd *cobra.Command, args []string) error {
+	// Remote daemon mode: stop via RPC, then start.
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		fmt.Println("Restarting Mayor via remote daemon...")
+		_ = runMayorStopRemote(rpcClient)
+		return runMayorStart(cmd, args)
+	}
+
+	// K8s mode: delete pod (controller will recreate if bead still spawning).
+	if os.Getenv("GT_K8S_NAMESPACE") != "" {
+		if podName, ns := detectMayorK8sPod(""); podName != "" {
+			if err := stopK8sPod(podName, ns, "Mayor"); err != nil {
+				return err
+			}
+			fmt.Println("Starting Mayor...")
+			return runMayorStart(cmd, args)
+		}
+	}
+
 	mgr, err := getMayorManager()
 	if err != nil {
 		return err
