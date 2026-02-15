@@ -120,6 +120,10 @@ type Config struct {
 	// SidecarMaxChangesPerHour is the rate limit for sidecar changes per agent.
 	SidecarMaxChangesPerHour int
 
+	// HealthPort is the port for the HTTP health endpoint (env: HEALTH_PORT).
+	// Default: 8081. Set to 0 to disable.
+	HealthPort int
+
 	// RigCache maps rig name → git mirror service name, populated at runtime
 	// from rig beads in the daemon. Not parsed from env/flags.
 	RigCache map[string]RigCacheEntry
@@ -180,6 +184,7 @@ func Parse() *Config {
 		SidecarMaxCPU:            envOr("SIDECAR_MAX_CPU", "2"),
 		SidecarMaxMemory:         envOr("SIDECAR_MAX_MEMORY", "4Gi"),
 		SidecarMaxChangesPerHour: envIntOr("SIDECAR_MAX_CHANGES_PER_HOUR", 3),
+		HealthPort:               envIntOr("HEALTH_PORT", 8081),
 	}
 
 	flag.StringVar(&cfg.DaemonHost, "daemon-host", cfg.DaemonHost, "BD Daemon hostname")
@@ -209,6 +214,7 @@ func Parse() *Config {
 	flag.StringVar(&cfg.SidecarMaxCPU, "sidecar-max-cpu", cfg.SidecarMaxCPU, "Max CPU limit for toolchain sidecars")
 	flag.StringVar(&cfg.SidecarMaxMemory, "sidecar-max-memory", cfg.SidecarMaxMemory, "Max memory limit for toolchain sidecars")
 	flag.IntVar(&cfg.SidecarMaxChangesPerHour, "sidecar-max-changes-per-hour", cfg.SidecarMaxChangesPerHour, "Max sidecar changes per hour per agent")
+	flag.IntVar(&cfg.HealthPort, "health-port", cfg.HealthPort, "HTTP health endpoint port (0 to disable)")
 	flag.Parse()
 
 	return cfg
