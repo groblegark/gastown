@@ -119,6 +119,7 @@ tasks:
       COMMIT_SHA: ${{ init.commit-sha }}
       REF_NAME: ${{ init.ref-name }}
     filter:
+      - controller/**/*.go
       - controller/go.mod
       - controller/go.sum
     outputs:
