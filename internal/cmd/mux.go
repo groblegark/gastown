@@ -48,19 +48,20 @@ func runMux(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not connected to a K8s namespace — run 'gt connect <namespace>' first")
 	}
 
-	// Find the coop-broker pod.
-	podName, err := findBrokerPod(ns)
+	// Find the coop-broker service.
+	svcName, err := findBrokerService(ns)
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("%s Connecting to coop-broker %s in %s...\n",
-		style.Bold.Render("☸"), style.Bold.Render(podName), ns)
+		style.Bold.Render("☸"), style.Bold.Render(svcName), ns)
 
-	// Set up port-forward.
+	// Set up port-forward to the service (not a specific pod).
 	conn := terminal.NewCoopPodConnection(terminal.CoopPodConnectionConfig{
-		PodName:   podName,
+		PodName:   "svc/" + svcName,
 		Namespace: ns,
+		CoopPort:  9800, // broker service port (values.yaml coopBroker.service.port)
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -78,7 +79,7 @@ func runMux(cmd *cobra.Command, args []string) error {
 		muxEndpoint += "?token=" + url.QueryEscape(token)
 	}
 
-	fmt.Printf("  Port-forward: localhost:%d → %s:8080\n", conn.LocalPort(), podName)
+	fmt.Printf("  Port-forward: localhost:%d → %s:9800\n", conn.LocalPort(), svcName)
 
 	if muxURL {
 		fmt.Println(muxEndpoint)
@@ -107,19 +108,20 @@ func runMux(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// findBrokerPod locates the coop-broker pod in the given namespace.
-func findBrokerPod(ns string) (string, error) {
-	out, err := exec.Command("kubectl", "get", "pods", "-n", ns,
+// findBrokerService locates the coop-broker K8s Service in the given namespace.
+// Uses the same label selector as the pod lookup but targets the Service object,
+// which is stable across pod restarts and scales.
+func findBrokerService(ns string) (string, error) {
+	out, err := exec.Command("kubectl", "get", "svc", "-n", ns,
 		"-l", "app.kubernetes.io/component=coop-broker",
-		"--field-selector=status.phase=Running",
 		"-o", "jsonpath={.items[0].metadata.name}").Output()
 	if err != nil {
-		return "", fmt.Errorf("no coop-broker pod found in namespace %s: %w", ns, err)
+		return "", fmt.Errorf("no coop-broker service found in namespace %s: %w", ns, err)
 	}
 
 	name := strings.TrimSpace(string(out))
 	if name == "" {
-		return "", fmt.Errorf("no running coop-broker pod found in namespace %s", ns)
+		return "", fmt.Errorf("no coop-broker service found in namespace %s", ns)
 	}
 	return name, nil
 }
