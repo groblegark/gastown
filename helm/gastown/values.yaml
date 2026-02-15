@@ -270,6 +270,8 @@ bd-daemon:
     auth:
       enabled: false
     master:
+      nodeSelector:
+        kubernetes.io/arch: amd64
       persistence:
         enabled: true
         size: 1Gi
