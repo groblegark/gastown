@@ -372,6 +372,12 @@ func init() {
 }
 
 func runDeaconStart(cmd *cobra.Command, args []string) error {
+	// Remote daemon mode: spawn via RPC (controller creates the pod).
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		return runDeaconStartRemote(rpcClient)
+	}
+
+	// Explicit --target=k8s without daemon config (legacy).
 	if deaconTarget == "k8s" {
 		return runDeaconStartK8s()
 	}
@@ -396,6 +402,20 @@ func runDeaconStart(cmd *cobra.Command, args []string) error {
 		style.Bold.Render("✓"),
 		style.Dim.Render("gt deacon attach"))
 
+	return nil
+}
+
+// runDeaconStartRemote spawns the deacon via the daemon's beads API.
+func runDeaconStartRemote(client *rpcclient.Client) error {
+	fmt.Println("Dispatching Deacon to Kubernetes via daemon...")
+	_, err := client.SpawnSingleton(context.Background(), "deacon")
+	if err != nil {
+		return fmt.Errorf("spawning deacon: %w", err)
+	}
+	fmt.Printf("%s Deacon dispatched (agent_state=spawning, bead=%s)\n",
+		style.Bold.Render("✓"), beads.DeaconBeadIDTown())
+	fmt.Printf("  The controller will create a deacon pod when it detects this bead.\n")
+	fmt.Printf("  Attach with: %s\n", style.Dim.Render("gt deacon attach"))
 	return nil
 }
 
@@ -484,15 +504,10 @@ func runDeaconStartK8s() error {
 // Uses bead metadata written by the controller's status reporter
 // instead of shelling out to kubectl.
 func detectDeaconK8sPod() (string, string) {
-	if os.Getenv("GT_K8S_NAMESPACE") == "" {
-		return "", ""
-	}
-
 	info, err := terminal.ResolveAgentPodInfo("deacon")
 	if err != nil || info.PodName == "" {
 		return "", ""
 	}
-
 	return info.PodName, info.Namespace
 }
 
@@ -541,13 +556,17 @@ func runDeaconStopRemote(client *rpcclient.Client) error {
 }
 
 func runDeaconAttach(cmd *cobra.Command, args []string) error {
-	// When GT_K8S_NAMESPACE is set, try K8s attach first.
-	if os.Getenv("GT_K8S_NAMESPACE") != "" {
-		if podName, ns := detectDeaconK8sPod(); podName != "" {
+	// Remote daemon mode: attach via bead metadata (pod name from controller).
+	if ns := getConnectedNamespace(); ns != "" {
+		if podName, podNS := detectDeaconK8sPod(); podName != "" {
+			if podNS == "" {
+				podNS = ns
+			}
 			fmt.Printf("%s Attaching to K8s Deacon pod via coop...\n",
 				style.Bold.Render("☸"))
-			return attachToCoopPodWithBrowser(podName, ns, deaconBrowser)
+			return attachToCoopPodWithBrowser(podName, podNS, deaconBrowser)
 		}
+		return fmt.Errorf("Deacon pod not found. Start with: gt deacon start")
 	}
 
 	sessionName := getDeaconSessionName()
@@ -583,23 +602,6 @@ func runDeaconStatus(cmd *cobra.Command, args []string) error {
 	// Remote daemon mode: query via RPC.
 	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
 		return runAgentStatusRemote(rpcClient, "deacon", "Deacon", beads.DeaconBeadIDTown())
-	}
-
-	// K8s mode: check for K8s pod first (no workspace required).
-	if os.Getenv("GT_K8S_NAMESPACE") != "" {
-		if podName, ns := detectDeaconK8sPod(); podName != "" {
-			fmt.Printf("%s Deacon is running in %s\n",
-				style.Bold.Render("☸"),
-				style.Bold.Render("Kubernetes"))
-			fmt.Printf("  Pod: %s (namespace: %s, coop)\n", podName, ns)
-			fmt.Printf("\nAttach with: %s\n", style.Dim.Render("gt deacon attach"))
-			return nil
-		}
-		fmt.Printf("%s Deacon is %s in %s\n",
-			style.Dim.Render("○"),
-			"not running",
-			os.Getenv("GT_K8S_NAMESPACE"))
-		return nil
 	}
 
 	sessionName := getDeaconSessionName()

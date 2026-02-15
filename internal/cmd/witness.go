@@ -309,7 +309,7 @@ func runWitnessAttach(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// When GT_K8S_NAMESPACE is set, try K8s attach via bead metadata first.
+	// When connected to a K8s namespace, try K8s attach via bead metadata first.
 	if ns := getConnectedNamespace(); ns != "" {
 		target := fmt.Sprintf("%s/witness", rigName)
 		if info, err := terminal.ResolveAgentPodInfo(target); err == nil && info.PodName != "" {

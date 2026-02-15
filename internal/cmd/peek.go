@@ -117,10 +117,10 @@ func runPeek(cmd *cobra.Command, args []string) error {
 func peekViaPortForward(address string, lines int) error {
 	podName, ns := resolveCoopTarget(address)
 	if podName == "" {
-		// resolveCoopTarget needs GT_K8S_NAMESPACE. Try bead metadata as fallback.
+		// resolveCoopTarget needs a connected namespace. Try bead metadata as fallback.
 		podInfo, err := terminal.ResolveAgentPodInfo(address)
 		if err != nil {
-			return fmt.Errorf("cannot find pod for %q: set GT_K8S_NAMESPACE or ensure agent bead has pod metadata", address)
+			return fmt.Errorf("cannot find pod for %q: run 'gt connect <namespace>' or ensure agent bead has pod metadata", address)
 		}
 		podName = podInfo.PodName
 		ns = podInfo.Namespace

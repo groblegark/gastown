@@ -193,13 +193,13 @@ func readGlobalDaemonConfigFull() (*GlobalDaemonConfig, error) {
 }
 
 // getConnectedNamespace returns the K8s namespace from the daemon config.
-// Falls back to GT_K8S_NAMESPACE env var, then returns "" if neither is set.
+// Returns "" if not connected to a K8s namespace.
 func getConnectedNamespace() string {
 	cfg, err := readGlobalDaemonConfigFull()
 	if err == nil && cfg.Namespace != "" {
 		return cfg.Namespace
 	}
-	return os.Getenv("GT_K8S_NAMESPACE")
+	return ""
 }
 
 // maskToken returns a display-safe representation of a token.
