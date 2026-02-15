@@ -228,8 +228,7 @@ tasks:
       sudo apt-get -y install --no-install-recommends nodejs
       sudo rm -rf /var/lib/apt/lists/*
 
-      # Install Claude CLI
-      sudo npm install -g @anthropic-ai/claude-code
+      # Install Claude CLI (npm install can break sudo, so do binaries first)
 
       # Install binaries
       sudo cp ${{ tasks.build-gt.artifacts.gt-binary }} /usr/local/bin/gt
@@ -248,10 +247,14 @@ tasks:
       sudo mkdir -p /home/agent/gt
       sudo chown -R 1000:1000 /home/agent
 
-      # Rename ubuntu→agent in passwd/group LAST (breaks sudo for running process)
+      # Rename ubuntu→agent in passwd/group (breaks sudo for running process)
       sudo sed -i 's/^ubuntu:/agent:/' /etc/passwd
       sudo sed -i 's|/home/ubuntu|/home/agent|' /etc/passwd
       sudo sed -i 's/^ubuntu:/agent:/' /etc/group
+
+      # Install Claude CLI LAST — npm install -g breaks sudo for the
+      # running user, so no sudo commands can follow this
+      sudo npm install -g @anthropic-ai/claude-code
 
       # Configure image metadata (no sudo needed)
       jq -n '["/entrypoint.sh"]' > $RWX_IMAGE/entrypoint.json
