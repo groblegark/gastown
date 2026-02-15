@@ -87,7 +87,12 @@ func newDaemonRPCClient() *rpcclient.Client {
 		if port == "" {
 			port = "9080"
 		}
-		baseURL = "http://" + host + ":" + port
+		if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
+			// Host already includes scheme — don't prepend another.
+			baseURL = host
+		} else {
+			baseURL = "http://" + host + ":" + port
+		}
 	}
 	token := os.Getenv("BD_DAEMON_TOKEN")
 	townName := os.Getenv("GT_TOWN")
