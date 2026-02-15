@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -30,8 +29,9 @@ The mux dashboard shows a live grid of all registered agent pods with
 their terminal output, state badges, and credential alerts. Click a
 tile to focus it for input, or expand to full screen.
 
-Requires a coop-broker pod running in the K8s namespace (GT_K8S_NAMESPACE).
-The auth token is read from the local daemon connection config.
+Requires a coop-broker pod running in the connected K8s namespace.
+The service name is derived from the town name in daemon config, and
+the auth token is read from the local daemon connection config.
 
 Use --url to print the local URL without opening a browser.`,
 	RunE: runMux,
@@ -48,8 +48,9 @@ func runMux(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not connected to a K8s namespace — run 'gt connect <namespace>' first")
 	}
 
-	// Find the coop-broker service.
-	svcName, err := findBrokerService(ns)
+	// Resolve the coop-broker service name from daemon config (Helm convention:
+	// <release-name>-coop-broker where release-name = town-name).
+	svcName, err := resolveBrokerServiceName()
 	if err != nil {
 		return err
 	}
@@ -108,22 +109,19 @@ func runMux(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// findBrokerService locates the coop-broker K8s Service in the given namespace.
-// Uses the same label selector as the pod lookup but targets the Service object,
-// which is stable across pod restarts and scales.
-func findBrokerService(ns string) (string, error) {
-	out, err := exec.Command("kubectl", "get", "svc", "-n", ns,
-		"-l", "app.kubernetes.io/component=coop-broker",
-		"-o", "jsonpath={.items[0].metadata.name}").Output()
+// resolveBrokerServiceName returns the coop-broker K8s Service name.
+// Derives it from the town name in daemon config using the Helm naming
+// convention: <release-name>-coop-broker (where release-name = town-name).
+// This avoids a kubectl call since the town name is already cached locally.
+func resolveBrokerServiceName() (string, error) {
+	cfg, err := readGlobalDaemonConfigFull()
 	if err != nil {
-		return "", fmt.Errorf("no coop-broker service found in namespace %s: %w", ns, err)
+		return "", fmt.Errorf("reading daemon config: %w", err)
 	}
-
-	name := strings.TrimSpace(string(out))
-	if name == "" {
-		return "", fmt.Errorf("no coop-broker service found in namespace %s", ns)
+	if cfg.TownName == "" {
+		return "", fmt.Errorf("no town name in daemon config — run 'gt connect <namespace>' first")
 	}
-	return name, nil
+	return cfg.TownName + "-coop-broker", nil
 }
 
 // getBrokerToken returns the auth token for the coop-broker.
