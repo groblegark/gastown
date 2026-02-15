@@ -107,6 +107,76 @@ case "${ROLE}" in
         ;;
 esac
 
+# ── Rig-aware git setup ────────────────────────────────────────────────
+#
+# The controller sets GT_RIGS="name=giturl:prefix,name2=giturl2:prefix2"
+# with rig metadata from daemon rig beads. The init container (if present)
+# clones the agent's rig repo into {workspace}/{rig}/work/.
+#
+# This section:
+#   1. Populates rigs.json from GT_RIGS so gt rig commands work
+#   2. Creates rig directory structure for the agent's own rig
+#   3. Verifies the init-clone wrote code to the expected location
+
+if [ -n "${GT_RIGS:-}" ]; then
+    echo "[entrypoint] Registering rigs from GT_RIGS"
+    RIGS_JSON="${WORKSPACE}/mayor/rigs.json"
+
+    # Build rigs.json entries from GT_RIGS env var.
+    # Format: "rigname=https://github.com/org/repo.git:prefix,..."
+    RIGS_OBJ="{}"
+    IFS=',' read -ra RIG_ENTRIES <<< "${GT_RIGS}"
+    for entry in "${RIG_ENTRIES[@]}"; do
+        # Parse "name=url:prefix"
+        rig_name="${entry%%=*}"
+        url_prefix="${entry#*=}"
+        rig_url="${url_prefix%%:*}"
+        rig_prefix="${url_prefix#*:}"
+
+        if [ -z "${rig_name}" ] || [ -z "${rig_url}" ]; then
+            continue
+        fi
+
+        NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        RIGS_OBJ=$(echo "${RIGS_OBJ}" | jq \
+            --arg name "${rig_name}" \
+            --arg url "${rig_url}" \
+            --arg prefix "${rig_prefix}" \
+            --arg now "${NOW}" \
+            '.[$name] = {git_url: $url, added_at: $now, beads: {repo: "", prefix: $prefix}}')
+
+        echo "[entrypoint]   Registered rig: ${rig_name} (${rig_url}, prefix=${rig_prefix})"
+    done
+
+    # Write complete rigs.json
+    echo "{\"version\":1,\"rigs\":${RIGS_OBJ}}" | jq . > "${RIGS_JSON}"
+fi
+
+# Verify init-clone result for code-needing roles.
+if [ -n "${RIG}" ]; then
+    CLONE_DIR="${WORKSPACE}/${RIG}/work"
+    if [ -d "${CLONE_DIR}/.git" ]; then
+        echo "[entrypoint] Rig repo found at ${CLONE_DIR}"
+
+        # Create rig directory structure that gt prime expects.
+        # For crew: {workspace}/{rig}/crew/{agent}/ symlinked to clone
+        # For polecat: work directly in clone dir
+        # For witness/refinery: work in clone dir
+        case "${ROLE}" in
+            crew)
+                CREW_DIR="${WORKSPACE}/${RIG}/crew/${AGENT}"
+                if [ ! -d "${CREW_DIR}" ]; then
+                    mkdir -p "$(dirname "${CREW_DIR}")"
+                    ln -sfn "${CLONE_DIR}" "${CREW_DIR}"
+                    echo "[entrypoint] Linked crew workspace: ${CREW_DIR} → ${CLONE_DIR}"
+                fi
+                ;;
+        esac
+    elif [ "${ROLE}" = "polecat" ] || [ "${ROLE}" = "crew" ] || [ "${ROLE}" = "refinery" ]; then
+        echo "[entrypoint] WARNING: No git clone found at ${CLONE_DIR} (init container may not have run)"
+    fi
+fi
+
 # ── Daemon connection via gt connect ────────────────────────────────────
 #
 # If BD_DAEMON_HOST is set and .beads/config.yaml doesn't exist yet,
