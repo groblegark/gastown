@@ -243,14 +243,15 @@ tasks:
       sudo mkdir -p /home/agent/gt
       sudo chown -R 1000:1000 /home/agent
 
-      # Install Claude CLI while sudo still works (npm install -g can
-      # also break sudo, so this must come before the passwd rename)
-      sudo npm install -g @anthropic-ai/claude-code
-
-      # Rename ubuntu→agent in passwd/group LAST (breaks sudo for running process)
-      sudo sed -i 's/^ubuntu:/agent:/' /etc/passwd
-      sudo sed -i 's|/home/ubuntu|/home/agent|' /etc/passwd
-      sudo sed -i 's/^ubuntu:/agent:/' /etc/group
+      # WORKAROUND: npm install -g and sed both corrupt /etc/shadow on
+      # multi-layer overlayfs, breaking subsequent sudo calls. Run them
+      # in a single sudo bash -c to avoid re-authentication.
+      sudo bash -c '
+        npm install -g @anthropic-ai/claude-code
+        sed -i "s/^ubuntu:/agent:/" /etc/passwd
+        sed -i "s|/home/ubuntu|/home/agent|" /etc/passwd
+        sed -i "s/^ubuntu:/agent:/" /etc/group
+      '
 
       # Configure image metadata (no sudo needed)
       jq -n '["/entrypoint.sh"]' > $RWX_IMAGE/entrypoint.json
