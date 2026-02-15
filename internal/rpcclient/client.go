@@ -2859,6 +2859,61 @@ func (c *Client) StopAgent(ctx context.Context, agentAddr string, force bool, re
 	return agent, false, nil
 }
 
+// SpawnSingleton spawns a singleton agent (mayor, deacon) by creating an agent
+// bead via the daemon's beads API. The K8s controller detects the bead and
+// creates the pod.
+func (c *Client) SpawnSingleton(ctx context.Context, role string) (*Agent, error) {
+	beadID := fmt.Sprintf("hq-%s", role)
+	title := fmt.Sprintf("Agent: %s", role)
+	labels := []string{"gt:agent", fmt.Sprintf("role:%s", role), "execution_target:k8s"}
+
+	createBody := map[string]interface{}{
+		"id":          beadID,
+		"title":       title,
+		"description": fmt.Sprintf("Singleton agent %s - town-level coordinator.", role),
+		"issue_type":  "agent",
+		"labels":      labels,
+		"pinned":      true,
+		"role_type":   role,
+		"agent_state": "spawning",
+	}
+
+	var created beadIssue
+	err := c.postBeads(ctx, "Create", createBody, &created)
+	if err != nil {
+		// If the bead already exists, reopen it with spawning state.
+		errStr := err.Error()
+		if strings.Contains(errStr, "UNIQUE") || strings.Contains(errStr, "Duplicate") || strings.Contains(errStr, "already exists") {
+			updateBody := map[string]interface{}{
+				"id":          beadID,
+				"status":      "in_progress",
+				"agent_state": "spawning",
+			}
+			if err2 := c.postBeads(ctx, "Update", updateBody, nil); err2 != nil {
+				return nil, fmt.Errorf("reopening existing %s bead: %w", role, err2)
+			}
+		} else {
+			return nil, fmt.Errorf("creating %s bead: %w", role, err)
+		}
+	} else {
+		// Set status to in_progress to trigger the controller.
+		updateBody := map[string]interface{}{
+			"id":     beadID,
+			"status": "in_progress",
+		}
+		if err := c.postBeads(ctx, "Update", updateBody, nil); err != nil {
+			return nil, fmt.Errorf("setting %s status: %w", role, err)
+		}
+	}
+
+	return &Agent{
+		Address: role,
+		Name:    role,
+		Type:    role,
+		State:   "spawning",
+	}, nil
+}
+
 // NudgeAgent sends a message to an agent's terminal via RPC.
 // NOTE: This still uses the gastown AgentService endpoint as nudge is
 // a terminal operation that cannot be expressed as a bead mutation.

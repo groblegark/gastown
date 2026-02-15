@@ -72,4 +72,6 @@ storage-backend: dolt
 
 sync.mode: "dolt-native"
 
-# Daemon configuration handled at system level
+# Daemon connection — route all queries through HTTP RPC, not direct dolt
+daemon-host: "https://gastown-uat.app.e2e.dev.fics.ai"
+daemon-token: "V6T4jmuDY1GDgYDmSRaFa1wwd4RTkFKv"

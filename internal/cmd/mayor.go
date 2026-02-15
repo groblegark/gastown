@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
@@ -115,6 +114,12 @@ func getMayorSessionName() string {
 }
 
 func runMayorStart(cmd *cobra.Command, args []string) error {
+	// Remote daemon mode: spawn via RPC (controller creates the pod).
+	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
+		return runMayorStartRemote(rpcClient)
+	}
+
+	// Explicit --target=k8s without daemon config (legacy).
 	if mayorTarget == "k8s" {
 		return runMayorStartK8s()
 	}
@@ -136,6 +141,20 @@ func runMayorStart(cmd *cobra.Command, args []string) error {
 		style.Bold.Render("✓"),
 		style.Dim.Render("gt mayor attach"))
 
+	return nil
+}
+
+// runMayorStartRemote spawns the mayor via the daemon's beads API.
+func runMayorStartRemote(client *rpcclient.Client) error {
+	fmt.Println("Dispatching Mayor to Kubernetes via daemon...")
+	_, err := client.SpawnSingleton(context.Background(), "mayor")
+	if err != nil {
+		return fmt.Errorf("spawning mayor: %w", err)
+	}
+	fmt.Printf("%s Mayor dispatched (agent_state=spawning, bead=%s)\n",
+		style.Bold.Render("✓"), beads.MayorBeadIDTown())
+	fmt.Printf("  The controller will create a mayor pod when it detects this bead.\n")
+	fmt.Printf("  Attach with: %s\n", style.Dim.Render("gt mayor attach"))
 	return nil
 }
 
@@ -190,13 +209,6 @@ func runMayorStop(cmd *cobra.Command, args []string) error {
 		return runMayorStopRemote(rpcClient)
 	}
 
-	// K8s mode (no daemon config): detect K8s pod and delete it directly.
-	if os.Getenv("GT_K8S_NAMESPACE") != "" {
-		if podName, ns := detectMayorK8sPod(""); podName != "" {
-			return stopK8sPod(podName, ns, "Mayor")
-		}
-	}
-
 	mgr, err := getMayorManager()
 	if err != nil {
 		return err
@@ -227,14 +239,17 @@ func runMayorStopRemote(client *rpcclient.Client) error {
 }
 
 func runMayorAttach(cmd *cobra.Command, args []string) error {
-	// When GT_K8S_NAMESPACE is set, try K8s attach first — no local workspace needed.
-	// This allows `gt mayor attach` from any directory (e.g., ~/).
-	if os.Getenv("GT_K8S_NAMESPACE") != "" {
-		if podName, ns := detectMayorK8sPod(""); podName != "" {
+	// Remote daemon mode: attach via bead metadata (pod name from controller).
+	if ns := getConnectedNamespace(); ns != "" {
+		if podName, podNS := detectMayorK8sPod(""); podName != "" {
+			if podNS == "" {
+				podNS = ns
+			}
 			fmt.Printf("%s Attaching to K8s Mayor pod via coop...\n",
 				style.Bold.Render("☸"))
-			return attachToCoopPodWithBrowser(podName, ns, mayorBrowser)
+			return attachToCoopPodWithBrowser(podName, podNS, mayorBrowser)
 		}
+		return fmt.Errorf("Mayor pod not found. Start with: gt mayor start")
 	}
 
 	mgr, err := getMayorManager()
@@ -279,23 +294,6 @@ func runMayorStatus(cmd *cobra.Command, args []string) error {
 		return runAgentStatusRemote(rpcClient, "mayor", "Mayor", beads.MayorBeadIDTown())
 	}
 
-	// K8s mode: check for K8s pod first (no workspace required).
-	if os.Getenv("GT_K8S_NAMESPACE") != "" {
-		if podName, ns := detectMayorK8sPod(""); podName != "" {
-			fmt.Printf("%s Mayor is running in %s\n",
-				style.Bold.Render("☸"),
-				style.Bold.Render("Kubernetes"))
-			fmt.Printf("  Pod: %s (namespace: %s, coop)\n", podName, ns)
-			fmt.Printf("\nAttach with: %s\n", style.Dim.Render("gt mayor attach"))
-			return nil
-		}
-		fmt.Printf("%s Mayor is %s in %s\n",
-			style.Dim.Render("○"),
-			"not running",
-			os.Getenv("GT_K8S_NAMESPACE"))
-		return nil
-	}
-
 	mgr, err := getMayorManager()
 	if err != nil {
 		return err
@@ -335,16 +333,6 @@ func runMayorRestart(cmd *cobra.Command, args []string) error {
 		return runMayorStart(cmd, args)
 	}
 
-	// K8s mode (no daemon config): delete pod, then start.
-	if os.Getenv("GT_K8S_NAMESPACE") != "" {
-		if podName, ns := detectMayorK8sPod(""); podName != "" {
-			if err := stopK8sPod(podName, ns, "Mayor"); err != nil {
-				return err
-			}
-			return runMayorStart(cmd, args)
-		}
-	}
-
 	mgr, err := getMayorManager()
 	if err != nil {
 		return err
@@ -364,14 +352,9 @@ func runMayorRestart(cmd *cobra.Command, args []string) error {
 // Uses bead metadata written by the controller's status reporter
 // instead of shelling out to kubectl.
 func detectMayorK8sPod(_ string) (string, string) {
-	if os.Getenv("GT_K8S_NAMESPACE") == "" {
-		return "", ""
-	}
-
 	info, err := terminal.ResolveAgentPodInfo("mayor")
 	if err != nil || info.PodName == "" {
 		return "", ""
 	}
-
 	return info.PodName, info.Namespace
 }
