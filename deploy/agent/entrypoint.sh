@@ -171,6 +171,23 @@ if [ -n "${RIG}" ]; then
                     echo "[entrypoint] Linked crew workspace: ${CREW_DIR} → ${CLONE_DIR}"
                 fi
                 ;;
+            polecat)
+                # Install post-commit hook for early-push pattern.
+                # In K8s there's no shared bare repo — branches must be pushed
+                # to origin so refinery/witness can discover them via git fetch.
+                HOOKS_DIR="${CLONE_DIR}/.git/hooks"
+                mkdir -p "${HOOKS_DIR}"
+                cat > "${HOOKS_DIR}/post-commit" <<'HOOK'
+#!/bin/sh
+# Auto-push polecat branch after each commit so refinery can see progress.
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [ -n "${branch}" ] && [ "${branch}" != "HEAD" ] && [ "${branch}" != "main" ]; then
+    git push origin "${branch}" --force-with-lease 2>/dev/null &
+fi
+HOOK
+                chmod +x "${HOOKS_DIR}/post-commit"
+                echo "[entrypoint] Installed post-commit auto-push hook for polecat"
+                ;;
         esac
     elif [ "${ROLE}" = "polecat" ] || [ "${ROLE}" = "crew" ] || [ "${ROLE}" = "refinery" ]; then
         echo "[entrypoint] WARNING: No git clone found at ${CLONE_DIR} (init container may not have run)"
