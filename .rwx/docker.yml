@@ -2,8 +2,8 @@
 #
 # Uses $RWX_IMAGE for image metadata instead of inline Dockerfiles.
 # Images are pushed via `rwx image build --push-to` from the CLI,
-# or via `docker: true` tasks for images that need apt-get layers
-# (RWX native images inherit the task filesystem directly).
+# The build VM uses rwx/base 1.0.0; the $RWX_IMAGE output defines
+# the final container filesystem and metadata.
 #
 # Architecture:
 #   build-* tasks → compile binaries as artifacts (cached by filters)
@@ -57,7 +57,7 @@ on:
 
 base:
   image: ubuntu:24.04
-  config: none
+  config: rwx/base 1.0.0
 
 tasks:
   # ═══════════════════════════════════════════════════════════════════════
