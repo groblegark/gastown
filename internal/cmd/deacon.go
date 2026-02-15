@@ -502,13 +502,6 @@ func runDeaconStop(cmd *cobra.Command, args []string) error {
 		return runDeaconStopRemote(rpcClient)
 	}
 
-	// K8s mode (no daemon config): detect K8s pod and delete it directly.
-	if os.Getenv("GT_K8S_NAMESPACE") != "" {
-		if podName, ns := detectDeaconK8sPod(); podName != "" {
-			return stopK8sPod(podName, ns, "Deacon")
-		}
-	}
-
 	sessionName := getDeaconSessionName()
 	backend, sessionKey := resolveBackendForSession(sessionName)
 
@@ -655,17 +648,6 @@ func runDeaconRestart(cmd *cobra.Command, args []string) error {
 		fmt.Println("Restarting Deacon via remote daemon...")
 		_ = runDeaconStopRemote(rpcClient)
 		return runDeaconStart(cmd, args)
-	}
-
-	// K8s mode: delete pod, then start.
-	if os.Getenv("GT_K8S_NAMESPACE") != "" {
-		if podName, ns := detectDeaconK8sPod(); podName != "" {
-			if err := stopK8sPod(podName, ns, "Deacon"); err != nil {
-				return err
-			}
-			fmt.Println("Starting Deacon...")
-			return runDeaconStart(cmd, args)
-		}
 	}
 
 	sessionName := getDeaconSessionName()

@@ -3,29 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 
 	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/style"
 )
-
-// stopK8sPod deletes a K8s pod by name. The controller will handle cleanup.
-// For agents managed by the controller, deleting the pod triggers proper shutdown.
-func stopK8sPod(podName, namespace, displayName string) error {
-	fmt.Printf("%s Stopping %s K8s pod %s in %s...\n",
-		style.Bold.Render("☸"), displayName, podName, namespace)
-
-	cmd := exec.Command("kubectl", "delete", "pod", podName, "-n", namespace, "--grace-period=30")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("deleting pod %s: %w", podName, err)
-	}
-
-	fmt.Printf("%s %s pod deleted.\n", style.Bold.Render("✓"), displayName)
-	return nil
-}
 
 // runAgentStatusRemote queries agent status via daemon RPC.
 // agentAddr is the address used in RPC (e.g., "mayor", "deacon").
