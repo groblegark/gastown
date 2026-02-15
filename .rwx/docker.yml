@@ -257,7 +257,7 @@ tasks:
       echo "agent" > $RWX_IMAGE/user
       echo "/home/agent/gt" > $RWX_IMAGE/workspace
 
-  # ── Toolchain image (Go + Node + Python + AWS CLI + Docker CLI) ────
+  # ── Toolchain image (Go + Node + Python + AWS/Docker/RWX/GH/GLab/kubectl) ──
   - key: image-toolchain
     use: code
     if: ${{ init.ref-name != 'pr' }}
@@ -307,6 +307,24 @@ tasks:
         curl -fsSL "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" | \
           gunzip | tee /usr/local/bin/rust-analyzer > /dev/null
         chmod +x /usr/local/bin/rust-analyzer
+
+        # RWX CLI
+        curl -fsSL "https://github.com/rwx-cloud/cli/releases/download/v3.3.0/rwx-linux-x86_64-static" \
+          -o /usr/local/bin/rwx
+        chmod +x /usr/local/bin/rwx
+
+        # GitHub CLI (gh)
+        curl -fsSL "https://github.com/cli/cli/releases/download/v2.86.0/gh_2.86.0_linux_amd64.tar.gz" | \
+          tar -xz --strip-components=2 -C /usr/local/bin gh_2.86.0_linux_amd64/bin/gh
+
+        # GitLab CLI (glab)
+        curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v1.85.2/downloads/glab_1.85.2_linux_amd64.tar.gz" | \
+          tar -xz -C /usr/local/bin bin/glab --strip-components=1
+
+        # kubectl
+        curl -fsSL "https://dl.k8s.io/release/v1.35.1/bin/linux/amd64/kubectl" \
+          -o /usr/local/bin/kubectl
+        chmod +x /usr/local/bin/kubectl
 
         # Clean up
         apt-get clean
