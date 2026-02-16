@@ -734,7 +734,11 @@ func runRigAdopt(_ *cobra.Command, args []string) error {
 }
 
 // runRigRegister implements gt rig register — lightweight K8s rig registration (bd-bvwv).
-// Creates a rig bead in the daemon and updates rigs.json without cloning.
+// Creates a rig bead in the daemon and optionally updates local rigs.json/config.json.
+//
+// In daemon mode (BD_DAEMON_HOST set), works without a local workspace — only
+// creates the rig bead in the daemon. This enables K8s pods to register rigs
+// without needing the full workspace directory structure.
 func runRigRegister(_ *cobra.Command, args []string) error {
 	name := args[0]
 	gitURL := args[1]
@@ -743,66 +747,64 @@ func runRigRegister(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("--prefix is required (e.g., --prefix bd)")
 	}
 
-	// Find workspace
-	townRoot, err := workspace.FindFromCwdOrError()
-	if err != nil {
-		return fmt.Errorf("not in a Gas Town workspace: %w", err)
-	}
+	// Try to find workspace for local config updates.
+	// In K8s/daemon-only mode, workspace may not exist — that's fine.
+	townRoot, _ := workspace.FindFromCwdOrError()
 
-	// Load rigs config
-	rigsPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsPath)
-	if err != nil {
-		rigsConfig = &config.RigsConfig{
-			Version: 1,
-			Rigs:    make(map[string]config.RigEntry),
+	// If we have a local workspace, update rigs.json and create config.json
+	if townRoot != "" {
+		rigsPath := filepath.Join(townRoot, "mayor", "rigs.json")
+		rigsConfig, err := config.LoadRigsConfig(rigsPath)
+		if err != nil {
+			rigsConfig = &config.RigsConfig{
+				Version: 1,
+				Rigs:    make(map[string]config.RigEntry),
+			}
+		}
+
+		if _, exists := rigsConfig.Rigs[name]; exists {
+			fmt.Printf("  %s Rig %q already in rigs.json, skipping local update\n", style.Dim.Render("ℹ"), name)
+		} else {
+			rigsConfig.Rigs[name] = config.RigEntry{
+				GitURL:  gitURL,
+				AddedAt: time.Now(),
+				BeadsConfig: &config.BeadsConfig{
+					Prefix: rigRegisterPrefix,
+				},
+			}
+			if err := config.SaveRigsConfig(rigsPath, rigsConfig); err != nil {
+				fmt.Printf("  %s Could not save rigs.json: %v\n", style.Warning.Render("!"), err)
+			}
+		}
+
+		// Create minimal rig directory and config.json
+		rigDir := filepath.Join(townRoot, name)
+		if err := os.MkdirAll(rigDir, 0o755); err != nil {
+			fmt.Printf("  %s Could not create rig directory: %v\n", style.Warning.Render("!"), err)
+		} else {
+			rigConfig := &rig.RigConfig{
+				Type:          "rig",
+				Version:       1,
+				Name:          name,
+				GitURL:        gitURL,
+				DefaultBranch: rigRegisterBranch,
+				CreatedAt:     time.Now(),
+				Beads: &rig.BeadsConfig{
+					Prefix: rigRegisterPrefix,
+				},
+			}
+			configData, err := json.MarshalIndent(rigConfig, "", "  ")
+			if err == nil {
+				configPath := filepath.Join(rigDir, "config.json")
+				if err := os.WriteFile(configPath, configData, 0o644); err != nil {
+					fmt.Printf("  %s Could not save config.json: %v\n", style.Warning.Render("!"), err)
+				}
+			}
 		}
 	}
 
-	// Check if already registered
-	if _, exists := rigsConfig.Rigs[name]; exists {
-		return fmt.Errorf("rig %q is already registered", name)
-	}
-
-	// Add to rigs.json
-	rigsConfig.Rigs[name] = config.RigEntry{
-		GitURL:  gitURL,
-		AddedAt: time.Now(),
-		BeadsConfig: &config.BeadsConfig{
-			Prefix: rigRegisterPrefix,
-		},
-	}
-	if err := config.SaveRigsConfig(rigsPath, rigsConfig); err != nil {
-		return fmt.Errorf("saving rigs config: %w", err)
-	}
-
-	// Create minimal rig directory and config.json
-	rigDir := filepath.Join(townRoot, name)
-	if err := os.MkdirAll(rigDir, 0o755); err != nil {
-		return fmt.Errorf("creating rig directory: %w", err)
-	}
-
-	rigConfig := &rig.RigConfig{
-		Type:          "rig",
-		Version:       1,
-		Name:          name,
-		GitURL:        gitURL,
-		DefaultBranch: rigRegisterBranch,
-		CreatedAt:     time.Now(),
-		Beads: &rig.BeadsConfig{
-			Prefix: rigRegisterPrefix,
-		},
-	}
-	configData, err := json.MarshalIndent(rigConfig, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling rig config: %w", err)
-	}
-	configPath := filepath.Join(rigDir, "config.json")
-	if err := os.WriteFile(configPath, configData, 0o644); err != nil {
-		return fmt.Errorf("saving rig config: %w", err)
-	}
-
-	// Create rig bead (type=rig) in daemon with labels
+	// Create rig bead (type=rig) in daemon with labels.
+	// This is the primary operation — works in both local and daemon-only mode.
 	labels := []string{
 		fmt.Sprintf("prefix:%s", rigRegisterPrefix),
 		fmt.Sprintf("git_url:%s", gitURL),
@@ -813,16 +815,21 @@ func runRigRegister(_ *cobra.Command, args []string) error {
 		labels = append(labels, fmt.Sprintf("git_mirror:%s", rigRegisterGitMirror))
 	}
 
+	// Use explicit ID: hq-<prefix>-rig-<name> (lives in town beads, not rig-specific DB).
+	rigBeadID := fmt.Sprintf("hq-%s-rig-%s", rigRegisterPrefix, name)
+
 	createArgs := []string{
 		"create",
 		"--type", "rig",
+		"--id", rigBeadID,
 		"--title", name,
 		"--description", beads.FormatRigDescription(name, &beads.RigFields{
 			Repo:   gitURL,
 			Prefix: rigRegisterPrefix,
 			State:  "active",
 		}),
-		"--prefix", "hq-",
+		"--label", "gt:rig",
+		"--force",
 		"--silent",
 	}
 	for _, label := range labels {
@@ -832,8 +839,7 @@ func runRigRegister(_ *cobra.Command, args []string) error {
 	createCmd := bdcmd.Command(createArgs...)
 	createCmd.Stderr = os.Stderr
 	if _, err := createCmd.Output(); err != nil {
-		fmt.Printf("  %s Could not create rig bead: %v\n", style.Warning.Render("!"), err)
-		fmt.Printf("  %s Rig registered locally but not in daemon\n", style.Dim.Render("ℹ"))
+		return fmt.Errorf("creating rig bead in daemon: %w", err)
 	}
 
 	fmt.Printf("%s Registered rig %s\n", style.Success.Render("✓"), style.Bold.Render(name))
@@ -842,6 +848,9 @@ func runRigRegister(_ *cobra.Command, args []string) error {
 	fmt.Printf("  Branch: %s\n", rigRegisterBranch)
 	if rigRegisterGitMirror != "" {
 		fmt.Printf("  Git mirror: %s\n", rigRegisterGitMirror)
+	}
+	if townRoot == "" {
+		fmt.Printf("  %s Daemon-only mode (no local workspace)\n", style.Dim.Render("ℹ"))
 	}
 
 	return nil

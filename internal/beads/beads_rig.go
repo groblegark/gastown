@@ -75,6 +75,13 @@ func ParseRigFields(description string) *RigFields {
 // The ID format is: <prefix>-rig-<name> (e.g., gt-rig-gastown)
 // Use RigBeadID() helper to generate correct IDs.
 // The created_by field is populated from BD_ACTOR env var for provenance tracking.
+//
+// Labels set on the bead (for controller consumption):
+//   - gt:rig            — identifies this as a rig bead
+//   - prefix:<X>        — beads issue prefix (e.g., "gt", "bd")
+//   - git_url:<url>     — git repository URL
+//   - default_branch:<br> — default branch (if known)
+//   - state:<state>     — operational state (active, archived, maintenance)
 func (b *Beads) CreateRigBead(id, title string, fields *RigFields) (*Issue, error) {
 	description := FormatRigDescription(title, fields)
 
@@ -84,6 +91,20 @@ func (b *Beads) CreateRigBead(id, title string, fields *RigFields) (*Issue, erro
 		"--description=" + description,
 		"--labels=gt:rig",
 	}
+
+	// Add structured labels for controller consumption.
+	if fields != nil {
+		if fields.Prefix != "" {
+			args = append(args, "--labels=prefix:"+fields.Prefix)
+		}
+		if fields.Repo != "" {
+			args = append(args, "--labels=git_url:"+fields.Repo)
+		}
+		if fields.State != "" {
+			args = append(args, "--labels=state:"+fields.State)
+		}
+	}
+
 	if NeedsForceForID(id) {
 		args = append(args, "--force")
 	}
