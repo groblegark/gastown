@@ -1,8 +1,8 @@
 apiVersion: v2
 name: gastown
 description: Gas Town platform stack - Dolt database, bd-daemon, and Redis
-version: 0.7.11
-appVersion: "0.7.11"
+version: 0.7.12
+appVersion: "0.7.12"
 type: application
 keywords:
   - gastown
@@ -14,5 +14,5 @@ maintainers:
     email: devops@gastown.dev
 dependencies:
   - name: bd-daemon
-    version: "0.2.36"
+    version: "0.2.37"
     repository: oci://ghcr.io/groblegark/charts
