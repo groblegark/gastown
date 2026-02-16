@@ -472,6 +472,11 @@ tasks:
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
   # ── Push toolchain image to GHCR ──────────────────────────────────────
+  # NOTE: Toolchain is complex (apt packages, Go, Node, Python, AWS CLI, etc.).
+  # This task builds the full layer from scratch on the RWX VM, including
+  # apt packages installed into a chroot-like staging directory.
+  # For simpler rebuilds, use: rwx image build -f .rwx/docker.yml \
+  #   --target image-toolchain --push-to ghcr.io/groblegark/gastown/gastown-toolchain:latest
   - key: push-toolchain
     use: [code, build-gt, download-coop, download-bd]
     if: ${{ init.ref-name != 'pr' }}
@@ -489,30 +494,50 @@ tasks:
       # Login to GHCR
       echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
 
-      # Build the toolchain in /tmp/layer.
-      # We install everything into a staging directory, then tar it as a layer.
+      # Install apt packages on the build VM, then snapshot the installed files.
+      # The RWX VM runs ubuntu:24.04 (same as our base image), so package
+      # paths are identical. We install, diff /usr, and include the delta.
+      find /usr -type f > /tmp/before.txt
+      sudo apt-get -y update
+      sudo apt-get -y install --no-install-recommends \
+        python3 python3-pip python3-venv make gcc g++ unzip
+      find /usr -type f > /tmp/after.txt
+      # Compute new files from apt install
+      comm -13 <(sort /tmp/before.txt) <(sort /tmp/after.txt) > /tmp/apt-files.txt
+
       LAYER=/tmp/layer
-      mkdir -p $LAYER/usr/local/bin $LAYER/usr/local/go $LAYER/etc/ssl/certs \
-        $LAYER/home/agent/gt $LAYER/opt/aws-cli
+      mkdir -p $LAYER
+
+      # Copy apt-installed files into layer
+      while IFS= read -r f; do
+        dir="$LAYER$(dirname "$f")"
+        mkdir -p "$dir"
+        cp -a "$f" "$dir/"
+      done < /tmp/apt-files.txt
+      # Symlinks
+      mkdir -p $LAYER/usr/bin
+      ln -sf python3 $LAYER/usr/bin/python
 
       # CA certs
+      mkdir -p $LAYER/etc/ssl/certs
       cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
 
       # Go (resolve latest patch from .go-version)
       GO_VERSION=$(cat .go-version)
       GO_LATEST=$(curl -fsSL "https://go.dev/dl/?mode=json" | jq -r "[.[] | select(.version | startswith(\"go${GO_VERSION}\"))][0].version")
+      mkdir -p $LAYER/usr/local
       curl -fsSL "https://go.dev/dl/${GO_LATEST}.linux-amd64.tar.gz" | tar -C $LAYER/usr/local -xz
-      # gopls
+      # gopls (build using installed Go, output to layer)
       GOROOT=$LAYER/usr/local/go GOPATH=/tmp/gopath $LAYER/usr/local/go/bin/go install golang.org/x/tools/gopls@latest 2>/dev/null || true
       cp /tmp/gopath/bin/gopls $LAYER/usr/local/go/bin/ 2>/dev/null || true
 
       # Node.js (version from .node-version)
       NODE_VERSION=$(cat .node-version)
-      mkdir -p $LAYER/usr/local
       curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
         | tar -xJ --strip-components=1 -C $LAYER/usr/local
 
       # Rust Analyzer
+      mkdir -p $LAYER/usr/local/bin
       curl -fsSL "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" \
         | gunzip > $LAYER/usr/local/bin/rust-analyzer
       chmod +x $LAYER/usr/local/bin/rust-analyzer
@@ -532,9 +557,10 @@ tasks:
       curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" | \
         tar -xz --strip-components=1 -C $LAYER/usr/local/bin docker/docker
 
-      # AWS CLI (install to staging prefix, then move)
+      # AWS CLI
       curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
       unzip -q /tmp/awscli.zip -d /tmp
+      mkdir -p $LAYER/opt/aws-cli
       /tmp/aws/install --install-dir $LAYER/opt/aws-cli --bin-dir $LAYER/opt/aws-cli/bin
       ln -sf /opt/aws-cli/bin/aws $LAYER/usr/local/bin/aws
       rm -rf /tmp/awscli.zip /tmp/aws
@@ -548,9 +574,10 @@ tasks:
       chmod +x $LAYER/usr/local/bin/gt $LAYER/usr/local/bin/coop \
         $LAYER/usr/local/bin/bd $LAYER/usr/local/bin/coop-mux 2>/dev/null || true
 
-      # Entrypoint
+      # Entrypoint + home dir
       cp docker/toolchain/entrypoint.sh $LAYER/usr/local/bin/toolchain-entrypoint.sh
       chmod +x $LAYER/usr/local/bin/toolchain-entrypoint.sh
+      mkdir -p $LAYER/home/agent/gt
 
       tar -cf /tmp/layer.tar -C $LAYER .
 
