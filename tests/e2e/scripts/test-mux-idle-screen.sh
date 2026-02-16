@@ -34,7 +34,10 @@ discover_mux() {
   broker_pod=$(kube get pods --no-headers 2>/dev/null | grep "coop-broker" | grep "Running" | head -1 | awk '{print $1}')
   [[ -n "$broker_pod" ]] || return 1
 
-  MUX_TOKEN=$(kube exec "$broker_pod" -c coopmux -- printenv COOP_MUX_AUTH_TOKEN 2>/dev/null) || true
+  # Try both container names (coopmux for merged binary, coop-mux for split)
+  MUX_TOKEN=$(kube exec "$broker_pod" -c coopmux -- printenv COOP_MUX_AUTH_TOKEN 2>/dev/null) \
+    || MUX_TOKEN=$(kube exec "$broker_pod" -c coop-mux -- printenv COOP_MUX_AUTH_TOKEN 2>/dev/null) \
+    || true
   [[ -n "$MUX_TOKEN" ]]
 }
 
@@ -90,12 +93,17 @@ test_session_exists() {
   local sessions
   sessions=$(mux_sessions) || return 1
 
+  local tmpf
+  tmpf=$(mktemp)
+  printf '%s' "$sessions" > "$tmpf"
   SESSION_ID=$(python3 -c "
 import json, sys
-sessions = json.loads('''$sessions''')
-if sessions:
-    print(sessions[0]['id'])
+with open('$tmpf') as f:
+    data = json.load(f)
+if data:
+    print(data[0]['id'])
 " 2>/dev/null)
+  rm -f "$tmpf"
 
   if [[ -n "$SESSION_ID" ]]; then
     log "Found session: $SESSION_ID"
@@ -145,9 +153,13 @@ fi
 # ── Test 4: Screen has expected fields ──────────────────────────────
 test_screen_fields() {
   local result
+  local tmpf
+  tmpf=$(mktemp)
+  printf '%s' "$SCREEN_JSON" > "$tmpf"
   result=$(python3 -c "
 import json, sys
-screen = json.loads('''$SCREEN_JSON''')
+with open('$tmpf') as f:
+    screen = json.load(f)
 required = ['lines', 'cols', 'rows']
 missing = [f for f in required if f not in screen]
 if missing:
@@ -157,6 +169,7 @@ else:
     has_alt = 'alt_screen' in screen
     print(f'ok ansi={has_ansi} alt_screen={has_alt} cols={screen[\"cols\"]} rows={screen[\"rows\"]}')
 " 2>/dev/null)
+  rm -f "$tmpf"
 
   log "Screen fields: $result"
   [[ "$result" == ok* ]]
@@ -166,15 +179,20 @@ run_test "Screen snapshot has expected fields (lines, cols, rows)" test_screen_f
 # ── Test 5: Screen lines are non-empty ──────────────────────────────
 test_screen_nonempty() {
   local result
+  local tmpf
+  tmpf=$(mktemp)
+  printf '%s' "$SCREEN_JSON" > "$tmpf"
   result=$(python3 -c "
 import json, sys
-screen = json.loads('''$SCREEN_JSON''')
+with open('$tmpf') as f:
+    screen = json.load(f)
 lines = screen.get('ansi', screen.get('lines', []))
 non_blank = sum(1 for l in lines if l.strip())
 total = len(lines)
 alt = screen.get('alt_screen', False)
 print(f'{non_blank}/{total} alt_screen={alt}')
 " 2>/dev/null)
+  rm -f "$tmpf"
 
   log "Non-blank lines: $result"
   # At least some lines should have content
