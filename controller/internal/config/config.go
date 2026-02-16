@@ -92,6 +92,10 @@ type Config struct {
 	// Injected as RWX_ACCESS_TOKEN in agent pods for CI/CD operations.
 	RWXTokenSecret string
 
+	// DefaultServiceAccount is the K8s ServiceAccount to use for agent pods (env: DEFAULT_SERVICE_ACCOUNT).
+	// When set, all agent pods use this SA unless overridden by bead metadata.
+	DefaultServiceAccount string
+
 	// Transport selects the event transport: "sse" or "nats" (env: WATCHER_TRANSPORT).
 	// Default: "sse".
 	Transport string
@@ -175,6 +179,7 @@ func Parse() *Config {
 		CoopBrokerTokenSecret: os.Getenv("COOP_BROKER_TOKEN_SECRET"),
 		CoopMuxURL:            os.Getenv("COOP_MUX_URL"),
 		RWXTokenSecret:        os.Getenv("RWX_TOKEN_SECRET"),
+		DefaultServiceAccount: os.Getenv("DEFAULT_SERVICE_ACCOUNT"),
 		Transport:         envOr("WATCHER_TRANSPORT", "sse"),
 		NatsConsumerName:  os.Getenv("NATS_CONSUMER_NAME"),
 		SyncInterval:      envDurationOr("SYNC_INTERVAL", 60*time.Second),
@@ -208,6 +213,7 @@ func Parse() *Config {
 	flag.StringVar(&cfg.CoopBrokerTokenSecret, "coop-broker-token-secret", cfg.CoopBrokerTokenSecret, "K8s secret with broker auth token")
 	flag.StringVar(&cfg.CoopMuxURL, "coop-mux-url", cfg.CoopMuxURL, "URL of the coop multiplexer for session aggregation")
 	flag.StringVar(&cfg.RWXTokenSecret, "rwx-token-secret", cfg.RWXTokenSecret, "K8s secret with RWX access token for agent pods")
+	flag.StringVar(&cfg.DefaultServiceAccount, "default-service-account", cfg.DefaultServiceAccount, "K8s ServiceAccount for agent pods")
 	flag.StringVar(&cfg.Transport, "transport", cfg.Transport, "Event transport: sse or nats")
 	flag.StringVar(&cfg.NatsConsumerName, "nats-consumer-name", cfg.NatsConsumerName, "Durable consumer name for JetStream")
 	flag.DurationVar(&cfg.SyncInterval, "sync-interval", cfg.SyncInterval, "Interval for periodic pod status sync")

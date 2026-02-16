@@ -423,6 +423,8 @@ func buildAgentPodSpec(cfg *config.Config, event beadswatcher.Event) podmanager.
 	// Overlay event metadata for optional fields.
 	if sa := event.Metadata["service_account"]; sa != "" {
 		spec.ServiceAccountName = sa
+	} else if cfg.DefaultServiceAccount != "" {
+		spec.ServiceAccountName = cfg.DefaultServiceAccount
 	}
 	if cm := event.Metadata["configmap"]; cm != "" {
 		spec.ConfigMapName = cm
