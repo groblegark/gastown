@@ -127,11 +127,11 @@ if [ -n "${GT_RIGS:-}" ]; then
     RIGS_OBJ="{}"
     IFS=',' read -ra RIG_ENTRIES <<< "${GT_RIGS}"
     for entry in "${RIG_ENTRIES[@]}"; do
-        # Parse "name=url:prefix"
+        # Parse "name=url:prefix" — split on LAST colon since URL contains "://"
         rig_name="${entry%%=*}"
         url_prefix="${entry#*=}"
-        rig_url="${url_prefix%%:*}"
-        rig_prefix="${url_prefix#*:}"
+        rig_url="${url_prefix%:*}"
+        rig_prefix="${url_prefix##*:}"
 
         if [ -z "${rig_name}" ] || [ -z "${rig_url}" ]; then
             continue
