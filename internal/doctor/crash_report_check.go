@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// CrashReportCheck looks for recent macOS crash reports related to tmux or Claude.
+// CrashReportCheck looks for recent macOS crash reports related to Claude.
 // This helps diagnose mass session death events.
 type CrashReportCheck struct {
 	BaseCheck
@@ -22,7 +22,7 @@ type crashReport struct {
 	path     string
 	name     string
 	modTime  time.Time
-	process  string // "tmux", "claude", "node", etc.
+	process  string // "claude", "node", etc.
 }
 
 // NewCrashReportCheck creates a new crash report check.
@@ -30,7 +30,7 @@ func NewCrashReportCheck() *CrashReportCheck {
 	return &CrashReportCheck{
 		BaseCheck: BaseCheck{
 			CheckName:        "crash-reports",
-			CheckDescription: "Check for recent macOS crash reports (tmux, Claude)",
+			CheckDescription: "Check for recent macOS crash reports (Claude)",
 			CheckCategory:    CategoryCleanup,
 		},
 	}
@@ -69,7 +69,6 @@ func (c *CrashReportCheck) Run(ctx *CheckContext) *CheckResult {
 
 	// Processes we care about
 	relevantProcesses := []string{
-		"tmux",
 		"claude",
 		"claude-code",
 		"node",
@@ -160,11 +159,7 @@ func (c *CrashReportCheck) Run(ctx *CheckContext) *CheckResult {
 
 	message := fmt.Sprintf("Found %d crash report(s): %s", len(reports), strings.Join(summary, ", "))
 
-	// tmux crashes are particularly concerning
 	status := StatusWarning
-	if processCounts["tmux"] > 0 {
-		message += " - TMUX CRASHED (may explain session deaths)"
-	}
 
 	return &CheckResult{
 		Name:    c.Name(),
