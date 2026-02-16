@@ -760,7 +760,6 @@ tasks:
     use: [code, push-agent, push-controller, push-toolchain]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
-    timeout: 15m
     run: |
       set -ex
       source platform-versions.env
