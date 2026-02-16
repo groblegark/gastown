@@ -423,8 +423,6 @@ func buildAgentPodSpec(cfg *config.Config, event beadswatcher.Event) podmanager.
 	// Overlay event metadata for optional fields.
 	if sa := event.Metadata["service_account"]; sa != "" {
 		spec.ServiceAccountName = sa
-	} else if cfg.DefaultServiceAccount != "" {
-		spec.ServiceAccountName = cfg.DefaultServiceAccount
 	}
 	if cm := event.Metadata["configmap"]; cm != "" {
 		spec.ConfigMapName = cm
@@ -481,6 +479,9 @@ func applyRigDefaults(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 // applyCommonConfig wires controller-level config into an AgentPodSpec.
 // Shared by both BuildSpecFromBeadInfo (reconciler) and buildAgentPodSpec (events).
 func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
+	if spec.ServiceAccountName == "" && cfg.DefaultServiceAccount != "" {
+		spec.ServiceAccountName = cfg.DefaultServiceAccount
+	}
 	if cfg.CredentialsSecret != "" {
 		spec.CredentialsSecret = cfg.CredentialsSecret
 	}
