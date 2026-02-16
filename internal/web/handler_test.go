@@ -382,14 +382,14 @@ func TestConvoyHandler_PolecatWorkersRendering(t *testing.T) {
 			{
 				Name:         "dag",
 				Rig:          "roxas",
-				SessionID:    "gt-roxas-dag",
+				AgentID:    "gt-roxas-dag",
 				LastActivity: activity.Calculate(time.Now().Add(-30 * time.Second)),
 				StatusHint:   "Running tests...",
 			},
 			{
 				Name:         "nux",
 				Rig:          "roxas",
-				SessionID:    "gt-roxas-nux",
+				AgentID:    "gt-roxas-nux",
 				LastActivity: activity.Calculate(time.Now().Add(-5 * time.Minute)),
 				StatusHint:   "Waiting for input",
 			},
@@ -606,7 +606,7 @@ func TestConvoyHandler_FullDashboard(t *testing.T) {
 			{
 				Name:         "worker1",
 				Rig:          "testrig",
-				SessionID:    "gt-testrig-worker1",
+				AgentID:    "gt-testrig-worker1",
 				LastActivity: activity.Calculate(time.Now()),
 				StatusHint:   "Working...",
 			},
@@ -684,7 +684,7 @@ func TestE2E_Server_FullDashboard(t *testing.T) {
 			{
 				Name:         "furiosa",
 				Rig:          "roxas",
-				SessionID:    "gt-roxas-furiosa",
+				AgentID:    "gt-roxas-furiosa",
 				LastActivity: activity.Calculate(time.Now().Add(-30 * time.Second)),
 				StatusHint:   "Running E2E tests",
 			},
@@ -767,7 +767,7 @@ func TestE2E_Server_ActivityColors(t *testing.T) {
 					{
 						Name:         "test-worker",
 						Rig:          "test-rig",
-						SessionID:    "gt-test-rig-test-worker",
+						AgentID:    "gt-test-rig-test-worker",
 						LastActivity: activity.Calculate(time.Now().Add(-tt.age)),
 						StatusHint:   "Testing",
 					},
@@ -948,14 +948,14 @@ func TestE2E_Server_RefineryInPolecats(t *testing.T) {
 			{
 				Name:         "refinery",
 				Rig:          "roxas",
-				SessionID:    "gt-roxas-refinery",
+				AgentID:    "gt-roxas-refinery",
 				LastActivity: activity.Calculate(time.Now().Add(-10 * time.Second)),
 				StatusHint:   "Idle - Waiting for PRs",
 			},
 			{
 				Name:         "dag",
 				Rig:          "roxas",
-				SessionID:    "gt-roxas-dag",
+				AgentID:    "gt-roxas-dag",
 				LastActivity: activity.Calculate(time.Now().Add(-30 * time.Second)),
 				StatusHint:   "Working on feature",
 			},
