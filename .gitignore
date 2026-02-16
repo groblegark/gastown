@@ -72,3 +72,6 @@ beads-charts/
 # Helm chart build artifacts
 helm/*/charts/
 helm/*/Chart.lock
+
+# Generated protobuf code (regenerate with `buf generate`)
+gen/
