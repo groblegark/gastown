@@ -11,8 +11,8 @@ coop-version-latest=v0.11.26
 coop-cache-refresh=2026-03-15
 
 # Beads (bd) binary releases
-beads-version-latest=v0.47.1
-beads-cache-refresh=2026-03-14
+beads-version-latest=v0.62.3
+beads-cache-refresh=2026-03-16
 
 # Tool versions for reproducibility
 golangci-lint=latest
