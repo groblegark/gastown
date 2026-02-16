@@ -457,6 +457,36 @@ tasks:
       # Install Claude Code
       PATH="/tmp/layer/usr/local/bin:$PATH" npm install -g --prefix /tmp/layer/usr/local @anthropic-ai/claude-code
 
+      # Install system packages (git, curl, jq, screen) into the layer.
+      # The RWX VM is Ubuntu-based so we can apt-get install, then copy
+      # the installed files into the layer tree.
+      sudo apt-get -y update
+      sudo apt-get -y install --no-install-recommends git curl jq screen ca-certificates
+
+      # Extract installed package file lists and copy into layer
+      mkdir -p /tmp/layer
+      for pkg in git git-man curl jq screen ca-certificates \
+          liberror-perl libcurl4t64 libnghttp2-14 libbrotli1 \
+          libpsl5t64 libonig5 libexpat1; do
+        dpkg -L "$pkg" 2>/dev/null | while read -r f; do
+          [ -f "$f" ] || continue
+          dir="/tmp/layer$(dirname "$f")"
+          mkdir -p "$dir"
+          cp "$f" "/tmp/layer${f}"
+        done
+      done
+      # Also copy shared libs that git/curl link against
+      for bin in /usr/bin/git /usr/bin/curl /usr/bin/jq /usr/bin/screen; do
+        ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
+          [ -f "$lib" ] || continue
+          dir="/tmp/layer$(dirname "$lib")"
+          mkdir -p "$dir"
+          cp -n "$lib" "/tmp/layer${lib}" 2>/dev/null || true
+        done
+      done
+      # Copy git-core helpers
+      cp -r /usr/lib/git-core /tmp/layer/usr/lib/ 2>/dev/null || true
+
       # Install binaries
       mkdir -p /tmp/layer/usr/local/bin
       cp ${{ tasks.build-gt.artifacts.gt-binary }} /tmp/layer/usr/local/bin/gt
@@ -470,6 +500,10 @@ tasks:
       # Install entrypoint
       cp deploy/agent/entrypoint.sh /tmp/layer/entrypoint.sh
       chmod +x /tmp/layer/entrypoint.sh
+
+      # Write platform version for runtime discovery
+      mkdir -p /tmp/layer/etc
+      echo "${PLATFORM_VERSION}" > /tmp/layer/etc/platform-version
 
       # Create home directory and user config
       mkdir -p /tmp/layer/home/agent/gt /tmp/layer/etc/ssl/certs
@@ -522,6 +556,7 @@ tasks:
       find /usr -type f > /tmp/before.txt
       sudo apt-get -y update
       sudo apt-get -y install --no-install-recommends \
+        git curl jq screen ca-certificates \
         python3 python3-pip python3-venv make gcc g++ unzip
       find /usr -type f > /tmp/after.txt
       # Compute new files from apt install
@@ -596,7 +631,8 @@ tasks:
       chmod +x $LAYER/usr/local/bin/gt $LAYER/usr/local/bin/coop \
         $LAYER/usr/local/bin/bd $LAYER/usr/local/bin/coop-mux 2>/dev/null || true
 
-      # Entrypoint + home dir
+      # Platform version + entrypoint + home dir
+      echo "${PLATFORM_VERSION}" > $LAYER/etc/platform-version
       cp docker/toolchain/entrypoint.sh $LAYER/usr/local/bin/toolchain-entrypoint.sh
       chmod +x $LAYER/usr/local/bin/toolchain-entrypoint.sh
       mkdir -p $LAYER/home/agent/gt
