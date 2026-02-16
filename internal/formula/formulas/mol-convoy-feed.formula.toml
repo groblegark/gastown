@@ -84,7 +84,7 @@ bd blocked --json
 Check assignee session if set:
 ```bash
 # If assignee like "gastown/polecats/nux"
-tmux has-session -t gt-gastown-polecat-nux 2>/dev/null && echo "alive" || echo "dead"
+gt polecat status gastown/nux 2>/dev/null && echo "alive" || echo "dead"
 ```
 
 **4. Build ready list:**

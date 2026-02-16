@@ -28,7 +28,7 @@ Daemon tick
     └── Spawn Boot (fresh session each time)
         │
         └── Boot runs triage
-            ├── Observe (wisps, mail, git state, tmux panes)
+            ├── Observe (wisps, mail, git state, terminal output)
             ├── Decide (start/wake/nudge/interrupt/nothing)
             ├── Act
             ├── Clean inbox (discard stale handoffs)
@@ -57,7 +57,7 @@ Check the current system state:
 
 ```bash
 # Is Deacon session alive?
-tmux has-session -t {{ .DeaconSession }} 2>/dev/null && echo "alive" || echo "dead"
+gt polecat status deacon/ 2>/dev/null && echo "alive" || echo "dead"
 
 # If alive, what's the pane showing?
 gt peek deacon --lines 20
@@ -107,8 +107,8 @@ In normal mode: Optional brief handoff mail for next Boot instance.
 
 ## Degraded Mode (GT_DEGRADED=true)
 
-When tmux is unavailable:
-- Cannot observe tmux panes
+When coop sidecar is unavailable:
+- Cannot observe agent terminal output
 - Cannot interactively interrupt
 - Focus on beads/git state observation only
 - Report anomalies but can't fix interactively

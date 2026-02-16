@@ -51,7 +51,7 @@ SPAWN (gt sling)     WORK              DONE (gt done)
 
 | Layer | What it is | Persistence |
 |-------|-----------|-------------|
-| **Session** | Claude instance in tmux | Cycles on handoff/crash |
+| **Session** | Claude instance in coop (K8s pod) | Cycles on handoff/crash |
 | **Sandbox** | Git worktree | Until `gt done` |
 
 Session cycling is normal. Your git state survives. The sandbox dies only when you run `gt done`.

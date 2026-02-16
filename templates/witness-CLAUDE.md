@@ -40,11 +40,11 @@ gt polecat git-state {{RIG}}/<name>    # Check git cleanliness
 gt polecat nuke {{RIG}}/<name>         # Nuke (blocks on unpushed work)
 gt polecat nuke --force {{RIG}}/<name> # Force nuke (LOSES WORK)
 
-# Session inspection
-tmux capture-pane -t gt-{{RIG}}-<name> -p | tail -40
+# Session inspection (via coop API)
+gt peek {{RIG}}/<name> --lines 40
 
-# Session control
-tmux kill-session -t gt-{{RIG}}-<name>
+# Session control (via K8s pod lifecycle)
+gt polecat nuke {{RIG}}/<name>
 
 # Communication
 gt mail inbox

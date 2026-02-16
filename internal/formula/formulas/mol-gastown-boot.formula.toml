@@ -48,7 +48,7 @@ gt deacon start
 ```
 
 ## Verify
-1. Session exists: `tmux has-session -t hq-deacon 2>/dev/null`
+1. Session exists: `gt polecat status deacon/ 2>/dev/null`
 2. Not stalled: `gt peek deacon/` does NOT show \"> Try\" prompt
 3. Heartbeat fresh: `deacon/heartbeat.json` modified < 2 min ago
 
@@ -82,7 +82,7 @@ gt witness start gastown
 ```
 
 ## Verify
-1. Session exists: `tmux has-session -t gastown-witness 2>/dev/null`
+1. Session exists: `gt polecat status gastown/witness 2>/dev/null`
 2. Not stalled: `gt peek gastown/witness` does NOT show \"> Try\" prompt
 3. Heartbeat fresh: Last patrol cycle < 5 min ago"""
 id = "ensure-gastown-witness"
@@ -98,7 +98,7 @@ gt witness start beads
 ```
 
 ## Verify
-1. Session exists: `tmux has-session -t beads-witness 2>/dev/null`
+1. Session exists: `gt polecat status beads/witness 2>/dev/null`
 2. Not stalled: `gt peek beads/witness` does NOT show \"> Try\" prompt
 3. Heartbeat fresh: Last patrol cycle < 5 min ago"""
 id = "ensure-beads-witness"
@@ -124,7 +124,7 @@ gt refinery start gastown
 ```
 
 ## Verify
-1. Session exists: `tmux has-session -t gastown-refinery 2>/dev/null`
+1. Session exists: `gt polecat status gastown/refinery 2>/dev/null`
 2. Not stalled: `gt peek gastown/refinery` does NOT show \"> Try\" prompt
 3. Queue processing: Refinery can receive merge requests"""
 id = "ensure-gastown-refinery"
@@ -140,7 +140,7 @@ gt refinery start beads
 ```
 
 ## Verify
-1. Session exists: `tmux has-session -t beads-refinery 2>/dev/null`
+1. Session exists: `gt polecat status beads/refinery 2>/dev/null`
 2. Not stalled: `gt peek beads/refinery` does NOT show \"> Try\" prompt
 3. Queue processing: Refinery can receive merge requests"""
 id = "ensure-beads-refinery"

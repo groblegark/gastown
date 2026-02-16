@@ -31,7 +31,7 @@ Polecat has been spawned. Verify it initializes and starts working.
 
 **Check if alive:**
 ```bash
-tmux capture-pane -t gt-{{rig}}-{{polecat}} -p | tail -20
+gt peek {{rig}}/{{polecat}} --lines 20
 ```
 
 Look for:
@@ -67,7 +67,7 @@ Polecat is actively working. Monitor for stuck or completion.
 **Signs of progress:**
 - Git commits appearing
 - File changes visible in peek
-- Active tool usage in tmux capture
+- Active tool usage in terminal capture
 
 **Signs of stuck:**
 - Idle >15 minutes

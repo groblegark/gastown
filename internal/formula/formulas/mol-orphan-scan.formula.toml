@@ -87,7 +87,7 @@ bd show <issue-id>
 ```bash
 # If assignee is a polecat
 gt polecats <rig>           # Is the polecat active?
-tmux has-session -t <session> 2>/dev/null
+gt polecat status <rig>/<name> 2>/dev/null
 ```
 
 **4. Identify orphans:**
@@ -121,7 +121,7 @@ bd mol show <mol-id>
 
 **3. Check if owner session exists:**
 ```bash
-tmux has-session -t <session> 2>/dev/null
+gt polecat status <rig>/<name> 2>/dev/null
 ```
 
 **4. Identify orphans:**
