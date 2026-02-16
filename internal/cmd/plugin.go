@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/config"
@@ -16,11 +17,12 @@ import (
 
 // Plugin command flags
 var (
-	pluginListJSON    bool
-	pluginShowJSON    bool
-	pluginRunForce    bool
-	pluginRunDryRun   bool
-	pluginHistoryJSON bool
+	pluginListJSON     bool
+	pluginShowJSON     bool
+	pluginStatusJSON   bool
+	pluginRunForce     bool
+	pluginRunDryRun    bool
+	pluginHistoryJSON  bool
 	pluginHistoryLimit int
 )
 
@@ -112,12 +114,30 @@ Examples:
 	RunE: runPluginHistory,
 }
 
+var pluginStatusCmd = &cobra.Command{
+	Use:   "status <name>",
+	Short: "Show plugin operational status",
+	Long: `Show the operational status of a plugin including gate state and run history.
+
+Displays whether the plugin's gate is open, last run result, and
+recent execution statistics.
+
+Examples:
+  gt plugin status rebuild-gt
+  gt plugin status rebuild-gt --json`,
+	Args: cobra.ExactArgs(1),
+	RunE: runPluginStatus,
+}
+
 func init() {
 	// List subcommand flags
 	pluginListCmd.Flags().BoolVar(&pluginListJSON, "json", false, "Output as JSON")
 
 	// Show subcommand flags
 	pluginShowCmd.Flags().BoolVar(&pluginShowJSON, "json", false, "Output as JSON")
+
+	// Status subcommand flags
+	pluginStatusCmd.Flags().BoolVar(&pluginStatusJSON, "json", false, "Output as JSON")
 
 	// Run subcommand flags
 	pluginRunCmd.Flags().BoolVar(&pluginRunForce, "force", false, "Bypass gate check")
@@ -130,6 +150,7 @@ func init() {
 	// Add subcommands
 	pluginCmd.AddCommand(pluginListCmd)
 	pluginCmd.AddCommand(pluginShowCmd)
+	pluginCmd.AddCommand(pluginStatusCmd)
 	pluginCmd.AddCommand(pluginRunCmd)
 	pluginCmd.AddCommand(pluginHistoryCmd)
 
@@ -503,3 +524,187 @@ func runPluginHistory(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
+
+// PluginStatusOutput is the JSON output for gt plugin status.
+type PluginStatusOutput struct {
+	Name     string `json:"name"`
+	Location string `json:"location"`
+	RigName  string `json:"rig_name,omitempty"`
+	GateType string `json:"gate_type"`
+	GateOpen bool   `json:"gate_open"`
+	GateInfo string `json:"gate_info,omitempty"`
+	LastRun  *struct {
+		ID        string    `json:"id"`
+		Result    string    `json:"result"`
+		Timestamp time.Time `json:"timestamp"`
+		Age       string    `json:"age"`
+	} `json:"last_run,omitempty"`
+	Stats struct {
+		Total    int `json:"total_24h"`
+		Success  int `json:"success_24h"`
+		Failures int `json:"failures_24h"`
+		Skipped  int `json:"skipped_24h"`
+	} `json:"stats"`
+}
+
+func runPluginStatus(cmd *cobra.Command, args []string) error {
+	name := args[0]
+
+	scanner, townRoot, err := getPluginScanner()
+	if err != nil {
+		return err
+	}
+
+	p, err := scanner.GetPlugin(name)
+	if err != nil {
+		return err
+	}
+
+	recorder := plugin.NewRecorder(townRoot)
+
+	// Get last run
+	lastRun, err := recorder.GetLastRun(p.Name)
+	if err != nil {
+		lastRun = nil // Non-fatal
+	}
+
+	// Get 24h stats
+	recentRuns, err := recorder.GetRunsSince(p.Name, "24h")
+	if err != nil {
+		recentRuns = nil // Non-fatal
+	}
+
+	// Evaluate gate status
+	gateType := "manual"
+	gateOpen := true
+	gateInfo := ""
+	if p.Gate != nil && p.Gate.Type != "" {
+		gateType = string(p.Gate.Type)
+	}
+	if p.Gate != nil && p.Gate.Type == plugin.GateCooldown {
+		duration := p.Gate.Duration
+		if duration == "" {
+			duration = "1h"
+		}
+		count, err := recorder.CountRunsSince(p.Name, duration)
+		if err == nil && count > 0 {
+			gateOpen = false
+			gateInfo = fmt.Sprintf("ran %d time(s) within %s cooldown", count, duration)
+		} else if err == nil {
+			gateInfo = fmt.Sprintf("cooldown %s (ready)", duration)
+		}
+	} else if p.Gate != nil && p.Gate.Type == plugin.GateManual {
+		gateInfo = "manual trigger only"
+	} else if p.Gate != nil && p.Gate.Type == plugin.GateCron {
+		gateInfo = fmt.Sprintf("schedule: %s", p.Gate.Schedule)
+	} else if p.Gate != nil && p.Gate.Type == plugin.GateEvent {
+		gateInfo = fmt.Sprintf("on: %s", p.Gate.On)
+	} else if p.Gate != nil && p.Gate.Type == plugin.GateCondition {
+		gateInfo = fmt.Sprintf("check: %s", p.Gate.Check)
+	}
+
+	// Count stats
+	successes, failures, skipped := 0, 0, 0
+	for _, run := range recentRuns {
+		switch run.Result {
+		case plugin.ResultSuccess:
+			successes++
+		case plugin.ResultFailure:
+			failures++
+		case plugin.ResultSkipped:
+			skipped++
+		}
+	}
+
+	if pluginStatusJSON {
+		output := PluginStatusOutput{
+			Name:     p.Name,
+			Location: string(p.Location),
+			RigName:  p.RigName,
+			GateType: gateType,
+			GateOpen: gateOpen,
+			GateInfo: gateInfo,
+		}
+		output.Stats.Total = len(recentRuns)
+		output.Stats.Success = successes
+		output.Stats.Failures = failures
+		output.Stats.Skipped = skipped
+		if lastRun != nil {
+			output.LastRun = &struct {
+				ID        string    `json:"id"`
+				Result    string    `json:"result"`
+				Timestamp time.Time `json:"timestamp"`
+				Age       string    `json:"age"`
+			}{
+				ID:        lastRun.ID,
+				Result:    string(lastRun.Result),
+				Timestamp: lastRun.CreatedAt,
+				Age:       formatDuration(time.Since(lastRun.CreatedAt)),
+			}
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(output)
+	}
+
+	// Human-readable output
+	fmt.Printf("%s %s\n", style.Bold.Render("Plugin:"), p.Name)
+
+	locStr := string(p.Location)
+	if p.RigName != "" {
+		locStr = fmt.Sprintf("%s (%s)", p.Location, p.RigName)
+	}
+	fmt.Printf("%s %s\n", style.Bold.Render("Location:"), locStr)
+
+	// Gate status
+	fmt.Println()
+	gateIcon := style.Success.Render("●")
+	gateLabel := "open"
+	if !gateOpen {
+		gateIcon = style.Warning.Render("○")
+		gateLabel = "closed"
+	}
+	fmt.Printf("%s %s %s %s\n", style.Bold.Render("Gate:"), gateIcon, gateLabel, style.Dim.Render(fmt.Sprintf("[%s]", gateType)))
+	if gateInfo != "" {
+		fmt.Printf("  %s\n", style.Dim.Render(gateInfo))
+	}
+
+	// Last run
+	fmt.Println()
+	fmt.Printf("%s\n", style.Bold.Render("Last run:"))
+	if lastRun != nil {
+		resultIcon := style.Success.Render("✓")
+		if lastRun.Result == plugin.ResultFailure {
+			resultIcon = style.Error.Render("✗")
+		} else if lastRun.Result == plugin.ResultSkipped {
+			resultIcon = style.Dim.Render("○")
+		}
+		age := formatDuration(time.Since(lastRun.CreatedAt))
+		fmt.Printf("  %s %s (%s ago)  %s\n", resultIcon, string(lastRun.Result), age, style.Dim.Render(lastRun.ID))
+	} else {
+		fmt.Printf("  %s\n", style.Dim.Render("No runs recorded"))
+	}
+
+	// 24h stats
+	fmt.Println()
+	fmt.Printf("%s (last 24h)\n", style.Bold.Render("Stats:"))
+	if len(recentRuns) == 0 {
+		fmt.Printf("  %s\n", style.Dim.Render("No runs in last 24h"))
+	} else {
+		fmt.Printf("  Total: %d", len(recentRuns))
+		if successes > 0 {
+			fmt.Printf("  %s", style.Success.Render(fmt.Sprintf("✓ %d", successes)))
+		}
+		if failures > 0 {
+			fmt.Printf("  %s", style.Error.Render(fmt.Sprintf("✗ %d", failures)))
+		}
+		if skipped > 0 {
+			fmt.Printf("  %s", style.Dim.Render(fmt.Sprintf("○ %d", skipped)))
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
+// formatDuration is defined in session.go
