@@ -469,7 +469,7 @@ tasks:
       mkdir -p /tmp/layer
       for pkg in git git-man curl jq screen ca-certificates libicu74 \
           liberror-perl libcurl4t64 libnghttp2-14 libbrotli1 \
-          libpsl5t64 libonig5 libexpat1 libicudata74 libicuuc74 libicui18n74; do
+          libpsl5t64 libonig5 libexpat1; do
         dpkg -L "$pkg" 2>/dev/null | while read -r f; do
           [ -f "$f" ] || continue
           dir="/tmp/layer$(dirname "$f")"
