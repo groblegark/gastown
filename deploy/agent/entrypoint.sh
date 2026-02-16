@@ -668,15 +668,28 @@ auto_bypass_startup() {
         prompt_type=$(echo "${state}" | jq -r '.prompt.type // empty' 2>/dev/null)
         subtype=$(echo "${state}" | jq -r '.prompt.subtype // empty' 2>/dev/null)
 
-        # Handle "Resume Session" picker — Claude shows this when resuming and
-        # there are multiple session logs. Press Escape to cancel and start fresh.
+        # Handle interactive prompts while agent is in "starting" state.
         if [ "${agent_state}" = "starting" ]; then
             screen=$(curl -sf http://localhost:8080/api/v1/screen/text 2>/dev/null)
+
+            # Handle "Resume Session" picker — press Escape to start fresh.
             if echo "${screen}" | grep -q "Resume Session"; then
                 echo "[entrypoint] Detected resume session picker, pressing Escape to start fresh"
                 curl -sf -X POST http://localhost:8080/api/v1/input/keys \
                     -H 'Content-Type: application/json' \
                     -d '{"keys":["Escape"]}' 2>&1 || true
+                sleep 3
+                continue
+            fi
+
+            # Handle "Detected a custom API key" prompt (bd-e2ege).
+            # Claude Code detects sk-ant-* tokens in credentials and prompts.
+            # "No (recommended)" is pre-selected — press Enter to dismiss.
+            if echo "${screen}" | grep -q "Detected a custom API key"; then
+                echo "[entrypoint] Detected API key prompt, pressing Enter to dismiss (use OAuth instead)"
+                curl -sf -X POST http://localhost:8080/api/v1/input/keys \
+                    -H 'Content-Type: application/json' \
+                    -d '{"keys":["Return"]}' 2>&1 || true
                 sleep 3
                 continue
             fi
