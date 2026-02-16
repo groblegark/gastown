@@ -452,7 +452,7 @@ func (m *K8sManager) buildContainer(spec AgentPodSpec) corev1.Container {
 		c.LivenessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path: "/api/v1/health",
+					Path: "/api/v1/livez",
 					Port: intstr.FromString("health"),
 				},
 			},
@@ -839,7 +839,7 @@ func (m *K8sManager) buildCoopSidecar(spec AgentPodSpec) corev1.Container {
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path: "/api/v1/health",
+					Path: "/api/v1/livez",
 					Port: intstr.FromString("health"),
 				},
 			},
