@@ -26,6 +26,7 @@ Thumbs.db
 # Test
 coverage.out
 *.test
+.quench
 
 # Local config
 config.toml
