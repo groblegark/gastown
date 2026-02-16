@@ -427,6 +427,69 @@ tasks:
   # Secrets: GHCR_TOKEN and GITHUB_USER must be set in the RWX vault.
   # ═══════════════════════════════════════════════════════════════════════
 
+  # ── Push beads daemon image to GHCR ──────────────────────────────────
+  # Publishes ghcr.io/groblegark/beads with CalVer tag. The beads repo
+  # also pushes this image with semver tags (v0.62.7 etc.) via its own
+  # image.yml — this task adds a CalVer alias so all images share a
+  # single version number for deployment.
+  - key: push-bd
+    use: [code, download-bd]
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    run: |
+      set -ex
+      source platform-versions.env
+
+      # Install crane
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+
+      # Login to GHCR
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      # Install runtime deps — bd is CGO-linked and needs libicu at runtime
+      sudo apt-get -y update
+      sudo apt-get -y install --no-install-recommends \
+        ca-certificates libicu74 netcat-openbsd
+      sudo rm -rf /var/lib/apt/lists/*
+
+      # Build layer: bd binary + runtime deps
+      LAYER=/tmp/layer
+      mkdir -p $LAYER/usr/local/bin $LAYER/home/beads $LAYER/etc/ssl/certs
+
+      cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd $LAYER/usr/local/bin/bd
+      chmod 755 $LAYER/usr/local/bin/bd
+
+      # CA certificates (base ubuntu:24.04 doesn't include them)
+      cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
+
+      # libicu74 shared libraries (CGO dependency)
+      dpkg -L libicu74 | grep '\.so' | while read -r lib; do
+        dir="$LAYER$(dirname "$lib")"
+        mkdir -p "$dir"
+        cp -a "$lib" "$dir/"
+      done
+
+      tar -cf /tmp/layer.tar -C $LAYER .
+
+      # Push with CalVer tag and latest
+      REPO="ghcr.io/groblegark/beads"
+      crane append --base ubuntu:24.04 --new_tag "${REPO}:${PLATFORM_VERSION}" --new_layer /tmp/layer.tar --platform linux/amd64
+
+      # Set OCI image config to match beads repo image-bd task
+      crane mutate "${REPO}:${PLATFORM_VERSION}" \
+        --entrypoint bd \
+        --cmd daemon --cmd start --cmd --foreground --cmd "--tcp-addr=:9876" --cmd "--http-addr=:9877" --cmd --log-json \
+        --user 1000 \
+        --workdir /home/beads \
+        -t "${REPO}:${PLATFORM_VERSION}"
+      crane tag "${REPO}:${PLATFORM_VERSION}" latest
+      echo "Pushed ${REPO}:${PLATFORM_VERSION} and ${REPO}:latest"
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
   # ── Push controller image to GHCR ─────────────────────────────────────
   - key: push-controller
     use: [code, build-controller]
@@ -703,7 +766,7 @@ tasks:
   # ═══════════════════════════════════════════════════════════════════════
 
   - key: helm-bump
-    use: [code, push-agent, push-controller, push-toolchain]
+    use: [code, push-bd, push-agent, push-controller, push-toolchain]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -757,7 +820,7 @@ tasks:
   # ═══════════════════════════════════════════════════════════════════════
 
   - key: deploy-rwx
-    use: [code, push-agent, push-controller, push-toolchain]
+    use: [code, push-bd, push-agent, push-controller, push-toolchain]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
