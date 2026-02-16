@@ -410,6 +410,12 @@ tasks:
       # Push with platform version tag and latest
       REPO="ghcr.io/groblegark/gastown/agent-controller"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${PLATFORM_VERSION}" --new_layer /tmp/layer.tar --platform linux/amd64
+
+      # Set OCI image config (entrypoint, user) to match image-controller
+      crane mutate "${REPO}:${PLATFORM_VERSION}" \
+        --entrypoint /controller \
+        --user 65534 \
+        -t "${REPO}:${PLATFORM_VERSION}"
       crane tag "${REPO}:${PLATFORM_VERSION}" latest
       echo "Pushed ${REPO}:${PLATFORM_VERSION} and ${REPO}:latest"
     env:
@@ -465,6 +471,13 @@ tasks:
       # Push with platform version tag and latest
       REPO="ghcr.io/groblegark/gastown/gastown-agent"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${PLATFORM_VERSION}" --new_layer /tmp/layer.tar --platform linux/amd64
+
+      # Set OCI image config (entrypoint, user, workdir) to match image-agent
+      crane mutate "${REPO}:${PLATFORM_VERSION}" \
+        --entrypoint /entrypoint.sh \
+        --user 1000 \
+        --workdir /home/agent/gt \
+        -t "${REPO}:${PLATFORM_VERSION}"
       crane tag "${REPO}:${PLATFORM_VERSION}" latest
       echo "Pushed ${REPO}:${PLATFORM_VERSION} and ${REPO}:latest"
     env:
@@ -584,6 +597,13 @@ tasks:
       # Push with platform version tag and latest
       REPO="ghcr.io/groblegark/gastown/gastown-toolchain"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${PLATFORM_VERSION}" --new_layer /tmp/layer.tar --platform linux/amd64
+
+      # Set OCI image config (cmd, user, workdir) to match image-toolchain
+      crane mutate "${REPO}:${PLATFORM_VERSION}" \
+        --cmd /usr/local/bin/toolchain-entrypoint.sh \
+        --user 1000:1000 \
+        --workdir /home/agent/gt \
+        -t "${REPO}:${PLATFORM_VERSION}"
       crane tag "${REPO}:${PLATFORM_VERSION}" latest
       echo "Pushed ${REPO}:${PLATFORM_VERSION} and ${REPO}:latest"
     env:
