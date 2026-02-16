@@ -423,7 +423,7 @@ agentController:
   # K8s secret with RWX access token for agent pods (CI/CD operations)
   rwxTokenSecret: ""
 
-  # K8s ServiceAccount for agent pods (must exist in namespace)
+  # Legacy: explicit SA name override (ignored when agentServiceAccount.create=true)
   defaultServiceAccount: ""
 
   # K8s secret with NATS auth token for agent pods
@@ -432,6 +432,14 @@ agentController:
   serviceAccount:
     create: true
     name: ""
+    annotations: {}
+
+  # ServiceAccount for spawned agent pods (not the controller itself).
+  # When create=true, the chart provisions a SA + namespace-admin Role + RoleBinding.
+  # The SA name is passed to the agent-controller via DEFAULT_SERVICE_ACCOUNT env var.
+  agentServiceAccount:
+    create: true
+    name: ""        # defaults to "<release>-agent"
     annotations: {}
 
   resources:

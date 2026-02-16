@@ -84,6 +84,30 @@ Agent Controller service account name
 {{- end }}
 {{- end }}
 
+{{/* ===== Agent Pod helpers (SA/RBAC for spawned agent pods) ===== */}}
+
+{{/*
+Agent Pod service account name — used by spawned agent pods (not the controller itself).
+Defaults to "<release>-agent" when agentController.agentServiceAccount.create is true.
+*/}}
+{{- define "gastown.agentPod.serviceAccountName" -}}
+{{- if .Values.agentController.agentServiceAccount.create }}
+{{- default (printf "%s-agent" (include "gastown.fullname" .)) .Values.agentController.agentServiceAccount.name }}
+{{- else if .Values.agentController.defaultServiceAccount }}
+{{- .Values.agentController.defaultServiceAccount }}
+{{- else }}
+{{- "default" }}
+{{- end }}
+{{- end }}
+
+{{/*
+Agent Pod labels
+*/}}
+{{- define "gastown.agentPod.labels" -}}
+{{ include "gastown.labels" . }}
+app.kubernetes.io/component: agent
+{{- end }}
+
 {{/* ===== Coop Broker component helpers ===== */}}
 
 {{/*

@@ -109,10 +109,8 @@ spec:
             - name: RWX_TOKEN_SECRET
               value: {{ .Values.agentController.rwxTokenSecret }}
             {{- end }}
-            {{- if .Values.agentController.defaultServiceAccount }}
             - name: DEFAULT_SERVICE_ACCOUNT
-              value: {{ .Values.agentController.defaultServiceAccount }}
-            {{- end }}
+              value: {{ include "gastown.agentPod.serviceAccountName" . }}
             {{- if .Values.agentController.sidecarProfiles }}
             - name: SIDECAR_PROFILES_JSON
               value: {{ .Values.agentController.sidecarProfiles | toJson | quote }}

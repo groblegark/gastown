@@ -1,0 +1,43 @@
+{{- if and .Values.agentController.enabled .Values.agentController.agentServiceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "gastown.agentPod.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.agentPod.labels" . | nindent 4 }}
+  {{- with .Values.agentController.agentServiceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "gastown.agentPod.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.agentPod.labels" . | nindent 4 }}
+rules:
+  # Full namespace-scoped admin: agents can self-modify all resources
+  # within their own namespace (deployments, services, secrets, etc.)
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "gastown.agentPod.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.agentPod.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "gastown.agentPod.serviceAccountName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "gastown.agentPod.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
