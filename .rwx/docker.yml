@@ -65,7 +65,6 @@ on:
           default: ""
           required: false
       title: Agent rebuild (${{ init.ref-name }})
-      target: image-agent
   cli:
     init:
       commit-sha: ${{ event.git.sha }}
