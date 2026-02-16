@@ -278,6 +278,7 @@ tasks:
       - .rwx/toolchain-version.lock
       - .go-version
       - .node-version
+      - docker/toolchain/entrypoint.sh
     run: |
       export DEBIAN_FRONTEND=noninteractive
 
