@@ -225,6 +225,7 @@ tasks:
     if: ${{ init.ref-name != 'pr' }}
     filter:
       - deploy/agent/entrypoint.sh
+      - .node-version
     run: |
       # WORKAROUND: Do NOT run apt-get update/install here.
       # On multi-layer overlayfs (4 dependency layers), apt-get update
@@ -276,6 +277,7 @@ tasks:
     filter:
       - .rwx/toolchain-version.lock
       - .go-version
+      - .node-version
     run: |
       export DEBIAN_FRONTEND=noninteractive
 
