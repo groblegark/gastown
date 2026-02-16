@@ -54,7 +54,7 @@ type DogDispatchOptions struct {
 type DogDispatchInfo struct {
 	DogName string // Name of the dog
 	AgentID string // Agent ID format (deacon/dogs/<name>)
-	Pane    string // Tmux pane (empty if session start was delayed)
+	Pane    string // Pane ID (empty if session start was delayed)
 	Spawned bool   // True if dog was spawned (new)
 
 	// Internal fields for delayed session start

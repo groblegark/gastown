@@ -361,12 +361,12 @@ func (f *LiveConvoyFetcher) getWorkersFromAssignees(details map[string]*issueDet
 	return result
 }
 
-// getSessionActivityForAssignee returns nil — tmux session activity is not available.
+// getSessionActivityForAssignee returns nil — session activity is not available.
 func (f *LiveConvoyFetcher) getSessionActivityForAssignee(_ string) *time.Time {
 	return nil
 }
 
-// getAllPolecatActivity returns nil — tmux session activity is not available.
+// getAllPolecatActivity returns nil — session activity is not available.
 func (f *LiveConvoyFetcher) getAllPolecatActivity() *time.Time {
 	return nil
 }

@@ -68,7 +68,7 @@ func findLocalBeadsDir() (string, error) {
 //  2. No GT_ROLE → try cwd-based detection (witness/refinery/polecat/crew directories)
 //  3. No match → return "overseer" (human at terminal)
 //
-// All Gas Town agents run in tmux sessions with GT_ROLE set at spawn.
+// All Gas Town agents run in sessions with GT_ROLE set at spawn.
 // However, cwd-based detection is also tried to support running commands
 // from agent directories without GT_ROLE set (e.g., debugging sessions).
 func detectSender() string {

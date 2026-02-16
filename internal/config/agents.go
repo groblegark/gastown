@@ -49,7 +49,7 @@ type AgentPresetInfo struct {
 	Env map[string]string `json:"env,omitempty"`
 
 	// ProcessNames are the process names to look for when detecting if the agent is running.
-	// Used by tmux.IsAgentRunning to check pane_current_command.
+	// Used to check the active process in a session pane.
 	// E.g., ["node"] for Claude, ["cursor-agent"] for Cursor.
 	ProcessNames []string `json:"process_names,omitempty"`
 
@@ -424,7 +424,7 @@ func GetSessionIDEnvVar(agentName string) string {
 }
 
 // GetProcessNames returns the process names used to detect if an agent is running.
-// Used by tmux.IsAgentRunning to check pane_current_command.
+// Used to check the active process in a session pane.
 // Returns ["node"] for Claude (default) if agent is not found or has no ProcessNames.
 func GetProcessNames(agentName string) []string {
 	info := GetAgentPresetByName(agentName)

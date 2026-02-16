@@ -27,7 +27,7 @@ func TestSelfKillExitSession_UsesBackendResolution(t *testing.T) {
 	// thing is the function doesn't panic and returns an error (from the backend call).
 	err := selfKillExitSession("", roleInfo)
 	if err == nil {
-		// In a test environment without tmux/bd, we expect an error from KillSession.
+		// In a test environment without bd, we expect an error from KillSession.
 		// If it somehow succeeds, that's also fine.
 		return
 	}
@@ -55,7 +55,7 @@ func TestSelfKillExitSession_EnvOverridesRoleInfo(t *testing.T) {
 	// We can't easily verify the session name without mocking, but
 	// we verify the code path runs without panic.
 	err := selfKillExitSession("", roleInfo)
-	// Error is expected in test env (no tmux/bd), but no panic means
+	// Error is expected in test env (no bd), but no panic means
 	// the env var override logic worked correctly.
 	if err != nil {
 		t.Logf("selfKillExitSession returned expected error in test env: %v", err)

@@ -1,6 +1,6 @@
 // Package cmd provides OJ nudge helpers for gt nudge and sling.
 // When a target polecat is OJ-managed (has oj_job_id in its hooked bead),
-// nudges are routed through "oj agent send" instead of tmux (od-ki9.4).
+// nudges are routed through "oj agent send" instead of directly (od-ki9.4).
 package cmd
 
 import (

@@ -490,6 +490,47 @@ Scattered across the codebase, there are fallbacks for old bead formats:
 
 ---
 
+## Phase 9 — OddJobs (OJ) Integration (~900 source, ~700 test)
+
+Low risk. OJ dispatch is gated behind `GT_SLING_OJ=1`, which is never set in helm charts,
+Docker configs, deploy scripts, or K8s configuration. The K8s-native path (controller +
+coop) fully superseded OJ for workspace creation, agent spawn, crash recovery, and
+monitoring. No bead in production ever receives an `oj_job_id`, so all OJ code paths are
+unreachable.
+
+### 9a. Delete OJ dispatch files (~365 source, ~485 test)
+
+Self-contained files dedicated entirely to OJ integration.
+
+**Files to delete:**
+- `internal/cmd/sling_oj.go` (292) — OJ dispatch for `gt sling`, runbook sync
+- `internal/cmd/sling_oj_test.go` (336) — tests
+- `internal/cmd/nudge_oj.go` (72) — OJ nudge via `oj agent send`
+- `internal/cmd/nudge_test.go` (149) — OJ nudge edge case tests
+- `internal/doctor/oj_daemon_check.go` (220) — `oj-daemon` health check
+- `internal/doctor/oj_daemon_check_test.go` (191) — tests
+- `internal/witness/handlers_oj_test.go` (27) — `isOJJobActive` tests
+- `library/gastown/sling.hcl` (143) — OJ runbook template
+
+### 9b. Remove OJ branches from surviving files (~535 source, ~215 test est.)
+
+Surgical removal of OJ code paths within files that remain useful.
+
+**Files to modify:**
+- `internal/cmd/sling.go` — remove `GT_SLING_OJ` dispatch branch (~50 lines: 604–647,
+  803–808), `ojDispatch` variable, and `ojSlingEnabled()` call
+- `internal/daemon/daemon.go` — remove `getOjJobIDFromBead` (~20), `checkOjPolecatHealth`
+  (~27), `queryOjJobState` (~25), and OJ branch in `checkPolecatHealth` (~7)
+- `internal/witness/handlers.go` — remove `isOJJobActive` (~12) and OJ guard in
+  `NukePolecat` (~10)
+- `internal/beads/fields.go` — remove `OjJobID` field, `oj_job_id` parse case, serialization,
+  and known-key entry (~8)
+- `internal/beads/beads_agent.go` — remove `OJJobID` field, `oj_job_id` parse/serialize (~6)
+- `internal/sling/spawn.go` — remove `OjSlingEnabled()` helper (~4)
+- `internal/sling/metadata.go` — remove `StoreOjJobIDInBead` (~20)
+
+---
+
 ## Ledger
 
 | Phase | Description | Source | Test |
@@ -502,7 +543,8 @@ Scattered across the codebase, there are fallbacks for old bead formats:
 | 6 | Web dashboard (tmux-based) | 3,400 | 2,000 |
 | 7 | Doctor check consolidation | 4,100 | 2,100 |
 | 8 | Mail legacy + scattered cleanup | 1,700 | 2,000 |
-| **Total** | | **~61,000** | **~14,500** |
+| 9 | OddJobs (OJ) integration | 900 | 700 |
+| **Total** | | **~61,900** | **~15,200** |
 
 The test estimate of 14.5k is a conservative floor — many `*_test.go` files for deleted
 commands could not be confirmed to exist. The actual test reduction likely reaches 18–25k

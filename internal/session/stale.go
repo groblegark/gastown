@@ -6,7 +6,7 @@ import (
 )
 
 // SessionCreatedAt returns the time a session was created.
-// In K8s mode, session creation time is not available (no tmux).
+// In K8s mode, session creation time is not available.
 // Returns an error so callers fall through to non-stale behavior.
 func SessionCreatedAt(sessionName string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("session creation time not available (K8s mode)")

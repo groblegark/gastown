@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,6 +13,7 @@ import (
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/rpcclient"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/workspace"
 )
 
 // CrewStatusItem represents detailed status for a crew worker.
@@ -108,12 +108,14 @@ func runCrewStatus(cmd *cobra.Command, args []string) error {
 		}
 
 		// Mail status (non-fatal: display defaults to 0 if count fails)
-		mailDir := filepath.Join(w.ClonePath, "mail")
 		mailTotal, mailUnread := 0, 0
-		if _, err := os.Stat(mailDir); err == nil {
-			mailbox := mail.NewMailbox(mailDir)
-			mailTotal, mailUnread, _ = mailbox.Count()
+		townRoot, _ := workspace.Find(r.Path)
+		if townRoot == "" {
+			townRoot = r.Path
 		}
+		crewAddress := fmt.Sprintf("%s/crew/%s", r.Name, w.Name)
+		mailbox := mail.NewMailboxFromAddress(crewAddress, townRoot)
+		mailTotal, mailUnread, _ = mailbox.Count()
 
 		item := CrewStatusItem{
 			Name:         w.Name,

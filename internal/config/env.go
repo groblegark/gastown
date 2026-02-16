@@ -101,7 +101,7 @@ func AgentEnv(cfg AgentEnvConfig) map[string]string {
 	}
 
 	// Only set GT_ROOT if provided
-	// Empty values would override tmux session environment
+	// Empty values would override session environment
 	if cfg.TownRoot != "" {
 		env["GT_ROOT"] = cfg.TownRoot
 		// Prevent git from walking up to umbrella repo when running in rig worktrees.

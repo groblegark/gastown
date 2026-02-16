@@ -415,7 +415,7 @@ exit /b 0
 	t.Setenv(EnvGTRole, "mayor")
 	t.Setenv("GT_POLECAT", "")
 	t.Setenv("GT_CREW", "")
-	t.Setenv("TMUX_PANE", "") // Prevent inheriting real tmux pane from test runner
+	t.Setenv("TMUX_PANE", "") // Prevent inheriting real pane from test runner
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -443,7 +443,7 @@ exit /b 0
 	slingVars = nil
 	slingOnTarget = "gt-abc123"
 
-	// Prevent real tmux nudge from firing during tests (causes agent self-interruption)
+	// Prevent real nudge from firing during tests (causes agent self-interruption)
 	t.Setenv("GT_TEST_NO_NUDGE", "1")
 	t.Setenv("GT_TEST_SKIP_HOOK_VERIFY", "1") // Stub bd doesn't track state
 
@@ -608,7 +608,7 @@ exit /b 0
 	t.Setenv(EnvGTRole, "mayor")
 	t.Setenv("GT_POLECAT", "")
 	t.Setenv("GT_CREW", "")
-	t.Setenv("TMUX_PANE", "") // Prevent inheriting real tmux pane from test runner
+	t.Setenv("TMUX_PANE", "") // Prevent inheriting real pane from test runner
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -636,7 +636,7 @@ exit /b 0
 	slingVars = nil
 	slingOnTarget = "gt-abc123"
 
-	// Prevent real tmux nudge from firing during tests (causes agent self-interruption)
+	// Prevent real nudge from firing during tests (causes agent self-interruption)
 	t.Setenv("GT_TEST_NO_NUDGE", "1")
 	t.Setenv("GT_TEST_SKIP_HOOK_VERIFY", "1") // Stub bd doesn't track state
 
@@ -838,7 +838,7 @@ exit /b 0
 	t.Setenv(EnvGTRole, "crew")
 	t.Setenv("GT_CREW", "jv")
 	t.Setenv("GT_POLECAT", "")
-	t.Setenv("TMUX_PANE", "") // Prevent inheriting real tmux pane from test runner
+	t.Setenv("TMUX_PANE", "") // Prevent inheriting real pane from test runner
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -860,7 +860,7 @@ exit /b 0
 	slingDryRun = true
 	slingNoConvoy = true
 
-	// Prevent real tmux nudge from firing during tests (causes agent self-interruption)
+	// Prevent real nudge from firing during tests (causes agent self-interruption)
 	t.Setenv("GT_TEST_NO_NUDGE", "1")
 
 	// EXPECTED: gt sling should use daemon mode and succeed
@@ -1141,7 +1141,7 @@ exit /b 0
 	slingOnTarget = "" // No --on target, we want to test rig target
 
 	// Call runSlingFormula with our configured test rig
-	// The spawn will fail (no tmux, polecat manager issues in test env),
+	// The spawn will fail (polecat manager issues in test env),
 	// but the key check is that wisp creation happened BEFORE spawn attempt.
 	err = runSlingFormula([]string{"mol-polecat-work", "testrig"})
 
@@ -1196,7 +1196,7 @@ exit /b 0
 	}
 
 	// The key verification: wisp was created before SpawnPolecatForSling was called.
-	// Since SpawnPolecatForSling will fail (no tmux in test), but wisp was created,
+	// Since SpawnPolecatForSling will fail (no backend in test), but wisp was created,
 	// this proves the fix is working - wisp creation happens before spawn attempt.
 	if wispSeq >= 0 {
 		t.Logf("SUCCESS: Wisp created at sequence %d (before spawn attempt)", wispSeq)
@@ -1328,7 +1328,7 @@ exit /b 0
 	t.Setenv(EnvGTRole, "mayor")
 	t.Setenv("GT_POLECAT", "")
 	t.Setenv("GT_CREW", "")
-	t.Setenv("TMUX_PANE", "") // Prevent inheriting real tmux pane from test runner
+	t.Setenv("TMUX_PANE", "") // Prevent inheriting real pane from test runner
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -1356,7 +1356,7 @@ exit /b 0
 	slingVars = nil
 	slingOnTarget = "gt-abc123" // The bug bead we're applying formula to
 
-	// Prevent real tmux nudge from firing during tests (causes agent self-interruption)
+	// Prevent real nudge from firing during tests (causes agent self-interruption)
 	t.Setenv("GT_TEST_NO_NUDGE", "1")
 	t.Setenv("GT_TEST_SKIP_HOOK_VERIFY", "1") // Stub bd doesn't track state
 

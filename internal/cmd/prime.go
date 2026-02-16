@@ -723,7 +723,7 @@ func buildAgentBeadIDFromContext(ctx RoleContext, townRoot string) string {
 func acquireIdentityLock(ctx RoleContext) error {
 	// Only lock worker roles (polecat, crew)
 	// Infrastructure roles (mayor, witness, refinery, deacon) are singletons
-	// managed by tmux session names, so they don't need file-based locks
+	// managed by session names, so they don't need file-based locks
 	if ctx.Role != RolePolecat && ctx.Role != RoleCrew {
 		return nil
 	}

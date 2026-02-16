@@ -601,7 +601,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 	// Execute deferred polecat spawn if needed (for rig targets).
 	// This happens AFTER formula instantiation to prevent orphan polecats on failure (GH #gt-e9o).
 	//
-	// Two paths: OJ dispatch (GT_SLING_OJ=1) or legacy tmux spawn.
+	// Two paths: OJ dispatch (GT_SLING_OJ=1) or legacy spawn.
 	var ojDispatch *OjDispatchInfo // Non-nil when OJ dispatch is used
 	if deferredRigName != "" && ojSlingEnabled() {
 		// OJ dispatch path: GT allocates name, OJ daemon owns the polecat lifecycle.
@@ -719,7 +719,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 			Body:       workMailBody,
 			Type:       mail.TypeTask,
 			Priority:   mail.PriorityNormal,
-			SkipNotify: true, // We'll send a tmux nudge separately
+			SkipNotify: true, // We'll send a nudge separately
 		}
 		if err := router.Send(workMsg); err != nil {
 			fmt.Printf("%s Could not send mail notification to crew: %v\n", style.Dim.Render("Warning:"), err)
@@ -741,7 +741,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s Could not store dispatcher in bead: %v\n", style.Dim.Render("Warning:"), err)
 	}
 
-	// Store args in bead description (no-tmux mode: beads as data plane)
+	// Store args in bead description (beads as data plane)
 	if slingArgs != "" {
 		if err := storeArgsInBead(beadID, slingArgs); err != nil {
 			// Warn but don't fail - args will still be in the nudge prompt

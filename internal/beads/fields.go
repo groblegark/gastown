@@ -19,7 +19,7 @@ func ParseAgentFieldsFromDescription(description string) *AgentFields {
 type AttachmentFields struct {
 	AttachedMolecule string // Root issue ID of the attached molecule
 	AttachedAt       string // ISO 8601 timestamp when attached
-	AttachedArgs     string // Natural language args passed via gt sling --args (no-tmux mode)
+	AttachedArgs     string // Natural language args passed via gt sling --args (direct mode)
 	DispatchedBy     string // Agent ID that dispatched this work (for completion notification)
 	NoMerge          bool   // If true, gt done skips merge queue (for upstream PRs/human review)
 	MergeStrategy    string // Merge strategy: direct (push to main), mr (refinery), local (merge locally)
@@ -581,7 +581,7 @@ func FormatSynthesisFields(fields *SynthesisFields) string {
 // This enables agents to self-register their lifecycle configuration,
 // replacing hardcoded identity string parsing in the daemon.
 type RoleConfig struct {
-	// SessionPattern defines how to derive tmux session name.
+	// SessionPattern defines how to derive session name.
 	// Supports placeholders: {rig}, {name}, {role}
 	// Examples: "hq-mayor", "hq-deacon", "gt-{rig}-{role}", "gt-{rig}-{name}"
 	SessionPattern string

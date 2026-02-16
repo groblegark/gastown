@@ -31,17 +31,6 @@ type Mailbox struct {
 	workDir  string // directory to run bd commands in
 	beadsDir string // explicit .beads directory path (set via BEADS_DIR)
 	townRoot string // town root for prefix-based routing (e.g., ~/gt)
-	path     string // for legacy JSONL mode (crew workers)
-	legacy   bool   // true = use JSONL files, false = use beads
-}
-
-// NewMailbox creates a mailbox for the given JSONL path (legacy mode).
-// Used by crew workers that have local JSONL inboxes.
-func NewMailbox(path string) *Mailbox {
-	return &Mailbox{
-		path:   filepath.Join(path, "inbox.jsonl"),
-		legacy: true,
-	}
 }
 
 // NewMailboxBeads creates a mailbox backed by beads.
@@ -49,7 +38,6 @@ func NewMailboxBeads(identity, workDir string) *Mailbox {
 	return &Mailbox{
 		identity: identity,
 		workDir:  workDir,
-		legacy:   false,
 	}
 }
 
@@ -61,7 +49,6 @@ func NewMailboxFromAddress(address, workDir string) *Mailbox {
 		identity: AddressToIdentity(address),
 		workDir:  workDir,
 		beadsDir: beadsDir,
-		legacy:   false,
 	}
 }
 
@@ -71,7 +58,6 @@ func NewMailboxWithBeadsDir(address, workDir, beadsDir string) *Mailbox {
 		identity: AddressToIdentity(address),
 		workDir:  workDir,
 		beadsDir: beadsDir,
-		legacy:   false,
 	}
 }
 
@@ -83,7 +69,6 @@ func NewMailboxWithTownRoot(address, workDir, beadsDir, townRoot string) *Mailbo
 		workDir:  workDir,
 		beadsDir: beadsDir,
 		townRoot: townRoot,
-		legacy:   false,
 	}
 }
 
@@ -92,16 +77,8 @@ func (m *Mailbox) Identity() string {
 	return m.identity
 }
 
-// Path returns the JSONL path for legacy mailboxes.
-func (m *Mailbox) Path() string {
-	return m.path
-}
-
 // List returns all open messages in the mailbox.
 func (m *Mailbox) List() ([]*Message, error) {
-	if m.legacy {
-		return m.listLegacy()
-	}
 	return m.listBeads()
 }
 
@@ -260,43 +237,6 @@ func (m *Mailbox) queryMessages(beadsDir, filterFlag, filterValue, status string
 	return messages, nil
 }
 
-func (m *Mailbox) listLegacy() ([]*Message, error) {
-	file, err := os.Open(m.path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer func() { _ = file.Close() }() // non-fatal: OS will close on exit
-
-	var messages []*Message
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-
-		var msg Message
-		if err := json.Unmarshal([]byte(line), &msg); err != nil {
-			continue // Skip malformed lines
-		}
-		messages = append(messages, &msg)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	// Sort by timestamp (newest first)
-	sort.Slice(messages, func(i, j int) bool {
-		return messages[i].Timestamp.After(messages[j].Timestamp)
-	})
-
-	return messages, nil
-}
-
 // ListUnread returns unread (open) messages.
 // Filters out messages marked as read (via "read" label in beads mode).
 func (m *Mailbox) ListUnread() ([]*Message, error) {
@@ -315,9 +255,6 @@ func (m *Mailbox) ListUnread() ([]*Message, error) {
 
 // Get returns a message by ID.
 func (m *Mailbox) Get(id string) (*Message, error) {
-	if m.legacy {
-		return m.getLegacy(id)
-	}
 	return m.getBeads(id)
 }
 
@@ -358,24 +295,8 @@ func (m *Mailbox) getFromDir(id, beadsDir string) (*Message, error) {
 	return bms[0].ToMessage(), nil
 }
 
-func (m *Mailbox) getLegacy(id string) (*Message, error) {
-	messages, err := m.List()
-	if err != nil {
-		return nil, err
-	}
-	for _, msg := range messages {
-		if msg.ID == id {
-			return msg, nil
-		}
-	}
-	return nil, ErrMessageNotFound
-}
-
 // MarkRead marks a message as read.
 func (m *Mailbox) MarkRead(id string) error {
-	if m.legacy {
-		return m.markReadLegacy(id)
-	}
 	return m.markReadBeads(id)
 }
 
@@ -424,35 +345,10 @@ func (m *Mailbox) closeInDir(id, beadsDir string) error {
 	return nil
 }
 
-func (m *Mailbox) markReadLegacy(id string) error {
-	messages, err := m.List()
-	if err != nil {
-		return err
-	}
-
-	found := false
-	for _, msg := range messages {
-		if msg.ID == id {
-			msg.Read = true
-			found = true
-		}
-	}
-
-	if !found {
-		return ErrMessageNotFound
-	}
-
-	return m.rewriteLegacy(messages)
-}
-
 // MarkReadOnly marks a message as read WITHOUT archiving/closing it.
-// For beads mode, this adds a "read" label to the message.
-// For legacy mode, this sets the Read field to true.
+// This adds a "read" label to the message.
 // The message remains in the inbox but is displayed as read.
 func (m *Mailbox) MarkReadOnly(id string) error {
-	if m.legacy {
-		return m.markReadLegacy(id)
-	}
 	return m.markReadOnlyBeads(id)
 }
 
@@ -472,12 +368,7 @@ func (m *Mailbox) markReadOnlyBeads(id string) error {
 }
 
 // MarkUnreadOnly marks a message as unread (removes "read" label).
-// For beads mode, this removes the "read" label from the message.
-// For legacy mode, this sets the Read field to false.
 func (m *Mailbox) MarkUnreadOnly(id string) error {
-	if m.legacy {
-		return m.markUnreadLegacy(id)
-	}
 	return m.markUnreadOnlyBeads(id)
 }
 
@@ -502,9 +393,6 @@ func (m *Mailbox) markUnreadOnlyBeads(id string) error {
 
 // MarkUnread marks a message as unread (reopens in beads).
 func (m *Mailbox) MarkUnread(id string) error {
-	if m.legacy {
-		return m.markUnreadLegacy(id)
-	}
 	return m.markUnreadBeads(id)
 }
 
@@ -522,56 +410,9 @@ func (m *Mailbox) markUnreadBeads(id string) error {
 	return nil
 }
 
-func (m *Mailbox) markUnreadLegacy(id string) error {
-	messages, err := m.List()
-	if err != nil {
-		return err
-	}
-
-	found := false
-	for _, msg := range messages {
-		if msg.ID == id {
-			msg.Read = false
-			found = true
-		}
-	}
-
-	if !found {
-		return ErrMessageNotFound
-	}
-
-	return m.rewriteLegacy(messages)
-}
-
 // Delete removes a message.
 func (m *Mailbox) Delete(id string) error {
-	if m.legacy {
-		return m.deleteLegacy(id)
-	}
 	return m.MarkRead(id) // beads: just acknowledge/close
-}
-
-func (m *Mailbox) deleteLegacy(id string) error {
-	messages, err := m.List()
-	if err != nil {
-		return err
-	}
-
-	var filtered []*Message
-	found := false
-	for _, msg := range messages {
-		if msg.ID == id {
-			found = true
-		} else {
-			filtered = append(filtered, msg)
-		}
-	}
-
-	if !found {
-		return ErrMessageNotFound
-	}
-
-	return m.rewriteLegacy(filtered)
 }
 
 // Archive moves a message to the archive file and removes it from inbox.
@@ -593,10 +434,6 @@ func (m *Mailbox) Archive(id string) error {
 
 // ArchivePath returns the path to the archive file.
 func (m *Mailbox) ArchivePath() string {
-	if m.legacy {
-		return m.path + ".archive"
-	}
-	// For beads, use archive.jsonl in the same directory as beads
 	return filepath.Join(m.beadsDir, "archive.jsonl")
 }
 
@@ -825,76 +662,8 @@ func (m *Mailbox) Count() (total, unread int, err error) {
 	return total, unread, nil
 }
 
-// Append adds a message to the mailbox (legacy mode only).
-// For beads mode, use Router.Send() instead.
-func (m *Mailbox) Append(msg *Message) error {
-	if !m.legacy {
-		return errors.New("use Router.Send() to send messages via beads")
-	}
-	return m.appendLegacy(msg)
-}
-
-func (m *Mailbox) appendLegacy(msg *Message) error {
-	// Ensure directory exists
-	dir := filepath.Dir(m.path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	// Open for append
-	file, err := os.OpenFile(m.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }() // non-fatal: OS will close on exit
-
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-
-	_, err = file.WriteString(string(data) + "\n")
-	return err
-}
-
-// rewriteLegacy rewrites the mailbox with the given messages.
-func (m *Mailbox) rewriteLegacy(messages []*Message) error {
-	// Sort by timestamp (oldest first for JSONL)
-	sort.Slice(messages, func(i, j int) bool {
-		return messages[i].Timestamp.Before(messages[j].Timestamp)
-	})
-
-	// Write to temp file
-	tmpPath := m.path + ".tmp"
-	file, err := os.Create(tmpPath)
-	if err != nil {
-		return err
-	}
-
-	for _, msg := range messages {
-		data, err := json.Marshal(msg)
-		if err != nil {
-			_ = file.Close()       // best-effort cleanup
-			_ = os.Remove(tmpPath) // best-effort cleanup
-			return err
-		}
-		_, _ = file.WriteString(string(data) + "\n") // non-fatal: partial write is acceptable
-	}
-
-	if err := file.Close(); err != nil {
-		_ = os.Remove(tmpPath) // best-effort cleanup
-		return err
-	}
-
-	// Atomic rename
-	return os.Rename(tmpPath, m.path)
-}
-
 // ListByThread returns all messages in a given thread.
 func (m *Mailbox) ListByThread(threadID string) ([]*Message, error) {
-	if m.legacy {
-		return m.listByThreadLegacy(threadID)
-	}
 	return m.listByThreadBeads(threadID)
 }
 
@@ -927,23 +696,3 @@ func (m *Mailbox) listByThreadBeads(threadID string) ([]*Message, error) {
 	return messages, nil
 }
 
-func (m *Mailbox) listByThreadLegacy(threadID string) ([]*Message, error) {
-	messages, err := m.List()
-	if err != nil {
-		return nil, err
-	}
-
-	var thread []*Message
-	for _, msg := range messages {
-		if msg.ThreadID == threadID {
-			thread = append(thread, msg)
-		}
-	}
-
-	// Sort by timestamp (oldest first for thread view)
-	sort.Slice(thread, func(i, j int) bool {
-		return thread[i].Timestamp.Before(thread[j].Timestamp)
-	})
-
-	return thread, nil
-}

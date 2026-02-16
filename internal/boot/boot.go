@@ -25,9 +25,9 @@ func coopDefault() terminal.Backend {
 // deaconSession is the deacon session name, duplicated here to avoid import cycle with session package.
 const deaconSession = "hq-deacon"
 
-// SessionName is the tmux session name for Boot.
-// Note: We use "gt-boot" instead of "hq-deacon-boot" to avoid tmux prefix
-// matching collisions. Tmux matches session names by prefix, so "hq-deacon-boot"
+// SessionName is the session name for Boot.
+// Note: We use "gt-boot" instead of "hq-deacon-boot" to avoid prefix
+// matching collisions. Session names are matched by prefix, so "hq-deacon-boot"
 // would match when checking for "hq-deacon", causing HasSession("hq-deacon")
 // to return true when only Boot is running.
 const SessionName = "gt-boot"
@@ -94,7 +94,7 @@ func (b *Boot) statusPath() string {
 }
 
 // IsRunning checks if Boot is currently running.
-// Queries tmux directly for observable reality (ZFC principle).
+// Queries session state directly for observable reality (ZFC principle).
 func (b *Boot) IsRunning() bool {
 	return b.IsSessionAlive()
 }
@@ -192,7 +192,7 @@ func (b *Boot) Spawn(_ string) error {
 	return b.spawnDegraded()
 }
 
-// spawnDegraded spawns Boot in degraded mode (no tmux).
+// spawnDegraded spawns Boot in degraded mode (no session).
 // Boot runs to completion and exits without handoff.
 func (b *Boot) spawnDegraded() error {
 	// In degraded mode, we run gt boot triage directly
@@ -200,7 +200,7 @@ func (b *Boot) spawnDegraded() error {
 	cmd := exec.Command("gt", "boot", "triage", "--degraded")
 	cmd.Dir = b.deaconDir
 
-	// Use centralized AgentEnv for consistency with tmux mode
+	// Use centralized AgentEnv for consistency with session mode
 	envVars := config.AgentEnv(config.AgentEnvConfig{
 		Role:         "boot",
 		TownRoot:     b.townRoot,

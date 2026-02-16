@@ -314,7 +314,7 @@ func (d *Daemon) heartbeat(state *State) {
 	d.checkOrphanedWork()
 
 	// 9. Check polecat session health (proactive crash detection)
-	// This validates tmux sessions are still alive for polecats with work-on-hook
+	// This validates sessions are still alive for polecats with work-on-hook
 	d.checkPolecatSessionHealth()
 
 	// 10. Clean up orphaned claude subagent processes (memory leak prevention)
@@ -546,7 +546,7 @@ func (d *Daemon) ensureWitnessesRunning() {
 }
 
 // ensureWitnessRunning ensures the witness for a specific rig is running.
-// Discover, don't track: uses Manager.Start() which checks tmux directly (gt-zecmc).
+// Discover, don't track: uses Manager.Start() which checks sessions directly (gt-zecmc).
 func (d *Daemon) ensureWitnessRunning(rigName string) {
 	// Check rig operational state before auto-starting
 	if operational, reason := d.isRigOperational(rigName); !operational {
@@ -556,7 +556,7 @@ func (d *Daemon) ensureWitnessRunning(rigName string) {
 
 	// Manager.Start() handles: zombie detection, session creation, env vars, theming,
 	// startup readiness waits, and crucially - startup/propulsion nudges (GUPP).
-	// It returns ErrAlreadyRunning if Claude is already running in tmux.
+	// It returns ErrAlreadyRunning if Claude is already running.
 	r := &rig.Rig{
 		Name: rigName,
 		Path: filepath.Join(d.config.TownRoot, rigName),
@@ -586,7 +586,7 @@ func (d *Daemon) ensureRefineriesRunning() {
 }
 
 // ensureRefineryRunning ensures the refinery for a specific rig is running.
-// Discover, don't track: uses Manager.Start() which checks tmux directly (gt-zecmc).
+// Discover, don't track: uses Manager.Start() which checks sessions directly (gt-zecmc).
 func (d *Daemon) ensureRefineryRunning(rigName string) {
 	// Check rig operational state before auto-starting
 	if operational, reason := d.isRigOperational(rigName); !operational {
@@ -596,7 +596,7 @@ func (d *Daemon) ensureRefineryRunning(rigName string) {
 
 	// Manager.Start() handles: zombie detection, session creation, env vars, theming,
 	// WaitForClaudeReady, and crucially - startup/propulsion nudges (GUPP).
-	// It returns ErrAlreadyRunning if Claude is already running in tmux.
+	// It returns ErrAlreadyRunning if Claude is already running.
 	r := &rig.Rig{
 		Name: rigName,
 		Path: filepath.Join(d.config.TownRoot, rigName),
@@ -974,11 +974,11 @@ func KillOrphanedDaemons() (int, error) {
 	return killed, nil
 }
 
-// checkPolecatSessionHealth proactively validates polecat tmux sessions.
+// checkPolecatSessionHealth proactively validates polecat sessions.
 // This detects crashed polecats that:
 // 1. Have work-on-hook (assigned work)
 // 2. Report state=running/working in their agent bead
-// 3. But the tmux session is actually dead
+// 3. But the session is actually dead
 //
 // When a crash is detected, the polecat is automatically restarted.
 // This provides faster recovery than waiting for GUPP timeout or Witness detection.
@@ -1030,7 +1030,7 @@ func listPolecatWorktrees(polecatsDir string) ([]string, error) {
 // Three paths based on how the polecat is managed:
 // - OJ-managed (oj_job_id set): query oj job show, map states
 // - Coop-managed (backend=coop in notes): query coop HTTP health/agent API
-// - Legacy tmux: check tmux session existence
+// - Legacy: check session existence
 func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 	// Get agent bead info to check for hooked work
 	townName, _ := workspace.GetTownName(d.config.TownRoot)
@@ -1050,7 +1050,7 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 	// Check if this polecat is OJ-managed by reading oj_job_id from the hook bead
 	ojJobID := d.getOjJobIDFromBead(info.HookBead)
 	if ojJobID != "" {
-		// OJ-managed polecat: check OJ job status instead of tmux
+		// OJ-managed polecat: check OJ job status instead of session
 		d.checkOjPolecatHealth(rigName, polecatName, info.HookBead, ojJobID)
 		return
 	}
@@ -1062,7 +1062,7 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 		return
 	}
 
-	// Legacy tmux path: check tmux session existence
+	// Legacy path: check session existence
 	sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
 	sessionAlive, err := d.hasSession(sessionName)
 	if err != nil {

@@ -432,7 +432,7 @@ func (s *StatusServer) HealthCheck(
 	// Check dolt
 	components = append(components, s.checkDolt())
 
-	// Check tmux
+	// Check terminal sessions
 	components = append(components, s.checkTmux())
 
 	// Check beads
@@ -520,7 +520,7 @@ func (s *StatusServer) checkDolt() *gastownv1.ComponentHealth {
 	}
 }
 
-// checkTmux reports tmux as not applicable (K8s mode uses coop backend).
+// checkTmux reports terminal sessions as not applicable (K8s mode uses coop backend).
 func (s *StatusServer) checkTmux() *gastownv1.ComponentHealth {
 	return &gastownv1.ComponentHealth{
 		Name:      "tmux",
@@ -2894,7 +2894,7 @@ func (s *TerminalServer) SendInput(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session name is required"))
 	}
 
-	// Validate session starts with "gt-" to prevent arbitrary tmux access
+	// Validate session starts with "gt-" to prevent arbitrary session access
 	if !strings.HasPrefix(session, "gt-") {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("session must start with 'gt-'"))
 	}

@@ -146,14 +146,6 @@ type UpdateOptions struct {
 	SetLabels    []string // Labels to set (replaces all existing)
 }
 
-// SyncStatus represents the sync status of the beads repository.
-type SyncStatus struct {
-	Branch    string
-	Ahead     int
-	Behind    int
-	Conflicts []string
-}
-
 // Beads wraps bd CLI operations for a working directory.
 type Beads struct {
 	workDir  string
@@ -867,12 +859,6 @@ func (b *Beads) Sync() error {
 func (b *Beads) SyncFromMain() error {
 	_, err := b.run("sync", "--from-main")
 	return err
-}
-
-// GetSyncStatus is deprecated. Dolt handles sync automatically.
-// Returns empty status since bd sync has been removed.
-func (b *Beads) GetSyncStatus() (*SyncStatus, error) {
-	return &SyncStatus{}, nil
 }
 
 // Stats returns repository statistics.

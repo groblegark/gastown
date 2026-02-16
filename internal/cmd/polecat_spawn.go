@@ -137,7 +137,7 @@ func verifyAndSetHookBead(townRoot, rigName, polecatName, hookBead string) error
 // resolveExecutionTarget determines the execution target for a rig.
 // Priority: explicit override > rig settings > K8s auto-detect > "local".
 // When running inside a K8s pod (KUBERNETES_SERVICE_HOST is set), defaults
-// to "k8s" instead of "local" so agents spawn as pods, not tmux sessions.
+// to "k8s" instead of "local" so agents spawn as pods, not sessions.
 func resolveExecutionTarget(rigPath, override string) config.ExecutionTarget {
 	if override != "" {
 		return config.ExecutionTarget(override)
@@ -158,7 +158,7 @@ func resolveExecutionTarget(rigPath, override string) config.ExecutionTarget {
 }
 
 // spawnPolecatForK8sCMD creates an agent bead for a K8s polecat without creating
-// a local worktree or tmux session. The K8s controller watches for agent beads
+// a local worktree or session. The K8s controller watches for agent beads
 // with agent_state=spawning and execution_target:k8s label, then creates pods.
 func spawnPolecatForK8sCMD(townRoot, rigName string, r *rig.Rig, opts SlingSpawnOptions) (*SpawnedPolecatInfo, error) {
 	// Allocate polecat name. Try the full polecat Manager first (works when

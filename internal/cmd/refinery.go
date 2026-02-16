@@ -387,7 +387,7 @@ func runRefineryStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// ZFC: tmux is source of truth for running state
+	// ZFC: session is source of truth for running state
 	running, _ := mgr.IsRunning()
 	sessionInfo, _ := mgr.Status() // may be nil if not running
 

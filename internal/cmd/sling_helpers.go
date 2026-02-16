@@ -75,7 +75,7 @@ func getBeadInfo(beadID string) (*beadInfo, error) {
 }
 
 // storeArgsInBead stores args in the bead's description using attached_args field.
-// This enables no-tmux mode where agents discover args via gt prime / bd show.
+// This enables agents to discover args via gt prime / bd show.
 func storeArgsInBead(beadID, args string) error {
 	// Get the bead to preserve existing description content
 	showCmd := bdcmd.Command( "show", beadID, "--json", "--allow-stale")
@@ -371,7 +371,7 @@ func storeConvoyOwnedInBead(beadID string, owned bool) error {
 	return nil
 }
 
-// nudgeViaBackend attempts to nudge a non-tmux agent (Coop/K8s) via the Backend interface.
+// nudgeViaBackend attempts to nudge a Coop/K8s agent via the Backend interface.
 // Returns true if the nudge was sent successfully.
 func nudgeViaBackend(agentID, beadID, subject, args string) bool {
 	backend := terminal.ResolveBackend(agentID)
@@ -516,7 +516,7 @@ func updateAgentHookBead(agentID, beadID, workDir, townBeadsDir string) {
 
 	// Run from agentWorkDir WITHOUT BEADS_DIR to enable redirect-based routing.
 	// Set hook_bead to the slung work (gt-zecmc: removed agent_state update).
-	// Agent liveness is observable from tmux - no need to record it in bead.
+	// Agent liveness is observable from session - no need to record it in bead.
 	// For cross-database scenarios, slot set may fail gracefully (warning only).
 	bd := beads.New(agentWorkDir)
 	if err := bd.SetHookBead(agentBeadID, beadID); err != nil {
@@ -559,7 +559,7 @@ func nudgeRefinery(rigName, message string) {
 			_, _ = f.WriteString(entry)
 			_ = f.Close()
 		}
-		return // Don't actually nudge tmux in tests
+		return // Don't actually nudge in tests
 	}
 
 	refBackend, refSessionKey := resolveBackendForSession(refinerySession)
@@ -710,7 +710,7 @@ func looksLikeBeadID(s string) bool {
 	return true
 }
 
-// resolveRoleToSession converts a role name or path to a tmux session name.
+// resolveRoleToSession converts a role name or path to a session name.
 // Accepts:
 //   - Role shortcuts: "crew", "witness", "refinery", "mayor", "deacon"
 //   - Full paths: "<rig>/crew/<name>", "<rig>/witness", "<rig>/refinery"
@@ -877,7 +877,7 @@ func detectTownRootFromCwd() string {
 }
 
 // getCurrentTmuxSession returns the current session name.
-// Uses GT_SESSION or TMUX_SESSION env vars (K8s-native).
+// Uses GT_SESSION or TMUX_SESSION env vars.
 func getCurrentTmuxSession() (string, error) {
 	if s := os.Getenv("GT_SESSION"); s != "" {
 		return s, nil

@@ -10,7 +10,6 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/configbeads"
-	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -31,7 +30,6 @@ var ErrUnknownAnnounce = errors.New("unknown announce channel")
 type Router struct {
 	workDir  string // fallback directory to run bd commands in
 	townRoot string // town root directory (e.g., ~/gt)
-	backend  terminal.Backend
 }
 
 // NewRouter creates a new mail router.
@@ -44,7 +42,6 @@ func NewRouter(workDir string) *Router {
 	return &Router{
 		workDir:  workDir,
 		townRoot: townRoot,
-		backend:  terminal.NewCoopBackend(terminal.CoopConfig{}),
 	}
 }
 
@@ -53,13 +50,7 @@ func NewRouterWithTownRoot(workDir, townRoot string) *Router {
 	return &Router{
 		workDir:  workDir,
 		townRoot: townRoot,
-		backend:  terminal.NewCoopBackend(terminal.CoopConfig{}),
 	}
-}
-
-// SetBackend overrides the terminal backend used for session liveness checks.
-func (r *Router) SetBackend(b terminal.Backend) {
-	r.backend = b
 }
 
 // isListAddress returns true if the address uses list:name syntax.
@@ -1197,10 +1188,9 @@ func (r *Router) GetMailbox(address string) (*Mailbox, error) {
 	return NewMailboxWithTownRoot(address, workDir, beadsDir, r.townRoot), nil
 }
 
-// notifyRecipient sends a notification to a recipient's session (Coop or legacy).
+// notifyRecipient sends a notification to a recipient's Coop session.
 // Uses terminal.ResolveBackend to discover the recipient's Coop sidecar from bead
-// metadata (coop_url, pod_name). Falls back to session ID matching for backwards
-// compatibility. Works in both local and K8s modes.
+// metadata (coop_url, pod_name). Works in both local and K8s modes.
 func (r *Router) notifyRecipient(msg *Message) error {
 	// Convert mail address to agent identity for backend resolution
 	target := AddressToIdentity(msg.To)
@@ -1212,80 +1202,10 @@ func (r *Router) notifyRecipient(msg *Message) error {
 
 	// Resolve backend from agent bead metadata (discovers Coop URL in K8s)
 	resolved := terminal.ResolveBackend(target)
-	switch b := resolved.(type) {
-	case *terminal.CoopBackend:
+	if b, ok := resolved.(*terminal.CoopBackend); ok {
 		// Coop agent: session name is always "claude" for Coop agents
 		return b.NudgeSession("claude", notification)
-	default:
-		// Fallback: try session ID matching (legacy path)
-		sessionIDs := addressToSessionIDs(msg.To)
-		for _, sessionID := range sessionIDs {
-			hasSession, err := r.backend.HasSession(sessionID)
-			if err != nil || !hasSession {
-				continue
-			}
-			return r.backend.NudgeSession(sessionID, notification)
-		}
 	}
 
 	return nil // No active session found
-}
-
-// addressToSessionIDs converts a mail address to possible session IDs (legacy path).
-// Returns multiple candidates since the canonical address format (rig/name)
-// doesn't distinguish between crew workers (gt-rig-crew-name) and polecats
-// (gt-rig-name). The caller should try each and use the one that exists.
-//
-// This supersedes the approach in PR #896 which only handled slash-to-dash
-// conversion but didn't address the crew/polecat ambiguity.
-func addressToSessionIDs(address string) []string {
-	// Mayor address: "mayor/" or "mayor"
-	if strings.HasPrefix(address, "mayor") {
-		return []string{session.MayorSessionName()}
-	}
-
-	// Deacon address: "deacon/" or "deacon"
-	if strings.HasPrefix(address, "deacon") {
-		return []string{session.DeaconSessionName()}
-	}
-
-	// Rig-based address: "rig/target" or "rig/crew/name" or "rig/polecats/name"
-	parts := strings.SplitN(address, "/", 2)
-	if len(parts) != 2 || parts[1] == "" {
-		return nil
-	}
-
-	rig := parts[0]
-	target := parts[1]
-
-	// If target already has crew/ or polecats/ prefix, use it directly
-	// e.g., "gastown/crew/holden" → "gt-gastown-crew-holden"
-	if strings.HasPrefix(target, "crew/") || strings.HasPrefix(target, "polecats/") {
-		return []string{fmt.Sprintf("gt-%s-%s", rig, strings.ReplaceAll(target, "/", "-"))}
-	}
-
-	// Special cases that don't need crew variant
-	if target == "witness" || target == "refinery" {
-		return []string{fmt.Sprintf("gt-%s-%s", rig, target)}
-	}
-
-	// For normalized addresses like "gastown/holden", try both:
-	// 1. Crew format: gt-gastown-crew-holden
-	// 2. Polecat format: gt-gastown-holden
-	// Return crew first since crew workers are more commonly missed.
-	return []string{
-		session.CrewSessionName(rig, target),    // gt-rig-crew-name
-		session.PolecatSessionName(rig, target), // gt-rig-name
-	}
-}
-
-// addressToSessionID converts a mail address to a session ID (legacy path).
-// Returns empty string if address format is not recognized.
-// Deprecated: Use addressToSessionIDs for proper crew/polecat handling.
-func addressToSessionID(address string) string {
-	ids := addressToSessionIDs(address)
-	if len(ids) == 0 {
-		return ""
-	}
-	return ids[0]
 }

@@ -234,14 +234,14 @@ func splitLines(data []byte) [][]byte {
 }
 
 // NudgeQueue manages a town-level nudge queue for cross-agent communication.
-// Unlike the session-specific Queue, NudgeQueue is keyed by tmux session name
+// Unlike the session-specific Queue, NudgeQueue is keyed by session name
 // and stored at the town level so any agent can queue nudges for any other agent.
 type NudgeQueue struct {
 	townRoot    string
-	sessionName string // tmux session name (e.g., "gt-gastown-witness")
+	sessionName string // session name (e.g., "gt-gastown-witness")
 }
 
-// NewNudgeQueue creates a nudge queue for the given tmux session.
+// NewNudgeQueue creates a nudge queue for the given session.
 func NewNudgeQueue(townRoot, sessionName string) *NudgeQueue {
 	return &NudgeQueue{
 		townRoot:    townRoot,

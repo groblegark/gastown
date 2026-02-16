@@ -78,7 +78,7 @@ func TestDogDispatchInfoDelayedSession(t *testing.T) {
 		t.Error("sessionDelayed should be true for delayed dispatch")
 	}
 
-	// Note: We can't test StartDelayedSession without mocking tmux,
+	// Note: We can't test StartDelayedSession without mocking the backend,
 	// but we verify the struct correctly holds the delayed state.
 }
 

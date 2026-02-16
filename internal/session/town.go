@@ -9,10 +9,10 @@ import (
 	"github.com/steveyegge/gastown/internal/terminal"
 )
 
-// TownSession represents a town-level tmux session.
+// TownSession represents a town-level session.
 type TownSession struct {
 	Name      string // Display name (e.g., "Mayor")
-	SessionID string // Tmux session ID (e.g., "hq-mayor")
+	SessionID string // Session ID (e.g., "hq-mayor")
 }
 
 // TownSessions returns the list of town-level sessions in shutdown order.

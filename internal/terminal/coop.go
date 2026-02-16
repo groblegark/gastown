@@ -15,7 +15,7 @@ import (
 )
 
 // CoopBackend wraps the Coop HTTP API to implement Backend.
-// This replaces tmux/screen with Coop's PTY-based agent management.
+// This uses Coop's PTY-based agent management.
 //
 // Each CoopBackend connects to a single Coop instance (one agent pod).
 // The session parameter in Backend methods is used to select which Coop

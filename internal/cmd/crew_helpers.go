@@ -131,7 +131,7 @@ func newConnectedDaemonClient() *rpcclient.Client {
 	return rpcclient.NewClient(cfg.DaemonHost, opts...)
 }
 
-// crewSessionName generates the tmux session name for a crew worker.
+// crewSessionName generates the session name for a crew worker.
 func crewSessionName(rigName, crewName string) string {
 	return fmt.Sprintf("gt-%s-crew-%s", rigName, crewName)
 }

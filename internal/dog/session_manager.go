@@ -66,7 +66,7 @@ type SessionInfo struct {
 	// DogName is the dog name.
 	DogName string `json:"dog_name"`
 
-	// SessionID is the tmux session identifier.
+	// SessionID is the session identifier.
 	SessionID string `json:"session_id"`
 
 	// Running indicates if the session is currently active.
@@ -79,7 +79,7 @@ type SessionInfo struct {
 	Created time.Time `json:"created,omitempty"`
 }
 
-// SessionName generates the tmux session name for a dog.
+// SessionName generates the session name for a dog.
 // Pattern: gt-{town}-deacon-{name}
 func (m *SessionManager) SessionName(dogName string) string {
 	return fmt.Sprintf("gt-%s-deacon-%s", m.townName, dogName)
@@ -93,7 +93,7 @@ func (m *SessionManager) kennelPath(dogName string) string {
 // Start creates and starts a new session for a dog.
 // Dogs run Claude sessions that check mail for work and execute formulas.
 // When running in K8s (detected via KUBERNETES_SERVICE_HOST), creates an
-// agent bead with K8s labels instead of a tmux session.
+// agent bead with K8s labels instead of a session.
 func (m *SessionManager) Start(dogName string, opts SessionStartOptions) error {
 	kennelDir := m.kennelPath(dogName)
 	if _, err := os.Stat(kennelDir); os.IsNotExist(err) {
@@ -157,7 +157,7 @@ func (m *SessionManager) Start(dogName string, opts SessionStartOptions) error {
 	return nil
 }
 
-// startK8s creates an agent bead for a K8s dog without creating a tmux session.
+// startK8s creates an agent bead for a K8s dog without creating a session.
 // The K8s controller watches for agent beads with gt:agent + execution_target:k8s
 // labels, then creates pods.
 func (m *SessionManager) startK8s(dogName string, opts SessionStartOptions) error {
@@ -243,7 +243,7 @@ func (m *SessionManager) GetPane(dogName string) (string, error) {
 		return "", ErrSessionNotFound
 	}
 
-	// Pane IDs are a tmux concept; in K8s/coop mode return the session ID.
+	// In K8s/coop mode, return the session ID directly.
 	return sessionID, nil
 }
 

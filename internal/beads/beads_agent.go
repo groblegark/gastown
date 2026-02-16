@@ -480,7 +480,7 @@ func (b *Beads) UpdateAgentState(id string, state string, hookBead *string) erro
 
 // SetHookBead sets the hook_bead slot on an agent bead.
 // This is a convenience wrapper that only sets the hook without changing agent_state.
-// Per gt-zecmc: agent_state ("running", "dead", "idle") is observable from tmux
+// Per gt-zecmc: agent_state ("running", "dead", "idle") is observable
 // and should not be recorded in beads ("discover, don't track" principle).
 func (b *Beads) SetHookBead(agentBeadID, hookBeadID string) error {
 	// Set the hook using bd slot set

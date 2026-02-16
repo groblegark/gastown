@@ -16,10 +16,10 @@ func resolveTargetAgent(target string) (agentID string, pane string, hookRoot st
 		return "", "", "", err
 	}
 
-	// Convert session name to agent ID format (this doesn't require tmux)
+	// Convert session name to agent ID format
 	agentID = sessionToAgentID(sessionName)
 
-	// In K8s-only mode, all agents use Coop backends. No tmux pane or workdir
+	// In K8s-only mode, all agents use Coop backends. No pane or workdir
 	// available — the caller handles empty pane gracefully (sling.go falls back
 	// to "agent will discover work via gt prime"), and ResolveHookDir falls back
 	// to townRoot when hookRoot is empty.
@@ -39,7 +39,7 @@ func sessionToAgentID(sessionName string) string {
 	return identity.BeadID()
 }
 
-// resolveBackendForSession resolves the Backend for a tmux session name.
+// resolveBackendForSession resolves the Backend for a session name.
 // Returns the backend and the session key to use with it ("claude" for Coop).
 func resolveBackendForSession(sessionName string) (terminal.Backend, string) {
 	agentID := sessionToAgentID(sessionName)

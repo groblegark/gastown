@@ -146,7 +146,7 @@ func isStalePolecatDone(rigName, polecatName string, msg *mail.Message) (bool, s
 	sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
 	createdAt, err := session.SessionCreatedAt(sessionName)
 	if err != nil {
-		// Session not found or tmux not running - can't determine staleness, allow message
+		// Session not found - can't determine staleness, allow message
 		return false, ""
 	}
 
@@ -896,13 +896,13 @@ type PolecatsWithHookedWork struct {
 	RigName     string
 }
 
-// FindPolecatsWithHookedWork finds polecats that have hooked work but no active tmux session.
+// FindPolecatsWithHookedWork finds polecats that have hooked work but no active session.
 // These are polecats that completed work (gt done) but then had new work slung to them via gt sling.
 // They need to be respawned to process the hooked work.
 // Returns a list of such polecats that should be respawned.
 //
 // FIX (hq-50u3h): This function addresses the bug where done polecats don't process hooked work.
-// The fix checks each polecat's agent bead for hook_bead and verifies no active tmux session.
+// The fix checks each polecat's agent bead for hook_bead and verifies no active session.
 //
 // FIX (hq-dtwfqa): Validate hook_bead exists before including in respawn list.
 // If hook_bead points to a deleted/non-existent bead, clear it and skip this polecat.
@@ -1150,7 +1150,7 @@ func isCrewPath(path, rigName string) bool {
 	return false
 }
 
-// crewSessionName returns the tmux session name for a crew member.
+// crewSessionName returns the session name for a crew member.
 func crewSessionName(requestedBy, _ string) string {
 	// Handle formats:
 	// - "gastown/crew/worker" -> "gt-gastown-crew-worker"
@@ -1189,7 +1189,7 @@ func NudgeCrewWithDecision(workDir, rigName string, info *ResolvedDecisionInfo) 
 	}
 	msg.WriteString(". Check your mail or continue work.")
 
-	// Send the nudge via gt nudge (uses proper tmux formatting).
+	// Send the nudge via gt nudge.
 	// Direct send is now the default - the crew is likely idle (blocked waiting for
 	// this decision), so direct delivery is needed to wake up the session.
 	if err := util.ExecRun(workDir, "gt", "nudge", info.RequestedBy, msg.String()); err != nil {

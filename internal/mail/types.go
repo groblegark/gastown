@@ -108,7 +108,7 @@ type Message struct {
 	// CC'd recipients see the message in their inbox but are not the primary recipient.
 	CC []string `json:"cc,omitempty"`
 
-	// SkipNotify prevents the automatic tmux notification when mail is delivered.
+	// SkipNotify prevents the automatic notification when mail is delivered.
 	// Use this when you're sending a separate nudge to avoid double-notification (hq-t1wcr5).
 	SkipNotify bool `json:"skip_notify,omitempty"`
 

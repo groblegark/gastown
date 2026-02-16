@@ -145,7 +145,7 @@ func listHookedBeads(townRoot string) ([]*HookedBead, error) {
 	return beads, nil
 }
 
-// assigneeToSessionName converts an assignee address to a tmux session name.
+// assigneeToSessionName converts an assignee address to a session name.
 // Supports formats like "gastown/polecats/max", "gastown/crew/joe", etc.
 func assigneeToSessionName(assignee string) string {
 	parts := strings.Split(assignee, "/")

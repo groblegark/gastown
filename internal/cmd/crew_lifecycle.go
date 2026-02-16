@@ -265,7 +265,7 @@ func runCrewRefresh(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get the crew worker (must exist for refresh)
-	worker, err := crewMgr.Get(name)
+	_, err = crewMgr.Get(name)
 	if err != nil {
 		if err == crew.ErrCrewNotFound {
 			return fmt.Errorf("crew workspace '%s' not found", name)
@@ -279,23 +279,19 @@ func runCrewRefresh(cmd *cobra.Command, args []string) error {
 		handoffMsg = fmt.Sprintf("Context refresh for %s. Check mail and beads for current work state.", name)
 	}
 
-	// Send handoff mail to self
-	mailDir := filepath.Join(worker.ClonePath, "mail")
-	if _, err := os.Stat(mailDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(mailDir, 0755); err != nil {
-			return fmt.Errorf("creating mail dir: %w", err)
-		}
+	// Send handoff mail to self via router
+	townRoot, _ := workspace.Find(r.Path)
+	if townRoot == "" {
+		townRoot = r.Path
 	}
-
-	// Create and send mail
-	mailbox := mail.NewMailbox(mailDir)
+	router := mail.NewRouterWithTownRoot(townRoot, townRoot)
 	msg := &mail.Message{
 		From:    fmt.Sprintf("%s/%s", r.Name, name),
-		To:      fmt.Sprintf("%s/%s", r.Name, name),
+		To:      fmt.Sprintf("%s/crew/%s", r.Name, name),
 		Subject: "🤝 HANDOFF: Context Refresh",
 		Body:    handoffMsg,
 	}
-	if err := mailbox.Append(msg); err != nil {
+	if err := router.Send(msg); err != nil {
 		return fmt.Errorf("sending handoff mail: %w", err)
 	}
 	fmt.Printf("Sent handoff mail to %s/%s\n", r.Name, name)
@@ -343,7 +339,7 @@ func runCrewStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Remote daemon mode: route through StartCrew RPC. The daemon starts
-	// the crew session inside the K8s pod; no local tmux/session needed.
+	// the crew session inside the K8s pod; no local session needed.
 	if rpcClient := newConnectedDaemonClient(); rpcClient != nil {
 		// Need rig name resolved for the RPC call
 		if rigName == "" {

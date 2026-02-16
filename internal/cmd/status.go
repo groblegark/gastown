@@ -80,9 +80,9 @@ type OverseerInfo struct {
 type AgentRuntime struct {
 	Name         string `json:"name"`                    // Display name (e.g., "mayor", "witness")
 	Address      string `json:"address"`                 // Full address (e.g., "greenplace/witness")
-	Session      string `json:"session"`                 // tmux session name
+	Session      string `json:"session"`                 // session name
 	Role         string `json:"role"`                    // Role type
-	Running      bool   `json:"running"`                 // Is tmux session running?
+	Running      bool   `json:"running"`                 // Is session running?
 	HasWork      bool   `json:"has_work"`                // Has pinned work?
 	WorkTitle    string `json:"work_title,omitempty"`    // Title of pinned work
 	HookBead     string `json:"hook_bead,omitempty"`     // Pinned bead ID from agent bead
@@ -620,7 +620,7 @@ func renderAgentDetails(agent AgentRuntime, indent string, hooks []AgentHookInfo
 	var stateInfo string
 
 	if agent.Target == "k8s" {
-		// K8s polecats: derive status from agent_state (no tmux session)
+		// K8s polecats: derive status from agent_state (no session)
 		switch agent.State {
 		case "spawning":
 			statusStr = style.Info.Render("☸ spawning")
@@ -634,8 +634,8 @@ func renderAgentDetails(agent AgentRuntime, indent string, hooks []AgentHookInfo
 			statusStr = style.Info.Render("☸ k8s")
 		}
 	} else {
-		// Per gt-zecmc: derive status from tmux (observable reality), not bead state.
-		// "Discover, don't track" - agent liveness is observable from tmux session.
+		// Per gt-zecmc: derive status from session (observable reality), not bead state.
+		// "Discover, don't track" - agent liveness is observable from session.
 		sessionExists := agent.Running
 		if sessionExists {
 			statusStr = style.Success.Render("running")
@@ -644,7 +644,7 @@ func renderAgentDetails(agent AgentRuntime, indent string, hooks []AgentHookInfo
 		}
 
 		// Show non-observable states that represent intentional agent decisions.
-		// These can't be discovered from tmux and are legitimately recorded in beads.
+		// These can't be discovered from sessions and are legitimately recorded in beads.
 		beadState := agent.State
 		switch beadState {
 		case "stuck":
@@ -657,7 +657,7 @@ func renderAgentDetails(agent AgentRuntime, indent string, hooks []AgentHookInfo
 			// Other intentional non-observable states
 			stateInfo = style.Dim.Render(fmt.Sprintf(" [%s]", beadState))
 		// Ignore observable states: "running", "idle", "dead", "done", "stopped", ""
-		// These should be derived from tmux, not bead.
+		// These should be derived from session, not bead.
 		}
 	}
 
@@ -785,7 +785,7 @@ func formatMQSummaryCompact(mq *MQSummary) string {
 
 // renderAgentCompactWithSuffix renders a single-line agent status with an extra suffix
 func renderAgentCompactWithSuffix(agent AgentRuntime, indent string, hooks []AgentHookInfo, _ string, suffix string) {
-	// Build status indicator (gt-zecmc: use tmux state, not bead state)
+	// Build status indicator (gt-zecmc: use session state, not bead state)
 	statusIndicator := buildStatusIndicator(agent)
 
 	// Get hook info
@@ -825,7 +825,7 @@ func renderAgentCompactWithSuffix(agent AgentRuntime, indent string, hooks []Age
 
 // renderAgentCompact renders a single-line agent status
 func renderAgentCompact(agent AgentRuntime, indent string, hooks []AgentHookInfo, _ string) {
-	// Build status indicator (gt-zecmc: use tmux state, not bead state)
+	// Build status indicator (gt-zecmc: use session state, not bead state)
 	statusIndicator := buildStatusIndicator(agent)
 
 	// Get hook info
@@ -864,10 +864,10 @@ func renderAgentCompact(agent AgentRuntime, indent string, hooks []AgentHookInfo
 }
 
 // buildStatusIndicator creates the visual status indicator for an agent.
-// Per gt-zecmc: uses tmux state (observable reality), not bead state.
+// Per gt-zecmc: uses session state (observable reality), not bead state.
 // Non-observable states (stuck, awaiting-gate, muted, etc.) are shown as suffixes.
 func buildStatusIndicator(agent AgentRuntime) string {
-	// K8s polecats: no tmux session — use agent_state for liveness
+	// K8s polecats: no session — use agent_state for liveness
 	if agent.Target == "k8s" {
 		beadState := agent.State
 		switch beadState {
@@ -886,7 +886,7 @@ func buildStatusIndicator(agent AgentRuntime) string {
 
 	sessionExists := agent.Running
 
-	// Base indicator from tmux state
+	// Base indicator from session state
 	var indicator string
 	if sessionExists {
 		indicator = style.Success.Render("●")
@@ -909,7 +909,7 @@ func buildStatusIndicator(agent AgentRuntime) string {
 	return indicator
 }
 
-// inferAgentStatus maps observable state (tmux liveness) and bead state
+// inferAgentStatus maps observable state (session liveness) and bead state
 // to a monitoring.AgentStatus string for the InferredStatus field.
 func inferAgentStatus(agent AgentRuntime) string {
 	// K8s polecats: map bead state directly
@@ -928,7 +928,7 @@ func inferAgentStatus(agent AgentRuntime) string {
 		}
 	}
 
-	// Local agents: primary signal is tmux liveness
+	// Local agents: primary signal is session liveness
 	if !agent.Running {
 		return string(monitoring.StatusOffline)
 	}
@@ -1019,7 +1019,7 @@ func discoverRigHooks(r *rig.Rig, crews []string) []AgentHookInfo {
 
 // discoverGlobalAgents checks runtime state for town-level agents (Mayor, Deacon).
 // Uses parallel fetching for performance. If skipMail is true, mail lookups are skipped.
-// allSessions is a preloaded map of tmux sessions for O(1) lookup.
+// allSessions is a preloaded map of sessions for O(1) lookup.
 // allAgentBeads is a preloaded map of agent beads for O(1) lookup.
 // allHookBeads is a preloaded map of hook beads for O(1) lookup.
 func discoverGlobalAgents(allSessions map[string]bool, allAgentBeads map[string]*beads.Issue, allHookBeads map[string]*beads.Issue, mailRouter *mail.Router, skipMail bool) []AgentRuntime {
@@ -1063,7 +1063,7 @@ func discoverGlobalAgents(allSessions map[string]bool, allAgentBeads map[string]
 				Role:    d.role,
 			}
 
-			// Check tmux session from preloaded map (O(1))
+			// Check session from preloaded map (O(1))
 			agent.Running = allSessions[d.session]
 
 			// Look up agent bead from preloaded map (O(1))
@@ -1145,7 +1145,7 @@ type agentDef struct {
 
 // discoverRigAgents checks runtime state for all agents in a rig.
 // Uses parallel fetching for performance. If skipMail is true, mail lookups are skipped.
-// allSessions is a preloaded map of tmux sessions for O(1) lookup.
+// allSessions is a preloaded map of sessions for O(1) lookup.
 // allAgentBeads is a preloaded map of agent beads for O(1) lookup.
 // allHookBeads is a preloaded map of hook beads for O(1) lookup.
 func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, allAgentBeads map[string]*beads.Issue, allHookBeads map[string]*beads.Issue, mailRouter *mail.Router, skipMail bool) []AgentRuntime {
@@ -1218,7 +1218,7 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 				Role:    d.role,
 			}
 
-			// Check tmux session from preloaded map (O(1))
+			// Check session from preloaded map (O(1))
 			agent.Running = allSessions[d.session]
 
 			// Look up agent bead from preloaded map (O(1))

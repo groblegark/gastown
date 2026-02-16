@@ -42,13 +42,13 @@ func (m *Manager) hasSession(sessionID string) (bool, error) {
 	return m.backend.HasSession(sessionID)
 }
 
-// SessionName returns the tmux session name for the deacon.
+// SessionName returns the session name for the deacon.
 // This is a package-level function for convenience.
 func SessionName() string {
 	return session.DeaconSessionName()
 }
 
-// SessionName returns the tmux session name for the deacon.
+// SessionName returns the session name for the deacon.
 func (m *Manager) SessionName() string {
 	return SessionName()
 }

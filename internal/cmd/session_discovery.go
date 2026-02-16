@@ -11,11 +11,11 @@ import (
 
 // discoverSessionNames discovers all agent sessions via the SessionRegistry
 // and returns their TmuxSession names. This is the K8s-native replacement for
-// tmux.ListSessions().
+// listing sessions.
 //
 // townRoot is optional — if empty, the function tries workspace.FindFromCwd().
 // Returns an empty slice (not error) if discovery fails, matching the
-// best-effort semantics of the tmux.ListSessions() callers.
+// best-effort semantics of the session listing callers.
 func discoverSessionNames(townRoot string) []string {
 	agents := collectAllAgentBeads(townRoot)
 	if len(agents) == 0 {

@@ -1848,7 +1848,7 @@ func messageTypeToProto(t string) string {
 	}
 }
 
-// PeekSession captures the last N lines from a tmux session's pane via RPC.
+// PeekSession captures the last N lines from a session's pane via RPC.
 func (c *Client) PeekSession(ctx context.Context, session string, lines int, all bool) (string, []string, bool, error) {
 	body := map[string]interface{}{
 		"session": session,
@@ -1899,7 +1899,7 @@ func (c *Client) PeekSession(ctx context.Context, session string, lines int, all
 	return result.Output, result.Lines, result.Exists, nil
 }
 
-// ListTmuxSessions returns all active tmux sessions via RPC.
+// ListTmuxSessions returns all active sessions via RPC.
 func (c *Client) ListTmuxSessions(ctx context.Context, prefix string) ([]string, error) {
 	body := map[string]interface{}{}
 	if prefix != "" {
@@ -1943,7 +1943,7 @@ func (c *Client) ListTmuxSessions(ctx context.Context, prefix string) ([]string,
 	return result.Sessions, nil
 }
 
-// HasTmuxSession checks if a specific tmux session exists via RPC.
+// HasTmuxSession checks if a specific session exists via RPC.
 func (c *Client) HasTmuxSession(ctx context.Context, session string) (bool, error) {
 	body := map[string]interface{}{
 		"session": session,

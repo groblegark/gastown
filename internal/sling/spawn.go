@@ -19,7 +19,7 @@ import (
 // ResolveExecutionTarget determines the execution target for a rig.
 // Priority: explicit override > rig settings > K8s auto-detect > "local".
 // When running inside a K8s pod (KUBERNETES_SERVICE_HOST is set), defaults
-// to "k8s" instead of "local" so agents don't require tmux.
+// to "k8s" instead of "local".
 func ResolveExecutionTarget(rigPath, override string) config.ExecutionTarget {
 	if override != "" {
 		return config.ExecutionTarget(override)
@@ -123,7 +123,7 @@ func notifyWitnessRateLimit(rigName, polecatName, account string) {
 }
 
 // spawnPolecatForK8s creates an agent bead for a K8s polecat without creating
-// a local worktree or tmux session. The K8s controller watches for agent beads
+// a local worktree or session. The K8s controller watches for agent beads
 // with agent_state=spawning and execution_target:k8s label, then creates pods.
 func spawnPolecatForK8s(townRoot, rigName string, r *rig.Rig, opts SpawnOptions) (*SpawnResult, error) {
 	g := git.NewGit(r.Path)

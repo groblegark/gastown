@@ -260,7 +260,7 @@ func runSlingFormula(args []string) error {
 		fmt.Printf("%s Could not store dispatcher in bead: %v\n", style.Dim.Render("Warning:"), err)
 	}
 
-	// Store args in wisp bead if provided (no-tmux mode: beads as data plane)
+	// Store args in wisp bead if provided (beads as data plane)
 	if slingArgs != "" {
 		if err := storeArgsInBead(wispRootID, slingArgs); err != nil {
 			fmt.Printf("%s Could not store args in bead: %v\n", style.Dim.Render("Warning:"), err)

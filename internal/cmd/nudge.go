@@ -541,7 +541,7 @@ func sendOrQueueNudge(backend terminal.Backend, townRoot, sessionName, message, 
 	}
 
 	// If --wait-ready flag is set, wait for agent to be alive before sending (gt-kk330e).
-	// Poll using Backend.IsAgentRunning instead of tmux-specific WaitForAgentReady.
+	// Poll using Backend.IsAgentRunning instead of WaitForAgentReady.
 	if nudgeWaitReady {
 		timeout := time.Duration(nudgeWaitTimeout) * time.Second
 		deadline := time.Now().Add(timeout)
@@ -572,7 +572,7 @@ This command should be called from a PostToolUse hook to safely
 deliver nudge messages that were queued while tools were running.
 
 This prevents API 400 errors that occur when nudges are sent
-directly via tmux while Claude is processing a tool.
+directly while Claude is processing a tool.
 
 Exit codes:
   0 - Content was drained (or queue empty with --quiet)

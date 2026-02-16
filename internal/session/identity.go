@@ -78,7 +78,7 @@ func ParseAddress(address string) (*AgentIdentity, error) {
 	}
 }
 
-// ParseSessionName parses a tmux session name into an AgentIdentity.
+// ParseSessionName parses a session name into an AgentIdentity.
 //
 // Session name formats:
 //   - hq-mayor → Role: mayor (town-level, one per machine)
@@ -148,7 +148,7 @@ func ParseSessionName(session string) (*AgentIdentity, error) {
 	return &AgentIdentity{Role: RolePolecat, Rig: rig, Name: name}, nil
 }
 
-// SessionName returns the tmux session name for this identity.
+// SessionName returns the session name for this identity.
 func (a *AgentIdentity) SessionName() string {
 	switch a.Role {
 	case RoleMayor:

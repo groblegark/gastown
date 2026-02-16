@@ -36,7 +36,7 @@ type SlingOptions struct {
 	// Dependencies (injected by caller)
 	// ResolveTarget resolves a target string to (agentID, pane, workDir).
 	// Required for targets that are existing agents (not rigs, dogs, or crew).
-	// CLI provides tmux-based resolution; RPC can provide nil if only targeting rigs.
+	// CLI provides resolution; RPC can provide nil if only targeting rigs.
 	ResolveTarget ResolveTargetFunc
 	// ResolveSelf resolves the current agent's identity.
 	// Required when Target is empty (sling to self).
@@ -160,7 +160,7 @@ type SpawnOptions struct {
 	Agent    string
 
 	// ExecutionTarget is "local" (default) or "k8s".
-	// When "k8s", skip worktree/tmux and set agent_state=spawning for the controller.
+	// When "k8s", skip worktree creation and set agent_state=spawning for the controller.
 	ExecutionTarget string
 }
 

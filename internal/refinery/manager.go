@@ -82,13 +82,13 @@ func (m *Manager) SetOutput(w io.Writer) {
 	m.output = w
 }
 
-// SessionName returns the tmux session name for this refinery.
+// SessionName returns the session name for this refinery.
 func (m *Manager) SessionName() string {
 	return fmt.Sprintf("gt-%s-refinery", m.rig.Name)
 }
 
 // IsRunning checks if the refinery session is active.
-// ZFC: session existence is the source of truth (tmux or coop).
+// ZFC: session existence is the source of truth.
 func (m *Manager) IsRunning() (bool, error) {
 	return m.hasSession(m.SessionName())
 }

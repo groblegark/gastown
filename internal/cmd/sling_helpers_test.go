@@ -8,7 +8,7 @@ import (
 )
 
 // TestNudgeRefinerySessionName verifies that nudgeRefinery constructs the
-// correct tmux session name (gt-<rigName>-refinery) and passes the message.
+// correct session name (gt-<rigName>-refinery) and passes the message.
 func TestNudgeRefinerySessionName(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "nudge.log")
 	t.Setenv("GT_TEST_NUDGE_LOG", logPath)
@@ -72,7 +72,7 @@ func TestWakeRigAgentsDoesNotNudgeRefinery(t *testing.T) {
 	t.Setenv("GT_TEST_NUDGE_LOG", logPath)
 
 	// wakeRigAgents calls runRigBoot() directly and backend.NudgeSession.
-	// The boot command and witness nudge will fail silently (no real rig/tmux).
+	// The boot command and witness nudge will fail silently (no real rig/session).
 	// We only care that nudgeRefinery is NOT called (no log entries).
 	wakeRigAgents("testrig")
 
@@ -88,12 +88,12 @@ func TestWakeRigAgentsDoesNotNudgeRefinery(t *testing.T) {
 }
 
 // TestNudgeRefineryNoOpWithoutLog verifies that nudgeRefinery doesn't panic
-// or error when called without the test log env var and without a real tmux session.
-// The tmux NudgeSession call should fail silently.
+// or error when called without the test log env var and without a real session.
+// The NudgeSession call should fail silently.
 func TestNudgeRefineryNoOpWithoutLog(t *testing.T) {
-	// Ensure test log is NOT set so we exercise the real tmux path
+	// Ensure test log is NOT set so we exercise the real nudge path
 	t.Setenv("GT_TEST_NUDGE_LOG", "")
 
-	// Should not panic even though no tmux session exists
+	// Should not panic even though no session exists
 	nudgeRefinery("nonexistent-rig", "test message")
 }

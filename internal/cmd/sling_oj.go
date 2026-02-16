@@ -1,5 +1,5 @@
 // Package cmd provides OJ dispatch for gt sling.
-// When GT_SLING_OJ=1, polecat lifecycle is managed by OJ instead of tmux.
+// When GT_SLING_OJ=1, polecat lifecycle is managed by OJ instead of locally.
 package cmd
 
 import (

@@ -302,12 +302,12 @@ func truncateStr(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// runLogCrash handles the "gt log crash" command from tmux pane-died hooks.
+// runLogCrash handles the "gt log crash" command from pane-died hooks.
 func runLogCrash(cmd *cobra.Command, args []string) error {
 	townRoot, err := workspace.FindFromCwd()
 	if err != nil || townRoot == "" {
 		// Try to find town root from conventional location
-		// This is called from tmux hook which may not have proper cwd
+		// This is called from hook which may not have proper cwd
 		home := os.Getenv("HOME")
 		defaultRoot := home + "/gt"
 		if _, statErr := os.Stat(defaultRoot + "/mayor"); statErr == nil {
