@@ -23,8 +23,6 @@ var (
 	resolveRole  string
 	resolveAgent string
 
-	verifyFix bool
-
 	materializeHooks bool
 	materializeMCP   bool
 	materializeScope string
@@ -233,13 +231,7 @@ func runConfigVerify(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  - %s\n", p)
 	}
 
-	if verifyFix {
-		fmt.Printf("\nRunning seed to fix missing beads...\n")
-		seedForce = true
-		return runConfigSeed(cmd, nil)
-	}
-
-	fmt.Printf("\nRun 'gt config verify --fix' to re-seed missing beads\n")
+	fmt.Printf("\nRun 'gt bootstrap --seed-config' to re-seed missing beads\n")
 	return nil
 }
 
@@ -325,9 +317,6 @@ func init() {
 	configResolveCmd.Flags().StringVar(&resolveRig, "rig", "", "Rig scope (e.g., gastown)")
 	configResolveCmd.Flags().StringVar(&resolveRole, "role", "", "Role scope (e.g., crew, polecat)")
 	configResolveCmd.Flags().StringVar(&resolveAgent, "agent", "", "Agent scope (e.g., slack)")
-
-	// Verify flags
-	configVerifyCmd.Flags().BoolVar(&verifyFix, "fix", false, "Re-seed missing or outdated beads")
 
 	// Materialize flags
 	configMaterializeCmd.Flags().BoolVar(&materializeHooks, "hooks", false, "Materialize Claude hooks/settings")
