@@ -457,17 +457,19 @@ tasks:
       # Install Claude Code
       PATH="/tmp/layer/usr/local/bin:$PATH" npm install -g --prefix /tmp/layer/usr/local @anthropic-ai/claude-code
 
-      # Install system packages (git, curl, jq, screen) into the layer.
+      # Install system packages (git, curl, jq, screen, icu) into the layer.
       # The RWX VM is Ubuntu-based so we can apt-get install, then copy
       # the installed files into the layer tree.
       sudo apt-get -y update
-      sudo apt-get -y install --no-install-recommends git curl jq screen ca-certificates
+      sudo apt-get -y install --no-install-recommends \
+        git curl jq screen ca-certificates libicu74
 
-      # Extract installed package file lists and copy into layer
+      # Extract installed package file lists and copy into layer.
+      # Use dpkg -L for known packages, plus ldd for transitive shared libs.
       mkdir -p /tmp/layer
-      for pkg in git git-man curl jq screen ca-certificates \
+      for pkg in git git-man curl jq screen ca-certificates libicu74 \
           liberror-perl libcurl4t64 libnghttp2-14 libbrotli1 \
-          libpsl5t64 libonig5 libexpat1; do
+          libpsl5t64 libonig5 libexpat1 libicudata74 libicuuc74 libicui18n74; do
         dpkg -L "$pkg" 2>/dev/null | while read -r f; do
           [ -f "$f" ] || continue
           dir="/tmp/layer$(dirname "$f")"
@@ -475,7 +477,7 @@ tasks:
           cp "$f" "/tmp/layer${f}"
         done
       done
-      # Also copy shared libs that git/curl link against
+      # Also copy shared libs that git/curl/bd link against
       for bin in /usr/bin/git /usr/bin/curl /usr/bin/jq /usr/bin/screen; do
         ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
           [ -f "$lib" ] || continue
@@ -483,6 +485,12 @@ tasks:
           mkdir -p "$dir"
           cp -n "$lib" "/tmp/layer${lib}" 2>/dev/null || true
         done
+      done
+      # Copy ICU data and libs (needed by bd binary for unicode normalization)
+      find /usr/lib/x86_64-linux-gnu -name 'libicu*.so*' 2>/dev/null | while read -r f; do
+        dir="/tmp/layer$(dirname "$f")"
+        mkdir -p "$dir"
+        cp -a "$f" "/tmp/layer${f}"
       done
       # Copy git-core helpers
       cp -r /usr/lib/git-core /tmp/layer/usr/lib/ 2>/dev/null || true
@@ -556,7 +564,7 @@ tasks:
       find /usr -type f > /tmp/before.txt
       sudo apt-get -y update
       sudo apt-get -y install --no-install-recommends \
-        git curl jq screen ca-certificates \
+        git curl jq screen ca-certificates libicu74 \
         python3 python3-pip python3-venv make gcc g++ unzip
       find /usr -type f > /tmp/after.txt
       # Compute new files from apt install
