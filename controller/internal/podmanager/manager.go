@@ -157,6 +157,11 @@ type AgentPodSpec struct {
 
 	// GitDefaultBranch is the branch to checkout after cloning (default: "main").
 	GitDefaultBranch string
+
+	// GitCredentialsSecret is the K8s Secret name containing git credentials.
+	// The "username" and "token" keys are injected as env vars in the init-clone
+	// container for authenticated git clone of private repositories.
+	GitCredentialsSecret string
 }
 
 // CoopSidecarSpec configures the Coop sidecar container.
@@ -1041,6 +1046,44 @@ git config user.email "%s@gastown"
 	// the workspace to the agent UID/GID so the main container can write.
 	script += fmt.Sprintf("chown -R %d:%d \"%s/%s\"\n", AgentUID, AgentGID, MountWorkspace, spec.Rig)
 
+	// Prepend git credential helper setup if credentials are available.
+	// This allows cloning private repos in the init container.
+	if spec.GitCredentialsSecret != "" {
+		credSetup := `# Configure git credentials for private repos
+if [ -n "$GIT_USERNAME" ] && [ -n "$GIT_TOKEN" ]; then
+  git config --global credential.helper store
+  echo "https://${GIT_USERNAME}:${GIT_TOKEN}@github.com" > /tmp/.git-credentials
+  git config --global credential.helper 'store --file=/tmp/.git-credentials'
+fi
+`
+		script = credSetup + script
+	}
+
+	// Build env vars for the init container.
+	var initEnv []corev1.EnvVar
+	if spec.GitCredentialsSecret != "" {
+		initEnv = append(initEnv,
+			corev1.EnvVar{
+				Name: "GIT_USERNAME",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: spec.GitCredentialsSecret},
+						Key:                  "username",
+					},
+				},
+			},
+			corev1.EnvVar{
+				Name: "GIT_TOKEN",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: spec.GitCredentialsSecret},
+						Key:                  "token",
+					},
+				},
+			},
+		)
+	}
+
 	runAsRoot := int64(0)
 	runAsNonRoot := false
 	return &corev1.Container{
@@ -1048,6 +1091,7 @@ git config user.email "%s@gastown"
 		Image:           InitCloneImage,
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Command:         []string{"/bin/sh", "-c", script},
+		Env:             initEnv,
 		SecurityContext: &corev1.SecurityContext{
 			RunAsUser:    &runAsRoot,
 			RunAsNonRoot: &runAsNonRoot,

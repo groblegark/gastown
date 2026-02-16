@@ -490,7 +490,9 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 	}
 
 	// Git credentials: inject GIT_USERNAME and GIT_TOKEN from secret for clone/push.
+	// Also pass the secret name to init-clone container for private repo clones.
 	if cfg.GitCredentialsSecret != "" {
+		spec.GitCredentialsSecret = cfg.GitCredentialsSecret
 		spec.SecretEnv = append(spec.SecretEnv,
 			podmanager.SecretEnvSource{
 				EnvName:    "GIT_USERNAME",
