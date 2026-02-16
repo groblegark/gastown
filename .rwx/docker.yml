@@ -65,7 +65,8 @@ on:
           default: ""
           required: false
       title: Agent rebuild (${{ init.ref-name }})
-      target: image-agent
+      # NOTE: No target — dispatch runs the full pipeline including push-* tasks.
+      # Do NOT add "target: image-agent" here — it prevents GHCR pushes.
   cli:
     init:
       commit-sha: ${{ event.git.sha }}
