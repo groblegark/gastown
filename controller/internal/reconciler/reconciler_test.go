@@ -177,19 +177,26 @@ func TestReconcile_CreatesMissingPod(t *testing.T) {
 }
 
 func TestReconcile_DeletesOrphanPod(t *testing.T) {
-	// No beads, one pod gt-town-mayor-hq -> pod deleted.
+	// Two pods, one bead -> orphan pod deleted, matching pod preserved.
+	// (Need at least one bead so the empty-desired guard doesn't trigger.)
 	client := fake.NewSimpleClientset()
 	createFakePod(t, client, "gt-town-mayor-hq", testNamespace, "Running")
+	createFakePod(t, client, "gt-gastown-crew-k8s", testNamespace, "Running")
 
-	r := newReconciler(client, nil, nil)
+	r := newReconciler(client, []daemonclient.AgentBead{
+		bead("town", "mayor", "hq"),
+	}, nil)
 	ctx := context.Background()
 	if err := r.Reconcile(ctx); err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
 
 	names := listPodNames(t, client, testNamespace)
-	if len(names) != 0 {
-		t.Errorf("expected 0 pods after deleting orphan, got %d: %v", len(names), names)
+	if len(names) != 1 {
+		t.Errorf("expected 1 pod after deleting orphan, got %d: %v", len(names), names)
+	}
+	if len(names) == 1 && names[0] != "gt-town-mayor-hq" {
+		t.Errorf("expected gt-town-mayor-hq to survive, got %q", names[0])
 	}
 }
 
@@ -279,8 +286,10 @@ func TestReconcile_SkipsPendingPod(t *testing.T) {
 	}
 }
 
-func TestReconcile_EmptyDesiredDeletesAll(t *testing.T) {
-	// No beads, multiple pods -> all pods deleted.
+func TestReconcile_EmptyDesiredPreservesRunningPods(t *testing.T) {
+	// No beads, multiple pods -> pods PRESERVED (empty-desired-state guard).
+	// This prevents an "orphan storm" when the daemon transiently returns
+	// empty results (e.g., during restart or query race).
 	client := fake.NewSimpleClientset()
 	createFakePod(t, client, "gt-town-mayor-hq", testNamespace, "Running")
 	createFakePod(t, client, "gt-gastown-crew-k8s", testNamespace, "Running")
@@ -293,8 +302,8 @@ func TestReconcile_EmptyDesiredDeletesAll(t *testing.T) {
 	}
 
 	names := listPodNames(t, client, testNamespace)
-	if len(names) != 0 {
-		t.Errorf("expected 0 pods, got %d: %v", len(names), names)
+	if len(names) != 3 {
+		t.Errorf("expected 3 pods preserved (empty-desired guard), got %d: %v", len(names), names)
 	}
 }
 

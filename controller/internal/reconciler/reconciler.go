@@ -98,11 +98,19 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	}
 
 	// Delete orphan pods (exist in K8s but not in desired).
-	for name, pod := range actualMap {
-		if _, ok := desired[name]; !ok {
-			r.logger.Info("deleting orphan pod", "pod", name)
-			if err := r.pods.DeleteAgentPod(ctx, name, pod.Namespace); err != nil {
-				return fmt.Errorf("deleting orphan pod %s: %w", name, err)
+	// Guard: if daemon returned zero beads but pods exist, this is likely a
+	// transient daemon issue (restart, query race, etc.). Refuse to mass-delete
+	// to prevent an "orphan storm" that kills all agent pods.
+	if len(desired) == 0 && len(actualMap) > 0 {
+		r.logger.Warn("desired state is empty but agent pods exist — skipping orphan deletion to prevent mass kill",
+			"actual_pods", len(actualMap))
+	} else {
+		for name, pod := range actualMap {
+			if _, ok := desired[name]; !ok {
+				r.logger.Info("deleting orphan pod", "pod", name)
+				if err := r.pods.DeleteAgentPod(ctx, name, pod.Namespace); err != nil {
+					return fmt.Errorf("deleting orphan pod %s: %w", name, err)
+				}
 			}
 		}
 	}
