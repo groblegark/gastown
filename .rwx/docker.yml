@@ -813,7 +813,7 @@ Trigger: ${REF_NAME}"
         -n "$NS" --create-namespace \
         --values values.yaml \
         --values values/gastown-rwx.yaml \
-        --set "gastown.bd-daemon.image.tag=v${BEADS_VERSION#v}" \
+        --set "gastown.bd-daemon.image.tag=${BEADS_VERSION}" \
         --set "gastown.coopBroker.image.tag=${PLATFORM_VERSION}" \
         --set "gastown.agentController.image.tag=${PLATFORM_VERSION}" \
         --set "gastown.agentController.agentImage.tag=${PLATFORM_VERSION}" \
