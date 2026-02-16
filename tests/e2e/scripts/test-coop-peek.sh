@@ -132,13 +132,14 @@ test_peek_screen() {
   extract_first_session
   [[ -n "$FIRST_SESSION" ]] || { log "No session ID found to peek"; return 1; }
   log "Peeking session: $FIRST_SESSION"
-  SCREEN_TEXT=$(agent_exec "env ${COOP_ENV} coop peek ${FIRST_SESSION} --plain 2>&1" || true)
-  [[ -n "$SCREEN_TEXT" ]] || return 1
-  # Should not be an error
-  if echo "$SCREEN_TEXT" | grep -qi "error: \|fatal: \|not found"; then
-    log "coop peek screen returned error: ${SCREEN_TEXT:0:200}"
+  # Use exit code to detect coop errors (screen content may contain arbitrary terminal text)
+  SCREEN_TEXT=$(agent_exec "env ${COOP_ENV} coop peek ${FIRST_SESSION} --plain")
+  local rc=$?
+  if [[ $rc -ne 0 ]]; then
+    log "coop peek exited with code $rc"
     return 1
   fi
+  [[ -n "$SCREEN_TEXT" ]] || return 1
   local len=${#SCREEN_TEXT}
   log "Screen text length: $len chars"
   [[ "$len" -gt 0 ]]
@@ -160,13 +161,14 @@ test_peek_partial_id() {
   local partial="${FIRST_SESSION:0:6}"
   log "Testing partial ID: $partial (from $FIRST_SESSION)"
   local result
-  result=$(agent_exec "env ${COOP_ENV} coop peek ${partial} --plain 2>&1" || true)
-  [[ -n "$result" ]] || return 1
-  if echo "$result" | grep -qi "error: \|fatal: \|not found\|ambiguous"; then
-    log "Partial ID lookup failed: ${result:0:200}"
+  # Use exit code — screen content may contain arbitrary terminal text
+  result=$(agent_exec "env ${COOP_ENV} coop peek ${partial} --plain")
+  local rc=$?
+  if [[ $rc -ne 0 ]]; then
+    log "Partial ID lookup failed (exit code $rc)"
     return 1
   fi
-  return 0
+  [[ -n "$result" ]]
 }
 
 # ── Run tests ──────────────────────────────────────────────────────────
