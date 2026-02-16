@@ -997,7 +997,7 @@ func (m *K8sManager) buildInitCloneContainer(spec AgentPodSpec) *corev1.Containe
 		// Clone from in-cluster git mirror (fast, cached).
 		script = fmt.Sprintf(`set -e
 apk add --no-cache git
-git config --global --add safe.directory '*'
+git config --global --add safe.directory '%s/%s/work'
 WORK_DIR="%s/%s/work"
 if [ -d "$WORK_DIR/.git" ]; then
   echo "Repo already cloned, fetching updates..."
@@ -1011,7 +1011,7 @@ else
   git clone -b %s git://%s:%d/%s.git "$WORK_DIR"
   cd "$WORK_DIR"
 fi
-`, MountWorkspace, spec.Rig, branch, spec.GitMirrorService, branch, spec.GitMirrorService, GitDaemonPort, spec.Rig)
+`, MountWorkspace, spec.Rig, MountWorkspace, spec.Rig, branch, spec.GitMirrorService, branch, spec.GitMirrorService, GitDaemonPort, spec.Rig)
 
 		// Set origin to actual GitHub URL for pushes.
 		if spec.GitURL != "" {
@@ -1022,7 +1022,7 @@ fi
 		// No git mirror available — clone directly from GitHub.
 		script = fmt.Sprintf(`set -e
 apk add --no-cache git
-git config --global --add safe.directory '*'
+git config --global --add safe.directory '%s/%s/work'
 WORK_DIR="%s/%s/work"
 if [ -d "$WORK_DIR/.git" ]; then
   echo "Repo already cloned, fetching updates..."
@@ -1036,7 +1036,7 @@ else
   git clone -b %s %s "$WORK_DIR"
   cd "$WORK_DIR"
 fi
-`, MountWorkspace, spec.Rig, branch, spec.GitURL, branch, spec.GitURL)
+`, MountWorkspace, spec.Rig, MountWorkspace, spec.Rig, branch, spec.GitURL, branch, spec.GitURL)
 	}
 
 	// Configure git identity from agent env vars.
