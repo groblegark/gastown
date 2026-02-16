@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -38,7 +37,10 @@ is detected as running.`,
 var toolchainExecCmd = &cobra.Command{
 	Use:   "exec -- <command> [args...]",
 	Short: "Run a command in the toolchain sidecar",
-	Long: `Execute a command in the toolchain sidecar container via kubectl exec.
+	Long: `Execute a command in the toolchain sidecar container.
+
+Uses nsenter via shared process namespace when available (fast, no kubectl
+needed), falling back to kubectl exec otherwise.
 
 The command runs in the toolchain container which shares the workspace
 volume with the agent. This lets you use tools (compilers, linters, etc.)
@@ -143,9 +145,9 @@ func runToolchainStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  %s %s\n", style.Bold.Render("Namespace:"), namespace)
 	}
 
-	// Try to check if sidecar is actually running via kubectl.
+	// Try to check if sidecar is actually running.
 	if podName != "" && container != "" {
-		running := checkSidecarRunning(podName, namespace, container)
+		running := isSidecarRunning(container, podName, namespace)
 		if running {
 			fmt.Printf("\n  %s Sidecar is running\n", style.Bold.Render("✓"))
 		} else {
@@ -181,20 +183,7 @@ func runToolchainExec(cmd *cobra.Command, args []string) error {
 		namespace = detectNamespace()
 	}
 
-	// Build kubectl exec command.
-	kubectlArgs := []string{"exec", podName, "-c", container}
-	if namespace != "" {
-		kubectlArgs = append(kubectlArgs, "-n", namespace)
-	}
-	kubectlArgs = append(kubectlArgs, "--")
-	kubectlArgs = append(kubectlArgs, args...)
-
-	execCmd := exec.Command("kubectl", kubectlArgs...)
-	execCmd.Stdin = os.Stdin
-	execCmd.Stdout = os.Stdout
-	execCmd.Stderr = os.Stderr
-
-	return execCmd.Run()
+	return toolchainExec(container, podName, namespace, args)
 }
 
 func runToolchainBuild(cmd *cobra.Command, args []string) error {
@@ -239,21 +228,9 @@ func runToolchainBuild(cmd *cobra.Command, args []string) error {
 		kanikoArgs = append(kanikoArgs, "--cache=true", "--cache-repo", buildCacheRepo)
 	}
 
-	// Build kubectl exec command to run kaniko in the sidecar.
-	kubectlArgs := []string{"exec", podName, "-c", container}
-	if namespace != "" {
-		kubectlArgs = append(kubectlArgs, "-n", namespace)
-	}
-	kubectlArgs = append(kubectlArgs, "--")
-	kubectlArgs = append(kubectlArgs, kanikoArgs...)
-
 	fmt.Printf("  %s Running kaniko executor...\n\n", style.Dim.Render(">>>"))
 
-	execCmd := exec.Command("kubectl", kubectlArgs...)
-	execCmd.Stdout = os.Stdout
-	execCmd.Stderr = os.Stderr
-
-	if err := execCmd.Run(); err != nil {
+	if err := toolchainExec(container, podName, namespace, kanikoArgs); err != nil {
 		return fmt.Errorf("kaniko build failed: %w", err)
 	}
 
@@ -334,13 +311,7 @@ func runToolchainList(cmd *cobra.Command, args []string) error {
 	}
 	shellCmd := strings.Join(checks, "; ")
 
-	kubectlArgs := []string{"exec", podName, "-c", container}
-	if namespace != "" {
-		kubectlArgs = append(kubectlArgs, "-n", namespace)
-	}
-	kubectlArgs = append(kubectlArgs, "--", "sh", "-c", shellCmd)
-
-	out, err := exec.Command("kubectl", kubectlArgs...).Output()
+	out, err := toolchainExecOutput(container, podName, namespace, []string{"sh", "-c", shellCmd})
 	if err != nil {
 		return fmt.Errorf("failed to query sidecar: %w", err)
 	}
@@ -368,16 +339,3 @@ func runToolchainList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// checkSidecarRunning uses kubectl to check if the sidecar container is running.
-func checkSidecarRunning(podName, namespace, container string) bool {
-	args := []string{"get", "pod", podName, "-o",
-		fmt.Sprintf("jsonpath={.status.initContainerStatuses[?(@.name=='%s')].state.running}", container)}
-	if namespace != "" {
-		args = append(args, "-n", namespace)
-	}
-	out, err := exec.Command("kubectl", args...).Output()
-	if err != nil {
-		return false
-	}
-	return len(out) > 0 && string(out) != "{}"
-}
