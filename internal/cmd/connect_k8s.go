@@ -4,12 +4,29 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
 
-// discoverK8sDaemon finds the daemon URL in a Kubernetes namespace using kubectl.
+// discoverK8sDaemon finds the daemon URL in a Kubernetes namespace.
+// It first checks for BD_DAEMON_HTTP_URL or BD_DAEMON_HOST env vars (set by the
+// agent controller in K8s pods), then falls back to kubectl-based discovery for
+// interactive developer use.
 func discoverK8sDaemon(namespace, kubeContext string) (string, error) {
+	// Fast path: use env vars injected by the agent controller.
+	if url := os.Getenv("BD_DAEMON_HTTP_URL"); url != "" {
+		return url, nil
+	}
+	if host := os.Getenv("BD_DAEMON_HOST"); host != "" {
+		port := os.Getenv("BD_DAEMON_HTTP_PORT")
+		if port == "" {
+			port = "9080"
+		}
+		return "http://" + host + ":" + port, nil
+	}
+
+	// Slow path: kubectl-based discovery for developer machines.
 	// Find daemon service by label.
 	svcArgs := []string{"get", "svc", "-n", namespace, "-l", "app.kubernetes.io/component=daemon", "-o", "json"}
 	if kubeContext != "" {
@@ -99,10 +116,16 @@ func extractHostFromMatch(match string) string {
 	return rest[:end]
 }
 
-// extractK8sToken retrieves the daemon auth token from a Kubernetes secret.
-// It first tries secrets with the daemon component label, then falls back to
-// searching all secrets by name pattern (ExternalSecrets may not have app labels).
+// extractK8sToken retrieves the daemon auth token.
+// It first checks for BD_DAEMON_TOKEN env var (set by the agent controller in K8s
+// pods), then falls back to kubectl-based secret discovery for interactive developer use.
 func extractK8sToken(namespace, kubeContext string) (string, error) {
+	// Fast path: use env var injected by the agent controller.
+	if token := os.Getenv("BD_DAEMON_TOKEN"); token != "" {
+		return token, nil
+	}
+
+	// Slow path: kubectl-based secret discovery for developer machines.
 	if namespace == "" {
 		return "", fmt.Errorf("namespace is required for K8s token extraction")
 	}
