@@ -90,6 +90,7 @@ tasks:
   # for ldflags so `gt version` reports the correct version.
   - key: build-gt
     use: [go-deps]
+    cache: false
     run: |
       source platform-versions.env
       CGO_ENABLED=0 GOOS=linux go build \
@@ -102,8 +103,6 @@ tasks:
         -o gt ./cmd/gt
     env:
       COMMIT_SHA: ${{ init.commit-sha }}
-    filter:
-      - platform-versions.env
     outputs:
       artifacts:
         - key: gt-binary
