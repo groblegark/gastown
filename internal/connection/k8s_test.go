@@ -47,11 +47,14 @@ func TestK8sConnection_ImplementsInterface(t *testing.T) {
 	var _ Connection = (*K8sConnection)(nil)
 }
 
-func TestK8sConnection_KubectlBaseArgs(t *testing.T) {
+func TestK8sConnection_ConfigFields(t *testing.T) {
 	tests := []struct {
-		name     string
-		cfg      K8sConnectionConfig
-		wantArgs []string
+		name          string
+		cfg           K8sConnectionConfig
+		wantPod       string
+		wantNS        string
+		wantContainer string
+		wantKC        string
 	}{
 		{
 			name: "basic",
@@ -59,7 +62,8 @@ func TestK8sConnection_KubectlBaseArgs(t *testing.T) {
 				PodName:   "my-pod",
 				Namespace: "my-ns",
 			},
-			wantArgs: []string{"exec", "my-pod", "-n", "my-ns"},
+			wantPod: "my-pod",
+			wantNS:  "my-ns",
 		},
 		{
 			name: "with container",
@@ -68,7 +72,9 @@ func TestK8sConnection_KubectlBaseArgs(t *testing.T) {
 				Namespace: "my-ns",
 				Container: "sidecar",
 			},
-			wantArgs: []string{"exec", "my-pod", "-n", "my-ns", "-c", "sidecar"},
+			wantPod:       "my-pod",
+			wantNS:        "my-ns",
+			wantContainer: "sidecar",
 		},
 		{
 			name: "with kubeconfig",
@@ -77,35 +83,49 @@ func TestK8sConnection_KubectlBaseArgs(t *testing.T) {
 				Namespace:  "my-ns",
 				KubeConfig: "/home/user/.kube/config",
 			},
-			wantArgs: []string{"--kubeconfig", "/home/user/.kube/config", "exec", "my-pod", "-n", "my-ns"},
-		},
-		{
-			name: "no namespace",
-			cfg: K8sConnectionConfig{
-				PodName: "my-pod",
-			},
-			wantArgs: []string{"exec", "my-pod"},
+			wantPod: "my-pod",
+			wantNS:  "my-ns",
+			wantKC:  "/home/user/.kube/config",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			conn := NewK8sConnection(tt.cfg)
-			got := conn.kubectlBaseArgs()
-
-			if len(got) != len(tt.wantArgs) {
-				t.Errorf("kubectlBaseArgs() length = %d, want %d\ngot:  %v\nwant: %v",
-					len(got), len(tt.wantArgs), got, tt.wantArgs)
-				return
+			if conn.PodName != tt.wantPod {
+				t.Errorf("PodName = %q, want %q", conn.PodName, tt.wantPod)
 			}
-			for i := range got {
-				if got[i] != tt.wantArgs[i] {
-					t.Errorf("kubectlBaseArgs()[%d] = %q, want %q\ngot:  %v\nwant: %v",
-						i, got[i], tt.wantArgs[i], got, tt.wantArgs)
-					return
-				}
+			if conn.Namespace != tt.wantNS {
+				t.Errorf("Namespace = %q, want %q", conn.Namespace, tt.wantNS)
+			}
+			if conn.Container != tt.wantContainer {
+				t.Errorf("Container = %q, want %q", conn.Container, tt.wantContainer)
+			}
+			if conn.KubeConfig != tt.wantKC {
+				t.Errorf("KubeConfig = %q, want %q", conn.KubeConfig, tt.wantKC)
 			}
 		})
+	}
+}
+
+func TestK8sConnection_GetRESTConfigLazy(t *testing.T) {
+	// getRESTConfig should initialize lazily and return the same error each time.
+	conn := NewK8sConnection(K8sConnectionConfig{
+		PodName:    "test-pod",
+		Namespace:  "test-ns",
+		KubeConfig: "/nonexistent/kubeconfig",
+	})
+
+	// First call should fail (bad kubeconfig path).
+	_, err1 := conn.getRESTConfig()
+	if err1 == nil {
+		t.Skip("kubeconfig unexpectedly resolved; skipping lazy init test")
+	}
+
+	// Second call should return the same error (cached via sync.Once).
+	_, err2 := conn.getRESTConfig()
+	if err1.Error() != err2.Error() {
+		t.Errorf("second call returned different error:\n  first:  %v\n  second: %v", err1, err2)
 	}
 }
 
