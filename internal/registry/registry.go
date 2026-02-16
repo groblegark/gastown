@@ -360,17 +360,13 @@ func (r *SessionRegistry) CreateSession(opts CreateSessionOpts) (*Session, error
 		Rig:        opts.Rig,
 		AgentState: "spawning",
 	}
+	if opts.K8s {
+		fields.ExecutionTarget = "k8s"
+	}
 
 	issue, err := r.writer.CreateOrReopenAgentBead(opts.ID, opts.Title, fields)
 	if err != nil {
 		return nil, fmt.Errorf("creating agent bead: %w", err)
-	}
-
-	// Add K8s label so the controller picks up this agent
-	if opts.K8s {
-		if err := r.writer.AddLabel(opts.ID, "execution_target:k8s"); err != nil {
-			return nil, fmt.Errorf("adding k8s label: %w", err)
-		}
 	}
 
 	s := r.buildSession(issue.ID, issue)

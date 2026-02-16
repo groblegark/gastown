@@ -70,6 +70,7 @@ type AgentFields struct {
 	RoleType          string   // polecat, witness, refinery, deacon, mayor
 	Rig               string   // Rig name (empty for global agents like mayor/deacon)
 	AgentState        string   // spawning, working, done, stuck
+	ExecutionTarget   string   // "k8s" for K8s-managed agents (sets execution_target label at creation time)
 	HookBead          string   // Currently pinned work bead ID
 	CleanupStatus     string   // ZFC: polecat self-reports git state (clean, has_uncommitted, has_stash, has_unpushed)
 	ActiveMR          string   // Currently active merge request bead ID (for traceability)
@@ -239,6 +240,9 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 		if fields.RoleType != "" {
 			labels += ",role:" + fields.RoleType
 		}
+		if fields.ExecutionTarget != "" {
+			labels += ",execution_target:" + fields.ExecutionTarget
+		}
 	}
 	// Extract agent name from ID: last segment after prefix-rig-role-
 	// e.g., "gt-gastown-polecat-nux" → "nux"
@@ -379,6 +383,9 @@ func (b *Beads) CreateOrReopenAgentBead(id, title string, fields *AgentFields) (
 		}
 		if fields.RoleType != "" {
 			_ = b.AddLabel(id, "role:"+fields.RoleType)
+		}
+		if fields.ExecutionTarget != "" {
+			_ = b.AddLabel(id, "execution_target:"+fields.ExecutionTarget)
 		}
 		// Extract agent name from ID
 		if fields.Rig != "" && fields.RoleType != "" {

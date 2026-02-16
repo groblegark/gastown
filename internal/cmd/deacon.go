@@ -474,15 +474,12 @@ func runDeaconStartK8s() error {
 	beadsClient := beads.New(townRoot)
 	agentBeadID := beads.DeaconBeadIDTown() // "hq-deacon"
 	_, err = beadsClient.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
-		RoleType:   "deacon",
-		AgentState: "spawning",
+		RoleType:        "deacon",
+		AgentState:      "spawning",
+		ExecutionTarget: "k8s",
 	})
 	if err != nil {
 		return fmt.Errorf("creating deacon agent bead: %w", err)
-	}
-
-	if err := beadsClient.AddLabel(agentBeadID, "execution_target:k8s"); err != nil {
-		fmt.Printf("Warning: could not add execution_target label: %v\n", err)
 	}
 
 	_ = events.LogFeed(events.TypeSpawn, "deacon", map[string]interface{}{

@@ -608,18 +608,14 @@ func spawnPolecatForK8sCMD(townRoot, rigName string, r *rig.Rig, opts SlingSpawn
 	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
 	beadsClient := beads.New(townRoot)
 	_, err := beadsClient.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
-		RoleType:   "polecat",
-		Rig:        rigName,
-		AgentState: "spawning",
-		HookBead:   opts.HookBead,
+		RoleType:        "polecat",
+		Rig:             rigName,
+		AgentState:      "spawning",
+		HookBead:        opts.HookBead,
+		ExecutionTarget: "k8s",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating agent bead for K8s polecat: %w", err)
-	}
-
-	// Label the agent bead so the controller knows this is a K8s polecat.
-	if err := beadsClient.AddLabel(agentBeadID, "execution_target:k8s"); err != nil {
-		fmt.Printf("Warning: could not add execution_target label: %v\n", err)
 	}
 
 	fmt.Printf("✓ Polecat %s dispatched to K8s (agent_state=spawning)\n", polecatName)

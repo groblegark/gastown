@@ -409,10 +409,13 @@ func (s *AgentServer) StartCrew(
 	bd := beads.New(townBeadsPath)
 
 	// Build agent fields. Setting agent_state=spawning marks this as starting.
+	// ExecutionTarget:k8s is set atomically at creation time so the controller
+	// always sees it (fix: beads-z21u — separate AddLabel was silently failing).
 	fields := &beads.AgentFields{
-		RoleType:   "crew",
-		Rig:        req.Msg.Rig,
-		AgentState: "spawning",
+		RoleType:        "crew",
+		Rig:             req.Msg.Rig,
+		AgentState:      "spawning",
+		ExecutionTarget: "k8s",
 	}
 
 	title := fmt.Sprintf("Crew worker %s in %s", req.Msg.Name, req.Msg.Rig)
@@ -425,12 +428,6 @@ func (s *AgentServer) StartCrew(
 
 	// Determine if this was a reopen (crew existed before).
 	created := issue.Status == "" || issue.Status == "open"
-
-	// Add execution_target:k8s label so the controller reconciles this into a pod.
-	if err := bd.AddLabel(crewID, "execution_target:k8s"); err != nil {
-		// Non-fatal: controller may still discover via gt:agent label
-		fmt.Printf("Warning: could not add execution_target label: %v\n", err)
-	}
 
 	// Set the bead status to in_progress to trigger the controller.
 	inProgress := "in_progress"
@@ -778,10 +775,13 @@ func (s *AgentServer) CreateCrew(
 	bd := beads.New(townBeadsPath)
 
 	// Build agent fields. Setting agent_state=spawning marks this as a new crew.
+	// ExecutionTarget:k8s is set atomically at creation time so the controller
+	// always sees it (fix: beads-z21u — was completely missing in CreateCrew).
 	fields := &beads.AgentFields{
-		RoleType:   "crew",
-		Rig:        req.Msg.Rig,
-		AgentState: "spawning",
+		RoleType:        "crew",
+		Rig:             req.Msg.Rig,
+		AgentState:      "spawning",
+		ExecutionTarget: "k8s",
 	}
 
 	title := fmt.Sprintf("Crew worker %s in %s", req.Msg.Name, req.Msg.Rig)

@@ -722,18 +722,14 @@ func (m *Manager) startK8s(name string, opts StartOptions) error {
 	beadsClient := beads.New(townRoot)
 
 	_, err := beadsClient.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
-		RoleType:   "crew",
-		Rig:        m.rig.Name,
-		AgentState: "spawning",
-		HookBead:   opts.HookBead,
+		RoleType:        "crew",
+		Rig:             m.rig.Name,
+		AgentState:      "spawning",
+		HookBead:        opts.HookBead,
+		ExecutionTarget: "k8s",
 	})
 	if err != nil {
 		return fmt.Errorf("creating agent bead for K8s crew: %w", err)
-	}
-
-	// Label the agent bead so the controller dispatches it to K8s.
-	if err := beadsClient.AddLabel(agentBeadID, "execution_target:k8s"); err != nil {
-		fmt.Printf("Warning: could not add execution_target label: %v\n", err)
 	}
 
 	fmt.Printf("Crew %s dispatched to K8s (agent_state=spawning)\n", name)

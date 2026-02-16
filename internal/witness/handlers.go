@@ -1032,18 +1032,14 @@ func RespawnPolecatWithHookedWork(workDir, rigName, polecatName string) error {
 	// Reopen the agent bead with agent_state=spawning so the controller
 	// creates a new pod for this polecat. The hook_bead is preserved.
 	_, err = bd.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
-		RoleType:   "polecat",
-		Rig:        rigName,
-		AgentState: "spawning",
-		HookBead:   fields.HookBead,
+		RoleType:        "polecat",
+		Rig:             rigName,
+		AgentState:      "spawning",
+		HookBead:        fields.HookBead,
+		ExecutionTarget: "k8s",
 	})
 	if err != nil {
 		return fmt.Errorf("reopening agent bead for respawn: %w", err)
-	}
-
-	// Ensure K8s label is set so controller picks it up.
-	if err := bd.AddLabel(agentBeadID, "execution_target:k8s"); err != nil {
-		fmt.Printf("Warning: could not add execution_target label: %v\n", err)
 	}
 
 	return nil

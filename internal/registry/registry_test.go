@@ -376,11 +376,17 @@ func (m *mockBeadWriter) CreateOrReopenAgentBead(id, title string, fields *beads
 	if m.createErr != nil {
 		return nil, m.createErr
 	}
+	labels := []string{"gt:agent"}
+	if fields != nil && fields.ExecutionTarget != "" {
+		labels = append(labels, "execution_target:"+fields.ExecutionTarget)
+		// Also record in labels map so existing tests pass.
+		m.labels[id] = append(m.labels[id], "execution_target:"+fields.ExecutionTarget)
+	}
 	issue := &beads.Issue{
 		ID:          id,
 		Title:       title,
 		Description: beads.FormatAgentDescription(title, fields),
-		Labels:      []string{"gt:agent"},
+		Labels:      labels,
 	}
 	m.created[id] = issue
 	return issue, nil

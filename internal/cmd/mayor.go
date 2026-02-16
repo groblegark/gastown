@@ -174,16 +174,12 @@ func runMayorStartK8s() error {
 	beadsClient := beads.New(townRoot)
 	agentBeadID := beads.MayorBeadIDTown() // "hq-mayor"
 	_, err = beadsClient.CreateOrReopenAgentBead(agentBeadID, agentBeadID, &beads.AgentFields{
-		RoleType:   "mayor",
-		AgentState: "spawning",
+		RoleType:        "mayor",
+		AgentState:      "spawning",
+		ExecutionTarget: "k8s",
 	})
 	if err != nil {
 		return fmt.Errorf("creating mayor agent bead: %w", err)
-	}
-
-	// Label so the controller knows this is a K8s agent.
-	if err := beadsClient.AddLabel(agentBeadID, "execution_target:k8s"); err != nil {
-		fmt.Printf("Warning: could not add execution_target label: %v\n", err)
 	}
 
 	// Emit spawn event with payload fields the controller's watcher can parse.
