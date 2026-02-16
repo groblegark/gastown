@@ -93,29 +93,3 @@ func TestManager_FindMR_NoBeads(t *testing.T) {
 	t.Logf("FindMR() returned error (expected): %v", err)
 }
 
-func TestManager_RegisterMR_Deprecated(t *testing.T) {
-	mgr, _ := setupTestManager(t)
-
-	mr := &MergeRequest{
-		ID:     "gt-mr-test",
-		Branch: "polecat/Test/gt-123",
-		Worker: "Test",
-		Status: MROpen,
-	}
-
-	// RegisterMR should return an error indicating deprecation
-	err := mgr.RegisterMR(mr)
-	if err == nil {
-		t.Error("RegisterMR() expected error (deprecated)")
-	}
-}
-
-func TestManager_Retry_Deprecated(t *testing.T) {
-	mgr, _ := setupTestManager(t)
-
-	// Retry is deprecated and should not error, just print a message
-	err := mgr.Retry("any-id", false)
-	if err != nil {
-		t.Errorf("Retry() unexpected error: %v", err)
-	}
-}

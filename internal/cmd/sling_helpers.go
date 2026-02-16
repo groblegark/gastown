@@ -371,53 +371,6 @@ func storeConvoyOwnedInBead(beadID string, owned bool) error {
 	return nil
 }
 
-// injectStartPrompt sends a prompt to the target pane to start working.
-// Uses the reliable nudge pattern: literal mode + 500ms debounce + separate Enter.
-// For OJ-managed polecats, routes through "oj agent send" instead of tmux (od-ki9.4).
-func injectStartPrompt(pane, beadID, subject, args string) error {
-	if pane == "" {
-		return fmt.Errorf("no target pane")
-	}
-
-	// Skip nudge during tests to prevent agent self-interruption
-	if os.Getenv("GT_TEST_NO_NUDGE") != "" {
-		return nil
-	}
-
-	// Build the prompt to inject
-	var prompt string
-	if args != "" {
-		// Args provided - include them prominently in the prompt
-		if subject != "" {
-			prompt = fmt.Sprintf("Work slung: %s (%s). Args: %s. Start working now - use these args to guide your execution.", beadID, subject, args)
-		} else {
-			prompt = fmt.Sprintf("Work slung: %s. Args: %s. Start working now - use these args to guide your execution.", beadID, args)
-		}
-	} else if subject != "" {
-		prompt = fmt.Sprintf("Work slung: %s (%s). Start working on it now - no questions, just begin.", beadID, subject)
-	} else {
-		prompt = fmt.Sprintf("Work slung: %s. Start working on it now - run `gt hook` to see the hook, then begin.", beadID)
-	}
-
-	// Check if target polecat is OJ-managed (od-ki9.4: use oj agent send as canonical nudge).
-	// If the bead has oj_job_id, OJ owns the session and tmux pane may not exist.
-	if ojJobID := getOjJobIDFromBead(beadID); ojJobID != "" {
-		if err := sendViaOj(ojJobID, prompt); err == nil {
-			return nil
-		}
-		// OJ send failed, fall through to tmux
-	}
-
-	// Use the reliable nudge pattern via the backend.
-	// Resolve pane to session name for backend routing.
-	session := getSessionFromPane(pane)
-	if session == "" {
-		session = pane
-	}
-	backend, sessionKey := resolveBackendForSession(session)
-	return backend.NudgeSession(sessionKey, prompt)
-}
-
 // nudgeViaBackend attempts to nudge a non-tmux agent (Coop/K8s) via the Backend interface.
 // Returns true if the nudge was sent successfully.
 func nudgeViaBackend(agentID, beadID, subject, args string) bool {
@@ -445,37 +398,6 @@ func nudgeViaBackend(agentID, beadID, subject, args string) bool {
 		return false
 	}
 	return true
-}
-
-// getSessionFromPane extracts session name from a pane target.
-// Pane targets can be:
-// - "%9" (pane ID) - treated as-is (tmux pane IDs not supported in K8s mode)
-// - "gt-rig-name:0.0" (session:window.pane) - extract session name
-func getSessionFromPane(pane string) string {
-	if strings.HasPrefix(pane, "%") {
-		// Pane ID format - no tmux to query in K8s mode
-		return ""
-	}
-	// Session:window.pane format - extract session name
-	if idx := strings.Index(pane, ":"); idx > 0 {
-		return pane[:idx]
-	}
-	return pane
-}
-
-// ensureAgentReady waits for an agent to be ready before nudging an existing session.
-// In K8s mode, checks agent liveness via the backend.
-func ensureAgentReady(sessionName string) error {
-	backend, sessionKey := resolveBackendForSession(sessionName)
-	running, err := backend.IsAgentRunning(sessionKey)
-	if err != nil {
-		return fmt.Errorf("checking agent readiness: %w", err)
-	}
-	if !running {
-		// Give the agent a moment to start up
-		time.Sleep(2 * time.Second)
-	}
-	return nil
 }
 
 // detectCloneRoot finds the root of the current git clone.

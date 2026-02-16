@@ -258,42 +258,6 @@ func execRuntime(prompt, rigPath, configDir string) error {
 	return syscall.Exec(binPath, args, env)
 }
 
-// isInTmuxSession checks if we're currently inside the target session.
-func isInTmuxSession(targetSession string) bool {
-	// Check env vars for current session name
-	currentSession := os.Getenv("GT_SESSION")
-	if currentSession == "" {
-		currentSession = os.Getenv("TMUX_SESSION")
-	}
-	if currentSession == "" {
-		return false
-	}
-	return currentSession == targetSession
-}
-
-// attachToTmuxSession attaches to a tmux session.
-// If already inside tmux, uses switch-client instead of attach-session.
-func attachToTmuxSession(sessionID string) error {
-	tmuxPath, err := exec.LookPath("tmux")
-	if err != nil {
-		return fmt.Errorf("tmux not found: %w", err)
-	}
-
-	// Check if we're already inside a tmux session
-	var cmd *exec.Cmd
-	if os.Getenv("TMUX") != "" {
-		// Inside tmux: switch to the target session
-		cmd = exec.Command(tmuxPath, "switch-client", "-t", sessionID)
-	} else {
-		// Outside tmux: attach to the session
-		cmd = exec.Command(tmuxPath, "attach-session", "-t", sessionID)
-	}
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
 // attachToCoopPod attaches to a K8s pod running coop via port-forward.
 // It starts kubectl port-forward in the background, waits for coop to respond,
 // then execs into `coop attach` which takes over the terminal.
@@ -429,53 +393,3 @@ func ensureDefaultBranch(dir, roleName, rigPath string) bool { //nolint:unparam 
 	return true
 }
 
-// parseCrewSessionName extracts rig and crew name from a tmux session name.
-// Format: gt-<rig>-crew-<name>
-// Returns empty strings and false if the format doesn't match.
-func parseCrewSessionName(sessionName string) (rigName, crewName string, ok bool) {
-	// Must start with "gt-" and contain "-crew-"
-	if !strings.HasPrefix(sessionName, "gt-") {
-		return "", "", false
-	}
-
-	// Remove "gt-" prefix
-	rest := sessionName[3:]
-
-	// Find "-crew-" separator
-	idx := strings.Index(rest, "-crew-")
-	if idx == -1 {
-		return "", "", false
-	}
-
-	rigName = rest[:idx]
-	crewName = rest[idx+6:] // len("-crew-") = 6
-
-	if rigName == "" || crewName == "" {
-		return "", "", false
-	}
-
-	return rigName, crewName, true
-}
-
-// findRigCrewSessions returns all crew sessions for a given rig, sorted alphabetically.
-// Uses SessionRegistry to find sessions matching gt-<rig>-crew-* pattern.
-func findRigCrewSessions(rigName string) ([]string, error) { //nolint:unparam // error return kept for future use
-	townRoot, _ := workspace.FindFromCwd()
-	allSessions := discoverSessionNames(townRoot)
-
-	prefix := fmt.Sprintf("gt-%s-crew-", rigName)
-	var sessions []string
-
-	for _, line := range allSessions {
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, prefix) {
-			sessions = append(sessions, line)
-		}
-	}
-
-	// Sessions are already sorted by tmux, but sort explicitly for consistency
-	// (alphabetical by session name means alphabetical by crew name)
-	return sessions, nil
-}

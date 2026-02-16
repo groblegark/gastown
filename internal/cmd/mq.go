@@ -429,7 +429,7 @@ func runMQRetry(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get the MR first to show info
-	mr, err := mgr.GetMR(mrID)
+	mr, err := mgr.FindMR(mrID)
 	if err != nil {
 		if err == refinery.ErrMRNotFound {
 			return fmt.Errorf("merge request '%s' not found in rig '%s'", mrID, rigName)
@@ -445,20 +445,8 @@ func runMQRetry(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Previous error: %s\n", style.Dim.Render(mr.Error))
 	}
 
-	// Perform the retry
-	if err := mgr.Retry(mrID, mqRetryNow); err != nil {
-		if err == refinery.ErrMRNotFailed {
-			return fmt.Errorf("merge request '%s' has not failed (status: %s)", mrID, mr.Status)
-		}
-		return fmt.Errorf("retrying merge request: %w", err)
-	}
-
-	if mqRetryNow {
-		fmt.Printf("%s Merge request processed\n", style.Bold.Render("✓"))
-	} else {
-		fmt.Printf("%s Merge request queued for retry\n", style.Bold.Render("✓"))
-		fmt.Printf("  %s\n", style.Dim.Render("Will be processed on next refinery cycle"))
-	}
+	// Retry is deprecated — the Refinery agent handles retries autonomously via beads.
+	fmt.Printf("Note: Retry is deprecated. The Refinery agent handles retries autonomously via beads.\n")
 
 	return nil
 }

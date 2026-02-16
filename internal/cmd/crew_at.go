@@ -216,52 +216,22 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Check if we're already in the target session
-	if isInTmuxSession(sessionID) {
-		// Check if agent is already running - don't restart if so
-		agentCfg, _, err := config.ResolveAgentConfigWithOverride(townRoot, r.Path, crewAgentOverride)
-		if err != nil {
-			return fmt.Errorf("resolving agent: %w", err)
-		}
-		if running, _ := backend.IsAgentRunning(sessionID); running {
-			// Agent is already running, nothing to do
-			fmt.Printf("Already in %s session with %s running.\n", name, agentCfg.Command)
-			return nil
-		}
-
-		// We're in the session at a shell prompt - start the agent
-		address := fmt.Sprintf("%s/crew/%s", r.Name, name)
-		beacon := session.FormatStartupBeacon(session.BeaconConfig{
-			Recipient: address,
-			Sender:    "human",
-			Topic:     "start",
-		})
-		fmt.Printf("Starting %s in current session...\n", agentCfg.Command)
-		return execAgent(agentCfg, beacon)
+	// Attach via coop pod if connected to K8s namespace.
+	if ns := getConnectedNamespace(); ns != "" {
+		podName := fmt.Sprintf("gt-%s-crew-%s", r.Name, name)
+		fmt.Printf("Attaching to %s via coop...\n", sessionID)
+		return attachToCoopPodWithBrowser(podName, ns, crewBrowser)
 	}
 
-	// If inside tmux (but different session), don't switch - just inform user
-	insideTmux := os.Getenv("TMUX") != ""
-	if debug {
-		fmt.Printf("[DEBUG] insideTmux=%v\n", insideTmux)
-	}
-	if insideTmux {
-		fmt.Printf("Session %s ready. Use C-b s to switch.\n", sessionID)
-		return nil
-	}
-
-	// Outside tmux: attach unless --detached flag is set
+	// Not connected to K8s — print session info for manual attach.
 	if crewDetached {
 		fmt.Printf("Started %s/%s. Run 'gt crew at %s' to attach.\n", r.Name, name, name)
 		return nil
 	}
 
-	// Attach to session
-	fmt.Printf("Attaching to %s...\n", sessionID)
-	if debug {
-		fmt.Printf("[DEBUG] calling attachToTmuxSession(%q)\n", sessionID)
-	}
-	return attachToTmuxSession(sessionID)
+	fmt.Printf("Session %s ready.\n", sessionID)
+	fmt.Printf("  Connect to a daemon first: gt connect <host>\n")
+	return nil
 }
 
 // tryRemoteCrewAt attempts to attach to a remote K8s crew pod via coop.

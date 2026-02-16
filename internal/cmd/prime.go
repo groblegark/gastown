@@ -731,12 +731,8 @@ func acquireIdentityLock(ctx RoleContext) error {
 	// Create lock for this worker directory
 	l := lock.New(ctx.WorkDir)
 
-	// Determine session ID from environment or context
-	sessionID := os.Getenv("TMUX_PANE")
-	if sessionID == "" {
-		// Fall back to a descriptive identifier
-		sessionID = fmt.Sprintf("%s/%s", ctx.Rig, ctx.Polecat)
-	}
+	// Determine session ID from context
+	sessionID := fmt.Sprintf("%s/%s", ctx.Rig, ctx.Polecat)
 
 	// Try to acquire the lock
 	if err := l.Acquire(sessionID); err != nil {

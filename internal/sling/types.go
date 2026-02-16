@@ -54,9 +54,7 @@ type SlingResult struct {
 	PolecatSpawned bool
 	PolecatName    string
 	BeadTitle      string
-	ConvoyCreated  bool
-	// TargetPane is set when the target has a tmux pane (for CLI nudging).
-	TargetPane string
+	ConvoyCreated bool
 	// K8sSpawn is true when the polecat was dispatched to K8s (no local session).
 	K8sSpawn bool
 }
@@ -94,7 +92,6 @@ type FormulaResult struct {
 	ConvoyID       string
 	PolecatSpawned bool
 	PolecatName    string
-	TargetPane     string
 }
 
 // BatchOptions contains parameters for batch slinging.
@@ -172,8 +169,6 @@ type SpawnResult struct {
 	RigName     string
 	PolecatName string
 	ClonePath   string
-	SessionName string
-	Pane        string
 	// Internal fields for deferred session start
 	Account string
 	Agent   string

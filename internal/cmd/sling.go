@@ -239,9 +239,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 
 	// Determine target agent (self or specified)
 	var targetAgent string
-	var targetPane string
 	var hookWorkDir string                  // Working directory for running bd hook commands
-	var hookSetAtomically bool              // True if hook was set during polecat spawn (skip redundant update)
 	var delayedDogInfo *DogDispatchInfo     // For delayed dog session start after hook is set
 	var crewTargetRig, crewTargetName string // Track crew target for mail notification (hq--bug-gt_sling_crew_doesn_t_send_mail)
 
@@ -260,7 +258,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 
 		// Resolve "." to current agent identity (like git's "." meaning current directory)
 		if target == "." {
-			targetAgent, targetPane, _, err = resolveSelfTarget()
+			targetAgent, _, _, err = resolveSelfTarget()
 			if err != nil {
 				return fmt.Errorf("resolving self for '.' target: %w", err)
 			}
@@ -275,7 +273,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 				if dogName == "" {
 					targetAgent = "deacon/dogs/<idle>"
 				}
-				targetPane = "<dog-pane>"
 			} else {
 				// Dispatch to dog with delayed session start
 				// Session starts after hook is set to avoid race condition
@@ -298,7 +295,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 				// Dry run - just indicate what would happen
 				fmt.Printf("Would spawn fresh polecat in rig '%s'\n", rigName)
 				targetAgent = fmt.Sprintf("%s/polecats/<new>", rigName)
-				targetPane = "<new-pane>"
 			} else {
 				// DEFERRED SPAWN: Don't spawn polecat yet - we need to validate bead
 				// and instantiate formula first. This prevents orphan polecats when
@@ -315,14 +311,12 @@ func runSling(cmd *cobra.Command, args []string) error {
 				}
 				// Use placeholder values until spawn
 				targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)
-				targetPane = ""
 				// hookWorkDir stays empty - formula instantiation will use townRoot
-				// hookSetAtomically = false - hook will be set via bd update
 			}
 		} else {
 			// Slinging to an existing agent
 			var targetWorkDir string
-			targetAgent, targetPane, targetWorkDir, err = resolveTargetAgent(target)
+			targetAgent, _, targetWorkDir, err = resolveTargetAgent(target)
 			if err != nil {
 				// Check if this is a dead polecat (no active session)
 				// If so, spawn a fresh polecat instead of failing
@@ -345,9 +339,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 						}
 						// Use placeholder values until spawn
 						targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)
-						targetPane = ""
 						// hookWorkDir stays empty - formula instantiation will use townRoot
-						// hookSetAtomically = false - hook will be set via bd update
 					} else {
 						return fmt.Errorf("resolving target: %w", err)
 					}
@@ -398,7 +390,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 					}
 
 					// Retry resolving the target now that session is running
-					targetAgent, targetPane, targetWorkDir, err = resolveTargetAgent(target)
+					targetAgent, _, targetWorkDir, err = resolveTargetAgent(target)
 					if err != nil {
 						return fmt.Errorf("resolving target after starting crew: %w", err)
 					}
@@ -417,7 +409,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 	} else {
 		// Slinging to self
 		var selfWorkDir string
-		targetAgent, targetPane, selfWorkDir, err = resolveSelfTarget()
+		targetAgent, _, selfWorkDir, err = resolveSelfTarget()
 		if err != nil {
 			return err
 		}
@@ -573,7 +565,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 		if slingArgs != "" {
 			fmt.Printf("  args (in nudge): %s\n", slingArgs)
 		}
-		fmt.Printf("Would inject start prompt to pane: %s\n", targetPane)
 		return nil
 	}
 
@@ -640,9 +631,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 		}
 		ojDispatch = dispatchInfo
 		targetAgent = dispatchInfo.AgentID
-		targetPane = ""             // No tmux pane — OJ owns the session
 		hookWorkDir = townRoot      // Use town root for bd commands
-		hookSetAtomically = false   // OJ runbook handles hook via provision step
 
 		// Store OJ job ID in the bead for daemon health checks
 		if dispatchInfo.JobID != "" {
@@ -652,24 +641,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 				fmt.Printf("%s OJ job dispatched: %s\n", style.Bold.Render("✓"), dispatchInfo.JobID)
 			}
 		}
-
-		// Wake witness and refinery to monitor the new polecat
-		wakeRigAgents(deferredRigName)
-	} else if deferredRigName != "" {
-		// Standard spawn path (local tmux or K8s — resolved by SpawnPolecatForSling)
-		// Set HookBead atomically at spawn time to prevent race condition (GH #hq-3d01de).
-		// Without this, the polecat might start before bd update sets the hook.
-		deferredSpawnOpts.HookBead = beadID
-
-		fmt.Printf("  Spawning polecat in %s...\n", deferredRigName)
-		spawnInfo, spawnErr := SpawnPolecatForSling(deferredRigName, deferredSpawnOpts)
-		if spawnErr != nil {
-			return fmt.Errorf("spawning polecat: %w", spawnErr)
-		}
-		targetAgent = spawnInfo.AgentID()
-		targetPane = spawnInfo.Pane
-		hookWorkDir = spawnInfo.ClonePath // Run bd commands from polecat's worktree
-		hookSetAtomically = true          // Hook was set during spawn - skip redundant updateAgentHookBead
 
 		// Wake witness and refinery to monitor the new polecat
 		wakeRigAgents(deferredRigName)
@@ -762,12 +733,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 	_ = events.LogFeed(events.TypeSling, actor, events.SlingPayload(beadID, targetAgent))
 
 	// Update agent bead's hook_bead field (ZFC: agents track their current work)
-	// Skip if hook was already set atomically during polecat spawn - avoids "agent bead not found"
-	// error when polecat redirect setup fails (GH #gt-mzyk5: agent bead created in rig beads
-	// but updateAgentHookBead looks in polecat's local beads if redirect is missing).
-	if !hookSetAtomically {
-		updateAgentHookBead(targetAgent, beadID, hookWorkDir, townBeadsDir)
-	}
+	updateAgentHookBead(targetAgent, beadID, hookWorkDir, townBeadsDir)
 
 	// Store dispatcher in bead description (enables completion notification to dispatcher)
 	if err := storeDispatcherInBead(beadID, actor); err != nil {
@@ -827,48 +793,26 @@ func runSling(cmd *cobra.Command, args []string) error {
 	// Start delayed dog session now that hook is set
 	// This ensures dog sees the hook when gt prime runs on session start
 	if delayedDogInfo != nil {
-		pane, err := delayedDogInfo.StartDelayedSession()
-		if err != nil {
+		if _, err := delayedDogInfo.StartDelayedSession(); err != nil {
 			return fmt.Errorf("starting delayed dog session: %w", err)
 		}
-		targetPane = pane
 	}
 
-	// Try to inject the "start now" prompt (graceful if no tmux)
+	// Send nudge to start working.
 	// Skip for freshly spawned polecats - SessionManager.Start() already sent StartupNudge.
 	// Skip for OJ-dispatched polecats - OJ daemon owns the session lifecycle.
-	// Note: In deferred spawn mode (GH #gt-e9o), the polecat session was started
-	// in the deferred spawn block above after formula instantiation succeeded.
 	freshlySpawned := deferredRigName != ""
 	if ojDispatch != nil {
-		// OJ dispatch: daemon owns session lifecycle, no tmux nudge needed
+		// OJ dispatch: daemon owns session lifecycle, no nudge needed
 		fmt.Printf("%s OJ daemon managing polecat %s\n", style.Bold.Render("✓"), ojDispatch.PolecatName)
 	} else if freshlySpawned {
 		// Fresh polecat already got StartupNudge from SessionManager.Start()
-	} else if targetPane == "" {
-		// No tmux pane — try nudging via backend (Coop/K8s) before giving up
+	} else {
+		// Try nudging via backend (Coop/K8s)
 		if nudgeViaBackend(targetAgent, beadID, slingSubject, slingArgs) {
 			fmt.Printf("%s Start prompt sent (via backend)\n", style.Bold.Render("▶"))
 		} else {
 			fmt.Printf("%s No pane to nudge (agent will discover work via gt prime)\n", style.Dim.Render("○"))
-		}
-	} else {
-		// Ensure agent is ready before nudging (prevents race condition where
-		// message arrives before Claude has fully started - see issue #115)
-		sessionName := getSessionFromPane(targetPane)
-		if sessionName != "" {
-			if err := ensureAgentReady(sessionName); err != nil {
-				// Non-fatal: warn and continue, agent will discover work via gt prime
-				fmt.Printf("%s Could not verify agent ready: %v\n", style.Dim.Render("○"), err)
-			}
-		}
-
-		if err := injectStartPrompt(targetPane, beadID, slingSubject, slingArgs); err != nil {
-			// Graceful fallback for no-tmux mode
-			fmt.Printf("%s Could not nudge: %v\n", style.Dim.Render("○"), err)
-			fmt.Printf("  Agent will discover work via gt prime / bd show\n")
-		} else {
-			fmt.Printf("%s Start prompt sent\n", style.Bold.Render("▶"))
 		}
 	}
 

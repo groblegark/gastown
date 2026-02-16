@@ -85,9 +85,8 @@ func runSlingFormula(args []string) error {
 		target = args[1]
 	}
 
-	// Resolve target agent and pane
+	// Resolve target agent
 	var targetAgent string
-	var targetPane string
 	var delayedDogInfo *DogDispatchInfo // For delayed dog session start after hook is set
 
 	// Track deferred rig spawn - we create wisp BEFORE spawning polecat to avoid race condition
@@ -99,7 +98,7 @@ func runSlingFormula(args []string) error {
 	if target != "" {
 		// Resolve "." to current agent identity (like git's "." meaning current directory)
 		if target == "." {
-			targetAgent, targetPane, _, err = resolveSelfTarget()
+			targetAgent, _, _, err = resolveSelfTarget()
 			if err != nil {
 				return fmt.Errorf("resolving self for '.' target: %w", err)
 			}
@@ -114,7 +113,6 @@ func runSlingFormula(args []string) error {
 				if dogName == "" {
 					targetAgent = "deacon/dogs/<idle>"
 				}
-				targetPane = "<dog-pane>"
 			} else {
 				// Dispatch to dog with delayed session start
 				// Session starts after hook is set to avoid race condition
@@ -137,7 +135,6 @@ func runSlingFormula(args []string) error {
 				// Dry run - just indicate what would happen
 				fmt.Printf("Would spawn fresh polecat in rig '%s'\n", rigName)
 				targetAgent = fmt.Sprintf("%s/polecats/<new>", rigName)
-				targetPane = "<new-pane>"
 			} else {
 				// DEFERRED SPAWN: Don't spawn polecat yet - we need to create wisp first.
 				// This prevents race condition where polecat starts before its work exists.
@@ -153,12 +150,11 @@ func runSlingFormula(args []string) error {
 				}
 				// Use placeholder values - will be updated after spawn
 				targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)
-				targetPane = ""
 			}
 		} else {
 			// Slinging to an existing agent
 			var targetWorkDir string
-			targetAgent, targetPane, targetWorkDir, err = resolveTargetAgent(target)
+			targetAgent, _, targetWorkDir, err = resolveTargetAgent(target)
 			if err != nil {
 				return fmt.Errorf("resolving target: %w", err)
 			}
@@ -168,7 +164,7 @@ func runSlingFormula(args []string) error {
 	} else {
 		// Slinging to self
 		var selfWorkDir string
-		targetAgent, targetPane, selfWorkDir, err = resolveSelfTarget()
+		targetAgent, _, selfWorkDir, err = resolveSelfTarget()
 		if err != nil {
 			return err
 		}
@@ -183,7 +179,6 @@ func runSlingFormula(args []string) error {
 		for _, v := range slingVars {
 			fmt.Printf("  --var %s\n", v)
 		}
-		fmt.Printf("Would nudge pane: %s\n", targetPane)
 		return nil
 	}
 
@@ -233,7 +228,6 @@ func runSlingFormula(args []string) error {
 			return fmt.Errorf("spawning polecat: %w", spawnErr)
 		}
 		targetAgent = spawnInfo.AgentID()
-		targetPane = spawnInfo.Pane
 		fmt.Printf("%s\n", spawnInfo.PolecatName)
 
 		// Wake witness and refinery to monitor the new polecat
@@ -286,41 +280,16 @@ func runSlingFormula(args []string) error {
 	// Start delayed dog session now that hook is set
 	// This ensures dog sees the hook when gt prime runs on session start
 	if delayedDogInfo != nil {
-		pane, err := delayedDogInfo.StartDelayedSession()
-		if err != nil {
+		if _, err := delayedDogInfo.StartDelayedSession(); err != nil {
 			return fmt.Errorf("starting delayed dog session: %w", err)
 		}
-		targetPane = pane
 	}
 
-	// Step 4: Nudge to start (graceful if no tmux)
-	if targetPane == "" {
+	// Step 4: Nudge to start (via backend)
+	if nudgeViaBackend(targetAgent, wispRootID, slingSubject, slingArgs) {
+		fmt.Printf("%s Start prompt sent (via backend)\n", style.Bold.Render("▶"))
+	} else {
 		fmt.Printf("%s No pane to nudge (agent will discover work via gt prime)\n", style.Dim.Render("○"))
-		return nil
-	}
-
-	// Skip nudge during tests to prevent agent self-interruption
-	if os.Getenv("GT_TEST_NO_NUDGE") != "" {
-		return nil
-	}
-
-	var prompt string
-	if slingArgs != "" {
-		prompt = fmt.Sprintf("Formula %s slung. Args: %s. Run `gt hook` to see your hook, then execute using these args.", formulaName, slingArgs)
-	} else {
-		prompt = fmt.Sprintf("Formula %s slung. Run `gt hook` to see your hook, then execute the steps.", formulaName)
-	}
-	// Resolve session for pane-based nudge
-	session := getSessionFromPane(targetPane)
-	if session == "" {
-		session = targetPane
-	}
-	nudgeBackend, nudgeKey := resolveBackendForSession(session)
-	if err := nudgeBackend.NudgeSession(nudgeKey, prompt); err != nil {
-		fmt.Printf("%s Could not nudge: %v\n", style.Dim.Render("○"), err)
-		fmt.Printf("  Agent will discover work via gt prime / bd show\n")
-	} else {
-		fmt.Printf("%s Nudged to start\n", style.Bold.Render("▶"))
 	}
 
 	return nil

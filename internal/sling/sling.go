@@ -66,7 +66,6 @@ func Sling(opts SlingOptions) (*SlingResult, error) {
 
 	// Resolve target
 	var targetAgent string
-	var targetPane string
 	var hookWorkDir string
 	var hookSetAtomically bool
 	var deferredRigName string
@@ -108,7 +107,7 @@ func Sling(opts SlingOptions) (*SlingResult, error) {
 		} else if opts.ResolveTarget != nil {
 			// Existing agent: use resolver
 			var resolveWorkDir string
-			targetAgent, targetPane, resolveWorkDir, err = opts.ResolveTarget(target)
+			targetAgent, _, resolveWorkDir, err = opts.ResolveTarget(target)
 			if err != nil {
 				if IsPolecatTarget(target) {
 					parts := strings.Split(target, "/")
@@ -139,7 +138,7 @@ func Sling(opts SlingOptions) (*SlingResult, error) {
 		}
 	} else if opts.ResolveSelf != nil {
 		var selfWorkDir string
-		targetAgent, targetPane, selfWorkDir, err = opts.ResolveSelf()
+		targetAgent, _, selfWorkDir, err = opts.ResolveSelf()
 		if err != nil {
 			return nil, err
 		}
@@ -203,7 +202,6 @@ func Sling(opts SlingOptions) (*SlingResult, error) {
 	result.TargetAgent = targetAgent
 	result.PolecatSpawned = polecatSpawned
 	result.PolecatName = polecatName
-	result.TargetPane = targetPane
 
 	// Hook the bead
 	if err := HookBead(beadID, targetAgent, townRoot, hookWorkDir, out); err != nil {
@@ -287,7 +285,7 @@ func slingFormulaOnBead(opts FormulaOptions, out io.Writer, townRoot, townBeadsD
 	}
 
 	// Resolve target
-	var targetAgent, targetPane, hookWorkDir string
+	var targetAgent, hookWorkDir string
 	target := strings.TrimRight(opts.Target, "/")
 	var deferredRigName string
 	var deferredSpawnOpts SpawnOptions
@@ -306,7 +304,7 @@ func slingFormulaOnBead(opts FormulaOptions, out io.Writer, townRoot, townBeadsD
 			targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)
 		} else if opts.ResolveTarget != nil {
 			var resolveWorkDir string
-			targetAgent, targetPane, resolveWorkDir, err = opts.ResolveTarget(target)
+			targetAgent, _, resolveWorkDir, err = opts.ResolveTarget(target)
 			if err != nil {
 				return nil, fmt.Errorf("resolving target: %w", err)
 			}
@@ -318,7 +316,7 @@ func slingFormulaOnBead(opts FormulaOptions, out io.Writer, townRoot, townBeadsD
 		}
 	} else if opts.ResolveSelf != nil {
 		var selfWorkDir string
-		targetAgent, targetPane, selfWorkDir, err = opts.ResolveSelf()
+		targetAgent, _, selfWorkDir, err = opts.ResolveSelf()
 		if err != nil {
 			return nil, err
 		}
@@ -371,13 +369,12 @@ func slingFormulaOnBead(opts FormulaOptions, out io.Writer, townRoot, townBeadsD
 		BeadID:         beadID,
 		PolecatSpawned: polecatSpawned,
 		PolecatName:    polecatNameResult,
-		TargetPane:     targetPane,
 	}, nil
 }
 
 func slingStandaloneFormula(opts FormulaOptions, out io.Writer, townRoot, townBeadsDir, formula, target string) (*FormulaResult, error) {
 	// Resolve target
-	var targetAgent, targetPane string
+	var targetAgent string
 	var deferredRigName string
 	var deferredSpawnOpts SpawnOptions
 	var polecatSpawned bool
@@ -395,7 +392,7 @@ func slingStandaloneFormula(opts FormulaOptions, out io.Writer, townRoot, townBe
 			}
 			targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)
 		} else if opts.ResolveTarget != nil {
-			targetAgent, targetPane, _, err = opts.ResolveTarget(target)
+			targetAgent, _, _, err = opts.ResolveTarget(target)
 			if err != nil {
 				return nil, fmt.Errorf("resolving target: %w", err)
 			}
@@ -403,7 +400,7 @@ func slingStandaloneFormula(opts FormulaOptions, out io.Writer, townRoot, townBe
 			targetAgent = target
 		}
 	} else if opts.ResolveSelf != nil {
-		targetAgent, targetPane, _, err = opts.ResolveSelf()
+		targetAgent, _, _, err = opts.ResolveSelf()
 		if err != nil {
 			return nil, err
 		}
@@ -468,7 +465,6 @@ func slingStandaloneFormula(opts FormulaOptions, out io.Writer, townRoot, townBe
 		TargetAgent:    targetAgent,
 		PolecatSpawned: polecatSpawned,
 		PolecatName:    polecatNameResult,
-		TargetPane:     targetPane,
 	}, nil
 }
 
