@@ -291,9 +291,16 @@ func runSessionStop(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	polecatMgr, _, err := getSessionManager(rigName)
+	polecatMgr, r, err := getSessionManager(rigName)
 	if err != nil {
 		return err
+	}
+
+	// Pre-shutdown checks (skip with --force)
+	if !sessionForce {
+		if err := runPreShutdownChecks(r, rigName, polecatName); err != nil {
+			return err
+		}
 	}
 
 	if sessionForce {
@@ -319,6 +326,93 @@ func runSessionStop(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// PreShutdownCheckResult holds the results of pre-shutdown verification.
+type PreShutdownCheckResult struct {
+	UncommittedFiles int
+	UnpushedCommits  int
+	StashCount       int
+	OpenIssue        string // non-empty if polecat has an assigned issue that's not closed
+}
+
+// HasProblems returns true if any pre-shutdown check failed.
+func (r *PreShutdownCheckResult) HasProblems() bool {
+	return r.UncommittedFiles > 0 || r.UnpushedCommits > 0 || r.StashCount > 0 || r.OpenIssue != ""
+}
+
+// runPreShutdownChecks verifies the polecat is in a clean state before stopping.
+// Returns an error with fix instructions if checks fail.
+func runPreShutdownChecks(r *rig.Rig, rigName, polecatName string) error {
+	// Get polecat info for clone path and issue
+	mgr, _, err := getPolecatManager(rigName)
+	if err != nil {
+		// Can't resolve polecat — skip checks rather than block stop
+		return nil
+	}
+
+	p, err := mgr.Get(polecatName)
+	if err != nil {
+		// Polecat not found in manager (maybe K8s or already removed) — skip checks
+		return nil
+	}
+
+	result := &PreShutdownCheckResult{}
+
+	// Check 1: Git working tree clean + commits pushed
+	gitState, err := getGitState(p.ClonePath)
+	if err == nil {
+		result.UncommittedFiles = len(gitState.UncommittedFiles)
+		result.UnpushedCommits = gitState.UnpushedCommits
+		result.StashCount = gitState.StashCount
+	}
+	// If git check fails, skip gracefully — don't block stop
+
+	// Check 2: Assigned issue handled
+	if p.Issue != "" {
+		result.OpenIssue = p.Issue
+	}
+
+	if !result.HasProblems() {
+		return nil
+	}
+
+	// Build error message with fix instructions
+	fmt.Printf("\n%s Pre-shutdown checks failed for %s/%s:\n\n",
+		style.Error.Render("Error:"), rigName, polecatName)
+
+	if result.UncommittedFiles > 0 {
+		fmt.Printf("  %s %d uncommitted file(s)\n",
+			style.Warning.Render("●"), result.UncommittedFiles)
+	}
+	if result.UnpushedCommits > 0 {
+		fmt.Printf("  %s %d unpushed commit(s)\n",
+			style.Warning.Render("●"), result.UnpushedCommits)
+	}
+	if result.StashCount > 0 {
+		fmt.Printf("  %s %d stash(es)\n",
+			style.Warning.Render("●"), result.StashCount)
+	}
+	if result.OpenIssue != "" {
+		fmt.Printf("  %s assigned issue %s still open\n",
+			style.Warning.Render("●"), result.OpenIssue)
+	}
+
+	fmt.Println()
+	fmt.Println("Fix before stopping:")
+	if result.UncommittedFiles > 0 {
+		fmt.Printf("  git add . && git commit  %s\n", style.Dim.Render("# in polecat worktree"))
+	}
+	if result.UnpushedCommits > 0 {
+		fmt.Printf("  git push                 %s\n", style.Dim.Render("# in polecat worktree"))
+	}
+	if result.OpenIssue != "" {
+		fmt.Printf("  bd close %s           %s\n", result.OpenIssue, style.Dim.Render("# or reassign"))
+	}
+	fmt.Println()
+	fmt.Printf("Or use %s to bypass checks.\n", style.Bold.Render("--force"))
+
+	return fmt.Errorf("pre-shutdown checks failed (use --force to override)")
 }
 
 func runSessionAttach(cmd *cobra.Command, args []string) error {
