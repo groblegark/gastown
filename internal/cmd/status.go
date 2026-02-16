@@ -19,6 +19,7 @@ import (
 	"github.com/steveyegge/gastown/internal/crew"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/mail"
+	"github.com/steveyegge/gastown/internal/monitoring"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/registry"
 	"github.com/steveyegge/gastown/internal/style"
@@ -85,9 +86,10 @@ type AgentRuntime struct {
 	WorkTitle    string `json:"work_title,omitempty"`    // Title of pinned work
 	HookBead     string `json:"hook_bead,omitempty"`     // Pinned bead ID from agent bead
 	State        string `json:"state,omitempty"`         // Agent state from agent bead
-	Target       string `json:"target,omitempty"`        // Execution target: "local" or "k8s"
-	UnreadMail   int    `json:"unread_mail"`             // Number of unread messages
-	FirstSubject string `json:"first_subject,omitempty"` // Subject of first unread message
+	Target         string `json:"target,omitempty"`          // Execution target: "local" or "k8s"
+	InferredStatus string `json:"inferred_status,omitempty"` // Monitoring-inferred status
+	UnreadMail     int    `json:"unread_mail"`               // Number of unread messages
+	FirstSubject   string `json:"first_subject,omitempty"`   // Subject of first unread message
 }
 
 // RigStatus represents status of a single rig.
@@ -714,7 +716,12 @@ func renderAgentDetails(agent AgentRuntime, indent string, hooks []AgentHookInfo
 
 	fmt.Printf("%s  hook: %s\n", indent, hookStr)
 
-	// Line 3: Mail (if any unread)
+	// Line 3: Inferred monitoring status (if set)
+	if agent.InferredStatus != "" {
+		fmt.Printf("%s  status: %s\n", indent, agent.InferredStatus)
+	}
+
+	// Line 4: Mail (if any unread)
 	if agent.UnreadMail > 0 {
 		mailStr := fmt.Sprintf("📬 %d unread", agent.UnreadMail)
 		if agent.FirstSubject != "" {
@@ -901,6 +908,48 @@ func buildStatusIndicator(agent AgentRuntime) string {
 	return indicator
 }
 
+// inferAgentStatus maps observable state (tmux liveness) and bead state
+// to a monitoring.AgentStatus string for the InferredStatus field.
+func inferAgentStatus(agent AgentRuntime) string {
+	// K8s polecats: map bead state directly
+	if agent.Target == "k8s" {
+		switch agent.State {
+		case "spawning":
+			return string(monitoring.StatusWorking)
+		case "working":
+			return string(monitoring.StatusWorking)
+		case "done":
+			return string(monitoring.StatusAvailable)
+		case "stuck":
+			return string(monitoring.StatusError)
+		default:
+			return string(monitoring.StatusOffline)
+		}
+	}
+
+	// Local agents: primary signal is tmux liveness
+	if !agent.Running {
+		return string(monitoring.StatusOffline)
+	}
+
+	// Running — refine from bead state
+	switch agent.State {
+	case "stuck":
+		return string(monitoring.StatusError)
+	case "awaiting-gate":
+		return string(monitoring.StatusBlocked)
+	case "paused", "muted":
+		return string(monitoring.StatusPaused)
+	case "degraded":
+		return string(monitoring.StatusError)
+	default:
+		if agent.HasWork {
+			return string(monitoring.StatusWorking)
+		}
+		return string(monitoring.StatusAvailable)
+	}
+}
+
 // formatHookInfo formats the hook bead and title for display
 func formatHookInfo(hookBead, title string, maxLen int) string {
 	if hookBead == "" {
@@ -1042,6 +1091,9 @@ func discoverGlobalAgents(allSessions map[string]bool, allAgentBeads map[string]
 			if !skipMail {
 				populateMailInfo(&agent, mailRouter)
 			}
+
+			// Infer monitoring status from observable + bead state
+			agent.InferredStatus = inferAgentStatus(agent)
 
 			agents[idx] = agent
 		}(i, def)
@@ -1201,6 +1253,9 @@ func discoverRigAgents(allSessions map[string]bool, r *rig.Rig, crews []string, 
 			if !skipMail {
 				populateMailInfo(&agent, mailRouter)
 			}
+
+			// Infer monitoring status from observable + bead state
+			agent.InferredStatus = inferAgentStatus(agent)
 
 			agents[idx] = agent
 		}(i, def)
