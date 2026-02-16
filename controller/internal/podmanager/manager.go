@@ -997,6 +997,7 @@ func (m *K8sManager) buildInitCloneContainer(spec AgentPodSpec) *corev1.Containe
 		// Clone from in-cluster git mirror (fast, cached).
 		script = fmt.Sprintf(`set -e
 apk add --no-cache git
+git config --global --add safe.directory '*'
 WORK_DIR="%s/%s/work"
 if [ -d "$WORK_DIR/.git" ]; then
   echo "Repo already cloned, fetching updates..."
@@ -1021,6 +1022,7 @@ fi
 		// No git mirror available — clone directly from GitHub.
 		script = fmt.Sprintf(`set -e
 apk add --no-cache git
+git config --global --add safe.directory '*'
 WORK_DIR="%s/%s/work"
 if [ -d "$WORK_DIR/.git" ]; then
   echo "Repo already cloned, fetching updates..."
