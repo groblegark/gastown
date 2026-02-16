@@ -7,7 +7,7 @@ go-version=1.25
 go-deps-last-update=2026-02-14
 
 # Coop binary releases
-coop-version-latest=v0.11.26
+coop-version-latest=v0.12.1
 coop-cache-refresh=2026-03-15
 
 # Beads (bd) binary releases
