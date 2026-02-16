@@ -568,7 +568,9 @@ CLAUDEMD
 fi
 
 # ── Append toolchain sidecar section to CLAUDE.md if sidecar is configured ──
-if [ -n "${GT_TOOLCHAIN_PROFILE:-}" ] || [ -n "${GT_TOOLCHAIN_IMAGE:-}" ]; then
+# Guard: only append once (prevents duplication on pod restarts)
+if ( [ -n "${GT_TOOLCHAIN_PROFILE:-}" ] || [ -n "${GT_TOOLCHAIN_IMAGE:-}" ] ) && \
+   ! grep -q "## Toolchain Sidecar" "${WORKSPACE}/CLAUDE.md" 2>/dev/null; then
     cat >> "${WORKSPACE}/CLAUDE.md" <<'TOOLCHAIN'
 
 ## Toolchain Sidecar
