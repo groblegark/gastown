@@ -971,10 +971,14 @@ func roleNeedsCode(role string) bool {
 }
 
 // buildInitCloneContainer creates an init container that clones the rig's repo
-// from the in-cluster git mirror. Returns nil if the role doesn't need code
-// or no git mirror is configured.
+// into the workspace. Prefers in-cluster git mirror for speed, falls back to
+// cloning directly from GitURL (GitHub) when no mirror is available.
+// Returns nil if the role doesn't need code or no clone source is configured.
 func (m *K8sManager) buildInitCloneContainer(spec AgentPodSpec) *corev1.Container {
-	if spec.GitMirrorService == "" || !roleNeedsCode(spec.Role) {
+	if !roleNeedsCode(spec.Role) {
+		return nil
+	}
+	if spec.GitMirrorService == "" && spec.GitURL == "" {
 		return nil
 	}
 
@@ -983,8 +987,10 @@ func (m *K8sManager) buildInitCloneContainer(spec AgentPodSpec) *corev1.Containe
 		branch = "main"
 	}
 
-	// Clone from git mirror into workspace/{rig}/work/, set origin to real URL.
-	script := fmt.Sprintf(`set -e
+	var script string
+	if spec.GitMirrorService != "" {
+		// Clone from in-cluster git mirror (fast, cached).
+		script = fmt.Sprintf(`set -e
 apk add --no-cache git
 WORK_DIR="%s/%s/work"
 if [ -d "$WORK_DIR/.git" ]; then
@@ -1001,10 +1007,29 @@ else
 fi
 `, MountWorkspace, spec.Rig, branch, spec.GitMirrorService, branch, spec.GitMirrorService, GitDaemonPort, spec.Rig)
 
-	// Set origin to actual GitHub URL for pushes.
-	if spec.GitURL != "" {
-		script += fmt.Sprintf(`git remote set-url origin %s
+		// Set origin to actual GitHub URL for pushes.
+		if spec.GitURL != "" {
+			script += fmt.Sprintf(`git remote set-url origin %s
 `, spec.GitURL)
+		}
+	} else {
+		// No git mirror available — clone directly from GitHub.
+		script = fmt.Sprintf(`set -e
+apk add --no-cache git
+WORK_DIR="%s/%s/work"
+if [ -d "$WORK_DIR/.git" ]; then
+  echo "Repo already cloned, fetching updates..."
+  cd "$WORK_DIR"
+  git fetch --all --prune
+  git checkout %s
+  git pull --ff-only || true
+else
+  echo "Cloning from %s (no git mirror)..."
+  mkdir -p "$(dirname "$WORK_DIR")"
+  git clone -b %s %s "$WORK_DIR"
+  cd "$WORK_DIR"
+fi
+`, MountWorkspace, spec.Rig, branch, spec.GitURL, branch, spec.GitURL)
 	}
 
 	// Configure git identity from agent env vars.
