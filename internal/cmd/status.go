@@ -22,6 +22,7 @@ import (
 	"github.com/steveyegge/gastown/internal/monitoring"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/registry"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
 	"golang.org/x/term"
@@ -1024,7 +1025,7 @@ func discoverRigHooks(r *rig.Rig, crews []string) []AgentHookInfo {
 func discoverGlobalAgents(allSessions map[string]bool, allAgentBeads map[string]*beads.Issue, allHookBeads map[string]*beads.Issue, mailRouter *mail.Router, skipMail bool) []AgentRuntime {
 	// Get session names dynamically
 	mayorSession := getMayorSessionName()
-	deaconSession := getDeaconSessionName()
+	deaconSession := session.DeaconSessionName()
 	bootSession := getBootSessionName()
 
 	// Define agents to discover

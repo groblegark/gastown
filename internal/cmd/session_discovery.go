@@ -101,3 +101,52 @@ func collectAllAgentBeads(townRoot string) map[string]*beads.Issue {
 
 	return allAgents
 }
+
+// discoverRigs finds all rigs in the town.
+func discoverRigs(townRoot string) []string {
+	var rigs []string
+
+	// Try rigs.json first
+	if rigsConfig, err := loadRigsConfigBeadsFirst(townRoot); err == nil {
+		for name := range rigsConfig.Rigs {
+			rigs = append(rigs, name)
+		}
+		return rigs
+	}
+
+	// Fallback: scan directory for rig-like directories
+	entries, err := os.ReadDir(townRoot)
+	if err != nil {
+		return rigs
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		// Skip known non-rig directories
+		if name == "mayor" || name == "daemon" || name == "deacon" ||
+			name == ".git" || name == "docs" || name[0] == '.' {
+			continue
+		}
+
+		dirPath := filepath.Join(townRoot, name)
+
+		// Check for .beads directory (indicates a rig)
+		beadsPath := filepath.Join(dirPath, ".beads")
+		if _, err := os.Stat(beadsPath); err == nil {
+			rigs = append(rigs, name)
+			continue
+		}
+
+		// Check for polecats directory (indicates a rig)
+		polecatsPath := filepath.Join(dirPath, "polecats")
+		if _, err := os.Stat(polecatsPath); err == nil {
+			rigs = append(rigs, name)
+		}
+	}
+
+	return rigs
+}

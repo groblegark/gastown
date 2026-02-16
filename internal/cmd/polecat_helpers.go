@@ -9,7 +9,42 @@ import (
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/workspace"
 )
+
+// parseAddress parses "rig/polecat" format.
+// If no "/" is present, attempts to infer rig from current directory.
+func parseAddress(addr string) (rigName, polecatName string, err error) {
+	parts := strings.SplitN(addr, "/", 2)
+	if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+		return parts[0], parts[1], nil
+	}
+
+	// No slash - try to infer rig from cwd
+	if !strings.Contains(addr, "/") && addr != "" {
+		townRoot, err := workspace.FindFromCwd()
+		if err == nil && townRoot != "" {
+			inferredRig, err := inferRigFromCwd(townRoot)
+			if err == nil && inferredRig != "" {
+				return inferredRig, addr, nil
+			}
+		}
+	}
+
+	return "", "", fmt.Errorf("invalid address format: expected 'rig/polecat', got '%s'", addr)
+}
+
+// getSessionManager creates a session manager for the given rig.
+func getSessionManager(rigName string) (*polecat.SessionManager, *rig.Rig, error) {
+	_, r, err := getRig(rigName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	polecatMgr := polecat.NewSessionManager(r)
+
+	return polecatMgr, r, nil
+}
 
 // polecatTarget represents a polecat to operate on.
 type polecatTarget struct {

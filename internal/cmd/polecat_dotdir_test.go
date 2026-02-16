@@ -1,14 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/config"
 )
 
@@ -33,114 +30,6 @@ func TestDiscoverHooksSkipsPolecatDotDirs(t *testing.T) {
 
 	if len(hooks) != 0 {
 		t.Fatalf("expected no hooks, got %d", len(hooks))
-	}
-}
-
-func TestStartPolecatsWithWorkSkipsDotDirs(t *testing.T) {
-	townRoot := setupTestTownForDotDir(t)
-	rigName := "gastown"
-	rigPath := filepath.Join(townRoot, rigName)
-
-	addRigEntry(t, townRoot, rigName)
-
-	if err := os.MkdirAll(filepath.Join(rigPath, "polecats", ".claude"), 0755); err != nil {
-		t.Fatalf("mkdir .claude polecat: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(rigPath, "polecats", "toast"), 0755); err != nil {
-		t.Fatalf("mkdir polecat: %v", err)
-	}
-
-	binDir := t.TempDir()
-	bdScript := `#!/bin/sh
-if [ "$1" = "--no-daemon" ]; then
-  shift
-fi
-cmd="$1"
-case "$cmd" in
-  list)
-    if [ "$(basename "$PWD")" = ".claude" ]; then
-      echo '[{"id":"gt-1"}]'
-    else
-      echo '[]'
-    fi
-    exit 0
-    ;;
-  *)
-    exit 0
-    ;;
-esac
-`
-	writeScript(t, binDir, "bd", bdScript)
-
-	tmuxScript := `#!/bin/sh
-if [ "$1" = "has-session" ]; then
-  echo "tmux error" 1>&2
-  exit 1
-fi
-exit 0
-`
-	writeScript(t, binDir, "tmux", tmuxScript)
-
-	t.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(cwd) })
-	if err := os.Chdir(townRoot); err != nil {
-		t.Fatalf("chdir town root: %v", err)
-	}
-
-	started, errs := startPolecatsWithWork(townRoot, rigName)
-
-	if len(started) != 0 {
-		t.Fatalf("expected no polecats started, got %v", started)
-	}
-	if len(errs) != 0 {
-		t.Fatalf("expected no errors, got %v", errs)
-	}
-}
-
-func TestRunSessionCheckSkipsDotDirs(t *testing.T) {
-	townRoot := setupTestTownForDotDir(t)
-	rigName := "gastown"
-	rigPath := filepath.Join(townRoot, rigName)
-
-	addRigEntry(t, townRoot, rigName)
-
-	if err := os.MkdirAll(filepath.Join(rigPath, "polecats", ".claude"), 0755); err != nil {
-		t.Fatalf("mkdir .claude polecat: %v", err)
-	}
-
-	binDir := t.TempDir()
-	tmuxScript := `#!/bin/sh
-if [ "$1" = "has-session" ]; then
-  echo "can't find session" 1>&2
-  exit 1
-fi
-exit 0
-`
-	writeScript(t, binDir, "tmux", tmuxScript)
-	t.Setenv("PATH", fmt.Sprintf("%s:%s", binDir, os.Getenv("PATH")))
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(cwd) })
-	if err := os.Chdir(townRoot); err != nil {
-		t.Fatalf("chdir town root: %v", err)
-	}
-
-	output := captureStdout(t, func() {
-		if err := runSessionCheck(&cobra.Command{}, []string{rigName}); err != nil {
-			t.Fatalf("runSessionCheck: %v", err)
-		}
-	})
-
-	if strings.Contains(output, ".claude") {
-		t.Fatalf("expected .claude to be ignored, output:\n%s", output)
 	}
 }
 

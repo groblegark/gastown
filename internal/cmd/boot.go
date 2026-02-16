@@ -285,7 +285,7 @@ func runDegradedTriage(b *boot.Boot) (action, target string, err error) {
 	backend := b.Backend()
 
 	// Check if Deacon session exists
-	deaconSession := getDeaconSessionName()
+	deaconSession := session.DeaconSessionName()
 	hasDeacon, checkErr := backend.HasSession(deaconSession)
 	if checkErr != nil {
 		return "error", "deacon", fmt.Errorf("checking deacon session: %w", checkErr)
