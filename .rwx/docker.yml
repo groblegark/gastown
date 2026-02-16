@@ -281,10 +281,10 @@ tasks:
     run: |
       export DEBIAN_FRONTEND=noninteractive
 
-      # Save artifact paths before entering sudo (shell quotes get tricky inside heredocs)
-      GT_BIN="${{ tasks.build-gt.artifacts.gt-binary }}"
-      COOP_DIR="${{ tasks.download-coop.artifacts.coop-binaries }}"
-      BD_DIR="${{ tasks.download-bd.artifacts.bd-binaries }}"
+      # Export artifact paths so sudo -E can pass them into the bash -c block.
+      export GT_BIN="${{ tasks.build-gt.artifacts.gt-binary }}"
+      export COOP_DIR="${{ tasks.download-coop.artifacts.coop-binaries }}"
+      export BD_DIR="${{ tasks.download-bd.artifacts.bd-binaries }}"
 
       # Run ALL apt and sudo operations in a single sudo bash -c block.
       # WORKAROUND: dpkg operations (apt-get install) corrupt /etc/shadow
