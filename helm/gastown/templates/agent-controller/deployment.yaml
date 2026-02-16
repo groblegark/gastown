@@ -105,6 +105,10 @@ spec:
             - name: COOP_MUX_URL
               value: {{ include "gastown.coopBroker.muxServiceURL" . }}
             {{- end }}
+            {{- if .Values.agentController.rwxTokenSecret }}
+            - name: RWX_TOKEN_SECRET
+              value: {{ .Values.agentController.rwxTokenSecret }}
+            {{- end }}
             {{- if .Values.agentController.sidecarProfiles }}
             - name: SIDECAR_PROFILES_JSON
               value: {{ .Values.agentController.sidecarProfiles | toJson | quote }}

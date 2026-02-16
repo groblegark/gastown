@@ -420,6 +420,9 @@ agentController:
   #   usernameProperty: "username"
   #   tokenProperty: "token"
 
+  # K8s secret with RWX access token for agent pods (CI/CD operations)
+  rwxTokenSecret: ""
+
   # K8s secret with NATS auth token for agent pods
   natsTokenSecret: ""
 

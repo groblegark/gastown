@@ -581,6 +581,15 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		}
 	}
 
+	// RWX access token for CI/CD operations inside agent pods.
+	if cfg.RWXTokenSecret != "" {
+		spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
+			EnvName:    "RWX_ACCESS_TOKEN",
+			SecretName: cfg.RWXTokenSecret,
+			SecretKey:  "token",
+		})
+	}
+
 	// Wire mux registration URL and auth token. Agent pods auto-register
 	// with the mux on startup and re-register via heartbeat after restarts.
 	if cfg.CoopMuxURL != "" {

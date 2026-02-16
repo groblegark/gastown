@@ -18,4 +18,4 @@ rwx image build -f .rwx/docker.yml --target image-toolchain \
 
 ## Tools included
 
-Go, Node.js, Python, AWS CLI, Docker CLI (client only), Rust Analyzer, gopls, git, jq, make, curl.
+Go, Node.js, Python, AWS CLI, Docker CLI (client only), Rust Analyzer, gopls, kubectl, RWX CLI, git, jq, make, curl.

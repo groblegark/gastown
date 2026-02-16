@@ -147,6 +147,14 @@ serviceAccount:
   #   eks.amazonaws.com/role-arn: arn:aws:iam::role/agent-pod-role
 
 # =============================================================================
+# RBAC (namespace-scoped Role + RoleBinding)
+# =============================================================================
+rbac:
+  # Create a Role and RoleBinding granting the agent ServiceAccount
+  # namespace-scoped permissions (pods, secrets, configmaps, events, PVCs, services).
+  create: true
+
+# =============================================================================
 # External Secrets (Anthropic API key + git credentials from AWS Secrets Manager)
 # =============================================================================
 externalSecrets:

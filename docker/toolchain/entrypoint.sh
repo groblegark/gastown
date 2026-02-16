@@ -14,7 +14,7 @@ mkdir -p "${TOOLBIN}"
 
 # List of binaries to export to the shared volume.
 # These are tools the agent container needs to run directly (not via kubectl exec).
-EXPORT_BINS="gopls rust-analyzer"
+EXPORT_BINS="gopls rust-analyzer kubectl rwx"
 
 for bin in ${EXPORT_BINS}; do
     src=$(command -v "${bin}" 2>/dev/null) || continue

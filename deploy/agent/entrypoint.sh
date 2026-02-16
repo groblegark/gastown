@@ -610,6 +610,8 @@ TOOLCHAIN
 | Python 3 | `gt toolchain exec -- python3` |
 | AWS CLI | `gt toolchain exec -- aws` |
 | Docker CLI | `gt toolchain exec -- docker` (client only) |
+| kubectl | `gt toolchain exec -- kubectl` (or direct via PATH) |
+| RWX CLI | `gt toolchain exec -- rwx` (or direct via PATH) |
 | Kaniko | `gt toolchain exec -- kaniko` (image builder) |
 | git, jq, make, curl | Base tools |
 TOOLCHAIN_FULL
