@@ -684,12 +684,14 @@ auto_bypass_startup() {
 
             # Handle "Detected a custom API key" prompt (bd-e2ege).
             # Claude Code detects sk-ant-* tokens in credentials and prompts.
-            # "No (recommended)" is pre-selected — press Enter to dismiss.
+            # Select "Yes" (option 1) to use it — the token is valid even though
+            # it's stored in the OAuth credential slot.
             if echo "${screen}" | grep -q "Detected a custom API key"; then
-                echo "[entrypoint] Detected API key prompt, pressing Enter to dismiss (use OAuth instead)"
+                echo "[entrypoint] Detected API key prompt, selecting 'Yes' to use it"
+                # Navigate to option 1 (Yes) with Up arrow, then Enter to confirm
                 curl -sf -X POST http://localhost:8080/api/v1/input/keys \
                     -H 'Content-Type: application/json' \
-                    -d '{"keys":["Return"]}' 2>&1 || true
+                    -d '{"keys":["Up","Return"]}' 2>&1 || true
                 sleep 3
                 continue
             fi
