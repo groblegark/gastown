@@ -16,8 +16,7 @@ import (
 const DefaultCoopPort = 8080
 
 // CoopPodConnection manages a kubectl port-forward to a K8s pod running coop.
-// Unlike PodConnection (which uses tmux + kubectl exec + screen), this connects
-// to the pod's coop HTTP/WebSocket API via a local port forward.
+// It connects to the pod's coop HTTP/WebSocket API via a local port forward.
 //
 // Usage:
 //  1. Open() starts kubectl port-forward and waits for coop to respond

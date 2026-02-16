@@ -80,8 +80,8 @@ func TestRefresh_EmptyInventory(t *testing.T) {
 func TestRefresh_DiscoversPods(t *testing.T) {
 	source := &mockPodSource{
 		pods: []*PodInfo{
-			{AgentID: "gt-gastown-alpha", PodName: "alpha-pod-abc", PodIP: "10.0.0.1", PodNode: "node-1", PodStatus: "running", ScreenSession: "agent"},
-			{AgentID: "gt-gastown-bravo", PodName: "bravo-pod-def", PodIP: "10.0.0.2", PodNode: "node-2", PodStatus: "running", ScreenSession: "agent"},
+			{AgentID: "gt-gastown-alpha", PodName: "alpha-pod-abc", PodIP: "10.0.0.1", PodNode: "node-1", PodStatus: "running"},
+			{AgentID: "gt-gastown-bravo", PodName: "bravo-pod-def", PodIP: "10.0.0.2", PodNode: "node-2", PodStatus: "running"},
 		},
 	}
 	pi := NewPodInventory(PodInventoryConfig{Source: source})

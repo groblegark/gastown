@@ -17,9 +17,7 @@ func MayorSessionName() string {
 	return HQPrefix + "mayor"
 }
 
-// MayorK8sSessionName returns the tmux session name used by the terminal
-// server when bridging to a K8s mayor pod. Matches the naming convention
-// in internal/terminal/server.go agentIDToSessionName("town/mayor/hq").
+// MayorK8sSessionName returns the tmux session name for a K8s mayor pod.
 func MayorK8sSessionName() string {
 	return Prefix + "town-mayor-hq"
 }

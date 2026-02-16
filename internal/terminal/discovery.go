@@ -12,14 +12,13 @@ import (
 
 // PodInfo contains information about an agent's K8s pod.
 type PodInfo struct {
-	AgentID       string    `json:"agent_id"`
-	PodName       string    `json:"pod_name"`
-	PodIP         string    `json:"pod_ip"`
-	PodNode       string    `json:"pod_node"`
-	PodStatus     string    `json:"pod_status"`
-	ScreenSession string    `json:"screen_session"`
-	Connected     bool      `json:"-"`
-	LastSeen      time.Time `json:"-"`
+	AgentID   string    `json:"agent_id"`
+	PodName   string    `json:"pod_name"`
+	PodIP     string    `json:"pod_ip"`
+	PodNode   string    `json:"pod_node"`
+	PodStatus string    `json:"pod_status"`
+	Connected bool      `json:"-"`
+	LastSeen  time.Time `json:"-"`
 }
 
 // PodEventType represents the type of pod lifecycle event.
@@ -53,12 +52,11 @@ type podListResponse struct {
 
 // podListEntry represents one agent in the pod-list response.
 type podListEntry struct {
-	AgentID       string `json:"agent_id"`
-	PodName       string `json:"pod_name"`
-	PodIP         string `json:"pod_ip"`
-	PodNode       string `json:"pod_node"`
-	PodStatus     string `json:"pod_status"`
-	ScreenSession string `json:"screen_session"`
+	AgentID   string `json:"agent_id"`
+	PodName   string `json:"pod_name"`
+	PodIP     string `json:"pod_ip"`
+	PodNode   string `json:"pod_node"`
+	PodStatus string `json:"pod_status"`
 }
 
 // CLIPodSource queries bd agent pod-list for pod information.
@@ -86,13 +84,12 @@ func (s *CLIPodSource) ListPods(ctx context.Context) ([]*PodInfo, error) {
 	pods := make([]*PodInfo, 0, len(resp.Agents))
 	for _, entry := range resp.Agents {
 		pods = append(pods, &PodInfo{
-			AgentID:       entry.AgentID,
-			PodName:       entry.PodName,
-			PodIP:         entry.PodIP,
-			PodNode:       entry.PodNode,
-			PodStatus:     entry.PodStatus,
-			ScreenSession: entry.ScreenSession,
-			LastSeen:      time.Now(),
+			AgentID:   entry.AgentID,
+			PodName:   entry.PodName,
+			PodIP:     entry.PodIP,
+			PodNode:   entry.PodNode,
+			PodStatus: entry.PodStatus,
+			LastSeen:  time.Now(),
 		})
 	}
 	return pods, nil
