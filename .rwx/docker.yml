@@ -10,6 +10,12 @@
 #   image-*  tasks → install runtime deps + configure $RWX_IMAGE metadata
 #   Push is handled by rwx image build --target <task> --push-to <registry>
 #
+# VERSIONING:
+# All component versions are pinned in platform-versions.env (repo root).
+# All images are tagged with PLATFORM_VERSION (CalVer: YYYY.MM.DD.N).
+# To rebuild: bump versions in platform-versions.env, commit, run:
+#   rwx run .rwx/docker.yml --init commit-sha=$(git rev-parse HEAD) --wait
+#
 # OPTIMIZATIONS:
 # - Filter directives on Go mod downloads (cached by go.mod/go.sum)
 # - Parallel builds with filter caching for dependency stability
@@ -22,14 +28,12 @@ on:
       init:
         commit-sha: ${{ event.git.sha }}
         ref-name: ${{ event.git.ref }}
-        coop-version: latest
       status-checks:
         name: Docker
     pull_request:
       init:
         commit-sha: ${{ event.git.sha }}
         ref-name: pr
-        coop-version: latest
       status-checks:
         - tasks: [build-gt, build-controller, download-coop, download-bd]
           name: Docker
@@ -38,17 +42,11 @@ on:
       init:
         commit-sha: ${{ event.git.sha }}
         ref-name: ${{ event.dispatch.params.trigger-source }}
-        coop-version: ${{ event.dispatch.params.coop-version }}
       params:
         - key: trigger-source
           name: Trigger source
           description: What triggered the rebuild (e.g. coop-release, beads-release)
           default: manual
-          required: false
-        - key: coop-version
-          name: Coop version
-          description: Coop release tag to pin (e.g. v0.11.20). Defaults to latest.
-          default: latest
           required: false
       title: Agent rebuild (${{ init.ref-name }})
       target: image-agent
@@ -56,7 +54,6 @@ on:
     init:
       commit-sha: ${{ event.git.sha }}
       ref-name: cli
-      coop-version: latest
 
 base:
   image: ubuntu:24.04
@@ -89,21 +86,24 @@ tasks:
       - go.sum
 
   # ── Build gt CLI binary → artifact ──────────────────────────────────
+  # Reads GASTOWN_VERSION and PLATFORM_VERSION from platform-versions.env
+  # for ldflags so `gt version` reports the correct version.
   - key: build-gt
-    use: go-deps
+    use: [go-deps]
     run: |
-      REF_NAME="${REF_NAME#refs/tags/}"
-      REF_NAME="${REF_NAME#refs/heads/}"
+      source platform-versions.env
       CGO_ENABLED=0 GOOS=linux go build \
         -ldflags="-s -w \
-          -X github.com/steveyegge/gastown/internal/cmd.Version=${REF_NAME} \
+          -X github.com/steveyegge/gastown/internal/cmd.Version=${GASTOWN_VERSION} \
           -X github.com/steveyegge/gastown/internal/cmd.Commit=${COMMIT_SHA} \
           -X github.com/steveyegge/gastown/internal/cmd.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+          -X github.com/steveyegge/gastown/internal/cmd.PlatformVersion=${PLATFORM_VERSION} \
           -X github.com/steveyegge/gastown/internal/cmd.BuiltProperly=1" \
         -o gt ./cmd/gt
     env:
       COMMIT_SHA: ${{ init.commit-sha }}
-      REF_NAME: ${{ init.ref-name }}
+    filter:
+      - platform-versions.env
     outputs:
       artifacts:
         - key: gt-binary
@@ -113,60 +113,58 @@ tasks:
   - key: build-controller
     use: [code, go]
     run: |
+      source platform-versions.env
       cd controller
       go mod download
       CGO_ENABLED=0 GOOS=linux go build \
-        -ldflags="-s -w -X main.version=${REF_NAME} -X main.commit=${COMMIT_SHA}" \
+        -ldflags="-s -w -X main.version=${PLATFORM_VERSION} -X main.commit=${COMMIT_SHA}" \
         -o ../controller-bin ./cmd/controller/
     env:
       COMMIT_SHA: ${{ init.commit-sha }}
-      REF_NAME: ${{ init.ref-name }}
     filter:
       - controller/**/*.go
       - controller/go.mod
       - controller/go.sum
+      - platform-versions.env
     outputs:
       artifacts:
         - key: controller-binary
           path: controller-bin
 
-  # ── Download coop from releases → artifact (parallel, cached monthly) ─
+  # ── Download coop from releases → artifact (pinned by platform-versions.env) ─
   - key: download-coop
+    use: code
     run: |
       set -ex
-      COOP_VER="${COOP_VERSION:-latest}"
-      if [ "$COOP_VER" = "latest" ] || [ -z "$COOP_VER" ]; then
-        COOP_VER=$(curl -fsSL https://api.github.com/repos/groblegark/coop/releases/latest | jq -r .tag_name)
-      fi
-      echo "Downloading coop ${COOP_VER} for linux-amd64"
-      curl -fsSL "https://github.com/groblegark/coop/releases/download/${COOP_VER}/coop-linux-amd64.tar.gz" \
+      source platform-versions.env
+      echo "Downloading coop ${COOP_VERSION} for linux-amd64"
+      curl -fsSL "https://github.com/groblegark/coop/releases/download/${COOP_VERSION}/coop-linux-amd64.tar.gz" \
         -o /tmp/coop.tar.gz
       mkdir -p coop-bin
       tar -xzf /tmp/coop.tar.gz -C coop-bin
       ls -la coop-bin/
-    env:
-      COOP_VERSION: ${{ init.coop-version }}
     filter:
-      - .rwx/cache-config.lock
+      - platform-versions.env
     outputs:
       artifacts:
         - key: coop-binaries
           path: coop-bin
 
-  # ── Download bd from releases → artifact (parallel, cached monthly) ──
+  # ── Download bd from releases → artifact (pinned by platform-versions.env) ──
   - key: download-bd
+    use: code
     run: |
       set -ex
-      BD_VERSION=$(curl -fsSL https://api.github.com/repos/groblegark/beads/releases/latest | jq -r .tag_name)
-      VERSION_NUM=${BD_VERSION#v}
-      echo "Downloading bd ${BD_VERSION} for linux_amd64"
-      curl -fsSL "https://github.com/groblegark/beads/releases/download/${BD_VERSION}/beads_${VERSION_NUM}_linux_amd64.tar.gz" \
+      source platform-versions.env
+      VERSION_NUM=${BEADS_VERSION#v}
+      echo "Downloading bd ${BEADS_VERSION} for linux_amd64"
+      curl -fsSL "https://github.com/groblegark/beads/releases/download/${BEADS_VERSION}/beads_${VERSION_NUM}_linux_amd64.tar.gz" \
         -o /tmp/bd.tar.gz
       mkdir -p bd-bin
       tar -xzf /tmp/bd.tar.gz -C bd-bin
       ls -la bd-bin/
     filter:
-      - .rwx/cache-config.lock
+      - platform-versions.env
     outputs:
       artifacts:
         - key: bd-binaries
@@ -175,10 +173,10 @@ tasks:
   # ═══════════════════════════════════════════════════════════════════════
   # Image tasks — RWX native images via $RWX_IMAGE.
   # These define the container filesystem and metadata.
-  # Push via: rwx image build -f .rwx/docker.yml --target <key> --push-to <ref>
+  # Push via: rwx image build -f .rwx/docker.yml --target <key> --push-to <registry>
   # ═══════════════════════════════════════════════════════════════════════
 
-  # ── gt CLI image (alpine + git + binary) ───────────────────────────
+  # ── gt CLI image (ubuntu + git + binary) ───────────────────────────
   - key: image-gt
     use: [build-gt]
     if: ${{ init.ref-name != 'pr' }}
@@ -226,6 +224,7 @@ tasks:
     filter:
       - deploy/agent/entrypoint.sh
       - .node-version
+      - platform-versions.env
     run: |
       # WORKAROUND: Do NOT run apt-get update/install here.
       # On multi-layer overlayfs (4 dependency layers), apt-get update
@@ -270,23 +269,29 @@ tasks:
       echo "agent" > $RWX_IMAGE/user
       echo "/home/agent/gt" > $RWX_IMAGE/workspace
 
-  # ── Toolchain image (Go + Node + Python + AWS/RWX/kubectl + Docker CLI) ──
+  # ── Toolchain image (Go + Node + Python + AWS/RWX/kubectl + Docker CLI + gt/bd/coop) ──
   - key: image-toolchain
-    use: code
+    use: [code, build-gt, download-coop, download-bd]
     if: ${{ init.ref-name != 'pr' }}
     filter:
       - .rwx/toolchain-version.lock
       - .go-version
       - .node-version
       - docker/toolchain/entrypoint.sh
+      - platform-versions.env
     run: |
       export DEBIAN_FRONTEND=noninteractive
+
+      # Save artifact paths before entering sudo (shell quotes get tricky inside heredocs)
+      GT_BIN="${{ tasks.build-gt.artifacts.gt-binary }}"
+      COOP_DIR="${{ tasks.download-coop.artifacts.coop-binaries }}"
+      BD_DIR="${{ tasks.download-bd.artifacts.bd-binaries }}"
 
       # Run ALL apt and sudo operations in a single sudo bash -c block.
       # WORKAROUND: dpkg operations (apt-get install) corrupt /etc/shadow
       # on RWX overlayfs, breaking subsequent sudo re-authentication.
       # A single sudo session avoids re-auth after corruption.
-      sudo bash -c '
+      sudo -E bash -c '
         set -e
 
         # Base tools
@@ -340,9 +345,18 @@ tasks:
           -o /usr/local/bin/rwx
         chmod +x /usr/local/bin/rwx
 
-        # Clean up
+        # Clean up apt
         apt-get clean
         rm -rf /var/lib/apt/lists/*
+
+        # Install gt, coop, coopmux, bd binaries (from build artifacts)
+        cp "${GT_BIN}" /usr/local/bin/gt
+        cp "${COOP_DIR}/coop" /usr/local/bin/coop
+        cp "${COOP_DIR}/coop-mux" /usr/local/bin/coop-mux 2>/dev/null || true
+        cp "${BD_DIR}/bd" /usr/local/bin/bd
+        ln -sf /usr/local/bin/coop-mux /usr/local/bin/coopmux
+        chmod +x /usr/local/bin/gt /usr/local/bin/coop /usr/local/bin/bd \
+          /usr/local/bin/coop-mux 2>/dev/null || true
 
         # Install entrypoint and create home dir
         cp docker/toolchain/entrypoint.sh /usr/local/bin/toolchain-entrypoint.sh

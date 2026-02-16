@@ -12,12 +12,15 @@ import (
 
 // Version information - set at build time via ldflags
 var (
-	Version = "0.7.6"
+	Version = "0.8.2"
 	// Build can be set via ldflags at compile time
 	Build = "dev"
 	// Commit and Branch - the git revision the binary was built from (optional ldflag)
 	Commit = ""
 	Branch = ""
+	// PlatformVersion is the unified CalVer tag (YYYY.MM.DD.N) shared by all
+	// gastown images (agent, controller, toolchain, gt). Set by docker.yml.
+	PlatformVersion = ""
 	// BuiltProperly is set to "1" by `make build`. If empty, the binary was built
 	// with raw `go build` and is likely unsigned (will be killed on macOS).
 	BuiltProperly = ""
@@ -37,6 +40,9 @@ var versionCmd = &cobra.Command{
 			fmt.Printf("gt version %s (%s: %s)\n", Version, Build, version.ShortCommit(commit))
 		} else {
 			fmt.Printf("gt version %s (%s)\n", Version, Build)
+		}
+		if PlatformVersion != "" {
+			fmt.Printf("platform %s\n", PlatformVersion)
 		}
 	},
 }
