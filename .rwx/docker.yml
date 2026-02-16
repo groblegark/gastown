@@ -697,3 +697,144 @@ tasks:
     env:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Helm auto-bump — update fics-helm-chart image tags after image pushes
+  # ═══════════════════════════════════════════════════════════════════════
+
+  - key: helm-bump
+    use: [code, push-agent, push-controller, push-toolchain]
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    run: |
+      set -e
+      source platform-versions.env
+
+      # Skip if no GitLab token configured
+      if [ -z "${GITLAB_TOKEN}" ]; then
+        echo "GITLAB_TOKEN not set — skipping helm auto-bump."
+        echo "To enable, add GITLAB_TOKEN to the RWX vault."
+        echo ""
+        echo "Manual bump command:"
+        echo "  cd ~/book/fics-helm-chart/charts/gastown"
+        echo "  sed -i '' -E 's|tag: \"20[0-9]{2}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g' values/gastown-next.yaml"
+        echo "  git add values/gastown-next.yaml && git commit -m 'chore: bump to ${PLATFORM_VERSION}' && git push"
+        exit 0
+      fi
+
+      # Clone fics-helm-chart
+      git clone "https://oauth2:${GITLAB_TOKEN}@gitlab.com/PiHealth/CoreFICS/fics-helm-chart.git" /tmp/helm-chart
+      cd /tmp/helm-chart
+
+      # Update gastown-next values: replace all CalVer image tags with new PLATFORM_VERSION.
+      VALUES="charts/gastown/values/gastown-next.yaml"
+      if [ -f "$VALUES" ]; then
+        # Replace tag: "YYYY.MM.DD.N" patterns
+        sed -i -E "s|tag: \"20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g" "$VALUES"
+        # Replace inline image references with CalVer tags
+        sed -i -E "s|gastown-toolchain:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|gastown-toolchain:${PLATFORM_VERSION}|g" "$VALUES"
+        sed -i -E "s|gastown-agent:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|gastown-agent:${PLATFORM_VERSION}|g" "$VALUES"
+        sed -i -E "s|agent-controller:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|agent-controller:${PLATFORM_VERSION}|g" "$VALUES"
+      fi
+
+      # Commit and push if there are changes
+      git config user.name "gastown-ci"
+      git config user.email "ci@gastown.dev"
+      git add -A
+      if git diff --cached --quiet; then
+        echo "No helm changes needed — tags already at ${PLATFORM_VERSION}"
+      else
+        git commit -m "chore(gastown-next): auto-bump images to ${PLATFORM_VERSION}
+
+Automated by gastown docker.yml pipeline.
+Trigger: ${REF_NAME}"
+        git push
+        echo "Helm values updated to ${PLATFORM_VERSION}"
+      fi
+    env:
+      GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+      REF_NAME: ${{ init.ref-name }}
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Deploy to gastown-rwx — auto-deploy after every successful image push
+  # ═══════════════════════════════════════════════════════════════════════
+
+  - key: deploy-rwx
+    use: [code, push-agent, push-controller, push-toolchain]
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    timeout: 15m
+    run: |
+      set -ex
+      source platform-versions.env
+
+      # Skip if no AWS credentials configured
+      if [ -z "${AWS_ACCESS_KEY_ID}" ]; then
+        echo "AWS credentials not set — skipping deploy-rwx."
+        echo "To enable, add E2E_AWS_ACCESS_KEY_ID and E2E_AWS_SECRET_ACCESS_KEY to the RWX vault."
+        exit 0
+      fi
+
+      # ── Install tools ──────────────────────────────────────────────────
+      # kubectl
+      KUBE_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+      curl -fsSL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
+      sudo install /tmp/kubectl /usr/local/bin/kubectl
+
+      # helm
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      # ── Configure kubeconfig ───────────────────────────────────────────
+      # Install AWS CLI (minimal)
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      unzip -q /tmp/awscli.zip -d /tmp
+      sudo /tmp/aws/install
+      aws eks update-kubeconfig --name "${EKS_CLUSTER}" --region us-east-1
+
+      # ── Clone helm chart repo ──────────────────────────────────────────
+      if [ -n "${GITLAB_TOKEN}" ]; then
+        git clone --depth=1 "https://oauth2:${GITLAB_TOKEN}@gitlab.com/PiHealth/CoreFICS/fics-helm-chart.git" /tmp/helm-chart
+      else
+        echo "GITLAB_TOKEN not set — cannot clone helm chart. Skipping deploy."
+        exit 0
+      fi
+
+      cd /tmp/helm-chart/charts/gastown
+
+      # ── Build helm dependencies ────────────────────────────────────────
+      echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
+      helm dependency build ./
+
+      # ── Deploy with --atomic (auto-rollback on failure) ────────────────
+      NS="gastown-rwx"
+      RELEASE="gastown-rwx"
+
+      helm upgrade --install "$RELEASE" ./ \
+        -n "$NS" --create-namespace \
+        --values values.yaml \
+        --values values/gastown-rwx.yaml \
+        --set "gastown.bd-daemon.image.tag=v${BEADS_VERSION#v}" \
+        --set "gastown.coopBroker.image.tag=${PLATFORM_VERSION}" \
+        --set "gastown.agentController.image.tag=${PLATFORM_VERSION}" \
+        --set "gastown.agentController.agentImage.tag=${PLATFORM_VERSION}" \
+        --set "gastown.agentController.sidecarProfiles.toolchain-full.image=ghcr.io/groblegark/gastown/gastown-toolchain:${PLATFORM_VERSION}" \
+        --atomic --timeout 10m \
+        --wait
+
+      echo "Deployed ${RELEASE} to ${NS} with platform version ${PLATFORM_VERSION}"
+
+      # ── Health check ───────────────────────────────────────────────────
+      echo "Checking pod health..."
+      kubectl get pods -n "$NS" -o wide
+      kubectl wait --for=condition=Ready pods -l app.kubernetes.io/component=daemon -n "$NS" --timeout=120s || true
+
+      echo ""
+      echo "Deploy complete: ${NS} → platform ${PLATFORM_VERSION}"
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.E2E_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.E2E_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+      EKS_CLUSTER: ${{ secrets.E2E_EKS_CLUSTER }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+      GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
