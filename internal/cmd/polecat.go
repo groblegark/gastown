@@ -432,8 +432,8 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 		}
 
 		// Discover K8s polecats from agent beads (no local worktree)
-		rigBeadsPath := filepath.Join(r.Path, "mayor", "rig")
-		rigBeads := beads.New(rigBeadsPath)
+		// Use rig root (not mayor/rig which may not exist in K8s mode)
+		rigBeads := beads.New(r.Path)
 		agentBeadMap, err := rigBeads.ListAgentBeads()
 		if err == nil {
 			for _, issue := range agentBeadMap {
@@ -755,8 +755,8 @@ func runPolecatStatusK8s(r *rig.Rig, rigName, polecatName string) error {
 	prefix := beads.GetPrefixForRig(townRoot, rigName)
 	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
 
-	rigBeadsPath := filepath.Join(r.Path, "mayor", "rig")
-	rigBeads := beads.New(rigBeadsPath)
+	// Use rig root (not mayor/rig which may not exist in K8s mode)
+	rigBeads := beads.New(r.Path)
 	issue, err := rigBeads.Show(agentBeadID)
 	if err != nil {
 		return fmt.Errorf("K8s polecat '%s' not found in rig '%s'", polecatName, rigName)
@@ -1285,7 +1285,7 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 			if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
 				closeArgs = append(closeArgs, "--session="+sessionID)
 			}
-			closeCmd := bdcmd.CommandInDir(filepath.Join(p.r.Path, "mayor", "rig"), closeArgs...)
+			closeCmd := bdcmd.CommandInDir(p.r.Path, closeArgs...)
 			if err := closeCmd.Run(); err != nil {
 				nukeErrors = append(nukeErrors, fmt.Sprintf("%s/%s: agent bead close failed: %v", p.rigName, p.polecatName, err))
 				continue
@@ -1337,8 +1337,7 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 		// Step 4: Reject any open MRs for this branch before deleting it
 		// This prevents MQ/git sync inconsistency where MR exists but branch is gone
 		if branchToDelete != "" {
-			mayorRigPath := filepath.Join(p.r.Path, "mayor", "rig")
-			bd := beads.New(mayorRigPath)
+			bd := beads.New(p.r.Path)
 			mr, err := bd.FindMRForBranch(branchToDelete)
 			if err == nil && mr != nil {
 				// Found an open MR for this branch - reject it
@@ -1386,7 +1385,7 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 		if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
 			closeArgs = append(closeArgs, "--session="+sessionID)
 		}
-		closeCmd := bdcmd.CommandInDir(filepath.Join(p.r.Path, "mayor", "rig"), closeArgs...)
+		closeCmd := bdcmd.CommandInDir(p.r.Path, closeArgs...)
 		if err := closeCmd.Run(); err != nil {
 			// Non-fatal - agent bead might not exist
 			fmt.Printf("  %s agent bead not found or already closed\n", style.Dim.Render("○"))
