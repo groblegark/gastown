@@ -44,8 +44,9 @@ tasks:
       for chart in helm/*/; do
         if [ -f "$chart/Chart.yaml" ]; then
           echo "=== Linting $chart ==="
-          # Build deps first (gastown chart depends on bd-daemon from GHCR)
-          helm dependency build "$chart" 2>/dev/null || true
+          # Build deps (gastown chart depends on bd-daemon from GHCR).
+          # Let real errors fail loudly; only suppress expected warnings on stderr.
+          helm dependency build "$chart" 2> >(grep -v '^Warning:' >&2)
           helm lint "$chart"
           helm template "$(basename $chart)" "$chart" > /dev/null
         fi

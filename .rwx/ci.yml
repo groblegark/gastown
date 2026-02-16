@@ -17,7 +17,7 @@ tasks:
       repository: https://github.com/groblegark/gastown.git
       ref: ${{ init.commit-sha }}
 
-  # ── Go toolchain ──────────────────────────────────────────────────────
+  # ── Go toolchain (version from .go-version) ──────────────────────────
   - key: go
     call: golang/install 1.2.0
     with:
@@ -59,7 +59,7 @@ tasks:
   - key: lint
     use: git-config
     run: |
-      curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+      curl -fsSL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
         | sh -s -- -b $(go env GOPATH)/bin latest
       golangci-lint run --timeout=5m
     filter:

@@ -74,7 +74,7 @@ tasks:
       repository: https://github.com/groblegark/gastown.git
       ref: ${{ init.commit-sha }}
 
-  # ── Go toolchain ───────────────────────────────────────────────────
+  # ── Go toolchain (version from .go-version) ───────────────────────
   - key: go
     call: golang/install 1.2.0
     with:
@@ -182,6 +182,11 @@ tasks:
   - key: image-gt
     use: [build-gt]
     if: ${{ init.ref-name != 'pr' }}
+    filter:
+      - cmd/gt/**/*.go
+      - internal/**/*.go
+      - go.mod
+      - go.sum
     run: |
       # Install minimal runtime deps
       sudo apt-get -y update
@@ -201,6 +206,10 @@ tasks:
   - key: image-controller
     use: [build-controller]
     if: ${{ init.ref-name != 'pr' }}
+    filter:
+      - controller/**/*.go
+      - controller/go.mod
+      - controller/go.sum
     run: |
       # Install binary
       sudo cp ${{ tasks.build-controller.artifacts.controller-binary }} /controller
@@ -214,6 +223,8 @@ tasks:
   - key: image-agent
     use: [build-gt, download-coop, download-bd, code]
     if: ${{ init.ref-name != 'pr' }}
+    filter:
+      - deploy/agent/entrypoint.sh
     run: |
       # WORKAROUND: Do NOT run apt-get update/install here.
       # On multi-layer overlayfs (4 dependency layers), apt-get update
@@ -221,8 +232,9 @@ tasks:
       # The base image (rwx/base 1.0.0) already provides git, curl,
       # ca-certificates, and jq — verified by "0 newly installed" in logs.
 
-      # Install Node.js from binary tarball (no sudo needed for curl)
-      curl -fsSL "https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz" \
+      # Install Node.js from binary tarball (version from .node-version)
+      NODE_VERSION=$(cat .node-version)
+      curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
         | sudo tar -xJ --strip-components=1 -C /usr/local
 
       # Install binaries
@@ -261,6 +273,9 @@ tasks:
   - key: image-toolchain
     use: code
     if: ${{ init.ref-name != 'pr' }}
+    filter:
+      - .rwx/toolchain-version.lock
+      - .go-version
     run: |
       export DEBIAN_FRONTEND=noninteractive
 
@@ -276,15 +291,18 @@ tasks:
         apt-get -y install --no-install-recommends \
           curl git jq make unzip ca-certificates
 
-        # Go
-        curl -fsSL "https://go.dev/dl/go1.25.7.linux-amd64.tar.gz" | tar -C /usr/local -xz
+        # Go (version from .go-version, installer resolves latest patch)
+        GO_VERSION=$(cat .go-version)
+        GO_LATEST=$(curl -fsSL "https://go.dev/dl/?mode=json" | jq -r "[.[] | select(.version | startswith(\"go${GO_VERSION}\"))][0].version")
+        curl -fsSL "https://go.dev/dl/${GO_LATEST}.linux-amd64.tar.gz" | tar -C /usr/local -xz
         export PATH="/usr/local/go/bin:$PATH"
         GOPATH="/tmp/go" go install golang.org/x/tools/gopls@latest
         mv /tmp/go/bin/gopls /usr/local/go/bin/gopls
         rm -rf /tmp/go
 
-        # Node.js (binary tarball — nodesource apt also triggers shadow corruption)
-        curl -fsSL "https://nodejs.org/dist/v22.22.0/node-v22.22.0-linux-x64.tar.xz" \
+        # Node.js (version from .node-version; binary tarball — nodesource apt triggers shadow corruption)
+        NODE_VERSION=$(cat .node-version)
+        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
           | tar -xJ --strip-components=1 -C /usr/local
 
         # Python

@@ -58,7 +58,7 @@ tasks:
 
   - key: aws-cli
     run: |
-      curl -sSf "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
       unzip -q /tmp/awscliv2.zip -d /tmp
       sudo /tmp/aws/install
       aws --version
@@ -72,9 +72,9 @@ tasks:
 
   - key: kubectl-setup
     run: |
-      KUBE_VERSION=$(curl -sSfL https://dl.k8s.io/release/stable.txt)
+      KUBE_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
       echo "Installing kubectl $KUBE_VERSION"
-      curl -sSfL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
+      curl -fsSL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
       sudo install /tmp/kubectl /usr/local/bin/kubectl
       kubectl version --client
     filter:
