@@ -30,12 +30,14 @@ on:
       init:
         commit-sha: ${{ event.git.sha }}
         ref-name: ${{ event.git.ref }}
+        beads-version: ""
       status-checks:
         name: Docker
     pull_request:
       init:
         commit-sha: ${{ event.git.sha }}
         ref-name: pr
+        beads-version: ""
       status-checks:
         - tasks: [build-gt, build-controller, download-coop, download-bd]
           name: Docker
@@ -44,11 +46,23 @@ on:
       init:
         commit-sha: ${{ event.git.sha }}
         ref-name: ${{ event.dispatch.params.trigger-source }}
+        beads-version: ${{ event.dispatch.params.beads-version }}
+        coop-version: ${{ event.dispatch.params.coop-version }}
       params:
         - key: trigger-source
           name: Trigger source
           description: What triggered the rebuild (e.g. coop-release, beads-release)
           default: manual
+          required: false
+        - key: beads-version
+          name: Beads version
+          description: Beads version tag to use (e.g. v0.62.7). Overrides platform-versions.env when set.
+          default: ""
+          required: false
+        - key: coop-version
+          name: Coop version
+          description: Coop version tag to use (e.g. v0.12.4). Overrides platform-versions.env when set.
+          default: ""
           required: false
       title: Agent rebuild (${{ init.ref-name }})
       target: image-agent
@@ -56,6 +70,8 @@ on:
     init:
       commit-sha: ${{ event.git.sha }}
       ref-name: cli
+      beads-version: ""
+      coop-version: ""
 
 base:
   image: ubuntu:24.04
@@ -133,17 +149,26 @@ tasks:
           path: controller-bin
 
   # ── Download coop from releases → artifact (pinned by platform-versions.env) ─
+  # When dispatched from a coop release, init.coop-version overrides the
+  # pinned version so the agent image always gets the just-released binary.
   - key: download-coop
     use: code
     run: |
       set -ex
       source platform-versions.env
+      # Dispatch override: use the version from the triggering coop release
+      if [ -n "${COOP_VERSION_OVERRIDE}" ]; then
+        COOP_VERSION="${COOP_VERSION_OVERRIDE}"
+        echo "Using dispatch override: COOP_VERSION=${COOP_VERSION}"
+      fi
       echo "Downloading coop ${COOP_VERSION} for linux-amd64"
       curl -fsSL "https://github.com/groblegark/coop/releases/download/${COOP_VERSION}/coop-linux-amd64.tar.gz" \
         -o /tmp/coop.tar.gz
       mkdir -p coop-bin
       tar -xzf /tmp/coop.tar.gz -C coop-bin
       ls -la coop-bin/
+    env:
+      COOP_VERSION_OVERRIDE: ${{ init.coop-version }}
     filter:
       - platform-versions.env
     outputs:
@@ -152,11 +177,18 @@ tasks:
           path: coop-bin
 
   # ── Download bd from releases → artifact (pinned by platform-versions.env) ──
+  # When dispatched from a beads release, init.beads-version overrides the
+  # pinned version so the agent image always gets the just-released binary.
   - key: download-bd
     use: code
     run: |
       set -ex
       source platform-versions.env
+      # Dispatch override: use the version from the triggering beads release
+      if [ -n "${BEADS_VERSION_OVERRIDE}" ]; then
+        BEADS_VERSION="${BEADS_VERSION_OVERRIDE}"
+        echo "Using dispatch override: BEADS_VERSION=${BEADS_VERSION}"
+      fi
       VERSION_NUM=${BEADS_VERSION#v}
       echo "Downloading bd ${BEADS_VERSION} for linux_amd64"
       curl -fsSL "https://github.com/groblegark/beads/releases/download/${BEADS_VERSION}/beads_${VERSION_NUM}_linux_amd64.tar.gz" \
@@ -164,6 +196,8 @@ tasks:
       mkdir -p bd-bin
       tar -xzf /tmp/bd.tar.gz -C bd-bin
       ls -la bd-bin/
+    env:
+      BEADS_VERSION_OVERRIDE: ${{ init.beads-version }}
     filter:
       - platform-versions.env
     outputs:
