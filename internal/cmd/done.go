@@ -86,7 +86,8 @@ func runDone(cmd *cobra.Command, args []string) error {
 	// Crew, deacons, witnesses etc. don't use gt done - they persist across tasks.
 	// Polecats are ephemeral workers that self-destruct after completing work.
 	actor := os.Getenv("BD_ACTOR")
-	if actor != "" && !isPolecatActor(actor) {
+	gtRole := os.Getenv("GT_ROLE")
+	if actor != "" && !isPolecatActor(actor) && gtRole != "polecat" {
 		return fmt.Errorf("gt done is for polecats only (you are %s)\nPolecats are ephemeral workers that self-destruct after completing work.\nOther roles persist across tasks and don't use gt done.", actor)
 	}
 

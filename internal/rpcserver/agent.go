@@ -845,9 +845,15 @@ func (s *AgentServer) RemoveCrew(
 	townBeadsPath := beads.GetTownBeadsPath(s.townRoot)
 	bd := beads.New(townBeadsPath)
 
-	// Verify the bead exists.
+	// Verify the bead exists. If it doesn't and we're force-removing, treat as success.
 	_, _, err = bd.GetAgentBead(crewID)
 	if err != nil {
+		if req.Msg.Force || req.Msg.Purge {
+			return connect.NewResponse(&gastownv1.RemoveCrewResponse{
+				BeadId:  crewID,
+				Deleted: req.Msg.Purge,
+			}), nil
+		}
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("agent bead not found: %s", crewID))
 	}
 
