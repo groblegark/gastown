@@ -61,7 +61,7 @@ gt polecats --all --status
 ```
 
 What this does:
-- Kills tmux sessions running Claude
+- Kills coop sessions running Claude
 - Leaves git clones untouched
 - Leaves hook files (pinned molecules) intact
 - Leaves uncommitted work in place

@@ -6,7 +6,7 @@ the Deacon, or do nothing. This centralizes the "when to wake" decision in an ag
 can reason about context rather than relying on mechanical thresholds.
 
 Boot lifecycle:
-1. Observe (wisps, mail, git state, tmux panes)
+1. Observe (wisps, mail, git state, session output)
 2. Decide (start/wake/nudge/interrupt/nothing)
 3. Act
 4. Clean inbox (discard stale handoffs)
@@ -27,7 +27,7 @@ Observe the current system state to inform triage decisions.
 **Step 1: Check Deacon state**
 ```bash
 # Is Deacon session alive?
-tmux has-session -t hq-deacon 2>/dev/null && echo "alive" || echo "dead"
+gt polecat status hq-deacon
 
 # If alive, what's the pane output showing?
 gt peek deacon --lines 20
@@ -125,7 +125,7 @@ gt nudge deacon "Boot check-in: you have pending work"
 **WAKE**
 ```bash
 # Send escape to break any tool waiting
-tmux send-keys -t hq-deacon Escape
+gt nudge hq-deacon --escape
 
 # Brief pause
 sleep 1

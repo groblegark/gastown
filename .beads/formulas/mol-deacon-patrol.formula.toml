@@ -112,8 +112,8 @@ This command:
 **Why this is safe:**
 - Processes in terminals (your personal sessions) have a TTY - they won't be touched
 - Only kills processes that have no controlling terminal
-- These orphans are children of the tmux server with no TTY, indicating they're
-  detached subagents that failed to exit
+- These orphans are detached subagent processes with no TTY, indicating they
+  failed to exit
 
 **If cleanup fails:**
 Log the error but continue patrol - this is best-effort cleanup.
@@ -452,7 +452,7 @@ Detection only - Boot handles termination.
 
 **Zombie criteria:**
 - State: idle or done (no active work assigned)
-- Session: not running (tmux session dead)
+- Session: not running (coop session dead)
 - No hooked work (nothing pending for this polecat)
 - Last activity: older than 10 minutes
 
@@ -463,7 +463,7 @@ gt deacon zombie-scan --dry-run
 
 **NEVER run:**
 - `gt deacon zombie-scan` (without --dry-run)
-- `tmux kill-session`
+- `gt polecat nuke` (without a death warrant)
 - `gt polecat nuke`
 - Any command that terminates a session
 
@@ -627,7 +627,7 @@ bd list --status=in_progress --json | head -20
 
 For each in_progress issue, check if assignee session exists:
 ```bash
-tmux has-session -t <session> 2>/dev/null && echo "alive" || echo "orphan"
+gt polecat status <session>
 ```
 
 **Step 2: If orphans detected, dispatch to dog**
@@ -670,7 +670,7 @@ The Deacon stays lightweight - detection only.
 Skip dispatch - system is healthy.
 
 **Cleanup types (for reference):**
-- orphan-sessions: Dead tmux sessions
+- orphan-sessions: Dead coop sessions
 - orphan-processes: Orphaned Claude processes
 - wisp-gc: Old wisps past retention
 
@@ -687,9 +687,9 @@ Cost tracking is temporarily disabled because Claude Code does not expose
 session costs in a way that can be captured programmatically.
 
 **Why disabled:**
-- The `gt costs` command uses tmux capture-pane to find costs
+- The `gt costs` command uses session capture to find costs
 - Claude Code displays costs in the TUI status bar, not in scrollback
-- All sessions show $0.00 because capture-pane can't see TUI chrome
+- All sessions show $0.00 because capture can't see TUI chrome
 - The infrastructure is sound but has no data source
 
 **What we need from Claude Code:**
@@ -778,7 +778,7 @@ The state.json tracks active sessions. Prune entries for sessions that no longer
 gt daemon status --json 2>/dev/null
 ```
 
-If state.json references sessions not in tmux:
+If state.json references sessions not in coop:
 - Remove the stale entries
 - The daemon's internal cleanup should handle this, but verify
 
