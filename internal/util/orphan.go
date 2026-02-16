@@ -19,6 +19,24 @@ import (
 // processes and avoids killing legitimate short-lived subagents.
 const minOrphanAge = 60
 
+// selfPIDs returns a set of PIDs that should never be killed: the current
+// process and its parent. This prevents gt polecat nuke from killing the
+// calling agent's own Claude process (gt-trf7ok).
+func selfPIDs() map[int]bool {
+	return map[int]bool{
+		os.Getpid():  true,
+		os.Getppid(): true,
+	}
+}
+
+// isK8sMode returns true when running inside a Kubernetes pod.
+// In K8s mode, orphan/zombie cleanup should be skipped because the K8s
+// controller manages pod lifecycle, and all processes have TTY="?" which
+// would cause false positives (gt-trf7ok).
+func isK8sMode() bool {
+	return os.Getenv("KUBERNETES_SERVICE_HOST") != ""
+}
+
 // getTmuxSessionPIDs returns a set of PIDs belonging to managed sessions.
 // In K8s mode, there are no tmux sessions, so this returns an empty set.
 // Orphan detection relies solely on TTY-based and age-based checks.
@@ -201,9 +219,22 @@ type OrphanedProcess struct {
 // Additionally, processes must be older than minOrphanAge seconds to be considered
 // orphaned. This prevents race conditions with newly spawned processes.
 func FindOrphanedClaudeProcesses() ([]OrphanedProcess, error) {
+	// In K8s mode, skip orphan detection entirely. All pod processes have
+	// TTY="?" and the K8s controller handles pod lifecycle. Without this
+	// guard, we'd kill the calling agent's own process (gt-trf7ok).
+	if isK8sMode() {
+		return nil, nil
+	}
+
 	// Get PIDs belonging to valid Gas Town tmux sessions.
 	// These should not be killed even if they show TTY "?" during startup.
 	protectedPIDs := getTmuxSessionPIDs()
+
+	// Also protect our own process and parent (defense-in-depth, gt-trf7ok).
+	self := selfPIDs()
+	for pid := range self {
+		protectedPIDs[pid] = true
+	}
 
 	// Use ps to get PID, TTY, command, and elapsed time for all processes
 	// TTY "?" indicates no controlling terminal
@@ -292,12 +323,21 @@ type ZombieProcess struct {
 //
 // This is the definitive zombie check because it verifies against tmux reality.
 func FindZombieClaudeProcesses() ([]ZombieProcess, error) {
+	// In K8s mode, skip zombie detection entirely. All pod processes lack
+	// tmux sessions and have TTY="?", so every Claude process would be
+	// falsely detected as a zombie — including the caller (gt-trf7ok).
+	if isK8sMode() {
+		return nil, nil
+	}
+
 	// Get ALL valid PIDs (panes + their children) from active tmux sessions
 	validPIDs := getTmuxSessionPIDs()
 
-	// In K8s mode, there are no local tmux sessions to cross-reference.
-	// Zombie detection relies on TTY and age checks below.
-	// If no valid PIDs found, that's expected — we still check processes.
+	// Also protect our own process and parent (defense-in-depth, gt-trf7ok).
+	self := selfPIDs()
+	for pid := range self {
+		validPIDs[pid] = true
+	}
 
 	// Use ps to get PID, TTY, command, and elapsed time for all claude processes
 	out, err := exec.Command("ps", "-eo", "pid,tty,comm,etime").Output()
