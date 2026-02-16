@@ -25,6 +25,12 @@ AGENT="${GT_AGENT:-unknown}"
 WORKSPACE="/home/agent/gt"
 SESSION_RESUME="${GT_SESSION_RESUME:-1}"
 
+# Export platform version for bd/gt version commands
+if [ -f /etc/platform-version ]; then
+    export BD_PLATFORM_VERSION
+    BD_PLATFORM_VERSION=$(cat /etc/platform-version)
+fi
+
 echo "[entrypoint] Starting ${ROLE} agent: ${AGENT} (rig: ${RIG:-none})"
 
 # ── Workspace setup ──────────────────────────────────────────────────────

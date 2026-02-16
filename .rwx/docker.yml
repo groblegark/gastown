@@ -238,6 +238,10 @@ tasks:
       curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
         | sudo tar -xJ --strip-components=1 -C /usr/local
 
+      # Write platform version for runtime discovery (bd version, gt version)
+      source platform-versions.env
+      echo "${PLATFORM_VERSION}" | sudo tee /etc/platform-version > /dev/null
+
       # Install binaries
       sudo cp ${{ tasks.build-gt.artifacts.gt-binary }} /usr/local/bin/gt
       sudo cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /usr/local/bin/coop
@@ -282,6 +286,8 @@ tasks:
       - platform-versions.env
     run: |
       export DEBIAN_FRONTEND=noninteractive
+      source platform-versions.env
+      export PLATFORM_VERSION
 
       # Export artifact paths so sudo -E can pass them into the bash -c block.
       export GT_BIN="${{ tasks.build-gt.artifacts.gt-binary }}"
@@ -358,6 +364,9 @@ tasks:
         ln -sf /usr/local/bin/coop-mux /usr/local/bin/coopmux
         chmod +x /usr/local/bin/gt /usr/local/bin/coop /usr/local/bin/bd \
           /usr/local/bin/coop-mux 2>/dev/null || true
+
+        # Write platform version for runtime discovery
+        echo "${PLATFORM_VERSION}" > /etc/platform-version
 
         # Install entrypoint and create home dir
         cp docker/toolchain/entrypoint.sh /usr/local/bin/toolchain-entrypoint.sh
