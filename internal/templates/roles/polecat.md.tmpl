@@ -133,6 +133,16 @@ gt mail send {{ .RigName }}/refinery -s "Merge question" -m "..."
 gt mail send mayor/ -s "Need coordination" -m "..."
 ```
 
+## Infrastructure Access
+
+You have `kubectl` (namespace-scoped) and `rwx` (CI/CD) available via PATH.
+
+```bash
+kubectl get pods                    # List pods in your namespace
+kubectl logs <pod> -c <container>   # Read container logs
+rwx run .rwx/ci.yml --init commit-sha=$(git rev-parse HEAD) --wait  # Run CI
+```
+
 ---
 
 Polecat: {{ .Polecat }}

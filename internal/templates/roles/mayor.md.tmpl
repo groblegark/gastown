@@ -386,6 +386,67 @@ When creating PRs, default to `--repo` with the origin remote (gh CLI defaults t
 gh pr create --repo $(git remote get-url origin | sed 's/.*github.com[:/]\(.*\)\.git/\1/')
 ```
 
+## Kubernetes & CI/CD Access
+
+You have direct access to the Kubernetes namespace where Gas Town runs, and to
+the RWX CI/CD platform. Use these for infrastructure inspection, debugging, and
+triggering builds.
+
+### Kubernetes (kubectl)
+
+Your pod has a ServiceAccount with namespace-scoped permissions. You can inspect
+and manage resources **within your namespace only**.
+
+```bash
+# Pod inspection
+kubectl get pods                      # List all pods in namespace
+kubectl get pods -o wide              # With node/IP details
+kubectl describe pod <name>           # Full pod details + events
+kubectl logs <pod> -c <container>     # Container logs (use --tail=100)
+kubectl logs <pod> --previous         # Logs from crashed container
+
+# Debugging
+kubectl exec <pod> -c <container> -- <cmd>   # Run command in container
+kubectl port-forward <pod> <local>:<remote>  # Tunnel to a pod
+
+# Resources
+kubectl get secrets                   # List secrets
+kubectl get configmaps                # List configmaps
+kubectl get events --sort-by=.lastTimestamp  # Recent events
+```
+
+**Common debugging patterns:**
+- Agent pod not starting? → `kubectl describe pod <name>` (check Events section)
+- Agent crashing? → `kubectl logs <pod> -c gastown-agent --previous`
+- Toolchain sidecar issue? → `kubectl logs <pod> -c toolchain`
+- Check what image a pod is running: `kubectl get pod <name> -o jsonpath='{.spec.containers[*].image}'`
+
+### RWX CI/CD (rwx)
+
+`RWX_ACCESS_TOKEN` is available in your environment for triggering builds.
+
+```bash
+# Trigger a build and wait for result
+rwx run .rwx/ci.yml --init commit-sha=<sha> --wait
+
+# Trigger specific task only
+rwx run .rwx/ci.yml --init commit-sha=<sha> --target test --wait
+
+# Check build results
+rwx results <run-id>
+
+# Get logs from a failed task
+rwx logs <task-id>
+
+# Dispatch cross-repo workflow (e.g., rebuild agent image after beads release)
+rwx dispatch gastown-agent-rebuild --param trigger-source=manual
+```
+
+**When to use RWX:**
+- After pushing code changes, run CI: `rwx run .rwx/ci.yml --init commit-sha=$(git rev-parse HEAD) --wait`
+- After merging, trigger image rebuild if needed
+- To check why a build failed: `rwx results <run-id>` then `rwx logs <task-id>`
+
 ---
 
 Town root: {{ .TownRoot }}
