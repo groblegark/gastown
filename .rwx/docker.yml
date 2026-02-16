@@ -1,14 +1,16 @@
 # OCI image builds for gastown services — RWX native (no Dockerfiles).
 #
 # Uses $RWX_IMAGE for image metadata instead of inline Dockerfiles.
-# Images are pushed via `rwx image build --push-to` from the CLI,
 # The build VM uses rwx/base 1.0.0; the $RWX_IMAGE output defines
 # the final container filesystem and metadata.
 #
 # Architecture:
 #   build-* tasks → compile binaries as artifacts (cached by filters)
 #   image-*  tasks → install runtime deps + configure $RWX_IMAGE metadata
-#   Push is handled by rwx image build --target <task> --push-to <registry>
+#   push-*   tasks → crane-append layers to ubuntu:24.04, push to GHCR
+#
+# Push is automated on main/tags. For manual push of a single image:
+#   rwx run .rwx/docker.yml --init commit-sha=$(git rev-parse HEAD) --target push-agent
 #
 # VERSIONING:
 # All component versions are pinned in platform-versions.env (repo root).
@@ -374,3 +376,189 @@ tasks:
       echo "/usr/local/bin/toolchain-entrypoint.sh" > $RWX_IMAGE/command
       echo "1000:1000" > $RWX_IMAGE/user
       echo "/home/agent/gt" > $RWX_IMAGE/workspace
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Push tasks — crane-append layers to ubuntu:24.04, push to GHCR.
+  # Each push task reuses build artifacts to create a minimal OCI image.
+  # Secrets: GHCR_TOKEN and GITHUB_USER must be set in the RWX vault.
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # ── Push controller image to GHCR ─────────────────────────────────────
+  - key: push-controller
+    use: [code, build-controller]
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    run: |
+      set -ex
+      source platform-versions.env
+
+      # Install crane
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+
+      # Login to GHCR
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      # Build layer: static binary + CA certs
+      mkdir -p /tmp/layer/etc/ssl/certs
+      cp ${{ tasks.build-controller.artifacts.controller-binary }} /tmp/layer/controller
+      chmod 755 /tmp/layer/controller
+      cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
+      tar -cf /tmp/layer.tar -C /tmp/layer .
+
+      # Push with platform version tag and latest
+      REPO="ghcr.io/groblegark/gastown/agent-controller"
+      crane append --base ubuntu:24.04 --new_tag "${REPO}:${PLATFORM_VERSION}" --new_layer /tmp/layer.tar --platform linux/amd64
+      crane tag "${REPO}:${PLATFORM_VERSION}" latest
+      echo "Pushed ${REPO}:${PLATFORM_VERSION} and ${REPO}:latest"
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Push agent image to GHCR ──────────────────────────────────────────
+  - key: push-agent
+    use: [code, build-gt, download-coop, download-bd]
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    run: |
+      set -ex
+      source platform-versions.env
+
+      # Install crane
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+
+      # Login to GHCR
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      # Install Node.js into layer tree (version from .node-version)
+      NODE_VERSION=$(cat .node-version)
+      mkdir -p /tmp/layer/usr/local
+      curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+        | tar -xJ --strip-components=1 -C /tmp/layer/usr/local
+
+      # Install Claude Code
+      PATH="/tmp/layer/usr/local/bin:$PATH" npm install -g --prefix /tmp/layer/usr/local @anthropic-ai/claude-code
+
+      # Install binaries
+      mkdir -p /tmp/layer/usr/local/bin
+      cp ${{ tasks.build-gt.artifacts.gt-binary }} /tmp/layer/usr/local/bin/gt
+      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /tmp/layer/usr/local/bin/coop
+      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux /tmp/layer/usr/local/bin/coop-mux 2>/dev/null || true
+      cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd /tmp/layer/usr/local/bin/bd
+      ln -sf coop-mux /tmp/layer/usr/local/bin/coopmux
+      chmod +x /tmp/layer/usr/local/bin/gt /tmp/layer/usr/local/bin/coop \
+        /tmp/layer/usr/local/bin/bd /tmp/layer/usr/local/bin/coop-mux 2>/dev/null || true
+
+      # Install entrypoint
+      cp deploy/agent/entrypoint.sh /tmp/layer/entrypoint.sh
+      chmod +x /tmp/layer/entrypoint.sh
+
+      # Create home directory and user config
+      mkdir -p /tmp/layer/home/agent/gt /tmp/layer/etc/ssl/certs
+      cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
+
+      tar -cf /tmp/layer.tar -C /tmp/layer .
+
+      # Push with platform version tag and latest
+      REPO="ghcr.io/groblegark/gastown/gastown-agent"
+      crane append --base ubuntu:24.04 --new_tag "${REPO}:${PLATFORM_VERSION}" --new_layer /tmp/layer.tar --platform linux/amd64
+      crane tag "${REPO}:${PLATFORM_VERSION}" latest
+      echo "Pushed ${REPO}:${PLATFORM_VERSION} and ${REPO}:latest"
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
+  # ── Push toolchain image to GHCR ──────────────────────────────────────
+  - key: push-toolchain
+    use: [code, build-gt, download-coop, download-bd]
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    run: |
+      set -ex
+      source platform-versions.env
+      export DEBIAN_FRONTEND=noninteractive
+
+      # Install crane
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+
+      # Login to GHCR
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      # Build the toolchain in /tmp/layer.
+      # We install everything into a staging directory, then tar it as a layer.
+      LAYER=/tmp/layer
+      mkdir -p $LAYER/usr/local/bin $LAYER/usr/local/go $LAYER/etc/ssl/certs \
+        $LAYER/home/agent/gt $LAYER/opt/aws-cli
+
+      # CA certs
+      cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
+
+      # Go (resolve latest patch from .go-version)
+      GO_VERSION=$(cat .go-version)
+      GO_LATEST=$(curl -fsSL "https://go.dev/dl/?mode=json" | jq -r "[.[] | select(.version | startswith(\"go${GO_VERSION}\"))][0].version")
+      curl -fsSL "https://go.dev/dl/${GO_LATEST}.linux-amd64.tar.gz" | tar -C $LAYER/usr/local -xz
+      # gopls
+      GOROOT=$LAYER/usr/local/go GOPATH=/tmp/gopath $LAYER/usr/local/go/bin/go install golang.org/x/tools/gopls@latest 2>/dev/null || true
+      cp /tmp/gopath/bin/gopls $LAYER/usr/local/go/bin/ 2>/dev/null || true
+
+      # Node.js (version from .node-version)
+      NODE_VERSION=$(cat .node-version)
+      mkdir -p $LAYER/usr/local
+      curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+        | tar -xJ --strip-components=1 -C $LAYER/usr/local
+
+      # Rust Analyzer
+      curl -fsSL "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" \
+        | gunzip > $LAYER/usr/local/bin/rust-analyzer
+      chmod +x $LAYER/usr/local/bin/rust-analyzer
+
+      # kubectl
+      KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+      curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+        -o $LAYER/usr/local/bin/kubectl
+      chmod +x $LAYER/usr/local/bin/kubectl
+
+      # RWX CLI
+      curl -fsSL "https://github.com/rwx-cloud/cli/releases/latest/download/rwx-linux-x86_64" \
+        -o $LAYER/usr/local/bin/rwx
+      chmod +x $LAYER/usr/local/bin/rwx
+
+      # Docker CLI
+      curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" | \
+        tar -xz --strip-components=1 -C $LAYER/usr/local/bin docker/docker
+
+      # AWS CLI (install to staging prefix, then move)
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      unzip -q /tmp/awscli.zip -d /tmp
+      /tmp/aws/install --install-dir $LAYER/opt/aws-cli --bin-dir $LAYER/opt/aws-cli/bin
+      ln -sf /opt/aws-cli/bin/aws $LAYER/usr/local/bin/aws
+      rm -rf /tmp/awscli.zip /tmp/aws
+
+      # Install gt, coop, coopmux, bd binaries
+      cp ${{ tasks.build-gt.artifacts.gt-binary }} $LAYER/usr/local/bin/gt
+      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop $LAYER/usr/local/bin/coop
+      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux $LAYER/usr/local/bin/coop-mux 2>/dev/null || true
+      cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd $LAYER/usr/local/bin/bd
+      ln -sf coop-mux $LAYER/usr/local/bin/coopmux
+      chmod +x $LAYER/usr/local/bin/gt $LAYER/usr/local/bin/coop \
+        $LAYER/usr/local/bin/bd $LAYER/usr/local/bin/coop-mux 2>/dev/null || true
+
+      # Entrypoint
+      cp docker/toolchain/entrypoint.sh $LAYER/usr/local/bin/toolchain-entrypoint.sh
+      chmod +x $LAYER/usr/local/bin/toolchain-entrypoint.sh
+
+      tar -cf /tmp/layer.tar -C $LAYER .
+
+      # Push with platform version tag and latest
+      REPO="ghcr.io/groblegark/gastown/gastown-toolchain"
+      crane append --base ubuntu:24.04 --new_tag "${REPO}:${PLATFORM_VERSION}" --new_layer /tmp/layer.tar --platform linux/amd64
+      crane tag "${REPO}:${PLATFORM_VERSION}" latest
+      echo "Pushed ${REPO}:${PLATFORM_VERSION} and ${REPO}:latest"
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
