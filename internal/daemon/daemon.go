@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/boot"
 	"github.com/steveyegge/gastown/internal/constants"
@@ -1027,8 +1026,7 @@ func listPolecatWorktrees(polecatsDir string) ([]string, error) {
 // checkPolecatHealth checks a single polecat's session health.
 // If the polecat has work-on-hook but the session is dead, it's restarted.
 //
-// Three paths based on how the polecat is managed:
-// - OJ-managed (oj_job_id set): query oj job show, map states
+// Two paths based on how the polecat is managed:
 // - Coop-managed (backend=coop in notes): query coop HTTP health/agent API
 // - Legacy: check session existence
 func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
@@ -1044,14 +1042,6 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 	// Check if polecat has hooked work
 	if info.HookBead == "" {
 		// No hooked work - orphaned polecat, let Witness handle cleanup
-		return
-	}
-
-	// Check if this polecat is OJ-managed by reading oj_job_id from the hook bead
-	ojJobID := d.getOjJobIDFromBead(info.HookBead)
-	if ojJobID != "" {
-		// OJ-managed polecat: check OJ job status instead of session
-		d.checkOjPolecatHealth(rigName, polecatName, info.HookBead, ojJobID)
 		return
 	}
 
@@ -1090,81 +1080,6 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 	} else {
 		d.logger.Printf("Successfully restarted crashed polecat %s/%s", rigName, polecatName)
 	}
-}
-
-// getOjJobIDFromBead reads the oj_job_id from a work bead's description.
-// Returns empty string if not found or on error.
-func (d *Daemon) getOjJobIDFromBead(beadID string) string {
-	cmd := bdcmd.CommandInDir(d.config.TownRoot, "show", beadID, "--json", "--allow-stale")
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-
-	var issues []beads.Issue
-	if err := json.Unmarshal(output, &issues); err != nil || len(issues) == 0 {
-		return ""
-	}
-
-	fields := beads.ParseAttachmentFields(&issues[0])
-	if fields == nil {
-		return ""
-	}
-	return fields.OjJobID
-}
-
-// checkOjPolecatHealth checks health of an OJ-managed polecat by querying OJ job status.
-// Maps OJ job states to polecat health: running=alive, completed=done, failed=crashed.
-func (d *Daemon) checkOjPolecatHealth(rigName, polecatName, hookBead, ojJobID string) {
-	state, err := d.queryOjJobState(ojJobID)
-	if err != nil {
-		d.logger.Printf("Error querying OJ job %s for %s/%s: %v", ojJobID, rigName, polecatName, err)
-		return
-	}
-
-	switch state {
-	case "running", "pending":
-		// OJ job is alive - nothing to do
-		return
-	case "completed":
-		// Job completed successfully - polecat is done
-		d.logger.Printf("OJ job %s completed for polecat %s/%s", ojJobID, rigName, polecatName)
-		return
-	case "failed", "crashed", "cancelled":
-		// Job failed - log and notify witness
-		d.logger.Printf("OJ job %s %s for polecat %s/%s (hook_bead=%s)",
-			ojJobID, state, rigName, polecatName, hookBead)
-		d.notifyWitnessOfCrashedPolecat(rigName, polecatName, hookBead,
-			fmt.Errorf("OJ job %s in state: %s", ojJobID, state))
-	default:
-		d.logger.Printf("Unknown OJ job state %q for %s/%s", state, rigName, polecatName)
-	}
-}
-
-// queryOjJobState queries the OJ daemon for a job's current state.
-// Returns the state string (running, completed, failed, etc).
-func (d *Daemon) queryOjJobState(jobID string) (string, error) {
-	cmd := exec.Command("oj", "job", "show", jobID, "--json")
-	cmd.Dir = d.config.TownRoot
-	cmd.Env = os.Environ()
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("oj job show %s: %w", jobID, err)
-	}
-
-	var result struct {
-		State  string `json:"state"`
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(output, &result); err != nil {
-		return "", fmt.Errorf("parsing oj job show output: %w", err)
-	}
-
-	// OJ may use "state" or "status" field
-	if result.State != "" {
-		return result.State, nil
-	}
-	return result.Status, nil
 }
 
 // getCoopURLFromNotes extracts a coop_url from agent bead notes.

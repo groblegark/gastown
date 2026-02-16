@@ -246,7 +246,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 	// Deferred spawn: don't spawn polecat until AFTER formula instantiation succeeds.
 	// This prevents orphan polecats when formula fails (GH #gt-e9o).
 	var deferredRigName string
-	var deferredSpawnOpts SlingSpawnOptions
 
 	if len(args) > 1 {
 		target := args[1]
@@ -301,14 +300,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 				// formula instantiation fails (GH #gt-e9o).
 				fmt.Printf("Target is rig '%s', will spawn polecat after validation...\n", rigName)
 				deferredRigName = rigName
-				deferredSpawnOpts = SlingSpawnOptions{
-					Force:           slingForce,
-					Account:         slingAccount,
-					Create:          slingCreate,
-					// HookBead: NOT set - we'll hook via bd update after spawn
-					Agent:           slingAgent,
-					ExecutionTarget: slingExecutionTarget,
-				}
 				// Use placeholder values until spawn
 				targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)
 				// hookWorkDir stays empty - formula instantiation will use townRoot
@@ -329,14 +320,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 						// formula first. This prevents orphan polecats (GH #gt-e9o).
 						fmt.Printf("Target polecat has no active session, will spawn fresh polecat after validation...\n")
 						deferredRigName = rigName
-						deferredSpawnOpts = SlingSpawnOptions{
-							Force:           slingForce,
-							Account:         slingAccount,
-							Create:          slingCreate,
-							// HookBead: NOT set - we'll hook via bd update after spawn
-							Agent:           slingAgent,
-							ExecutionTarget: slingExecutionTarget,
-						}
 						// Use placeholder values until spawn
 						targetAgent = fmt.Sprintf("%s/polecats/<pending>", rigName)
 						// hookWorkDir stays empty - formula instantiation will use townRoot
@@ -598,54 +581,6 @@ func runSling(cmd *cobra.Command, args []string) error {
 		// - Base bead left orphaned after gt done
 	}
 
-	// Execute deferred polecat spawn if needed (for rig targets).
-	// This happens AFTER formula instantiation to prevent orphan polecats on failure (GH #gt-e9o).
-	//
-	// Two paths: OJ dispatch (GT_SLING_OJ=1) or legacy spawn.
-	var ojDispatch *OjDispatchInfo // Non-nil when OJ dispatch is used
-	if deferredRigName != "" && ojSlingEnabled() {
-		// OJ dispatch path: GT allocates name, OJ daemon owns the polecat lifecycle.
-		// OJ handles workspace creation, agent spawn, monitoring, crash recovery, cleanup.
-		fmt.Printf("  Dispatching to OJ daemon for %s...\n", deferredRigName)
-
-		// Ensure the gt-sling runbook is available for OJ
-		if err := ensureOjRunbook(townRoot); err != nil {
-			return fmt.Errorf("ensuring OJ runbook: %w", err)
-		}
-
-		// Get instructions from bead title for the OJ job
-		instructions := getBeadInstructions(beadID)
-		if slingArgs != "" {
-			instructions = slingArgs
-		}
-		if instructions == "" {
-			instructions = "Execute work on hook"
-		}
-
-		// Get base branch from bead labels
-		base := GetBeadBase(beadID)
-
-		dispatchInfo, dispatchErr := dispatchToOj(deferredRigName, deferredSpawnOpts, beadID, instructions, base, townRoot)
-		if dispatchErr != nil {
-			return fmt.Errorf("OJ dispatch: %w", dispatchErr)
-		}
-		ojDispatch = dispatchInfo
-		targetAgent = dispatchInfo.AgentID
-		hookWorkDir = townRoot      // Use town root for bd commands
-
-		// Store OJ job ID in the bead for daemon health checks
-		if dispatchInfo.JobID != "" {
-			if err := storeOjJobIDInBead(beadID, dispatchInfo.JobID); err != nil {
-				fmt.Printf("%s Could not store OJ job ID: %v\n", style.Dim.Render("Warning:"), err)
-			} else {
-				fmt.Printf("%s OJ job dispatched: %s\n", style.Bold.Render("✓"), dispatchInfo.JobID)
-			}
-		}
-
-		// Wake witness and refinery to monitor the new polecat
-		wakeRigAgents(deferredRigName)
-	}
-
 	// Hook the bead using bd update with retry logic.
 	// Dolt can fail with concurrency errors (HTTP 400) when multiple agents write simultaneously.
 	// We retry with exponential backoff and verify the hook actually stuck.
@@ -800,12 +735,8 @@ func runSling(cmd *cobra.Command, args []string) error {
 
 	// Send nudge to start working.
 	// Skip for freshly spawned polecats - SessionManager.Start() already sent StartupNudge.
-	// Skip for OJ-dispatched polecats - OJ daemon owns the session lifecycle.
 	freshlySpawned := deferredRigName != ""
-	if ojDispatch != nil {
-		// OJ dispatch: daemon owns session lifecycle, no nudge needed
-		fmt.Printf("%s OJ daemon managing polecat %s\n", style.Bold.Render("✓"), ojDispatch.PolecatName)
-	} else if freshlySpawned {
+	if freshlySpawned {
 		// Fresh polecat already got StartupNudge from SessionManager.Start()
 	} else {
 		// Try nudging via backend (Coop/K8s)

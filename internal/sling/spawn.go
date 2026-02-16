@@ -80,11 +80,6 @@ func WakeRigAgents(rigName string) {
 	_ = backend.NudgeSession(witnessSession, "Polecat dispatched - check for work")
 }
 
-// OjSlingEnabled returns true when OJ dispatch is active.
-func OjSlingEnabled() bool {
-	return os.Getenv("GT_SLING_OJ") == "1"
-}
-
 func verifyAndSetHookBead(townRoot, rigName, polecatName, hookBead string) error {
 	prefix := beads.GetPrefixForRig(townRoot, rigName)
 	agentBeadID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)

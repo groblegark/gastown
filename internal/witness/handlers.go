@@ -569,33 +569,6 @@ func getAgentBeadFields(workDir, rigName, polecatName string) *beads.AgentFields
 	return beads.ParseAgentFields(resp.Description)
 }
 
-// isOJJobActive checks whether an OddJobs job is still running.
-// Returns true if the job is active (running/pending) and the polecat should NOT be nuked.
-// Returns false if the job is completed, failed, or cannot be queried.
-func isOJJobActive(workDir, jobID string) bool {
-	output, err := util.ExecWithOutput(workDir, "oj", "job", "show", jobID, "--json")
-	if err != nil || output == "" {
-		// Can't reach OJ or job not found — assume not active (allow nuke)
-		return false
-	}
-
-	// Parse minimal JSON to extract status
-	var resp struct {
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal([]byte(output), &resp); err != nil {
-		return false
-	}
-
-	// Active statuses that should prevent nuking
-	switch resp.Status {
-	case "running", "pending", "queued":
-		return true
-	default:
-		return false
-	}
-}
-
 // escalateToMayor sends an escalation mail to the Mayor.
 func escalateToMayor(router *mail.Router, rigName string, payload *HelpPayload, reason string) (string, error) {
 	msg := &mail.Message{
@@ -752,18 +725,8 @@ type NukePolecatResult struct {
 func AutoNukeIfClean(workDir, rigName, polecatName string) *NukePolecatResult {
 	result := &NukePolecatResult{}
 
-	// Check agent bead fields for OJ job and cleanup status
+	// Check agent bead fields for cleanup status
 	agentFields := getAgentBeadFields(workDir, rigName, polecatName)
-
-	// If this polecat was dispatched by OddJobs, check job status before nuking.
-	// OJ manages the full lifecycle — don't nuke while the job is still active.
-	if agentFields != nil && agentFields.OJJobID != "" {
-		if isOJJobActive(workDir, agentFields.OJJobID) {
-			result.Skipped = true
-			result.Reason = fmt.Sprintf("skipped: OJ job %s still active", agentFields.OJJobID)
-			return result
-		}
-	}
 
 	// Check cleanup_status from agent bead
 	cleanupStatus := ""

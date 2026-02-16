@@ -215,13 +215,6 @@ type DogDispatchResult struct {
 	Spawned bool
 }
 
-// OjDispatchResult contains info about a dispatched OJ sling job.
-type OjDispatchResult struct {
-	JobID       string
-	PolecatName string
-	AgentID     string
-}
-
 // ResolveTargetFunc resolves a target string to agent ID, pane, and work directory.
 type ResolveTargetFunc func(target string) (agentID, pane, workDir string, err error)
 

@@ -143,26 +143,6 @@ func StoreConvoyOwnedInBead(beadID string, owned bool) error {
 	return updateBeadDescription(beadID, newDesc)
 }
 
-// StoreOjJobIDInBead stores the OJ job ID in a bead's description.
-func StoreOjJobIDInBead(beadID, ojJobID string) error {
-	if ojJobID == "" {
-		return nil
-	}
-	issue, err := fetchBeadIssue(beadID)
-	if err != nil {
-		return err
-	}
-
-	fields := beads.ParseAttachmentFields(issue)
-	if fields == nil {
-		fields = &beads.AttachmentFields{}
-	}
-	fields.OjJobID = ojJobID
-
-	newDesc := beads.SetAttachmentFields(issue, fields)
-	return updateBeadDescription(beadID, newDesc)
-}
-
 // fetchBeadIssue fetches a bead issue by ID.
 func fetchBeadIssue(beadID string) (*beads.Issue, error) {
 	showCmd := bdcmd.Command( "show", beadID, "--json")
