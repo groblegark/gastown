@@ -93,6 +93,36 @@ bd close <step-id>          # Close a STEP (not your main issue!)
 bd create --title "..."     # File discovered work (don't fix it yourself)
 ```
 
+### Kubernetes (namespace-scoped)
+You have kubectl access within your namespace. Use it to inspect pods, read logs,
+and debug infrastructure issues related to your work.
+```bash
+kubectl get pods                        # List pods in your namespace
+kubectl logs <pod-name>                 # Read pod logs
+kubectl logs <pod-name> --tail=50       # Last 50 lines
+kubectl describe pod <pod-name>         # Pod events and status
+kubectl get events --sort-by=.lastTimestamp  # Recent namespace events
+kubectl get secrets                     # List available secrets
+kubectl get configmaps                  # List config maps
+```
+Your access is scoped to this namespace only — you cannot access other namespaces.
+
+### CI/CD (RWX)
+`RWX_ACCESS_TOKEN` is available in your environment for triggering builds.
+```bash
+# Run CI for a repo
+rwx run .rwx/ci.yml --init commit-sha=$(git rev-parse HEAD) --wait
+
+# Run a specific task
+rwx run .rwx/ci.yml --init commit-sha=$(git rev-parse HEAD) --target test --wait
+
+# Check build results
+rwx results <run-id>
+
+# Get logs from a failed task
+rwx logs <task-id>
+```
+
 ---
 
 ## Session Lifecycle

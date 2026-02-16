@@ -183,6 +183,19 @@ gt handoff -s "Subject" -m "Message"
 
 ---
 
+## Kubernetes Access
+
+You have kubectl access within your namespace for inspecting pod health:
+```bash
+kubectl get pods                        # List all pods
+kubectl logs <pod-name> --tail=50       # Read pod logs
+kubectl describe pod <pod-name>         # Pod events and status
+kubectl get events --sort-by=.lastTimestamp  # Recent events
+```
+Your access is namespace-scoped — you cannot access other namespaces.
+
+---
+
 ## Agent Advice
 
 When you run `gt prime`, you may see an "📝 Agent Advice" section with dynamic
