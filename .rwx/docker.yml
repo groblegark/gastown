@@ -901,11 +901,10 @@ tasks:
 
       # ── Build helm dependencies ────────────────────────────────────────
       echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
-      # The gastown subchart (charts/gastown/) is committed in the helm repo
-      # and NOT yet published to OCI registry. Build the subchart's own deps
-      # (bd-daemon from OCI), then skip parent dep-build since the subchart
-      # is already present locally.
-      helm dependency build charts/gastown/
+      # The git repo has a partial charts/gastown/ directory (sub-deps tracked
+      # but no Chart.yaml). Remove it so helm pulls the full subchart from OCI.
+      rm -rf charts/gastown
+      helm dependency build ./
 
       # ── Deploy with --atomic (auto-rollback on failure) ────────────────
       NS="gastown-rwx"
