@@ -43,7 +43,7 @@ func init() {
 func runIssueSet(cmd *cobra.Command, args []string) error {
 	issueID := args[0]
 
-	// Get current tmux session
+	// Get current session
 	session := os.Getenv("TMUX_PANE")
 	if session == "" {
 		// Try to detect from GT env vars
@@ -104,7 +104,7 @@ func runIssueShow(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// detectCurrentSession tries to find the tmux session name from env.
+// detectCurrentSession tries to find the session name from env.
 func detectCurrentSession() string {
 	// Try to build session name from GT env vars
 	rig := os.Getenv("GT_RIG")

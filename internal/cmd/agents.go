@@ -31,17 +31,17 @@ const (
 	AgentPolecat
 )
 
-// AgentSession represents a categorized tmux session.
+// AgentSession represents a categorized session.
 type AgentSession struct {
 	Name      string
 	Type      AgentType
 	Rig       string // For rig-specific agents
 	AgentName string // e.g., crew name, polecat name
-	K8s       bool   // True for K8s coop-backed agents (no tmux session)
+	K8s       bool   // True for K8s coop-backed agents (no session)
 	BeadID    string // Bead ID for K8s agents (used by Backend.AttachSession)
 }
 
-// AgentTypeColors maps agent types to tmux color codes.
+// AgentTypeColors maps agent types to color codes.
 var AgentTypeColors = map[AgentType]string{
 	AgentMayor:    "#[fg=red,bold]",
 	AgentDeacon:   "#[fg=yellow,bold]",
@@ -154,13 +154,6 @@ func categorizeSession(name string) *AgentSession {
 
 	suffix := strings.TrimPrefix(name, "gt-")
 
-	// Witness sessions: legacy format gt-witness-<rig> (fallback)
-	if strings.HasPrefix(suffix, "witness-") {
-		session.Type = AgentWitness
-		session.Rig = strings.TrimPrefix(suffix, "witness-")
-		return session
-	}
-
 	// Rig-level agents: gt-<rig>-<type> or gt-<rig>-crew-<name>
 	parts := strings.SplitN(suffix, "-", 2)
 	if len(parts) < 2 {
@@ -215,7 +208,7 @@ func getAgentSessions(includePolecats bool) ([]*AgentSession, error) {
 	}
 
 	// Also discover K8s agents from the SessionRegistry (if workspace available).
-	// These agents don't have tmux sessions — they run in K8s pods with coop.
+	// These agents don't have sessions — they run in K8s pods with coop.
 	if townRoot, err := workspace.FindFromCwd(); err == nil {
 		agents = mergeK8sAgents(agents, seen, townRoot, includePolecats)
 	}
@@ -262,7 +255,7 @@ func getAgentSessions(includePolecats bool) ([]*AgentSession, error) {
 }
 
 // mergeK8sAgents discovers K8s agents via the SessionRegistry and merges
-// them into the agents list. K8s agents don't have tmux sessions — they run
+// them into the agents list. K8s agents don't have sessions — they run
 // in pods with coop. Uses the pre-fetched agent beads as the registry source.
 func mergeK8sAgents(agents []*AgentSession, seen map[string]bool, townRoot string, includePolecats bool) []*AgentSession {
 	// Collect all agent beads from town + rig beads instances
@@ -408,7 +401,7 @@ func runAgents(cmd *cobra.Command, args []string) error {
 		keyIndex++
 	}
 
-	// Execute tmux display-menu
+	// Execute display-menu
 	tmuxPath, err := exec.LookPath("tmux")
 	if err != nil {
 		return fmt.Errorf("tmux not found: %w", err)
@@ -609,7 +602,7 @@ func buildCollisionReport(townRoot string) (*CollisionReport, error) {
 			continue
 		}
 
-		// Check if the locked session exists in tmux
+		// Check if the locked session exists
 		expectedSession := guessSessionFromWorkerDir(workerDir, townRoot)
 		if expectedSession != "" {
 			found := false

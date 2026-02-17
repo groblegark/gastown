@@ -103,16 +103,16 @@ func (c *BootHealthCheck) Run(ctx *CheckContext) *CheckResult {
 		details = append(details, "No previous run recorded")
 	}
 
-	// Check 4: Currently running (uses tmux session state per ZFC principle)
+	// Check 4: Currently running
 	if sessionAlive {
-		details = append(details, "Currently running (tmux session active)")
+		details = append(details, "Currently running")
 	}
 
 	// All checks passed
 	message := "Boot watchdog healthy"
 	if b.IsDegraded() {
 		message = "Boot watchdog healthy (degraded mode)"
-		details = append(details, "Running in degraded mode (no tmux)")
+		details = append(details, "Running in degraded mode")
 	}
 
 	return &CheckResult{

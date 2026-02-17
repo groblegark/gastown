@@ -300,7 +300,7 @@ func checkAgentHealth(townRoot string, report *PreflightReport) {
 	}
 }
 
-// agentBeadIDToSessionName converts an agent bead ID to the expected tmux session name.
+// agentBeadIDToSessionName converts an agent bead ID to the expected session name.
 func agentBeadIDToSessionName(beadID string) string {
 	// Town-level agents: hq-mayor → gt-mayor, hq-deacon → gt-deacon
 	if strings.HasPrefix(beadID, "hq-") {

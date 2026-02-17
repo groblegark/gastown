@@ -1236,8 +1236,7 @@ func TestClaudeSettingsCheck_TownRootSettingsWarnsInsteadOfKilling(t *testing.T)
 		t.Errorf("expected details to mention wrong location, got %v", result.Details)
 	}
 
-	// Apply fix - should NOT return error and should NOT kill sessions
-	// (session killing would require tmux which isn't available in tests)
+	// Apply fix - should NOT return error
 	if err := check.Fix(ctx); err != nil {
 		t.Fatalf("Fix failed: %v", err)
 	}

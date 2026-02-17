@@ -301,7 +301,7 @@ func HaltPayload(services []string) map[string]interface{} {
 }
 
 // SessionDeathPayload creates a payload for session death events.
-// session: tmux session name that died
+// session: session name that died
 // agent: Gas Town agent identity (e.g., "gastown/polecats/Toast")
 // reason: why the session was killed (e.g., "zombie cleanup", "user request", "doctor fix")
 // caller: what initiated the kill (e.g., "daemon", "doctor", "gt down")

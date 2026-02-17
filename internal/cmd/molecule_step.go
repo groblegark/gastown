@@ -447,7 +447,7 @@ func handleParallelSteps(cwd, townRoot, workDir string, steps []*beads.Issue, dr
 	// For parallel execution, we use goroutines with a WaitGroup
 	// Each step is executed by running its commands in sequence
 	// For now, we execute them sequentially but mark them all as in_progress first
-	// TODO: True parallel execution requires spawning subagents or separate tmux panes
+	// TODO: True parallel execution requires spawning subagents or separate panes
 
 	fmt.Printf("\n%s Executing parallel steps...\n", style.Bold.Render("🔄"))
 
@@ -468,7 +468,7 @@ func handleParallelSteps(cwd, townRoot, workDir string, steps []*beads.Issue, dr
 	// Execute steps concurrently using goroutines
 	// Note: This is simplified - each step's "execution" just marks it complete
 	// In practice, the agent (witness/deacon) needs to actually do the work described in step.Description
-	// For true parallel execution, this would spawn separate tmux panes or Task subagents
+	// For true parallel execution, this would spawn separate panes or Task subagents
 
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(steps))

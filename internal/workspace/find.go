@@ -160,7 +160,7 @@ func IsWorkspace(dir string) (bool, error) {
 }
 
 // GetTownName loads the town name from the workspace's town.json config.
-// This is used for generating unique tmux session names that avoid collisions
+// This is used for generating unique session names that avoid collisions
 // when running multiple Gas Town instances.
 func GetTownName(townRoot string) (string, error) {
 	townConfigPath := filepath.Join(townRoot, PrimaryMarker)

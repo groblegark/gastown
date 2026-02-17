@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/steveyegge/gastown/internal/bdcmd"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/boot"
 	"github.com/steveyegge/gastown/internal/constants"
@@ -29,7 +28,6 @@ import (
 	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
-	"github.com/steveyegge/gastown/internal/statusline"
 	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/wisp"
@@ -52,7 +50,6 @@ type Daemon struct {
 	convoyWatcher  *ConvoyWatcher
 	doltServer     *DoltServerManager
 	krcPruner          *KRCPruner
-	statusCache        *statusline.CacheManager
 
 	// Mass death detection: track recent session deaths
 	deathsMu     sync.Mutex
@@ -213,15 +210,6 @@ func (d *Daemon) Run() error {
 		}
 	}
 
-	// Start status line cache manager (reduces Dolt query load from tmux status bars)
-	updater := statusline.NewUpdater(d.config.TownRoot)
-	d.statusCache = statusline.NewCacheManager(d.config.TownRoot, updater.Update)
-	if err := d.statusCache.Start(); err != nil {
-		d.logger.Printf("Warning: failed to start status cache: %v", err)
-	} else {
-		d.logger.Println("Status line cache started")
-	}
-
 	// Initial heartbeat
 	d.heartbeat(state)
 
@@ -325,7 +313,7 @@ func (d *Daemon) heartbeat(state *State) {
 	d.checkOrphanedWork()
 
 	// 9. Check polecat session health (proactive crash detection)
-	// This validates tmux sessions are still alive for polecats with work-on-hook
+	// This validates sessions are still alive for polecats with work-on-hook
 	d.checkPolecatSessionHealth()
 
 	// 10. Clean up orphaned claude subagent processes (memory leak prevention)
@@ -557,7 +545,7 @@ func (d *Daemon) ensureWitnessesRunning() {
 }
 
 // ensureWitnessRunning ensures the witness for a specific rig is running.
-// Discover, don't track: uses Manager.Start() which checks tmux directly (gt-zecmc).
+// Discover, don't track: uses Manager.Start() which checks sessions directly (gt-zecmc).
 func (d *Daemon) ensureWitnessRunning(rigName string) {
 	// Check rig operational state before auto-starting
 	if operational, reason := d.isRigOperational(rigName); !operational {
@@ -567,7 +555,7 @@ func (d *Daemon) ensureWitnessRunning(rigName string) {
 
 	// Manager.Start() handles: zombie detection, session creation, env vars, theming,
 	// startup readiness waits, and crucially - startup/propulsion nudges (GUPP).
-	// It returns ErrAlreadyRunning if Claude is already running in tmux.
+	// It returns ErrAlreadyRunning if Claude is already running.
 	r := &rig.Rig{
 		Name: rigName,
 		Path: filepath.Join(d.config.TownRoot, rigName),
@@ -597,7 +585,7 @@ func (d *Daemon) ensureRefineriesRunning() {
 }
 
 // ensureRefineryRunning ensures the refinery for a specific rig is running.
-// Discover, don't track: uses Manager.Start() which checks tmux directly (gt-zecmc).
+// Discover, don't track: uses Manager.Start() which checks sessions directly (gt-zecmc).
 func (d *Daemon) ensureRefineryRunning(rigName string) {
 	// Check rig operational state before auto-starting
 	if operational, reason := d.isRigOperational(rigName); !operational {
@@ -607,7 +595,7 @@ func (d *Daemon) ensureRefineryRunning(rigName string) {
 
 	// Manager.Start() handles: zombie detection, session creation, env vars, theming,
 	// WaitForClaudeReady, and crucially - startup/propulsion nudges (GUPP).
-	// It returns ErrAlreadyRunning if Claude is already running in tmux.
+	// It returns ErrAlreadyRunning if Claude is already running.
 	r := &rig.Rig{
 		Name: rigName,
 		Path: filepath.Join(d.config.TownRoot, rigName),
@@ -778,12 +766,6 @@ func (d *Daemon) shutdown(state *State) error { //nolint:unparam // error return
 	if d.krcPruner != nil {
 		d.krcPruner.Stop()
 		d.logger.Println("KRC pruner stopped")
-	}
-
-	// Stop status line cache manager
-	if d.statusCache != nil {
-		d.statusCache.Stop()
-		d.logger.Println("Status line cache stopped")
 	}
 
 	// Stop Dolt server if we're managing it
@@ -991,11 +973,11 @@ func KillOrphanedDaemons() (int, error) {
 	return killed, nil
 }
 
-// checkPolecatSessionHealth proactively validates polecat tmux sessions.
+// checkPolecatSessionHealth proactively validates polecat sessions.
 // This detects crashed polecats that:
 // 1. Have work-on-hook (assigned work)
 // 2. Report state=running/working in their agent bead
-// 3. But the tmux session is actually dead
+// 3. But the session is actually dead
 //
 // When a crash is detected, the polecat is automatically restarted.
 // This provides faster recovery than waiting for GUPP timeout or Witness detection.
@@ -1044,10 +1026,9 @@ func listPolecatWorktrees(polecatsDir string) ([]string, error) {
 // checkPolecatHealth checks a single polecat's session health.
 // If the polecat has work-on-hook but the session is dead, it's restarted.
 //
-// Three paths based on how the polecat is managed:
-// - OJ-managed (oj_job_id set): query oj job show, map states
+// Two paths based on how the polecat is managed:
 // - Coop-managed (backend=coop in notes): query coop HTTP health/agent API
-// - Legacy tmux: check tmux session existence
+// - Legacy: check session existence
 func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 	// Get agent bead info to check for hooked work
 	townName, _ := workspace.GetTownName(d.config.TownRoot)
@@ -1064,14 +1045,6 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 		return
 	}
 
-	// Check if this polecat is OJ-managed by reading oj_job_id from the hook bead
-	ojJobID := d.getOjJobIDFromBead(info.HookBead)
-	if ojJobID != "" {
-		// OJ-managed polecat: check OJ job status instead of tmux
-		d.checkOjPolecatHealth(rigName, polecatName, info.HookBead, ojJobID)
-		return
-	}
-
 	// Check if this polecat is Coop-managed (K8s pod with coop sidecar)
 	coopURL := getCoopURLFromNotes(info.Notes)
 	if coopURL != "" {
@@ -1079,7 +1052,7 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 		return
 	}
 
-	// Legacy tmux path: check tmux session existence
+	// Legacy path: check session existence
 	sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
 	sessionAlive, err := d.hasSession(sessionName)
 	if err != nil {
@@ -1107,81 +1080,6 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 	} else {
 		d.logger.Printf("Successfully restarted crashed polecat %s/%s", rigName, polecatName)
 	}
-}
-
-// getOjJobIDFromBead reads the oj_job_id from a work bead's description.
-// Returns empty string if not found or on error.
-func (d *Daemon) getOjJobIDFromBead(beadID string) string {
-	cmd := bdcmd.CommandInDir(d.config.TownRoot, "show", beadID, "--json", "--allow-stale")
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-
-	var issues []beads.Issue
-	if err := json.Unmarshal(output, &issues); err != nil || len(issues) == 0 {
-		return ""
-	}
-
-	fields := beads.ParseAttachmentFields(&issues[0])
-	if fields == nil {
-		return ""
-	}
-	return fields.OjJobID
-}
-
-// checkOjPolecatHealth checks health of an OJ-managed polecat by querying OJ job status.
-// Maps OJ job states to polecat health: running=alive, completed=done, failed=crashed.
-func (d *Daemon) checkOjPolecatHealth(rigName, polecatName, hookBead, ojJobID string) {
-	state, err := d.queryOjJobState(ojJobID)
-	if err != nil {
-		d.logger.Printf("Error querying OJ job %s for %s/%s: %v", ojJobID, rigName, polecatName, err)
-		return
-	}
-
-	switch state {
-	case "running", "pending":
-		// OJ job is alive - nothing to do
-		return
-	case "completed":
-		// Job completed successfully - polecat is done
-		d.logger.Printf("OJ job %s completed for polecat %s/%s", ojJobID, rigName, polecatName)
-		return
-	case "failed", "crashed", "cancelled":
-		// Job failed - log and notify witness
-		d.logger.Printf("OJ job %s %s for polecat %s/%s (hook_bead=%s)",
-			ojJobID, state, rigName, polecatName, hookBead)
-		d.notifyWitnessOfCrashedPolecat(rigName, polecatName, hookBead,
-			fmt.Errorf("OJ job %s in state: %s", ojJobID, state))
-	default:
-		d.logger.Printf("Unknown OJ job state %q for %s/%s", state, rigName, polecatName)
-	}
-}
-
-// queryOjJobState queries the OJ daemon for a job's current state.
-// Returns the state string (running, completed, failed, etc).
-func (d *Daemon) queryOjJobState(jobID string) (string, error) {
-	cmd := exec.Command("oj", "job", "show", jobID, "--json")
-	cmd.Dir = d.config.TownRoot
-	cmd.Env = os.Environ()
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("oj job show %s: %w", jobID, err)
-	}
-
-	var result struct {
-		State  string `json:"state"`
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(output, &result); err != nil {
-		return "", fmt.Errorf("parsing oj job show output: %w", err)
-	}
-
-	// OJ may use "state" or "status" field
-	if result.State != "" {
-		return result.State, nil
-	}
-	return result.Status, nil
 }
 
 // getCoopURLFromNotes extracts a coop_url from agent bead notes.

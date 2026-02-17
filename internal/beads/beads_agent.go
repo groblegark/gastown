@@ -76,7 +76,6 @@ type AgentFields struct {
 	ActiveMR          string   // Currently active merge request bead ID (for traceability)
 	NotificationLevel string   // DND mode: verbose, normal, muted (default: normal)
 	OwnedFormulas     []string // Formulas this agent owns/maintains (crew workers)
-	OJJobID           string   // OddJobs job ID managing this agent's lifecycle (if OJ-dispatched)
 	// Note: RoleBead field removed - role definitions are now config-based.
 	// See internal/config/roles/*.toml and config-based-roles.md.
 }
@@ -140,10 +139,6 @@ func FormatAgentDescription(title string, fields *AgentFields) string {
 		lines = append(lines, "owned_formulas: null")
 	}
 
-	if fields.OJJobID != "" {
-		lines = append(lines, fmt.Sprintf("oj_job_id: %s", fields.OJJobID))
-	}
-
 	return strings.Join(lines, "\n")
 }
 
@@ -194,8 +189,6 @@ func ParseAgentFields(description string) *AgentFields {
 				}
 				fields.OwnedFormulas = formulas
 			}
-		case "oj_job_id":
-			fields.OJJobID = value
 		}
 	}
 
@@ -480,7 +473,7 @@ func (b *Beads) UpdateAgentState(id string, state string, hookBead *string) erro
 
 // SetHookBead sets the hook_bead slot on an agent bead.
 // This is a convenience wrapper that only sets the hook without changing agent_state.
-// Per gt-zecmc: agent_state ("running", "dead", "idle") is observable from tmux
+// Per gt-zecmc: agent_state ("running", "dead", "idle") is observable
 // and should not be recorded in beads ("discover, don't track" principle).
 func (b *Beads) SetHookBead(agentBeadID, hookBeadID string) error {
 	// Set the hook using bd slot set

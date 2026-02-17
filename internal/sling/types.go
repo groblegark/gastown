@@ -36,7 +36,7 @@ type SlingOptions struct {
 	// Dependencies (injected by caller)
 	// ResolveTarget resolves a target string to (agentID, pane, workDir).
 	// Required for targets that are existing agents (not rigs, dogs, or crew).
-	// CLI provides tmux-based resolution; RPC can provide nil if only targeting rigs.
+	// CLI provides resolution; RPC can provide nil if only targeting rigs.
 	ResolveTarget ResolveTargetFunc
 	// ResolveSelf resolves the current agent's identity.
 	// Required when Target is empty (sling to self).
@@ -54,9 +54,7 @@ type SlingResult struct {
 	PolecatSpawned bool
 	PolecatName    string
 	BeadTitle      string
-	ConvoyCreated  bool
-	// TargetPane is set when the target has a tmux pane (for CLI nudging).
-	TargetPane string
+	ConvoyCreated bool
 	// K8sSpawn is true when the polecat was dispatched to K8s (no local session).
 	K8sSpawn bool
 }
@@ -94,7 +92,6 @@ type FormulaResult struct {
 	ConvoyID       string
 	PolecatSpawned bool
 	PolecatName    string
-	TargetPane     string
 }
 
 // BatchOptions contains parameters for batch slinging.
@@ -163,7 +160,7 @@ type SpawnOptions struct {
 	Agent    string
 
 	// ExecutionTarget is "local" (default) or "k8s".
-	// When "k8s", skip worktree/tmux and set agent_state=spawning for the controller.
+	// When "k8s", skip worktree creation and set agent_state=spawning for the controller.
 	ExecutionTarget string
 }
 
@@ -172,8 +169,6 @@ type SpawnResult struct {
 	RigName     string
 	PolecatName string
 	ClonePath   string
-	SessionName string
-	Pane        string
 	// Internal fields for deferred session start
 	Account string
 	Agent   string
@@ -218,13 +213,6 @@ type DogDispatchResult struct {
 	AgentID string
 	Pane    string
 	Spawned bool
-}
-
-// OjDispatchResult contains info about a dispatched OJ sling job.
-type OjDispatchResult struct {
-	JobID       string
-	PolecatName string
-	AgentID     string
 }
 
 // ResolveTargetFunc resolves a target string to agent ID, pane, and work directory.

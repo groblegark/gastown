@@ -4,7 +4,7 @@
 // Lock files are stored at <worker>/.runtime/agent.lock and contain:
 // - PID of the owning process
 // - Timestamp when lock was acquired
-// - Session ID (tmux session name)
+// - Session ID (session name)
 //
 // Stale locks (where the PID is dead) are automatically cleaned up.
 package lock
@@ -223,16 +223,16 @@ func FindAllLocks(root string) (map[string]*LockInfo, error) {
 
 // CleanStaleLocks removes all stale locks in a directory tree.
 // Returns the number of stale locks cleaned.
-// A lock is only truly stale if BOTH the PID is dead AND the tmux session
+// A lock is only truly stale if BOTH the PID is dead AND the session
 // doesn't exist. This prevents killing active workers whose spawning process
-// has exited (which is normal - Claude runs as a child in tmux).
+// has exited (which is normal - Claude runs as a child in a session).
 func CleanStaleLocks(root string) (int, error) {
 	locks, err := FindAllLocks(root)
 	if err != nil {
 		return 0, err
 	}
 
-	// Get active tmux sessions to verify locks
+	// Get active sessions to verify locks
 	activeSessions := getActiveTmuxSessions()
 	sessionSet := make(map[string]bool)
 	for _, s := range activeSessions {
@@ -258,7 +258,7 @@ func CleanStaleLocks(root string) (int, error) {
 	return cleaned, nil
 }
 
-// getActiveTmuxSessions returns a list of active tmux session identifiers.
+// getActiveTmuxSessions returns a list of active session identifiers.
 // Returns both session names (gt-foo-bar) and session IDs in various formats
 // (%N, $N) to handle different lock file formats.
 func getActiveTmuxSessions() []string {
@@ -267,7 +267,7 @@ func getActiveTmuxSessions() []string {
 	cmd := execCommand("tmux", "list-sessions", "-F", "#{session_name}:#{session_id}")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil // tmux not running or not installed
+		return nil // not running or not installed
 	}
 
 	var sessions []string
@@ -283,7 +283,7 @@ func getActiveTmuxSessions() []string {
 		if len(parts) >= 2 {
 			id := parts[1]
 			sessions = append(sessions, id) // $N format
-			// Also add %N format (old tmux style) for compatibility
+			// Also add %N format (old style) for compatibility
 			if len(id) > 0 && id[0] == '$' {
 				sessions = append(sessions, "%"+id[1:])
 			}
@@ -348,7 +348,7 @@ func splitLines(s string) []string {
 
 // DetectCollisions finds workers with multiple agents claiming the same identity.
 // This detects the case where multiple processes think they own the same worker
-// by comparing tmux sessions with lock files.
+// by comparing sessions with lock files.
 // Returns a list of collision descriptions.
 func DetectCollisions(root string, activeSessions []string) []string {
 	var collisions []string

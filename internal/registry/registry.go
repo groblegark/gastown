@@ -33,7 +33,7 @@ type Session struct {
 	// Name is the agent's name within its role (e.g., "hq", "Toast", "k8s").
 	Name string
 
-	// TmuxSession is the computed tmux session name (e.g., "hq-mayor", "gt-gastown-crew-k8s").
+	// TmuxSession is the computed session name (e.g., "hq-mayor", "gt-gastown-crew-k8s").
 	TmuxSession string
 
 	// BackendType is the detected backend: "coop" or "local".
@@ -217,7 +217,7 @@ func (r *SessionRegistry) buildSession(id string, issue *beads.Issue) Session {
 	// Parse name from ID
 	s.Name = parseNameFromID(id, s.Rig, s.Role)
 
-	// Compute tmux session name
+	// Compute session name
 	s.TmuxSession = computeTmuxSession(id, s.Rig, s.Role, s.Name)
 
 	// Check for K8s labels
@@ -330,7 +330,7 @@ func parseNameFromID(id, rig, role string) string {
 	return id
 }
 
-// computeTmuxSession computes the tmux session name for an agent.
+// computeTmuxSession computes the session name for an agent.
 // Town-level: "hq-mayor", "hq-deacon"
 // Rig-level: "gt-<rig>-<type>" or "gt-<rig>-crew-<name>"
 func computeTmuxSession(id, rig, role, name string) string {
@@ -338,7 +338,7 @@ func computeTmuxSession(id, rig, role, name string) string {
 	if strings.HasPrefix(id, "hq-") {
 		return id
 	}
-	// For everything else, the bead ID IS the tmux session name
+	// For everything else, the bead ID IS the session name
 	return id
 }
 

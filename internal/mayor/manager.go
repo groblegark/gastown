@@ -42,13 +42,13 @@ func (m *Manager) hasSession(sessionID string) (bool, error) {
 	return m.backend.HasSession(sessionID)
 }
 
-// SessionName returns the tmux session name for the mayor.
+// SessionName returns the session name for the mayor.
 // This is a package-level function for convenience.
 func SessionName() string {
 	return session.MayorSessionName()
 }
 
-// SessionName returns the tmux session name for the mayor.
+// SessionName returns the session name for the mayor.
 func (m *Manager) SessionName() string {
 	return SessionName()
 }

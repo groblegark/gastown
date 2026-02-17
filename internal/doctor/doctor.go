@@ -79,7 +79,7 @@ func runCheckWithTimeout(check Check, ctx *CheckContext) *CheckResult {
 			Name:    check.Name(),
 			Status:  StatusError,
 			Message: fmt.Sprintf("Check timed out after %v", DefaultCheckTimeout),
-			Details: []string{"The check was abandoned because it exceeded the timeout. This usually indicates a hanging subprocess (tmux, ps, bd) or a slow database query."},
+			Details: []string{"The check was abandoned because it exceeded the timeout. This usually indicates a hanging subprocess (ps, bd) or a slow database query."},
 		}
 	}
 }

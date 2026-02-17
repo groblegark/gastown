@@ -146,7 +146,7 @@ func isStalePolecatDone(rigName, polecatName string, msg *mail.Message) (bool, s
 	sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
 	createdAt, err := session.SessionCreatedAt(sessionName)
 	if err != nil {
-		// Session not found or tmux not running - can't determine staleness, allow message
+		// Session not found - can't determine staleness, allow message
 		return false, ""
 	}
 
@@ -569,33 +569,6 @@ func getAgentBeadFields(workDir, rigName, polecatName string) *beads.AgentFields
 	return beads.ParseAgentFields(resp.Description)
 }
 
-// isOJJobActive checks whether an OddJobs job is still running.
-// Returns true if the job is active (running/pending) and the polecat should NOT be nuked.
-// Returns false if the job is completed, failed, or cannot be queried.
-func isOJJobActive(workDir, jobID string) bool {
-	output, err := util.ExecWithOutput(workDir, "oj", "job", "show", jobID, "--json")
-	if err != nil || output == "" {
-		// Can't reach OJ or job not found — assume not active (allow nuke)
-		return false
-	}
-
-	// Parse minimal JSON to extract status
-	var resp struct {
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal([]byte(output), &resp); err != nil {
-		return false
-	}
-
-	// Active statuses that should prevent nuking
-	switch resp.Status {
-	case "running", "pending", "queued":
-		return true
-	default:
-		return false
-	}
-}
-
 // escalateToMayor sends an escalation mail to the Mayor.
 func escalateToMayor(router *mail.Router, rigName string, payload *HelpPayload, reason string) (string, error) {
 	msg := &mail.Message{
@@ -752,18 +725,8 @@ type NukePolecatResult struct {
 func AutoNukeIfClean(workDir, rigName, polecatName string) *NukePolecatResult {
 	result := &NukePolecatResult{}
 
-	// Check agent bead fields for OJ job and cleanup status
+	// Check agent bead fields for cleanup status
 	agentFields := getAgentBeadFields(workDir, rigName, polecatName)
-
-	// If this polecat was dispatched by OddJobs, check job status before nuking.
-	// OJ manages the full lifecycle — don't nuke while the job is still active.
-	if agentFields != nil && agentFields.OJJobID != "" {
-		if isOJJobActive(workDir, agentFields.OJJobID) {
-			result.Skipped = true
-			result.Reason = fmt.Sprintf("skipped: OJ job %s still active", agentFields.OJJobID)
-			return result
-		}
-	}
 
 	// Check cleanup_status from agent bead
 	cleanupStatus := ""
@@ -896,13 +859,13 @@ type PolecatsWithHookedWork struct {
 	RigName     string
 }
 
-// FindPolecatsWithHookedWork finds polecats that have hooked work but no active tmux session.
+// FindPolecatsWithHookedWork finds polecats that have hooked work but no active session.
 // These are polecats that completed work (gt done) but then had new work slung to them via gt sling.
 // They need to be respawned to process the hooked work.
 // Returns a list of such polecats that should be respawned.
 //
 // FIX (hq-50u3h): This function addresses the bug where done polecats don't process hooked work.
-// The fix checks each polecat's agent bead for hook_bead and verifies no active tmux session.
+// The fix checks each polecat's agent bead for hook_bead and verifies no active session.
 //
 // FIX (hq-dtwfqa): Validate hook_bead exists before including in respawn list.
 // If hook_bead points to a deleted/non-existent bead, clear it and skip this polecat.
@@ -1150,7 +1113,7 @@ func isCrewPath(path, rigName string) bool {
 	return false
 }
 
-// crewSessionName returns the tmux session name for a crew member.
+// crewSessionName returns the session name for a crew member.
 func crewSessionName(requestedBy, _ string) string {
 	// Handle formats:
 	// - "gastown/crew/worker" -> "gt-gastown-crew-worker"
@@ -1189,7 +1152,7 @@ func NudgeCrewWithDecision(workDir, rigName string, info *ResolvedDecisionInfo) 
 	}
 	msg.WriteString(". Check your mail or continue work.")
 
-	// Send the nudge via gt nudge (uses proper tmux formatting).
+	// Send the nudge via gt nudge.
 	// Direct send is now the default - the crew is likely idle (blocked waiting for
 	// this decision), so direct delivery is needed to wake up the session.
 	if err := util.ExecRun(workDir, "gt", "nudge", info.RequestedBy, msg.String()); err != nil {

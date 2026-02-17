@@ -23,7 +23,7 @@ var (
 )
 
 // Manager handles witness lifecycle and monitoring operations.
-// ZFC-compliant: session existence is the source of truth (tmux or coop).
+// ZFC-compliant: session existence is the source of truth.
 type Manager struct {
 	rig     *rig.Rig
 	backend terminal.Backend
@@ -48,12 +48,12 @@ func (m *Manager) hasSession(sessionID string) (bool, error) {
 }
 
 // IsRunning checks if the witness session is active.
-// ZFC: session existence is the source of truth (tmux or coop).
+// ZFC: session existence is the source of truth.
 func (m *Manager) IsRunning() (bool, error) {
 	return m.hasSession(m.SessionName())
 }
 
-// SessionName returns the tmux session name for this witness.
+// SessionName returns the session name for this witness.
 func (m *Manager) SessionName() string {
 	return fmt.Sprintf("gt-%s-witness", m.rig.Name)
 }

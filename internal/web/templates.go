@@ -82,7 +82,7 @@ type QueueRow struct {
 	Failed     int
 }
 
-// SessionRow represents a tmux session.
+// SessionRow represents an agent session.
 type SessionRow struct {
 	Name     string // Session name (e.g., "gt-gastown-witness")
 	Role     string // witness, refinery, polecat, crew, deacon
@@ -104,8 +104,7 @@ type HookRow struct {
 
 // MayorStatus represents the Mayor's current state.
 type MayorStatus struct {
-	IsAttached   bool   // True if gt-mayor tmux session exists
-	SessionName  string // Tmux session name
+	IsAttached   bool   // True if mayor agent is running
 	LastActivity string // Age since last activity
 	IsActive     bool   // True if activity < 5 min (likely working)
 	Runtime      string // Which runtime (claude, codex, etc.)
@@ -169,9 +168,9 @@ type MailRow struct {
 type WorkerRow struct {
 	Name         string        // e.g., "dag", "nux", "refinery"
 	Rig          string        // e.g., "roxas", "gastown"
-	SessionID    string        // e.g., "gt-roxas-dag"
+	AgentID      string        // Agent identifier (e.g., "gt-roxas-dag")
 	LastActivity activity.Info // Colored activity display
-	StatusHint   string        // Last line from pane (optional)
+	StatusHint   string        // Status hint (optional)
 	IssueID      string        // Currently assigned issue ID (e.g., "hq-1234")
 	IssueTitle   string        // Issue title (truncated)
 	WorkStatus   string        // working, stale, stuck, idle

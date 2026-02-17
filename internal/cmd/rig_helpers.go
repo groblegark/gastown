@@ -83,6 +83,28 @@ func loadRigsConfigBeadsFirst(townRoot string) (*config.RigsConfig, error) {
 	return config.LoadRigsConfigWithFallback(configEntries, townName, townRoot)
 }
 
+// getAllRigs discovers all rigs in the current workspace.
+func getAllRigs() ([]*rig.Rig, string, error) {
+	townRoot, err := workspace.FindFromCwdOrError()
+	if err != nil {
+		return nil, "", fmt.Errorf("not in a Gas Town workspace: %w", err)
+	}
+
+	rigsConfig, err := loadRigsConfigBeadsFirst(townRoot)
+	if err != nil {
+		rigsConfig = &config.RigsConfig{Rigs: make(map[string]config.RigEntry)}
+	}
+
+	g := git.NewGit(townRoot)
+	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
+	rigs, err := rigMgr.DiscoverRigs()
+	if err != nil {
+		return nil, "", err
+	}
+
+	return rigs, townRoot, nil
+}
+
 // rigBeadsToEntries converts rig identity beads into RigBeadEntry format
 // compatible with LoadRigsConfigFromBeads. Extracts git_url and prefix from
 // the rig bead's description (via ParseRigFields) and labels, then marshals

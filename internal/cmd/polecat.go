@@ -1427,7 +1427,7 @@ func runPolecatNuke(cmd *cobra.Command, args []string) error {
 }
 
 // cleanupOrphanedProcesses kills Claude processes that survived session termination.
-// Uses aggressive zombie detection via tmux session verification.
+// Uses aggressive zombie detection via session verification.
 func cleanupOrphanedProcesses() {
 	results, err := util.CleanupZombieClaudeProcesses()
 	if err != nil {

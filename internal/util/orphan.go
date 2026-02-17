@@ -38,7 +38,7 @@ func isK8sMode() bool {
 }
 
 // getTmuxSessionPIDs returns a set of PIDs belonging to managed sessions.
-// In K8s mode, there are no tmux sessions, so this returns an empty set.
+// In K8s mode, there are no sessions, so this returns an empty set.
 // Orphan detection relies solely on TTY-based and age-based checks.
 func getTmuxSessionPIDs() map[int]bool {
 	return make(map[int]bool)
@@ -226,7 +226,7 @@ func FindOrphanedClaudeProcesses() ([]OrphanedProcess, error) {
 		return nil, nil
 	}
 
-	// Get PIDs belonging to valid Gas Town tmux sessions.
+	// Get PIDs belonging to valid Gas Town sessions.
 	// These should not be killed even if they show TTY "?" during startup.
 	protectedPIDs := getTmuxSessionPIDs()
 
@@ -272,7 +272,7 @@ func FindOrphanedClaudeProcesses() ([]OrphanedProcess, error) {
 			continue
 		}
 
-		// Skip processes that belong to valid Gas Town tmux sessions.
+		// Skip processes that belong to valid Gas Town sessions.
 		// This prevents killing witnesses/refineries/deacon during startup
 		// when they may temporarily show TTY "?".
 		if protectedPIDs[pid] {
@@ -306,7 +306,7 @@ type CleanupResult struct {
 	Error   error
 }
 
-// ZombieProcess represents a claude process not in any active tmux session.
+// ZombieProcess represents a claude process not in any active session.
 type ZombieProcess struct {
 	PID int
 	Cmd string
@@ -314,23 +314,23 @@ type ZombieProcess struct {
 	TTY string // TTY column from ps (may be "?" or a session like "s024")
 }
 
-// FindZombieClaudeProcesses finds Claude processes NOT in any active tmux session.
-// This catches "zombie" processes that have a TTY but whose tmux session is dead.
+// FindZombieClaudeProcesses finds Claude processes NOT in any active session.
+// This catches "zombie" processes that have a TTY but whose session is dead.
 //
 // Unlike FindOrphanedClaudeProcesses (which uses TTY="?" detection), this function
-// uses tmux pane verification: a process is a zombie if it's NOT the pane PID of
-// any active tmux session AND not a child of any pane PID.
+// uses pane verification: a process is a zombie if it's NOT the pane PID of
+// any active session AND not a child of any pane PID.
 //
-// This is the definitive zombie check because it verifies against tmux reality.
+// This is the definitive zombie check because it verifies against session reality.
 func FindZombieClaudeProcesses() ([]ZombieProcess, error) {
 	// In K8s mode, skip zombie detection entirely. All pod processes lack
-	// tmux sessions and have TTY="?", so every Claude process would be
+	// sessions and have TTY="?", so every Claude process would be
 	// falsely detected as a zombie — including the caller (gt-trf7ok).
 	if isK8sMode() {
 		return nil, nil
 	}
 
-	// Get ALL valid PIDs (panes + their children) from active tmux sessions
+	// Get ALL valid PIDs (panes + their children) from active sessions
 	validPIDs := getTmuxSessionPIDs()
 
 	// Also protect our own process and parent (defense-in-depth, gt-trf7ok).
@@ -367,7 +367,7 @@ func FindZombieClaudeProcesses() ([]ZombieProcess, error) {
 			continue
 		}
 
-		// Skip processes that belong to valid Gas Town tmux sessions
+		// Skip processes that belong to valid Gas Town sessions
 		if validPIDs[pid] {
 			continue
 		}
@@ -381,7 +381,7 @@ func FindZombieClaudeProcesses() ([]ZombieProcess, error) {
 			continue
 		}
 
-		// This process is NOT in any active tmux session - it's a zombie
+		// This process is NOT in any active session - it's a zombie
 		zombies = append(zombies, ZombieProcess{
 			PID: pid,
 			Cmd: cmd,
@@ -414,7 +414,7 @@ type ZombieCleanupResult struct {
 }
 
 // CleanupZombieClaudeProcesses finds and kills zombie Claude processes.
-// Uses tmux verification to ensure we never kill processes in active sessions.
+// Uses session verification to ensure we never kill processes in active sessions.
 //
 // Uses the same graceful escalation as orphan cleanup:
 //  1. First encounter → SIGTERM, record in state file

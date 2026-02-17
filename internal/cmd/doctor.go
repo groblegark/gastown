@@ -129,14 +129,12 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Register built-in checks
 	d.Register(doctor.NewStaleBinaryCheck())
-	d.Register(doctor.NewSqlite3Check())
 	d.Register(doctor.NewTownGitCheck())
 	d.Register(doctor.NewTownRootBranchCheck())
 	d.Register(doctor.NewPreCheckoutHookCheck())
 	d.Register(doctor.NewDaemonCheck())
 	d.Register(doctor.NewRepoFingerprintCheck())
 	d.Register(doctor.NewBootHealthCheck())
-	d.Register(doctor.NewOjDaemonCheck())
 	d.Register(doctor.NewBeadsDatabaseCheck())
 	d.Register(doctor.NewCustomTypesCheck())
 	d.Register(doctor.NewRoleLabelCheck())
@@ -155,7 +153,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	d.Register(doctor.NewCloneDivergenceCheck())
 	d.Register(doctor.NewIdentityCollisionCheck())
 	d.Register(doctor.NewCrashReportCheck())
-	d.Register(doctor.NewLocalDoltCheck())
+
 
 	// Patrol system checks
 	d.Register(doctor.NewPatrolMoleculesExistCheck())
@@ -173,7 +171,6 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	d.Register(doctor.NewSettingsCheck())
 	d.Register(doctor.NewSessionHookCheck())
 	d.Register(doctor.NewRuntimeGitignoreCheck())
-	d.Register(doctor.NewLegacyGastownCheck())
 	d.Register(doctor.NewClaudeSettingsCheck())
 
 	// Priming subsystem check

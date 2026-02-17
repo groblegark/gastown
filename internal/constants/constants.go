@@ -4,7 +4,7 @@ package constants
 
 import "time"
 
-// Timing constants for session management and tmux operations.
+// Timing constants for session management.
 const (
 	// ShutdownNotifyDelay is the pause after sending shutdown notification.
 	ShutdownNotifyDelay = 500 * time.Millisecond
@@ -21,7 +21,7 @@ const (
 	// See NudgeSession comment: "Wait 500ms for paste to complete (tested, required)"
 	DefaultDebounceMs = 500
 
-	// DefaultDisplayMs is the default duration for tmux display-message.
+	// DefaultDisplayMs is the default duration for display-message.
 	DefaultDisplayMs = 5000
 
 	// PollInterval is the default polling interval for wait loops.
@@ -29,7 +29,7 @@ const (
 
 	// AgentReadyPollInterval is the polling interval for WaitForAgentReady.
 	// Uses a longer interval than PollInterval since agent startup takes seconds,
-	// not milliseconds. Avoids excessive tmux queries during startup (gt-kk330e).
+	// not milliseconds. Avoids excessive session queries during startup (gt-kk330e).
 	AgentReadyPollInterval = 1 * time.Second
 
 	// DefaultWaitReadyTimeout is the default timeout for --wait-ready on gt nudge.
@@ -130,12 +130,12 @@ const (
 	BranchIntegrationPrefix = "integration/"
 )
 
-// Tmux session names.
+// Session names.
 // Mayor and Deacon use hq- prefix: hq-mayor, hq-deacon (town-level, one per machine).
 // Rig-level services use gt- prefix: gt-<rig>-witness, gt-<rig>-refinery, etc.
 // Use session.MayorSessionName() and session.DeaconSessionName().
 const (
-	// SessionPrefix is the prefix for rig-level Gas Town tmux sessions.
+	// SessionPrefix is the prefix for rig-level Gas Town sessions.
 	SessionPrefix = "gt-"
 
 	// HQSessionPrefix is the prefix for town-level services (Mayor, Deacon).
@@ -214,7 +214,7 @@ func RoleEmoji(role string) string {
 }
 
 // SupportedShells lists shell binaries that Gas Town can detect and work with.
-// Used to identify if a tmux pane is at a shell prompt vs running a command.
+// Used to identify if a session pane is at a shell prompt vs running a command.
 var SupportedShells = []string{"bash", "zsh", "sh", "fish", "tcsh", "ksh"}
 
 // Path helpers construct common paths.

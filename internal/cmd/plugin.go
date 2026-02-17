@@ -707,4 +707,20 @@ func runPluginStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// formatDuration is defined in session.go
+// formatDuration formats a duration for human display.
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm %ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	hours := int(d.Hours())
+	mins := int(d.Minutes()) % 60
+	if hours >= 24 {
+		days := hours / 24
+		hours = hours % 24
+		return fmt.Sprintf("%dd %dh %dm", days, hours, mins)
+	}
+	return fmt.Sprintf("%dh %dm", hours, mins)
+}

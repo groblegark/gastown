@@ -537,7 +537,7 @@ func (m *Manager) setupSharedBeads(crewPath string) error {
 	return beads.SetupRedirect(townRoot, crewPath)
 }
 
-// SessionName returns the tmux session name for a crew member.
+// SessionName returns the session name for a crew member.
 func (m *Manager) SessionName(name string) string {
 	return fmt.Sprintf("gt-%s-crew-%s", m.rig.Name, name)
 }
@@ -545,7 +545,7 @@ func (m *Manager) SessionName(name string) string {
 // Start creates and starts a session for a crew member.
 // If the crew member doesn't exist, it will be created first.
 // When running in K8s (detected via KUBERNETES_SERVICE_HOST or rig settings),
-// creates an agent bead with K8s labels instead of a tmux session.
+// creates an agent bead with K8s labels instead of a session.
 func (m *Manager) Start(name string, opts StartOptions) error {
 	if err := validateCrewName(name); err != nil {
 		return err
@@ -713,7 +713,7 @@ func (m *Manager) Start(name string, opts StartOptions) error {
 }
 
 // startK8s creates an agent bead for a K8s crew member without creating
-// a local worktree or tmux session. The K8s controller watches for agent beads
+// a local worktree or session. The K8s controller watches for agent beads
 // with gt:agent + execution_target:k8s labels, then creates pods.
 func (m *Manager) startK8s(name string, opts StartOptions) error {
 	townRoot := filepath.Dir(m.rig.Path)

@@ -1023,7 +1023,7 @@ func runResetStale(bd *beads.Beads, dryRun bool) error {
 	return nil
 }
 
-// assigneeToSessionName converts an assignee (rig/name or rig/crew/name) to tmux session name.
+// assigneeToSessionName converts an assignee (rig/name or rig/crew/name) to session name.
 // Returns the session name and whether this is a persistent identity (crew).
 func assigneeToSessionName(assignee string) (sessionName string, isPersistent bool) {
 	parts := strings.Split(assignee, "/")

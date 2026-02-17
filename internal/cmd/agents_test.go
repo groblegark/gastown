@@ -50,12 +50,6 @@ func TestCategorizeSession(t *testing.T) {
 			wantRig:  "gastown",
 		},
 		{
-			name:     "witness (legacy format): gt-witness-<rig>",
-			input:    "gt-witness-gastown",
-			wantType: AgentWitness,
-			wantRig:  "gastown",
-		},
-		{
 			name:     "refinery: gt-<rig>-refinery",
 			input:    "gt-myrig-refinery",
 			wantType: AgentRefinery,
@@ -112,7 +106,7 @@ func TestCategorizeSession(t *testing.T) {
 			wantNil: true,
 		},
 		{
-			name:    "tmux default session name",
+			name:    "default session name",
 			input:   "0",
 			wantNil: true,
 		},
@@ -202,7 +196,7 @@ func TestDisplayLabel(t *testing.T) {
 	}
 }
 
-// TestDisplayLabel_ColorFormat verifies that each agent type has a tmux color
+// TestDisplayLabel_ColorFormat verifies that each agent type has a color
 // code that starts with "#[" and a matching icon from the constants package.
 func TestDisplayLabel_ColorFormat(t *testing.T) {
 	for agentType, color := range AgentTypeColors {
@@ -340,7 +334,7 @@ func TestMergeK8sAgents_RoleMapping(t *testing.T) {
 
 func TestMergeK8sAgents_Dedup(t *testing.T) {
 	// The seen map should prevent duplicate entries when a session name
-	// already exists from tmux discovery.
+	// already exists from discovery.
 	seen := map[string]bool{
 		"hq-mayor":            true,
 		"gt-gastown-witness":  true,
@@ -407,7 +401,6 @@ func TestCategorizeSession_RoundTrip(t *testing.T) {
 		"gt-gastown-refinery",
 		"gt-gastown-crew-alice",
 		"gt-gastown-bob",
-		"gt-witness-legacyrig",
 	}
 
 	for _, name := range sessionNames {

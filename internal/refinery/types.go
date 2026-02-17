@@ -1,6 +1,6 @@
 // Package refinery provides the merge queue processing agent.
 //
-// ZFC-compliant: Running state is derived from tmux sessions, not stored in files.
+// ZFC-compliant: Running state is derived from sessions, not stored in files.
 // Merge queue is derived from beads merge-request issues.
 package refinery
 

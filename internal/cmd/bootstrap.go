@@ -798,3 +798,31 @@ func actionLabel(action string) string {
 	}
 	return style.Success.Render("✓ " + action)
 }
+
+// extractHooksMap extracts the "hooks" sub-map from a settings map.
+func extractHooksMap(settings map[string]interface{}) map[string]interface{} {
+	hooks, ok := settings["hooks"]
+	if !ok {
+		return nil
+	}
+	hooksMap, ok := hooks.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return hooksMap
+}
+
+// roleDefToMetadata converts a RoleDefinition to a generic metadata map via JSON round-trip.
+func roleDefToMetadata(def *config.RoleDefinition) (map[string]interface{}, error) {
+	defJSON, err := json.Marshal(def)
+	if err != nil {
+		return nil, err
+	}
+
+	var metadata map[string]interface{}
+	if err := json.Unmarshal(defJSON, &metadata); err != nil {
+		return nil, err
+	}
+
+	return metadata, nil
+}

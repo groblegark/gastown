@@ -184,15 +184,6 @@ func runBatchSling(beadIDs []string, rigName string, townBeadsDir string) error 
 			}
 		}
 
-		// Nudge the polecat
-		if spawnInfo.Pane != "" {
-			if err := injectStartPrompt(spawnInfo.Pane, beadID, slingSubject, slingArgs); err != nil {
-				fmt.Printf("  %s Could not nudge (agent will discover via gt prime)\n", style.Dim.Render("○"))
-			} else {
-				fmt.Printf("  %s Start prompt sent\n", style.Bold.Render("▶"))
-			}
-		}
-
 		results = append(results, slingResult{beadID: beadID, polecat: spawnInfo.PolecatName, success: true})
 	}
 

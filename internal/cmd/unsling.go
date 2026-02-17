@@ -161,7 +161,7 @@ func runUnsling(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Clear the hook (gt-zecmc: removed agent_state update - observable from tmux)
+	// Clear the hook (gt-zecmc: removed agent_state update - observable from session)
 	if err := b.ClearHookBead(agentBeadID); err != nil {
 		return fmt.Errorf("clearing hook from agent bead %s: %w", agentBeadID, err)
 	}

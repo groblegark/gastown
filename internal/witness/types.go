@@ -1,6 +1,6 @@
 // Package witness provides the polecat monitoring agent.
 //
-// ZFC-compliant: Running state is derived from tmux sessions, not stored in files.
+// ZFC-compliant: Running state is derived from sessions, not stored in files.
 // Configuration is sourced from role beads (hq-witness-role).
 package witness
 

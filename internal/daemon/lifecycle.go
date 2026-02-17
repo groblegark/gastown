@@ -310,7 +310,7 @@ func (d *Daemon) getRoleConfigForIdentity(identity string) (*beads.RoleConfig, *
 	return roleConfig, parsed, nil
 }
 
-// identityToSession converts a beads identity to a tmux session name.
+// identityToSession converts a beads identity to a session name.
 // Uses role config if available, falls back to hardcoded patterns.
 func (d *Daemon) identityToSession(identity string) string {
 	config, parsed, err := d.getRoleConfigForIdentity(identity)
@@ -519,7 +519,7 @@ func (d *Daemon) getStartCommand(roleConfig *beads.RoleConfig, parsed *ParsedIde
 	return defaultCmd
 }
 
-// setSessionEnvironment sets environment variables for the tmux session.
+// setSessionEnvironment sets environment variables for the session.
 // Uses centralized AgentEnv for consistency, plus custom env vars from role config if available.
 func (d *Daemon) setSessionEnvironment(sessionName string, roleConfig *beads.RoleConfig, parsed *ParsedIdentity) {
 	// Use centralized AgentEnv for base environment variables
@@ -543,9 +543,9 @@ func (d *Daemon) setSessionEnvironment(sessionName string, roleConfig *beads.Rol
 	}
 }
 
-// applySessionTheme is a no-op in K8s mode (tmux theming not applicable).
+// applySessionTheme is a no-op in K8s mode (theming not applicable).
 func (d *Daemon) applySessionTheme(_ string, _ *ParsedIdentity) {
-	// Theming is a tmux-only concept. In K8s mode, sessions are coop-managed pods.
+	// Theming is not applicable in K8s mode. Sessions are coop-managed pods.
 }
 
 // syncWorkspace syncs a git workspace before starting a new session.
@@ -633,7 +633,7 @@ type AgentBeadInfo struct {
 }
 
 // getAgentBeadState reads non-observable agent state from an agent bead.
-// Per gt-zecmc: Observable states (running, dead, idle) are derived from tmux.
+// Per gt-zecmc: Observable states (running, dead, idle) are derived from the session.
 // Only non-observable states (stuck, awaiting-gate, muted, paused) are stored in beads.
 // Returns the agent_state field value or empty string if not found.
 func (d *Daemon) getAgentBeadState(agentBeadID string) (string, error) {
@@ -732,7 +732,7 @@ func (d *Daemon) identityToAgentBeadID(identity string) string {
 }
 
 // NOTE: checkStaleAgents() and markAgentDead() were removed in gt-zecmc.
-// Agent liveness is now discovered from tmux, not recorded in beads.
+// Agent liveness is now discovered from sessions, not recorded in beads.
 // "Discover, don't track" principle: observable state should not be recorded.
 
 // identityToBDActor converts a daemon identity to BD_ACTOR format (with slashes).
@@ -822,12 +822,12 @@ func (d *Daemon) checkRigGUPPViolations(rigName string) {
 			continue // No hooked work - no GUPP violation possible
 		}
 
-		// Per gt-zecmc: derive running state from tmux, not agent_state
+		// Per gt-zecmc: derive running state from session, not agent_state
 		// Extract polecat name from agent ID (<prefix>-<rig>-polecat-<name> -> <name>)
 		polecatName := strings.TrimPrefix(agent.ID, prefix)
 		sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
 
-		// Check if tmux session exists and agent is running
+		// Check if session exists and agent is running
 		if d.isAgentAlive(sessionName) {
 			// Session is alive - check if it's been stuck too long
 			updatedAt, err := time.Parse(time.RFC3339, agent.UpdatedAt)
@@ -872,7 +872,7 @@ Action needed: Check if agent is alive and responsive. Consider restarting if st
 
 // checkOrphanedWork looks for work assigned to dead agents.
 // Orphaned work needs to be reassigned or the agent needs to be restarted.
-// Per gt-zecmc: derive agent liveness from tmux, not agent_state.
+// Per gt-zecmc: derive agent liveness from sessions, not agent_state.
 func (d *Daemon) checkOrphanedWork() {
 	// Check all polecat agents with hooked work
 	rigs := d.getKnownRigs()
@@ -915,7 +915,7 @@ func (d *Daemon) checkRigOrphanedWork(rigName string) {
 			continue
 		}
 
-		// Check if tmux session is alive (derive state from tmux, not bead)
+		// Check if session is alive (derive state from session, not bead)
 		polecatName := strings.TrimPrefix(agent.ID, prefix)
 		sessionName := fmt.Sprintf("gt-%s-%s", rigName, polecatName)
 

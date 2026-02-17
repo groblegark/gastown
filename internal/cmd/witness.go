@@ -239,7 +239,7 @@ func runWitnessStatus(cmd *cobra.Command, args []string) error {
 
 	mgr := witness.NewManager(r)
 
-	// ZFC: tmux is source of truth for running state
+	// ZFC: session is source of truth for running state
 	running, _ := mgr.IsRunning()
 	sessionInfo, _ := mgr.Status() // may be nil if not running
 
@@ -286,7 +286,7 @@ func runWitnessStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// witnessSessionName returns the tmux session name for a rig's witness.
+// witnessSessionName returns the session name for a rig's witness.
 func witnessSessionName(rigName string) string {
 	return fmt.Sprintf("gt-%s-witness", rigName)
 }

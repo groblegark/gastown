@@ -248,40 +248,7 @@ func runMayorAttach(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Mayor pod not found. Start with: gt mayor start")
 	}
 
-	mgr, err := getMayorManager()
-	if err != nil {
-		return err
-	}
-
-	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
-	sessionID := mgr.SessionName()
-
-	running, err := mgr.IsRunning()
-	if err != nil {
-		return fmt.Errorf("checking session: %w", err)
-	}
-	if !running {
-		// No local session — auto-start
-		fmt.Println("Mayor session not running, starting...")
-		if err := mgr.Start(mayorAgentOverride); err != nil {
-			return err
-		}
-	} else {
-		// Session exists - check if runtime is still running
-		if agentRunning, _ := backend.IsAgentRunning(sessionID); !agentRunning {
-			// Runtime has exited, restart it
-			fmt.Println("Runtime exited, restarting...")
-
-			if err := backend.RespawnPane(sessionID); err != nil {
-				return fmt.Errorf("restarting runtime: %w", err)
-			}
-
-			fmt.Printf("%s Mayor restarted with context\n", style.Bold.Render("✓"))
-		}
-	}
-
-	// Use shared attach helper
-	return attachToTmuxSession(sessionID)
+	return fmt.Errorf("not connected to a K8s namespace. Run: gt connect <host>")
 }
 
 func runMayorStatus(cmd *cobra.Command, args []string) error {

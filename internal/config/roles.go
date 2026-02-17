@@ -24,7 +24,7 @@ type RoleDefinition struct {
 	// Scope is "town" or "rig" - determines where the agent runs.
 	Scope string `toml:"scope" json:"scope"`
 
-	// Session contains tmux session configuration.
+	// Session contains session configuration.
 	Session RoleSessionConfig `toml:"session" json:"session"`
 
 	// Env contains environment variables to set in the session.
@@ -42,7 +42,7 @@ type RoleDefinition struct {
 
 // RoleSessionConfig contains session-related configuration.
 type RoleSessionConfig struct {
-	// Pattern is the tmux session name pattern.
+	// Pattern is the session name pattern.
 	// Supports placeholders: {rig}, {name}, {role}
 	// Examples: "hq-mayor", "gt-{rig}-witness", "gt-{rig}-{name}"
 	Pattern string `toml:"pattern" json:"pattern"`

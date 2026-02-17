@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// Prefix is the common prefix for rig-level Gas Town tmux sessions.
+// Prefix is the common prefix for rig-level Gas Town sessions.
 const Prefix = "gt-"
 
 // HQPrefix is the prefix for town-level services (Mayor, Deacon).
@@ -17,7 +17,7 @@ func MayorSessionName() string {
 	return HQPrefix + "mayor"
 }
 
-// MayorK8sSessionName returns the tmux session name for a K8s mayor pod.
+// MayorK8sSessionName returns the session name for a K8s mayor pod.
 func MayorK8sSessionName() string {
 	return Prefix + "town-mayor-hq"
 }
@@ -49,9 +49,9 @@ func PolecatSessionName(rig, name string) string {
 }
 
 // BootSessionName returns the session name for the Boot watchdog.
-// Note: We use "gt-boot" instead of "hq-deacon-boot" to avoid tmux prefix
-// matching collisions. Tmux matches session names by prefix, so "hq-deacon-boot"
-// would match when checking for "hq-deacon", causing HasSession("hq-deacon")
+// Note: We use "gt-boot" instead of "hq-deacon-boot" to avoid prefix
+// matching collisions. Some backends match session names by prefix, so
+// "hq-deacon-boot" would match when checking for "hq-deacon", causing HasSession("hq-deacon")
 // to return true when only Boot is running.
 func BootSessionName() string {
 	return Prefix + "boot"

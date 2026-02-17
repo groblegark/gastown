@@ -118,7 +118,7 @@ func runBroadcast(cmd *cobra.Command, args []string) error {
 			fmt.Printf("  %s %s %s\n", style.SuccessPrefix, AgentTypeIcons[agent.Type], agentName)
 		}
 
-		// Small delay between nudges to avoid overwhelming tmux
+		// Small delay between nudges to avoid overwhelming sessions
 		if i < len(targets)-1 {
 			time.Sleep(100 * time.Millisecond)
 		}

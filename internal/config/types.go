@@ -219,7 +219,7 @@ type RigSettings struct {
 	Type       string            `json:"type"`                  // "rig-settings"
 	Version    int               `json:"version"`               // schema version
 	MergeQueue *MergeQueueConfig `json:"merge_queue,omitempty"` // merge queue settings
-	Theme      *ThemeConfig      `json:"theme,omitempty"`       // tmux theme settings
+	Theme      *ThemeConfig      `json:"theme,omitempty"`       // theme settings
 	Namepool   *NamepoolConfig   `json:"namepool,omitempty"`    // polecat name pool settings
 	Crew       *CrewConfig       `json:"crew,omitempty"`        // crew startup settings
 	Workflow   *WorkflowConfig   `json:"workflow,omitempty"`    // workflow settings
@@ -245,7 +245,7 @@ type RigSettings struct {
 	RoleAgents map[string]string `json:"role_agents,omitempty"`
 
 	// Execution configures where polecats run for this rig.
-	// Default is local (tmux sessions). Set target to "k8s" for Kubernetes pods.
+	// Default is local. Set target to "k8s" for Kubernetes pods.
 	Execution *ExecutionConfig `json:"execution,omitempty"`
 }
 
@@ -253,7 +253,7 @@ type RigSettings struct {
 type ExecutionTarget string
 
 const (
-	// ExecutionTargetLocal runs polecats as local tmux sessions (default).
+	// ExecutionTargetLocal runs polecats as local sessions (default).
 	ExecutionTargetLocal ExecutionTarget = "local"
 	// ExecutionTargetK8s runs polecats as Kubernetes pods via the controller.
 	ExecutionTargetK8s ExecutionTarget = "k8s"
@@ -262,7 +262,7 @@ const (
 // ResolveExecutionTarget determines the execution target for a rig.
 // Priority: explicit override > rig settings > K8s auto-detect > "local".
 // When running inside a K8s pod (KUBERNETES_SERVICE_HOST is set), defaults
-// to "k8s" instead of "local" so agents spawn as pods, not tmux sessions.
+// to "k8s" instead of "local" so agents spawn as pods, not local sessions.
 //
 // rigPath may be empty for town-level agents (e.g., dogs) that have no rig.
 func ResolveExecutionTarget(rigPath, override string) ExecutionTarget {
@@ -384,9 +384,9 @@ type RuntimeHooksConfig struct {
 	SettingsFile string `json:"settings_file,omitempty"`
 }
 
-// RuntimeTmuxConfig controls tmux heuristics for detecting runtime readiness.
+// RuntimeTmuxConfig controls session heuristics for detecting runtime readiness.
 type RuntimeTmuxConfig struct {
-	// ProcessNames are tmux pane commands that indicate the runtime is running.
+	// ProcessNames are pane commands that indicate the runtime is running.
 	ProcessNames []string `json:"process_names,omitempty"`
 
 	// ReadyPromptPrefix is the prompt prefix to detect readiness (e.g., "> ").
@@ -408,7 +408,7 @@ func DefaultRuntimeConfig() *RuntimeConfig {
 }
 
 // BuildCommand returns the full command line string.
-// For use with tmux SendKeys.
+// For use with SendKeys.
 func (rc *RuntimeConfig) BuildCommand() string {
 	resolved := normalizeRuntimeConfig(rc)
 
@@ -551,7 +551,7 @@ func defaultRuntimeCommand(provider string) string {
 
 // resolveClaudePath finds the claude binary, checking PATH first then common installation locations.
 // This handles the case where claude is installed as an alias (not in PATH) which doesn't work
-// in non-interactive shells spawned by tmux.
+// in non-interactive shells.
 func resolveClaudePath() string {
 	// First, try to find claude in PATH
 	if path, err := exec.LookPath("claude"); err == nil {
@@ -570,7 +570,7 @@ func resolveClaudePath() string {
 		return claudePath
 	}
 
-	// Fall back to bare command (might work if PATH is set differently in tmux)
+	// Fall back to bare command (might work if PATH is set differently in the session)
 	return "claude"
 }
 
@@ -647,7 +647,7 @@ func defaultProcessNames(provider, command string) []string {
 	}
 	if provider == "opencode" {
 		// OpenCode runs as Node.js process, need both for IsAgentRunning detection.
-		// tmux pane_current_command may show "node" or "opencode" depending on how invoked.
+		// pane_current_command may show "node" or "opencode" depending on how invoked.
 		return []string{"opencode", "node"}
 	}
 	if command != "" {
@@ -696,7 +696,7 @@ func defaultInstructionsFile(provider string) string {
 // - double quote (string delimiter)
 // - backtick (command substitution)
 // - dollar sign (variable expansion)
-// - newline (causes shell parsing issues when passed through tmux respawn-pane)
+// - newline (causes shell parsing issues when passed through respawn-pane)
 // - carriage return (similar to newline)
 // - tab (escaped for consistency)
 func quoteForShell(s string) string {
@@ -705,7 +705,7 @@ func quoteForShell(s string) string {
 	escaped = strings.ReplaceAll(escaped, "`", "\\`")
 	escaped = strings.ReplaceAll(escaped, "$", `\$`)
 	// Escape newlines to avoid shell parsing issues when commands are passed
-	// through tmux respawn-pane. Claude Code will receive \n sequences, which
+	// through respawn-pane. Claude Code will receive \n sequences, which
 	// is acceptable for prompt formatting.
 	escaped = strings.ReplaceAll(escaped, "\n", `\n`)
 	escaped = strings.ReplaceAll(escaped, "\r", `\r`)
@@ -713,7 +713,7 @@ func quoteForShell(s string) string {
 	return `"` + escaped + `"`
 }
 
-// ThemeConfig represents tmux theme settings for a rig.
+// ThemeConfig represents theme settings for a rig.
 type ThemeConfig struct {
 	// Name picks from the default palette (e.g., "ocean", "forest").
 	// If empty, a theme is auto-assigned based on rig name.
@@ -729,8 +729,8 @@ type ThemeConfig struct {
 
 // CustomTheme allows specifying exact colors for the status bar.
 type CustomTheme struct {
-	BG string `json:"bg"` // Background color (hex or tmux color name)
-	FG string `json:"fg"` // Foreground color (hex or tmux color name)
+	BG string `json:"bg"` // Background color (hex or named color)
+	FG string `json:"fg"` // Foreground color (hex or named color)
 }
 
 // TownThemeConfig represents global theme settings (mayor/config.json).
@@ -963,7 +963,7 @@ type MessagingConfig struct {
 	Announces map[string]AnnounceConfig `json:"announces,omitempty"`
 
 	// NudgeChannels are named groups for real-time nudge fan-out.
-	// Like mailing lists but for tmux send-keys instead of durable mail.
+	// Like mailing lists but for real-time send-keys instead of durable mail.
 	// Example: {"workers": ["gastown/polecats/*", "gastown/crew/*"], "witnesses": ["*/witness"]}
 	NudgeChannels map[string][]string `json:"nudge_channels,omitempty"`
 }

@@ -20,7 +20,7 @@ import "time"
 // the polecat's identity - it just means the session needs intervention.
 //
 // "Stalled" and "zombie" are detected conditions, not stored states. The Witness
-// detects them through monitoring (tmux state, age in StateDone, etc.).
+// detects them through monitoring (session state, age in StateDone, etc.).
 type State string
 
 const (

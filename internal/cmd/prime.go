@@ -723,7 +723,7 @@ func buildAgentBeadIDFromContext(ctx RoleContext, townRoot string) string {
 func acquireIdentityLock(ctx RoleContext) error {
 	// Only lock worker roles (polecat, crew)
 	// Infrastructure roles (mayor, witness, refinery, deacon) are singletons
-	// managed by tmux session names, so they don't need file-based locks
+	// managed by session names, so they don't need file-based locks
 	if ctx.Role != RolePolecat && ctx.Role != RoleCrew {
 		return nil
 	}
@@ -731,12 +731,8 @@ func acquireIdentityLock(ctx RoleContext) error {
 	// Create lock for this worker directory
 	l := lock.New(ctx.WorkDir)
 
-	// Determine session ID from environment or context
-	sessionID := os.Getenv("TMUX_PANE")
-	if sessionID == "" {
-		// Fall back to a descriptive identifier
-		sessionID = fmt.Sprintf("%s/%s", ctx.Rig, ctx.Polecat)
-	}
+	// Determine session ID from context
+	sessionID := fmt.Sprintf("%s/%s", ctx.Rig, ctx.Polecat)
 
 	// Try to acquire the lock
 	if err := l.Acquire(sessionID); err != nil {

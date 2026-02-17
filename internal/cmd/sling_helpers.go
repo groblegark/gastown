@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/steveyegge/gastown/internal/bdcmd"
 
 	"github.com/steveyegge/gastown/internal/beads"
+	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -73,7 +75,7 @@ func getBeadInfo(beadID string) (*beadInfo, error) {
 }
 
 // storeArgsInBead stores args in the bead's description using attached_args field.
-// This enables no-tmux mode where agents discover args via gt prime / bd show.
+// This enables agents to discover args via gt prime / bd show.
 func storeArgsInBead(beadID, args string) error {
 	// Get the bead to preserve existing description content
 	showCmd := bdcmd.Command( "show", beadID, "--json", "--allow-stale")
@@ -369,54 +371,7 @@ func storeConvoyOwnedInBead(beadID string, owned bool) error {
 	return nil
 }
 
-// injectStartPrompt sends a prompt to the target pane to start working.
-// Uses the reliable nudge pattern: literal mode + 500ms debounce + separate Enter.
-// For OJ-managed polecats, routes through "oj agent send" instead of tmux (od-ki9.4).
-func injectStartPrompt(pane, beadID, subject, args string) error {
-	if pane == "" {
-		return fmt.Errorf("no target pane")
-	}
-
-	// Skip nudge during tests to prevent agent self-interruption
-	if os.Getenv("GT_TEST_NO_NUDGE") != "" {
-		return nil
-	}
-
-	// Build the prompt to inject
-	var prompt string
-	if args != "" {
-		// Args provided - include them prominently in the prompt
-		if subject != "" {
-			prompt = fmt.Sprintf("Work slung: %s (%s). Args: %s. Start working now - use these args to guide your execution.", beadID, subject, args)
-		} else {
-			prompt = fmt.Sprintf("Work slung: %s. Args: %s. Start working now - use these args to guide your execution.", beadID, args)
-		}
-	} else if subject != "" {
-		prompt = fmt.Sprintf("Work slung: %s (%s). Start working on it now - no questions, just begin.", beadID, subject)
-	} else {
-		prompt = fmt.Sprintf("Work slung: %s. Start working on it now - run `gt hook` to see the hook, then begin.", beadID)
-	}
-
-	// Check if target polecat is OJ-managed (od-ki9.4: use oj agent send as canonical nudge).
-	// If the bead has oj_job_id, OJ owns the session and tmux pane may not exist.
-	if ojJobID := getOjJobIDFromBead(beadID); ojJobID != "" {
-		if err := sendViaOj(ojJobID, prompt); err == nil {
-			return nil
-		}
-		// OJ send failed, fall through to tmux
-	}
-
-	// Use the reliable nudge pattern via the backend.
-	// Resolve pane to session name for backend routing.
-	session := getSessionFromPane(pane)
-	if session == "" {
-		session = pane
-	}
-	backend, sessionKey := resolveBackendForSession(session)
-	return backend.NudgeSession(sessionKey, prompt)
-}
-
-// nudgeViaBackend attempts to nudge a non-tmux agent (Coop/K8s) via the Backend interface.
+// nudgeViaBackend attempts to nudge a Coop/K8s agent via the Backend interface.
 // Returns true if the nudge was sent successfully.
 func nudgeViaBackend(agentID, beadID, subject, args string) bool {
 	backend := terminal.ResolveBackend(agentID)
@@ -443,37 +398,6 @@ func nudgeViaBackend(agentID, beadID, subject, args string) bool {
 		return false
 	}
 	return true
-}
-
-// getSessionFromPane extracts session name from a pane target.
-// Pane targets can be:
-// - "%9" (pane ID) - treated as-is (tmux pane IDs not supported in K8s mode)
-// - "gt-rig-name:0.0" (session:window.pane) - extract session name
-func getSessionFromPane(pane string) string {
-	if strings.HasPrefix(pane, "%") {
-		// Pane ID format - no tmux to query in K8s mode
-		return ""
-	}
-	// Session:window.pane format - extract session name
-	if idx := strings.Index(pane, ":"); idx > 0 {
-		return pane[:idx]
-	}
-	return pane
-}
-
-// ensureAgentReady waits for an agent to be ready before nudging an existing session.
-// In K8s mode, checks agent liveness via the backend.
-func ensureAgentReady(sessionName string) error {
-	backend, sessionKey := resolveBackendForSession(sessionName)
-	running, err := backend.IsAgentRunning(sessionKey)
-	if err != nil {
-		return fmt.Errorf("checking agent readiness: %w", err)
-	}
-	if !running {
-		// Give the agent a moment to start up
-		time.Sleep(2 * time.Second)
-	}
-	return nil
 }
 
 // detectCloneRoot finds the root of the current git clone.
@@ -592,7 +516,7 @@ func updateAgentHookBead(agentID, beadID, workDir, townBeadsDir string) {
 
 	// Run from agentWorkDir WITHOUT BEADS_DIR to enable redirect-based routing.
 	// Set hook_bead to the slung work (gt-zecmc: removed agent_state update).
-	// Agent liveness is observable from tmux - no need to record it in bead.
+	// Agent liveness is observable from session - no need to record it in bead.
 	// For cross-database scenarios, slot set may fail gracefully (warning only).
 	bd := beads.New(agentWorkDir)
 	if err := bd.SetHookBead(agentBeadID, beadID); err != nil {
@@ -635,7 +559,7 @@ func nudgeRefinery(rigName, message string) {
 			_, _ = f.WriteString(entry)
 			_ = f.Close()
 		}
-		return // Don't actually nudge tmux in tests
+		return // Don't actually nudge in tests
 	}
 
 	refBackend, refSessionKey := resolveBackendForSession(refinerySession)
@@ -750,4 +674,216 @@ func CookFormula(formulaName, workDir string) error {
 	cookCmd.Dir = workDir
 	cookCmd.Stderr = os.Stderr
 	return cookCmd.Run()
+}
+
+// looksLikeBeadID checks if a string looks like a bead ID.
+// Bead IDs have format: prefix-xxxx where prefix is 1-5 lowercase letters and xxxx is alphanumeric.
+// Examples: "gt-abc123", "bd-ka761", "hq-cv-abc", "beads-xyz", "ap-qtsup.16"
+func looksLikeBeadID(s string) bool {
+	// Find the first hyphen
+	idx := strings.Index(s, "-")
+	if idx < 1 || idx > 5 {
+		// No hyphen, or prefix is empty/too long
+		return false
+	}
+
+	// Check prefix is all lowercase letters
+	prefix := s[:idx]
+	for _, c := range prefix {
+		if c < 'a' || c > 'z' {
+			return false
+		}
+	}
+
+	// Check there's something after the hyphen
+	rest := s[idx+1:]
+	if len(rest) == 0 {
+		return false
+	}
+
+	// Check rest starts with alphanumeric and contains only alphanumeric, dots, hyphens
+	first := rest[0]
+	if !((first >= 'a' && first <= 'z') || (first >= '0' && first <= '9')) {
+		return false
+	}
+
+	return true
+}
+
+// resolveRoleToSession converts a role name or path to a session name.
+// Accepts:
+//   - Role shortcuts: "crew", "witness", "refinery", "mayor", "deacon"
+//   - Full paths: "<rig>/crew/<name>", "<rig>/witness", "<rig>/refinery"
+//   - Direct session names (passed through)
+//
+// For role shortcuts that need context (crew, witness, refinery), it auto-detects from environment.
+func resolveRoleToSession(role string) (string, error) {
+	// First, check if it's a path format (contains /)
+	if strings.Contains(role, "/") {
+		return resolvePathToSession(role)
+	}
+
+	switch strings.ToLower(role) {
+	case "mayor", "may":
+		return getMayorSessionName(), nil
+
+	case "deacon", "dea":
+		return session.DeaconSessionName(), nil
+
+	case "crew":
+		// Try to get rig and crew name from environment or cwd
+		rig := os.Getenv("GT_RIG")
+		crewName := os.Getenv("GT_CREW")
+		if rig == "" || crewName == "" {
+			// Try to detect from cwd
+			detected, err := detectCrewFromCwd()
+			if err == nil {
+				rig = detected.rigName
+				crewName = detected.crewName
+			}
+		}
+		if rig == "" || crewName == "" {
+			return "", fmt.Errorf("cannot determine crew identity - run from crew directory or specify GT_RIG/GT_CREW")
+		}
+		return fmt.Sprintf("gt-%s-crew-%s", rig, crewName), nil
+
+	case "witness", "wit":
+		rig := os.Getenv("GT_RIG")
+		if rig == "" {
+			return "", fmt.Errorf("cannot determine rig - set GT_RIG or run from rig context")
+		}
+		return fmt.Sprintf("gt-%s-witness", rig), nil
+
+	case "refinery", "ref":
+		rig := os.Getenv("GT_RIG")
+		if rig == "" {
+			return "", fmt.Errorf("cannot determine rig - set GT_RIG or run from rig context")
+		}
+		return fmt.Sprintf("gt-%s-refinery", rig), nil
+
+	default:
+		// FIX (hq-cc7214.25): Check if the name is a crew member in any rig
+		// Before assuming it's a direct session name, scan all rigs for crew/<name>
+		townRoot := detectTownRootFromCwd()
+		if townRoot != "" {
+			rigs, err := os.ReadDir(townRoot)
+			if err == nil {
+				for _, rigEntry := range rigs {
+					if !rigEntry.IsDir() || strings.HasPrefix(rigEntry.Name(), ".") {
+						continue
+					}
+					crewPath := filepath.Join(townRoot, rigEntry.Name(), "crew", role)
+					if info, err := os.Stat(crewPath); err == nil && info.IsDir() {
+						// Found a crew member with this name
+						return fmt.Sprintf("gt-%s-crew-%s", rigEntry.Name(), role), nil
+					}
+				}
+			}
+		}
+		// Not a crew member - assume it's a direct session name (e.g., gt-gastown-crew-max)
+		return role, nil
+	}
+}
+
+// resolvePathToSession converts a path like "<rig>/crew/<name>" to a session name.
+// Supported formats:
+//   - <rig>/crew/<name> -> gt-<rig>-crew-<name>
+//   - <rig>/witness -> gt-<rig>-witness
+//   - <rig>/refinery -> gt-<rig>-refinery
+//   - <rig>/polecats/<name> -> gt-<rig>-<name> (explicit polecat)
+//   - <rig>/<name> -> gt-<rig>-<name> (polecat shorthand, if name isn't a known role)
+func resolvePathToSession(path string) (string, error) {
+	parts := strings.Split(path, "/")
+
+	// Handle <rig>/crew/<name> format
+	if len(parts) == 3 && parts[1] == "crew" {
+		rig := parts[0]
+		name := parts[2]
+		return fmt.Sprintf("gt-%s-crew-%s", rig, name), nil
+	}
+
+	// Handle <rig>/polecats/<name> format (explicit polecat path)
+	if len(parts) == 3 && parts[1] == "polecats" {
+		rig := parts[0]
+		name := strings.ToLower(parts[2]) // normalize polecat name
+		return fmt.Sprintf("gt-%s-%s", rig, name), nil
+	}
+
+	// Handle <rig>/<role-or-polecat> format
+	if len(parts) == 2 {
+		rig := parts[0]
+		second := parts[1]
+		secondLower := strings.ToLower(second)
+
+		// Check for known roles first
+		switch secondLower {
+		case "witness":
+			return fmt.Sprintf("gt-%s-witness", rig), nil
+		case "refinery":
+			return fmt.Sprintf("gt-%s-refinery", rig), nil
+		case "crew":
+			// Just "<rig>/crew" without a name - need more info
+			return "", fmt.Errorf("crew path requires name: %s/crew/<name>", rig)
+		case "polecats":
+			// Just "<rig>/polecats" without a name - need more info
+			return "", fmt.Errorf("polecats path requires name: %s/polecats/<name>", rig)
+		default:
+			// Not a known role - check if it's a crew member before assuming polecat.
+			// Crew members exist at <townRoot>/<rig>/crew/<name>.
+			// This fixes: gt sling gt-375 gastown/max failing because max is crew, not polecat.
+			townRoot := detectTownRootFromCwd()
+			if townRoot != "" {
+				crewPath := filepath.Join(townRoot, rig, "crew", second)
+				if info, err := os.Stat(crewPath); err == nil && info.IsDir() {
+					return fmt.Sprintf("gt-%s-crew-%s", rig, second), nil
+				}
+			}
+			// Not a crew member - treat as polecat name (e.g., gastown/nux)
+			return fmt.Sprintf("gt-%s-%s", rig, secondLower), nil
+		}
+	}
+
+	return "", fmt.Errorf("cannot parse path '%s' - expected <rig>/<polecat>, <rig>/crew/<name>, <rig>/witness, or <rig>/refinery", path)
+}
+
+// detectTownRootFromCwd walks up from the current directory to find the town root.
+// Falls back to GT_TOWN_ROOT or GT_ROOT env vars if cwd detection fails (broken state recovery).
+func detectTownRootFromCwd() string {
+	// Use workspace.FindFromCwd which handles both primary (mayor/town.json)
+	// and secondary (mayor/ directory) markers
+	townRoot, err := workspace.FindFromCwd()
+	if err == nil && townRoot != "" {
+		return townRoot
+	}
+
+	// Fallback: try environment variables for town root
+	// GT_TOWN_ROOT is set by shell integration, GT_ROOT is set by session manager
+	// This enables handoff to work even when cwd detection fails due to
+	// detached HEAD, wrong branch, deleted worktree, etc.
+	for _, envName := range []string{"GT_TOWN_ROOT", "GT_ROOT"} {
+		if envRoot := os.Getenv(envName); envRoot != "" {
+			// Verify it's actually a workspace
+			if _, statErr := os.Stat(filepath.Join(envRoot, workspace.PrimaryMarker)); statErr == nil {
+				return envRoot
+			}
+			// Try secondary marker too
+			if info, statErr := os.Stat(filepath.Join(envRoot, workspace.SecondaryMarker)); statErr == nil && info.IsDir() {
+				return envRoot
+			}
+		}
+	}
+
+	return ""
+}
+
+// getCurrentTmuxSession returns the current session name.
+// Uses GT_SESSION or TMUX_SESSION env vars.
+func getCurrentTmuxSession() (string, error) {
+	if s := os.Getenv("GT_SESSION"); s != "" {
+		return s, nil
+	}
+	if s := os.Getenv("TMUX_SESSION"); s != "" {
+		return s, nil
+	}
+	return "", fmt.Errorf("GT_SESSION or TMUX_SESSION not set")
 }

@@ -417,7 +417,7 @@ func TestBuildStatusIndicator_K8sAllStates(t *testing.T) {
 // --- AgentRuntime Target field integration test ---
 
 func TestDiscoverRigAgents_K8sPolecatNotRunning(t *testing.T) {
-	// K8s polecats should not show as "running" based on tmux sessions
+	// K8s polecats should not show as "running" based on sessions
 	townRoot := t.TempDir()
 	writeTestRoutes(t, townRoot, []beads.Route{
 		{Prefix: "gt-", Path: "gastown/mayor/rig"},
@@ -429,7 +429,7 @@ func TestDiscoverRigAgents_K8sPolecatNotRunning(t *testing.T) {
 		Polecats: []string{"K8sAgent"},
 	}
 
-	// The tmux session does not exist for this agent
+	// The session does not exist for this agent
 	allSessions := map[string]bool{
 		// no "gt-gastown-K8sAgent" entry
 	}
@@ -452,14 +452,14 @@ func TestDiscoverRigAgents_K8sPolecatNotRunning(t *testing.T) {
 		t.Errorf("agent Target = %q, want %q", agent.Target, "k8s")
 	}
 	if agent.Running {
-		t.Error("K8s agent should not be Running (no tmux session)")
+		t.Error("K8s agent should not be Running (no session)")
 	}
 	if agent.State != "working" {
 		t.Errorf("agent State = %q, want %q", agent.State, "working")
 	}
 }
 
-// --- K8s polecats with tmux sessions map doesn't affect K8s detection ---
+// --- K8s polecats with sessions map doesn't affect K8s detection ---
 
 func TestDiscoverRigAgents_K8sTargetNotAffectedByTmux(t *testing.T) {
 	townRoot := t.TempDir()
@@ -473,7 +473,7 @@ func TestDiscoverRigAgents_K8sTargetNotAffectedByTmux(t *testing.T) {
 		Polecats: []string{"Agent"},
 	}
 
-	// Even if a tmux session with matching name exists, K8s target should still be "k8s"
+	// Even if a session with matching name exists, K8s target should still be "k8s"
 	allSessions := map[string]bool{
 		"gt-gastown-Agent": true,
 	}
@@ -492,6 +492,6 @@ func TestDiscoverRigAgents_K8sTargetNotAffectedByTmux(t *testing.T) {
 	}
 
 	if agents[0].Target != "k8s" {
-		t.Errorf("agent Target = %q, want %q (K8s label overrides tmux)", agents[0].Target, "k8s")
+		t.Errorf("agent Target = %q, want %q (K8s label overrides session)", agents[0].Target, "k8s")
 	}
 }

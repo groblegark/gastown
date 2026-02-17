@@ -417,7 +417,7 @@ func (m *Model) dismissDecision(decisionID, prompt, reason string) tea.Cmd {
 	}
 }
 
-// getSessionName converts a RequestedBy path to a tmux session name
+// getSessionName converts a RequestedBy path to a session name.
 // e.g., "gastown/crew/decision_point" -> "gt-gastown-crew-decision_point"
 func getSessionName(requestedBy string) (string, error) {
 	if requestedBy == "" {

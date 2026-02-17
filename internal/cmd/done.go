@@ -764,11 +764,11 @@ func updateAgentStateOnDone(cwd, townRoot, exitType, _ string) { // issueID unus
 	}
 
 	// Only set non-observable states - "stuck" and "awaiting-gate" are intentional
-	// agent decisions that can't be discovered from tmux. Skip "done" and "idle"
+	// agent decisions that can't be discovered from sessions. Skip "done" and "idle"
 	// since those are observable (no session = done, session + no hook = idle).
 	switch exitType {
 	case ExitEscalated:
-		// "stuck" = agent is requesting help - not observable from tmux
+		// "stuck" = agent is requesting help - not observable from session
 		if _, err := bd.Run("agent", "state", agentBeadID, "stuck"); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: couldn't set agent %s to stuck: %v\n", agentBeadID, err)
 		}

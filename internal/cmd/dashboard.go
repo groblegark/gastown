@@ -43,27 +43,18 @@ func init() {
 }
 
 func runDashboard(cmd *cobra.Command, args []string) error {
-	// Check if we're in a workspace - if not, run in setup mode
-	var handler http.Handler
-	var err error
-
 	if _, wsErr := workspace.FindFromCwdOrError(); wsErr != nil {
-		// No workspace - run in setup mode
-		handler, err = web.NewSetupMux()
-		if err != nil {
-			return fmt.Errorf("creating setup handler: %w", err)
-		}
-	} else {
-		// In a workspace - run normal dashboard
-		fetcher, fetchErr := web.NewLiveConvoyFetcher()
-		if fetchErr != nil {
-			return fmt.Errorf("creating convoy fetcher: %w", fetchErr)
-		}
+		return fmt.Errorf("not in a Gas Town workspace: %w", wsErr)
+	}
 
-		handler, err = web.NewDashboardMux(fetcher)
-		if err != nil {
-			return fmt.Errorf("creating dashboard handler: %w", err)
-		}
+	fetcher, err := web.NewLiveConvoyFetcher()
+	if err != nil {
+		return fmt.Errorf("creating convoy fetcher: %w", err)
+	}
+
+	handler, err := web.NewDashboardMux(fetcher)
+	if err != nil {
+		return fmt.Errorf("creating dashboard handler: %w", err)
 	}
 
 	// Build the URL

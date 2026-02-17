@@ -14,7 +14,6 @@ import (
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/templates"
-	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -39,7 +38,6 @@ type staleSettingsInfo struct {
 	path          string        // Full path to settings.json
 	agentType     string        // e.g., "witness", "refinery", "deacon", "mayor"
 	rigName       string        // Rig name (empty for town-level agents)
-	sessionName   string        // tmux session name for cycling
 	missing       []string      // What's missing from the settings
 	wrongLocation bool          // True if file is in wrong location (should be deleted)
 	gitStatus     gitFileStatus // Git status for wrong-location files (for safe deletion)
@@ -176,7 +174,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 			files = append(files, staleSettingsInfo{
 				path:          staleTownRootSettings,
 				agentType:     "mayor",
-				sessionName:   "hq-mayor",
+	
 				wrongLocation: true,
 				gitStatus:     c.getGitFileStatus(staleTownRootSettings),
 				missing:       []string{"should be a symlink to mayor/.claude/settings.json, not a regular file"},
@@ -194,7 +192,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 			files = append(files, staleSettingsInfo{
 				path:          townRootCLAUDEmd,
 				agentType:     "mayor",
-				sessionName:   "hq-mayor",
+	
 				wrongLocation: true,
 				gitStatus:     c.getGitFileStatus(townRootCLAUDEmd),
 				missing:       []string{"contains role-specific content; should be neutral anchor or moved to mayor/CLAUDE.md"},
@@ -208,7 +206,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 		files = append(files, staleSettingsInfo{
 			path:        mayorSettings,
 			agentType:   "mayor",
-			sessionName: "hq-mayor",
+
 		})
 	}
 
@@ -218,7 +216,7 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 		files = append(files, staleSettingsInfo{
 			path:        deaconSettings,
 			agentType:   "deacon",
-			sessionName: "hq-deacon",
+
 		})
 	}
 
@@ -247,10 +245,9 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 		witnessSettings := filepath.Join(rigPath, "witness", ".claude", "settings.json")
 		if fileExists(witnessSettings) {
 			files = append(files, staleSettingsInfo{
-				path:        witnessSettings,
-				agentType:   "witness",
-				rigName:     rigName,
-				sessionName: fmt.Sprintf("gt-%s-witness", rigName),
+				path:      witnessSettings,
+				agentType: "witness",
+				rigName:   rigName,
 			})
 		}
 		witnessWrongSettings := filepath.Join(rigPath, "witness", "rig", ".claude", "settings.json")
@@ -259,7 +256,6 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 				path:          witnessWrongSettings,
 				agentType:     "witness",
 				rigName:       rigName,
-				sessionName:   fmt.Sprintf("gt-%s-witness", rigName),
 				wrongLocation: true,
 			})
 		}
@@ -269,10 +265,9 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 		refinerySettings := filepath.Join(rigPath, "refinery", ".claude", "settings.json")
 		if fileExists(refinerySettings) {
 			files = append(files, staleSettingsInfo{
-				path:        refinerySettings,
-				agentType:   "refinery",
-				rigName:     rigName,
-				sessionName: fmt.Sprintf("gt-%s-refinery", rigName),
+				path:      refinerySettings,
+				agentType: "refinery",
+				rigName:   rigName,
 			})
 		}
 		refineryWrongSettings := filepath.Join(rigPath, "refinery", "rig", ".claude", "settings.json")
@@ -281,7 +276,6 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 				path:          refineryWrongSettings,
 				agentType:     "refinery",
 				rigName:       rigName,
-				sessionName:   fmt.Sprintf("gt-%s-refinery", rigName),
 				wrongLocation: true,
 			})
 		}
@@ -292,10 +286,9 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 		crewSettings := filepath.Join(crewDir, ".claude", "settings.json")
 		if fileExists(crewSettings) {
 			files = append(files, staleSettingsInfo{
-				path:        crewSettings,
-				agentType:   "crew",
-				rigName:     rigName,
-				sessionName: "", // Shared settings, no single session
+				path:      crewSettings,
+				agentType: "crew",
+				rigName:   rigName,
 			})
 		}
 		if dirExists(crewDir) {
@@ -317,7 +310,6 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 						path:          crewWrongSettings,
 						agentType:     "crew",
 						rigName:       rigName,
-						sessionName:   fmt.Sprintf("gt-%s-crew-%s", rigName, crewEntry.Name()),
 						wrongLocation: true,
 					})
 				}
@@ -330,10 +322,9 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 		polecatsSettings := filepath.Join(polecatsDir, ".claude", "settings.json")
 		if fileExists(polecatsSettings) {
 			files = append(files, staleSettingsInfo{
-				path:        polecatsSettings,
-				agentType:   "polecat",
-				rigName:     rigName,
-				sessionName: "", // Shared settings, no single session
+				path:      polecatsSettings,
+				agentType: "polecat",
+				rigName:   rigName,
 			})
 		}
 		if dirExists(polecatsDir) {
@@ -368,7 +359,6 @@ func (c *ClaudeSettingsCheck) findSettingsFiles(townRoot string) []staleSettings
 							path:          wp.settingsPath,
 							agentType:     "polecat",
 							rigName:       rigName,
-							sessionName:   fmt.Sprintf("gt-%s-%s", rigName, pcEntry.Name()),
 							wrongLocation: true,
 						})
 					}
@@ -629,7 +619,6 @@ func (c *ClaudeSettingsCheck) hookHasBdStdinPiping(hooks map[string]any, hookNam
 func (c *ClaudeSettingsCheck) Fix(ctx *CheckContext) error {
 	var errors []string
 	var renamed []string
-	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
 
 	for _, sf := range c.staleSettings {
 		wasRenamed := false
@@ -707,19 +696,6 @@ func (c *ClaudeSettingsCheck) Fix(ctx *CheckContext) error {
 			continue
 		}
 
-		// Only cycle patrol roles if --restart-sessions was explicitly passed.
-		// This prevents unexpected session restarts during routine --fix operations.
-		// Crew and polecats are spawned on-demand and won't auto-restart anyway.
-		if ctx.RestartSessions {
-			if sf.agentType == "witness" || sf.agentType == "refinery" ||
-				sf.agentType == "deacon" || sf.agentType == "mayor" {
-				running, _ := backend.HasSession(sf.sessionName)
-				if running {
-					// Cycle the agent by killing and letting gt up restart it.
-					_ = backend.KillSession(sf.sessionName)
-				}
-			}
-		}
 	}
 
 	// Report renamed files as info
