@@ -2,11 +2,9 @@
 package config
 
 import (
-	"encoding/json"
 	"flag"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -108,38 +106,9 @@ type Config struct {
 	// Default: 60s.
 	SyncInterval time.Duration
 
-	// SidecarProfiles maps profile names to toolchain sidecar images and resources.
-	// Loaded from Helm values (env: SIDECAR_PROFILES_JSON).
-	SidecarProfiles map[string]SidecarProfileConfig `json:"-"`
-
-	// DefaultSidecarProfile is the profile to use when none is specified.
-	// Empty means no sidecar by default (env: DEFAULT_SIDECAR_PROFILE).
-	DefaultSidecarProfile string
-
-	// SidecarRegistryAllowlist contains allowed image registry prefixes for custom sidecars.
-	SidecarRegistryAllowlist []string
-
-	// SidecarMaxCPU is the max CPU limit for sidecars (e.g., "2").
-	SidecarMaxCPU string
-
-	// SidecarMaxMemory is the max memory limit for sidecars (e.g., "4Gi").
-	SidecarMaxMemory string
-
-	// SidecarMaxChangesPerHour is the rate limit for sidecar changes per agent.
-	SidecarMaxChangesPerHour int
-
 	// RigCache maps rig name → git mirror service name, populated at runtime
 	// from rig beads in the daemon. Not parsed from env/flags.
 	RigCache map[string]RigCacheEntry
-}
-
-// SidecarProfileConfig holds a sidecar profile definition from Helm/env.
-type SidecarProfileConfig struct {
-	Image         string `json:"image"`
-	CPURequest    string `json:"cpuRequest"`
-	CPULimit      string `json:"cpuLimit"`
-	MemoryRequest string `json:"memoryRequest"`
-	MemoryLimit   string `json:"memoryLimit"`
 }
 
 // RigCacheEntry holds rig metadata from daemon rig beads.
@@ -183,13 +152,6 @@ func Parse() *Config {
 		Transport:         envOr("WATCHER_TRANSPORT", "sse"),
 		NatsConsumerName:  os.Getenv("NATS_CONSUMER_NAME"),
 		SyncInterval:      envDurationOr("SYNC_INTERVAL", 60*time.Second),
-
-		SidecarProfiles:          parseSidecarProfiles(),
-		DefaultSidecarProfile:    os.Getenv("DEFAULT_SIDECAR_PROFILE"),
-		SidecarRegistryAllowlist: parseSidecarRegistryAllowlist(),
-		SidecarMaxCPU:            envOr("SIDECAR_MAX_CPU", "2"),
-		SidecarMaxMemory:         envOr("SIDECAR_MAX_MEMORY", "4Gi"),
-		SidecarMaxChangesPerHour: envIntOr("SIDECAR_MAX_CHANGES_PER_HOUR", 3),
 	}
 
 	flag.StringVar(&cfg.DaemonHost, "daemon-host", cfg.DaemonHost, "BD Daemon hostname")
@@ -217,10 +179,6 @@ func Parse() *Config {
 	flag.StringVar(&cfg.Transport, "transport", cfg.Transport, "Event transport: sse or nats")
 	flag.StringVar(&cfg.NatsConsumerName, "nats-consumer-name", cfg.NatsConsumerName, "Durable consumer name for JetStream")
 	flag.DurationVar(&cfg.SyncInterval, "sync-interval", cfg.SyncInterval, "Interval for periodic pod status sync")
-	flag.StringVar(&cfg.DefaultSidecarProfile, "default-sidecar-profile", cfg.DefaultSidecarProfile, "Default toolchain sidecar profile")
-	flag.StringVar(&cfg.SidecarMaxCPU, "sidecar-max-cpu", cfg.SidecarMaxCPU, "Max CPU limit for toolchain sidecars")
-	flag.StringVar(&cfg.SidecarMaxMemory, "sidecar-max-memory", cfg.SidecarMaxMemory, "Max memory limit for toolchain sidecars")
-	flag.IntVar(&cfg.SidecarMaxChangesPerHour, "sidecar-max-changes-per-hour", cfg.SidecarMaxChangesPerHour, "Max sidecar changes per hour per agent")
 	flag.Parse()
 
 	return cfg
@@ -261,22 +219,3 @@ func envDurationOr(key string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
-func parseSidecarProfiles() map[string]SidecarProfileConfig {
-	raw := os.Getenv("SIDECAR_PROFILES_JSON")
-	if raw == "" {
-		return nil
-	}
-	var profiles map[string]SidecarProfileConfig
-	if err := json.Unmarshal([]byte(raw), &profiles); err != nil {
-		return nil
-	}
-	return profiles
-}
-
-func parseSidecarRegistryAllowlist() []string {
-	raw := os.Getenv("SIDECAR_REGISTRY_ALLOWLIST")
-	if raw == "" {
-		return nil
-	}
-	return strings.Split(raw, ",")
-}

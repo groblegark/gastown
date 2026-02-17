@@ -55,7 +55,6 @@ var beadsExemptCommands = map[string]bool{
 	"dnd":        true,
 	"krc":        true, // KRC doesn't require beads
 	"connect":    true,
-	"toolchain":  true, // Runs inside K8s agent pod, no local beads
 	"preflight":  true,
 	"postflight": true,
 }

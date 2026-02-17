@@ -17,7 +17,7 @@ import (
 )
 
 // SpecBuilder constructs an AgentPodSpec from config, bead identity, and metadata.
-// The metadata map may contain sidecar_profile, sidecar_image, etc.
+// The metadata map may contain per-bead overrides (e.g., image).
 type SpecBuilder func(cfg *config.Config, rig, role, agentName string, metadata map[string]string) podmanager.AgentPodSpec
 
 // Reconciler diffs desired state (agent beads) against actual state (K8s pods)
@@ -162,10 +162,6 @@ func podDriftReason(desired podmanager.AgentPodSpec, actual *corev1.Pod, tracker
 	if agentChanged(desired.Image, actual) {
 		return fmt.Sprintf("agent image changed: %s", desired.Image)
 	}
-	// Check toolchain sidecar drift.
-	if sidecarChanged(desired.ToolchainSidecar, actual) {
-		return fmt.Sprintf("toolchain sidecar changed: %s", sidecarImage(desired.ToolchainSidecar))
-	}
 	// Check image digest drift (same tag, different digest — e.g. :latest updated).
 	if tracker != nil {
 		if reason := digestDrift(desired.Image, actual, tracker); reason != "" {
@@ -216,33 +212,3 @@ func agentChanged(desiredImage string, actual *corev1.Pod) bool {
 	return false
 }
 
-// sidecarChanged returns true if the desired toolchain sidecar differs from
-// what's currently running in the pod.
-func sidecarChanged(desired *podmanager.ToolchainSidecarSpec, actual *corev1.Pod) bool {
-	current := findInitContainer(actual.Spec.InitContainers, podmanager.ToolchainContainerName)
-	if desired == nil && current == nil {
-		return false
-	}
-	if desired == nil || current == nil {
-		return true // added or removed
-	}
-	return current.Image != desired.Image
-}
-
-// findInitContainer finds a container by name in a list.
-func findInitContainer(containers []corev1.Container, name string) *corev1.Container {
-	for i := range containers {
-		if containers[i].Name == name {
-			return &containers[i]
-		}
-	}
-	return nil
-}
-
-// sidecarImage returns the image from a ToolchainSidecarSpec, or empty string if nil.
-func sidecarImage(spec *podmanager.ToolchainSidecarSpec) string {
-	if spec == nil {
-		return ""
-	}
-	return spec.Image
-}

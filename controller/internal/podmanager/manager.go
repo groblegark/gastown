@@ -73,12 +73,6 @@ const (
 	CoopDefaultMemRequest   = "32Mi"
 	CoopDefaultMemLimit     = "64Mi"
 
-	// Toolchain sidecar constants.
-	ToolchainContainerName     = "toolchain"
-	ToolchainDefaultCPURequest = "250m"
-	ToolchainDefaultCPULimit   = "2"
-	ToolchainDefaultMemRequest = "512Mi"
-	ToolchainDefaultMemLimit   = "4Gi"
 )
 
 // SecretEnvSource maps a K8s Secret key to a pod environment variable.
@@ -141,10 +135,6 @@ type AgentPodSpec struct {
 	// shareProcessNamespace is enabled, and backend metadata is set to "coop".
 	CoopSidecar *CoopSidecarSpec
 
-	// ToolchainSidecar configures an optional toolchain sidecar container.
-	// Resolved from bead metadata via ProfileRegistry.
-	ToolchainSidecar *ToolchainSidecarSpec
-
 	// GitMirrorService is the in-cluster git mirror service name for this rig
 	// (e.g., "git-mirror-beads"). When set and the role needs code access
 	// (polecat, crew, refinery), an init container is added that clones from
@@ -200,19 +190,6 @@ type CoopSidecarSpec struct {
 	Resources *corev1.ResourceRequirements
 }
 
-// ToolchainSidecarSpec configures an optional toolchain sidecar container.
-// Resolved from bead metadata (sidecar_profile / sidecar_image).
-type ToolchainSidecarSpec struct {
-	// Profile is the named preset (e.g., "toolchain-full"). Empty means custom image.
-	Profile string
-
-	// Image is the container image. Takes precedence over profile default.
-	Image string
-
-	// Resources overrides profile defaults for the sidecar.
-	Resources *corev1.ResourceRequirements
-}
-
 // WorkspaceStorageSpec configures a PVC-backed workspace volume.
 type WorkspaceStorageSpec struct {
 	// ClaimName is the PVC name. If empty, derived from pod name.
@@ -250,19 +227,13 @@ type Manager interface {
 
 // K8sManager implements Manager using client-go.
 type K8sManager struct {
-	client       kubernetes.Interface
-	logger       *slog.Logger
-	resourceCaps ResourceCaps
+	client kubernetes.Interface
+	logger *slog.Logger
 }
 
 // New creates a pod manager backed by a K8s client.
 func New(client kubernetes.Interface, logger *slog.Logger) *K8sManager {
 	return &K8sManager{client: client, logger: logger}
-}
-
-// SetResourceCaps configures maximum resource limits for sidecar containers.
-func (m *K8sManager) SetResourceCaps(caps ResourceCaps) {
-	m.resourceCaps = caps
 }
 
 // CreateAgentPod creates a pod for the given agent spec.
@@ -369,13 +340,6 @@ func (m *K8sManager) buildPod(spec AgentPodSpec) *corev1.Pod {
 	var initContainers []corev1.Container
 	if ic := m.buildInitCloneContainer(spec); ic != nil {
 		initContainers = append(initContainers, *ic)
-	}
-
-	// Add toolchain sidecar if configured.
-	// Uses K8s native sidecar pattern: initContainer with restartPolicy: Always.
-	if spec.ToolchainSidecar != nil && spec.ToolchainSidecar.Image != "" {
-		toolchainContainer := m.buildToolchainSidecar(spec)
-		initContainers = append(initContainers, toolchainContainer)
 	}
 
 	podSpec := corev1.PodSpec{
@@ -601,17 +565,6 @@ func (m *K8sManager) buildEnvVars(spec AgentPodSpec) []corev1.EnvVar {
 				},
 			},
 		})
-	}
-
-	// Toolchain sidecar discovery env vars for the agent.
-	if spec.ToolchainSidecar != nil && spec.ToolchainSidecar.Image != "" {
-		envVars = append(envVars,
-			corev1.EnvVar{Name: "GT_TOOLCHAIN_CONTAINER", Value: ToolchainContainerName},
-			corev1.EnvVar{Name: "GT_TOOLCHAIN_IMAGE", Value: spec.ToolchainSidecar.Image},
-		)
-		if spec.ToolchainSidecar.Profile != "" {
-			envVars = append(envVars, corev1.EnvVar{Name: "GT_TOOLCHAIN_PROFILE", Value: spec.ToolchainSidecar.Profile})
-		}
 	}
 
 	return envVars
@@ -898,69 +851,6 @@ func (m *K8sManager) buildCoopResources(coop *CoopSidecarSpec) corev1.ResourceRe
 			corev1.ResourceMemory: resource.MustParse(CoopDefaultMemLimit),
 		},
 	}
-}
-
-// buildToolchainSidecar constructs the toolchain sidecar as a K8s native sidecar
-// (init container with restartPolicy: Always). It shares the workspace volume
-// with the agent container so tools can operate on the same files.
-func (m *K8sManager) buildToolchainSidecar(spec AgentPodSpec) corev1.Container {
-	tc := spec.ToolchainSidecar
-
-	resources := m.buildToolchainResources(tc)
-
-	// Environment variables for tool discovery by the agent.
-	envVars := []corev1.EnvVar{
-		{Name: "GT_TOOLCHAIN_CONTAINER", Value: ToolchainContainerName},
-		{Name: "GT_TOOLCHAIN_IMAGE", Value: tc.Image},
-	}
-	if tc.Profile != "" {
-		envVars = append(envVars, corev1.EnvVar{Name: "GT_TOOLCHAIN_PROFILE", Value: tc.Profile})
-	}
-
-	restartAlways := corev1.ContainerRestartPolicyAlways
-
-	return corev1.Container{
-		Name:          ToolchainContainerName,
-		Image:         tc.Image,
-		RestartPolicy: &restartAlways,
-		Env:           envVars,
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: VolumeWorkspace, MountPath: MountWorkspace},
-			{Name: VolumeTmp, MountPath: MountTmp},
-		},
-		Resources:       resources,
-		ImagePullPolicy: SidecarPullPolicy(tc),
-		SecurityContext: &corev1.SecurityContext{
-			RunAsUser:                intPtr(AgentUID),
-			RunAsGroup:               intPtr(AgentGID),
-			AllowPrivilegeEscalation: boolPtr(false),
-			ReadOnlyRootFilesystem:   boolPtr(false),
-			Capabilities: &corev1.Capabilities{
-				Drop: []corev1.Capability{"ALL"},
-			},
-		},
-	}
-}
-
-// buildToolchainResources returns resource requirements for the toolchain sidecar.
-// If resource caps are configured, requested resources are clamped to the caps.
-func (m *K8sManager) buildToolchainResources(tc *ToolchainSidecarSpec) corev1.ResourceRequirements {
-	var reqs corev1.ResourceRequirements
-	if tc.Resources != nil {
-		reqs = *tc.Resources
-	} else {
-		reqs = corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse(ToolchainDefaultCPURequest),
-				corev1.ResourceMemory: resource.MustParse(ToolchainDefaultMemRequest),
-			},
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse(ToolchainDefaultCPULimit),
-				corev1.ResourceMemory: resource.MustParse(ToolchainDefaultMemLimit),
-			},
-		}
-	}
-	return ClampResources(reqs, m.resourceCaps, m.logger)
 }
 
 // restartPolicyForRole returns the appropriate restart policy.
