@@ -296,11 +296,15 @@ func handleEvent(ctx context.Context, logger *slog.Logger, cfg *config.Config, e
 // without an SSE event. Used by the reconciler to produce specs identical to
 // those created by handleEvent, using controller config for all metadata.
 func BuildSpecFromBeadInfo(cfg *config.Config, rig, role, agentName string, metadata map[string]string) podmanager.AgentPodSpec {
+	image := cfg.DefaultImage
+	if img := metadata["image"]; img != "" {
+		image = img
+	}
 	spec := podmanager.AgentPodSpec{
 		Rig:       rig,
 		Role:      role,
 		AgentName: agentName,
-		Image:     cfg.DefaultImage,
+		Image:     image,
 		Namespace: cfg.Namespace,
 		Env: map[string]string{
 			"BD_DAEMON_HOST":          cfg.DaemonHost,
