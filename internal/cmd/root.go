@@ -44,7 +44,6 @@ var beadsExemptCommands = map[string]bool{
 	"nudge":      true,
 	"seance":     true,
 	"doctor":     true,
-	"dolt":       true,
 	"handoff":    true,
 	"costs":      true,
 	"feed":       true,
