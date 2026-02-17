@@ -231,8 +231,8 @@ func TestSleepForReadyDelay_NilConfig(t *testing.T) {
 
 func TestSleepForReadyDelay_ZeroDelay(t *testing.T) {
 	rc := &config.RuntimeConfig{
-		Tmux: &config.RuntimeTmuxConfig{
-			ReadyDelayMs: 0,
+		Readiness: &config.RuntimeReadinessConfig{
+			DelayMs: 0,
 		},
 	}
 
@@ -248,8 +248,8 @@ func TestSleepForReadyDelay_ZeroDelay(t *testing.T) {
 
 func TestSleepForReadyDelay_WithDelay(t *testing.T) {
 	rc := &config.RuntimeConfig{
-		Tmux: &config.RuntimeTmuxConfig{
-			ReadyDelayMs: 10, // 10ms delay
+		Readiness: &config.RuntimeReadinessConfig{
+			DelayMs: 10, // 10ms delay
 		},
 	}
 
@@ -267,9 +267,9 @@ func TestSleepForReadyDelay_WithDelay(t *testing.T) {
 	}
 }
 
-func TestSleepForReadyDelay_NilTmuxConfig(t *testing.T) {
+func TestSleepForReadyDelay_NilReadinessConfig(t *testing.T) {
 	rc := &config.RuntimeConfig{
-		Tmux: nil,
+		Readiness: nil,
 	}
 
 	start := time.Now()
@@ -278,7 +278,7 @@ func TestSleepForReadyDelay_NilTmuxConfig(t *testing.T) {
 
 	// Should return immediately
 	if elapsed > 100*time.Millisecond {
-		t.Errorf("SleepForReadyDelay() with nil Tmux config took too long: %v", elapsed)
+		t.Errorf("SleepForReadyDelay() with nil Readiness config took too long: %v", elapsed)
 	}
 }
 

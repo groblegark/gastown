@@ -6,9 +6,7 @@ package doctor
 import (
 	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/steveyegge/gastown/internal/shell"
 	"github.com/steveyegge/gastown/internal/state"
 )
 
@@ -40,7 +38,6 @@ func (c *GlobalStateCheck) Run(ctx *CheckContext) *CheckResult {
 	if err != nil {
 		if os.IsNotExist(err) {
 			result.Message = "Global state not initialized"
-			result.FixHint = "Run: gt enable"
 			result.Status = StatusWarning
 			return result
 		}
@@ -65,20 +62,9 @@ func (c *GlobalStateCheck) Run(ctx *CheckContext) *CheckResult {
 		details = append(details, "Machine ID: "+s.MachineID)
 	}
 
-	rcPath := shell.RCFilePath(shell.DetectShell())
-	if hasShellIntegration(rcPath) {
-		details = append(details, "Shell integration: installed ("+rcPath+")")
-	} else {
-		warnings = append(warnings, "Shell integration not installed")
-	}
-
 	hookPath := filepath.Join(state.ConfigDir(), "shell-hook.sh")
 	if _, err := os.Stat(hookPath); err == nil {
 		details = append(details, "Hook script: present")
-	} else {
-		if hasShellIntegration(rcPath) {
-			errors = append(errors, "Hook script missing but shell integration installed")
-		}
 	}
 
 	result.Details = details
@@ -86,15 +72,9 @@ func (c *GlobalStateCheck) Run(ctx *CheckContext) *CheckResult {
 	if len(errors) > 0 {
 		result.Status = StatusError
 		result.Message = errors[0]
-		result.FixHint = "Run: gt install --shell"
 	} else if len(warnings) > 0 {
 		result.Status = StatusWarning
 		result.Message = warnings[0]
-		if !s.Enabled {
-			result.FixHint = "Run: gt enable"
-		} else {
-			result.FixHint = "Run: gt install --shell"
-		}
 	} else {
 		result.Message = "Global state healthy"
 	}
@@ -102,10 +82,3 @@ func (c *GlobalStateCheck) Run(ctx *CheckContext) *CheckResult {
 	return result
 }
 
-func hasShellIntegration(rcPath string) bool {
-	data, err := os.ReadFile(rcPath)
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(data), "Gas Town Integration")
-}

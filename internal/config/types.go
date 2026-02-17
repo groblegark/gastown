@@ -354,8 +354,8 @@ type RuntimeConfig struct {
 	// Hooks config controls runtime hook installation (if supported).
 	Hooks *RuntimeHooksConfig `json:"hooks,omitempty"`
 
-	// Tmux config controls process detection and readiness heuristics.
-	Tmux *RuntimeTmuxConfig `json:"tmux,omitempty"`
+	// Readiness config controls startup delay heuristics.
+	Readiness *RuntimeReadinessConfig `json:"readiness,omitempty"`
 
 	// Instructions controls the per-workspace instruction file name.
 	Instructions *RuntimeInstructionsConfig `json:"instructions,omitempty"`
@@ -384,16 +384,10 @@ type RuntimeHooksConfig struct {
 	SettingsFile string `json:"settings_file,omitempty"`
 }
 
-// RuntimeTmuxConfig controls session heuristics for detecting runtime readiness.
-type RuntimeTmuxConfig struct {
-	// ProcessNames are pane commands that indicate the runtime is running.
-	ProcessNames []string `json:"process_names,omitempty"`
-
-	// ReadyPromptPrefix is the prompt prefix to detect readiness (e.g., "> ").
-	ReadyPromptPrefix string `json:"ready_prompt_prefix,omitempty"`
-
-	// ReadyDelayMs is a fixed delay used when prompt detection is unavailable.
-	ReadyDelayMs int `json:"ready_delay_ms,omitempty"`
+// RuntimeReadinessConfig controls startup delay heuristics for detecting runtime readiness.
+type RuntimeReadinessConfig struct {
+	// DelayMs is a fixed delay used during startup.
+	DelayMs int `json:"delay_ms,omitempty"`
 }
 
 // RuntimeInstructionsConfig controls the name of the role instruction file.
@@ -509,20 +503,12 @@ func normalizeRuntimeConfig(rc *RuntimeConfig) *RuntimeConfig {
 		rc.Hooks.SettingsFile = defaultHooksFile(rc.Provider)
 	}
 
-	if rc.Tmux == nil {
-		rc.Tmux = &RuntimeTmuxConfig{}
+	if rc.Readiness == nil {
+		rc.Readiness = &RuntimeReadinessConfig{}
 	}
 
-	if rc.Tmux.ProcessNames == nil {
-		rc.Tmux.ProcessNames = defaultProcessNames(rc.Provider, rc.Command)
-	}
-
-	if rc.Tmux.ReadyPromptPrefix == "" {
-		rc.Tmux.ReadyPromptPrefix = defaultReadyPromptPrefix(rc.Provider)
-	}
-
-	if rc.Tmux.ReadyDelayMs == 0 {
-		rc.Tmux.ReadyDelayMs = defaultReadyDelayMs(rc.Provider)
+	if rc.Readiness.DelayMs == 0 {
+		rc.Readiness.DelayMs = defaultReadyDelayMs(rc.Provider)
 	}
 
 	if rc.Instructions == nil {
@@ -639,29 +625,6 @@ func defaultHooksFile(provider string) string {
 	default:
 		return ""
 	}
-}
-
-func defaultProcessNames(provider, command string) []string {
-	if provider == "claude" {
-		return []string{"node"}
-	}
-	if provider == "opencode" {
-		// OpenCode runs as Node.js process, need both for IsAgentRunning detection.
-		// pane_current_command may show "node" or "opencode" depending on how invoked.
-		return []string{"opencode", "node"}
-	}
-	if command != "" {
-		return []string{filepath.Base(command)}
-	}
-	return nil
-}
-
-func defaultReadyPromptPrefix(provider string) string {
-	if provider == "claude" {
-		// Claude Code uses ❯ (U+276F) as the prompt character
-		return "❯ "
-	}
-	return ""
 }
 
 func defaultReadyDelayMs(provider string) int {

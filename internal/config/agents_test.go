@@ -735,15 +735,6 @@ func TestOpenCodeProviderDefaults(t *testing.T) {
 		t.Errorf("defaultReadyDelayMs(opencode) = %d, want 8000", delay)
 	}
 
-	// Test defaultProcessNames for opencode
-	names := defaultProcessNames("opencode", "opencode")
-	if len(names) != 2 {
-		t.Errorf("defaultProcessNames(opencode) length = %d, want 2", len(names))
-	}
-	if names[0] != "opencode" || names[1] != "node" {
-		t.Errorf("defaultProcessNames(opencode) = %v, want [opencode, node]", names)
-	}
-
 	// Test defaultInstructionsFile for opencode
 	instFile := defaultInstructionsFile("opencode")
 	if instFile != "AGENTS.md" {

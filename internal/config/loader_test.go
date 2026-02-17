@@ -2243,9 +2243,6 @@ func TestFillRuntimeDefaults(t *testing.T) {
 			Hooks: &RuntimeHooksConfig{
 				Provider: "opencode",
 			},
-			Tmux: &RuntimeTmuxConfig{
-				ProcessNames: []string{"opencode", "node"},
-			},
 			Instructions: &RuntimeInstructionsConfig{
 				File: "OPENCODE.md",
 			},
@@ -2276,9 +2273,6 @@ func TestFillRuntimeDefaults(t *testing.T) {
 		}
 		if result.Hooks == nil || result.Hooks.Provider != input.Hooks.Provider {
 			t.Errorf("Hooks: got %+v, want %+v", result.Hooks, input.Hooks)
-		}
-		if result.Tmux == nil || len(result.Tmux.ProcessNames) != len(input.Tmux.ProcessNames) {
-			t.Errorf("Tmux: got %+v, want %+v", result.Tmux, input.Tmux)
 		}
 		if result.Instructions == nil || result.Instructions.File != input.Instructions.File {
 			t.Errorf("Instructions: got %+v, want %+v", result.Instructions, input.Instructions)
@@ -2453,27 +2447,20 @@ func TestFillRuntimeDefaults(t *testing.T) {
 		t.Parallel()
 		input := &RuntimeConfig{
 			Command: "opencode",
-			Tmux: &RuntimeTmuxConfig{
-				ProcessNames:      []string{"original-process"},
-				ReadyPromptPrefix: "original-prefix",
-				ReadyDelayMs:      5000,
+			Readiness: &RuntimeReadinessConfig{
+				DelayMs: 5000,
 			},
 		}
 
 		result := fillRuntimeDefaults(input)
 
-		// Modify result's tmux
-		result.Tmux.ProcessNames[0] = "modified-process"
-		result.Tmux.ReadyPromptPrefix = "modified-prefix"
+		// Modify result's readiness
+		result.Readiness.DelayMs = 9999
 
 		// Original should be unchanged
-		if input.Tmux.ProcessNames[0] != "original-process" {
-			t.Errorf("Tmux.ProcessNames was not deep copied - modifications affect original: got %q, want %q",
-				input.Tmux.ProcessNames[0], "original-process")
-		}
-		if input.Tmux.ReadyPromptPrefix != "original-prefix" {
-			t.Errorf("Tmux struct was not deep copied - modifications affect original: got %q, want %q",
-				input.Tmux.ReadyPromptPrefix, "original-prefix")
+		if input.Readiness.DelayMs != 5000 {
+			t.Errorf("Readiness struct was not deep copied - modifications affect original: got %d, want %d",
+				input.Readiness.DelayMs, 5000)
 		}
 	})
 
@@ -2514,8 +2501,8 @@ func TestFillRuntimeDefaults(t *testing.T) {
 		if result.Hooks != nil {
 			t.Error("Hooks should remain nil when input has nil Hooks")
 		}
-		if result.Tmux != nil {
-			t.Error("Tmux should remain nil when input has nil Tmux")
+		if result.Readiness != nil {
+			t.Error("Readiness should remain nil when input has nil Readiness")
 		}
 		if result.Instructions != nil {
 			t.Error("Instructions should remain nil when input has nil Instructions")
@@ -2524,24 +2511,18 @@ func TestFillRuntimeDefaults(t *testing.T) {
 
 	t.Run("partial nested struct is copied without defaults", func(t *testing.T) {
 		t.Parallel()
-		// User defines partial Tmux config - only ProcessNames, no other fields
+		// User defines partial Readiness config - only DelayMs
 		input := &RuntimeConfig{
 			Command: "opencode",
-			Tmux: &RuntimeTmuxConfig{
-				ProcessNames: []string{"opencode"},
-				// ReadyPromptPrefix and ReadyDelayMs left at zero values
+			Readiness: &RuntimeReadinessConfig{
+				DelayMs: 3000,
 			},
 		}
 
 		result := fillRuntimeDefaults(input)
 
-		// ProcessNames should be copied
-		if len(result.Tmux.ProcessNames) != 1 || result.Tmux.ProcessNames[0] != "opencode" {
-			t.Errorf("Tmux.ProcessNames not copied correctly: got %v", result.Tmux.ProcessNames)
-		}
-		// Zero values should remain zero (fillRuntimeDefaults doesn't fill nested defaults)
-		if result.Tmux.ReadyDelayMs != 0 {
-			t.Errorf("Tmux.ReadyDelayMs should be 0 (unfilled), got %d", result.Tmux.ReadyDelayMs)
+		if result.Readiness.DelayMs != 3000 {
+			t.Errorf("Readiness.DelayMs not copied correctly: got %d, want 3000", result.Readiness.DelayMs)
 		}
 	})
 }
@@ -2561,9 +2542,6 @@ func TestLookupAgentConfigPreservesCustomFields(t *testing.T) {
 				Args:       []string{"-m", "gpt-5"},
 				PromptMode: "none",
 				Env:        map[string]string{"OPENCODE_PERMISSION": `{"*":"allow"}`},
-				Tmux: &RuntimeTmuxConfig{
-					ProcessNames: []string{"opencode", "node"},
-				},
 			},
 		},
 	}
@@ -2581,9 +2559,6 @@ func TestLookupAgentConfigPreservesCustomFields(t *testing.T) {
 	}
 	if rc.Env["OPENCODE_PERMISSION"] != `{"*":"allow"}` {
 		t.Errorf("Env was not preserved: got %v", rc.Env)
-	}
-	if rc.Tmux == nil || len(rc.Tmux.ProcessNames) != 2 {
-		t.Errorf("Tmux.ProcessNames not preserved: got %+v", rc.Tmux)
 	}
 }
 
@@ -2672,9 +2647,6 @@ func TestRoleAgentConfigWithCustomAgent(t *testing.T) {
 			Args:       []string{"-m", "openai/gpt-5.2-codex"},
 			PromptMode: "none",
 			Env:        map[string]string{"OPENCODE_PERMISSION": `{"*":"allow"}`},
-			Tmux: &RuntimeTmuxConfig{
-				ProcessNames: []string{"opencode", "node"},
-			},
 		},
 		"amp-yolo": {
 			Command: "amp",

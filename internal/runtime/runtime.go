@@ -117,13 +117,13 @@ func readPersistedSessionID() string {
 
 // SleepForReadyDelay sleeps for the runtime's configured readiness delay.
 func SleepForReadyDelay(rc *config.RuntimeConfig) {
-	if rc == nil || rc.Tmux == nil {
+	if rc == nil || rc.Readiness == nil {
 		return
 	}
-	if rc.Tmux.ReadyDelayMs <= 0 {
+	if rc.Readiness.DelayMs <= 0 {
 		return
 	}
-	time.Sleep(time.Duration(rc.Tmux.ReadyDelayMs) * time.Millisecond)
+	time.Sleep(time.Duration(rc.Readiness.DelayMs) * time.Millisecond)
 }
 
 // StartupFallbackCommands returns commands that approximate Claude hooks when hooks are unavailable.
