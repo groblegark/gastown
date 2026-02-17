@@ -94,42 +94,57 @@ func FindFromCwd() (string, error) {
 }
 
 // FindFromCwdOrError is like FindFromCwd but returns an error if not found.
-// If getcwd fails (e.g., worktree deleted), falls back to GT_TOWN_ROOT env var.
+// Falls back to GT_TOWN_ROOT env var when:
+//   - getcwd fails (e.g., worktree deleted)
+//   - cwd is not inside a Gas Town workspace (e.g., running from beads repo)
 func FindFromCwdOrError() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		// Fallback: try GT_TOWN_ROOT env var (set by polecat sessions)
-		if townRoot := os.Getenv("GT_TOWN_ROOT"); townRoot != "" {
-			// Verify it's actually a workspace
-			if _, statErr := os.Stat(filepath.Join(townRoot, PrimaryMarker)); statErr == nil {
-				return townRoot, nil
-			}
-		}
-		return "", fmt.Errorf("getting current directory: %w", err)
+		return findFromEnvFallback(fmt.Errorf("getting current directory: %w", err))
 	}
-	return FindOrError(cwd)
+	root, err := FindOrError(cwd)
+	if err != nil {
+		return findFromEnvFallback(err)
+	}
+	return root, nil
+}
+
+// findFromEnvFallback tries GT_TOWN_ROOT env var when workspace detection fails.
+// This enables commands like `gt mail` to work from outside a Gas Town workspace
+// (e.g., when called via `bd mail` delegation from a beads repo).
+func findFromEnvFallback(originalErr error) (string, error) {
+	if townRoot := os.Getenv("GT_TOWN_ROOT"); townRoot != "" {
+		// Verify it's actually a workspace
+		if _, statErr := os.Stat(filepath.Join(townRoot, PrimaryMarker)); statErr == nil {
+			return townRoot, nil
+		}
+	}
+	return "", originalErr
 }
 
 // FindFromCwdWithFallback is like FindFromCwdOrError but returns (townRoot, cwd, error).
-// If getcwd fails, returns (townRoot, "", nil) using GT_TOWN_ROOT fallback.
+// Falls back to GT_TOWN_ROOT env var when getcwd fails or cwd is not in a workspace.
 // This is useful for commands like `gt done` that need to continue even if the
 // working directory is deleted (e.g., polecat worktree nuked by Witness).
 func FindFromCwdWithFallback() (townRoot string, cwd string, err error) {
 	cwd, err = os.Getwd()
 	if err != nil {
-		// Fallback: try GT_TOWN_ROOT env var
-		if townRoot = os.Getenv("GT_TOWN_ROOT"); townRoot != "" {
-			// Verify it's actually a workspace
-			if _, statErr := os.Stat(filepath.Join(townRoot, PrimaryMarker)); statErr == nil {
-				return townRoot, "", nil // cwd is gone but townRoot is valid
-			}
+		// cwd is gone — try GT_TOWN_ROOT fallback
+		townRoot, fallbackErr := findFromEnvFallback(fmt.Errorf("getting current directory: %w", err))
+		if fallbackErr != nil {
+			return "", "", fallbackErr
 		}
-		return "", "", fmt.Errorf("getting current directory: %w", err)
+		return townRoot, "", nil // cwd is gone but townRoot is valid
 	}
 
 	townRoot, err = FindOrError(cwd)
 	if err != nil {
-		return "", "", err
+		// Not in a workspace — try GT_TOWN_ROOT fallback
+		townRoot, fallbackErr := findFromEnvFallback(err)
+		if fallbackErr != nil {
+			return "", "", fallbackErr
+		}
+		return townRoot, cwd, nil
 	}
 	return townRoot, cwd, nil
 }
