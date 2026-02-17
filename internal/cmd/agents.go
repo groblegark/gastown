@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -41,16 +40,6 @@ type AgentSession struct {
 	BeadID    string // Bead ID for K8s agents (used by Backend.AttachSession)
 }
 
-// AgentTypeColors maps agent types to color codes.
-var AgentTypeColors = map[AgentType]string{
-	AgentMayor:    "#[fg=red,bold]",
-	AgentDeacon:   "#[fg=yellow,bold]",
-	AgentWitness:  "#[fg=cyan]",
-	AgentRefinery: "#[fg=blue]",
-	AgentCrew:     "#[fg=green]",
-	AgentPolecat:  "#[fg=white,dim]",
-}
-
 // AgentTypeIcons maps agent types to display icons.
 // Uses centralized emojis from constants package.
 var AgentTypeIcons = map[AgentType]string{
@@ -66,14 +55,12 @@ var agentsCmd = &cobra.Command{
 	Use:     "agents",
 	Aliases: []string{"ag"},
 	GroupID: GroupAgents,
-	Short:   "Switch between Gas Town agent sessions",
-	Long: `Display a popup menu of core Gas Town agent sessions.
+	Short:   "List Gas Town agent sessions",
+	Long: `List core Gas Town agent sessions.
 
 Shows Mayor, Deacon, Witnesses, Refineries, and Crew workers.
-Polecats are hidden (use 'gt polecat list' to see them).
-
-The menu appears as a popup for quick session switching.`,
-	RunE: runAgents,
+Polecats are hidden (use 'gt polecat list' to see them).`,
+	RunE: runAgentsList,
 }
 
 var agentsListCmd = &cobra.Command{
@@ -310,109 +297,6 @@ func mergeK8sAgents(agents []*AgentSession, seen map[string]bool, townRoot strin
 		seen[s.TmuxSession] = true
 	}
 	return agents
-}
-
-// displayLabel returns the menu display label for an agent.
-func (a *AgentSession) displayLabel() string {
-	color := AgentTypeColors[a.Type]
-	icon := AgentTypeIcons[a.Type]
-
-	switch a.Type {
-	case AgentMayor:
-		return fmt.Sprintf("%s%s Mayor#[default]", color, icon)
-	case AgentDeacon:
-		return fmt.Sprintf("%s%s Deacon#[default]", color, icon)
-	case AgentWitness:
-		return fmt.Sprintf("%s%s %s/witness#[default]", color, icon, a.Rig)
-	case AgentRefinery:
-		return fmt.Sprintf("%s%s %s/refinery#[default]", color, icon, a.Rig)
-	case AgentCrew:
-		return fmt.Sprintf("%s%s %s/crew/%s#[default]", color, icon, a.Rig, a.AgentName)
-	case AgentPolecat:
-		return fmt.Sprintf("%s%s %s/%s#[default]", color, icon, a.Rig, a.AgentName)
-	}
-	return a.Name
-}
-
-// shortcutKey returns a keyboard shortcut for the menu item.
-func shortcutKey(index int) string {
-	if index < 9 {
-		return fmt.Sprintf("%d", index+1)
-	}
-	if index < 35 {
-		// a-z after 1-9
-		return string(rune('a' + index - 9))
-	}
-	return ""
-}
-
-func runAgents(cmd *cobra.Command, args []string) error {
-	agents, err := getAgentSessions(agentsAllFlag)
-	if err != nil {
-		return fmt.Errorf("listing sessions: %w", err)
-	}
-
-	if len(agents) == 0 {
-		fmt.Println("No agent sessions running.")
-		fmt.Println("\nStart agents with:")
-		fmt.Println("  gt mayor start")
-		fmt.Println("  gt deacon start")
-		return nil
-	}
-
-	// Build display-menu arguments
-	menuArgs := []string{
-		"display-menu",
-		"-T", "#[fg=cyan,bold]⚙️  Gas Town Agents",
-		"-x", "C", // Center horizontally
-		"-y", "C", // Center vertically
-	}
-
-	var currentRig string
-	keyIndex := 0
-
-	for _, agent := range agents {
-		// Add rig header when rig changes (skip for town-level agents)
-		if agent.Rig != "" && agent.Rig != currentRig {
-			if currentRig != "" || keyIndex > 0 {
-				// Add separator before new rig section
-				menuArgs = append(menuArgs, "")
-			}
-			// Add rig header (non-selectable)
-			menuArgs = append(menuArgs, fmt.Sprintf("#[fg=white,dim]── %s ──", agent.Rig), "", "")
-			currentRig = agent.Rig
-		}
-
-		key := shortcutKey(keyIndex)
-		label := agent.displayLabel()
-		var action string
-		if agent.K8s {
-			// K8s agents run in coop pods — open a new window for the attach flow.
-			label += " #[fg=white,dim]☸"
-			action = fmt.Sprintf("new-window -n '%s' 'gt mayor attach'", agent.Name)
-			if agent.Type == AgentCrew {
-				action = fmt.Sprintf("new-window -n '%s' 'gt crew at %s'", agent.Name, agent.AgentName)
-			}
-		} else {
-			action = fmt.Sprintf("switch-client -t '%s'", agent.Name)
-		}
-
-		menuArgs = append(menuArgs, label, key, action)
-		keyIndex++
-	}
-
-	// Execute display-menu
-	tmuxPath, err := exec.LookPath("tmux")
-	if err != nil {
-		return fmt.Errorf("tmux not found: %w", err)
-	}
-
-	execCmd := exec.Command(tmuxPath, menuArgs...)
-	execCmd.Stdin = os.Stdin
-	execCmd.Stdout = os.Stdout
-	execCmd.Stderr = os.Stderr
-
-	return execCmd.Run()
 }
 
 func runAgentsList(cmd *cobra.Command, args []string) error {

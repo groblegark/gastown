@@ -1327,15 +1327,9 @@ func fillRuntimeDefaults(rc *RuntimeConfig) *RuntimeConfig {
 		}
 	}
 
-	if rc.Tmux != nil {
-		result.Tmux = &RuntimeTmuxConfig{
-			ReadyPromptPrefix: rc.Tmux.ReadyPromptPrefix,
-			ReadyDelayMs:      rc.Tmux.ReadyDelayMs,
-		}
-		// Deep copy ProcessNames slice
-		if rc.Tmux.ProcessNames != nil {
-			result.Tmux.ProcessNames = make([]string, len(rc.Tmux.ProcessNames))
-			copy(result.Tmux.ProcessNames, rc.Tmux.ProcessNames)
+	if rc.Readiness != nil {
+		result.Readiness = &RuntimeReadinessConfig{
+			DelayMs: rc.Readiness.DelayMs,
 		}
 	}
 

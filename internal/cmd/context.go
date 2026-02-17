@@ -176,11 +176,8 @@ func saveState(state *ContextLimitState) error {
 // In K8s agent pods (GT_ROLE set), returns the agent address
 // so resolveBackendForSession can route to the coop backend.
 func autoDetectSession() (string, error) {
-	// Check GT_SESSION or session env vars first
+	// Check GT_SESSION first
 	if s := os.Getenv("GT_SESSION"); s != "" {
-		return s, nil
-	}
-	if s := os.Getenv("TMUX_SESSION"); s != "" {
 		return s, nil
 	}
 

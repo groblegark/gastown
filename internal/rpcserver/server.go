@@ -432,9 +432,6 @@ func (s *StatusServer) HealthCheck(
 	// Check dolt
 	components = append(components, s.checkDolt())
 
-	// Check terminal sessions
-	components = append(components, s.checkTmux())
-
 	// Check beads
 	components = append(components, s.checkBeads())
 
@@ -517,16 +514,6 @@ func (s *StatusServer) checkDolt() *gastownv1.ComponentHealth {
 		Healthy:   true,
 		LatencyMs: time.Since(start).Milliseconds(),
 		Message:   fmt.Sprintf("available (%s)", doltPath),
-	}
-}
-
-// checkTmux reports terminal sessions as not applicable (K8s mode uses coop backend).
-func (s *StatusServer) checkTmux() *gastownv1.ComponentHealth {
-	return &gastownv1.ComponentHealth{
-		Name:      "tmux",
-		Healthy:   true,
-		LatencyMs: 0,
-		Message:   "not applicable (K8s mode, sessions managed via coop backend)",
 	}
 }
 

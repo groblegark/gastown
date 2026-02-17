@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/style"
@@ -323,32 +322,7 @@ func runWitnessAttach(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Verify rig exists and get manager
-	mgr, err := getWitnessManager(rigName)
-	if err != nil {
-		return err
-	}
-
-	sessionName := witnessSessionName(rigName)
-
-	// Ensure session exists (creates if needed)
-	if err := mgr.Start(false, "", nil); err != nil && err != witness.ErrAlreadyRunning {
-		return err
-	} else if err == nil {
-		fmt.Printf("Started witness session for %s\n", rigName)
-	}
-
-	// Attach to the session
-	tmuxPath, err := exec.LookPath("tmux")
-	if err != nil {
-		return fmt.Errorf("tmux not found: %w", err)
-	}
-
-	attachCmd := exec.Command(tmuxPath, "attach-session", "-t", sessionName)
-	attachCmd.Stdin = os.Stdin
-	attachCmd.Stdout = os.Stdout
-	attachCmd.Stderr = os.Stderr
-	return attachCmd.Run()
+	return fmt.Errorf("witness attach requires K8s coop backend")
 }
 
 func runWitnessRestart(cmd *cobra.Command, args []string) error {

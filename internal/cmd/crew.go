@@ -13,7 +13,7 @@ var (
 	crewJSON          bool
 	crewForce         bool
 	crewPurge         bool
-	crewNoTmux        bool
+	crewPath          bool
 	crewDetached      bool
 	crewMessage       string
 	crewAccount       string
@@ -114,7 +114,7 @@ var crewAtCmd = &cobra.Command{
 	Long: `Start or attach to a session for a crew workspace.
 
 Creates a new session if none exists, or attaches to existing.
-Use --no-session to just print the directory path instead.
+Use --path to just print the directory path instead.
 
 When a session is started, you can switch to it using the appropriate
 session management commands.
@@ -131,7 +131,7 @@ Examples:
   gt crew at dave                 # Attach to dave's session
   gt crew at                      # Auto-detect from cwd
   gt crew at dave --detached      # Start session without attaching
-  gt crew at dave --no-session    # Just print path`,
+  gt crew at dave --path          # Just print path`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runCrewAt,
 }
@@ -345,7 +345,7 @@ func init() {
 	crewListCmd.Flags().BoolVar(&crewJSON, "json", false, "Output as JSON")
 
 	crewAtCmd.Flags().StringVar(&crewRig, "rig", "", "Rig to use")
-	crewAtCmd.Flags().BoolVar(&crewNoTmux, "no-tmux", false, "Just print directory path")
+	crewAtCmd.Flags().BoolVar(&crewPath, "path", false, "Just print directory path")
 	crewAtCmd.Flags().BoolVarP(&crewDetached, "detached", "d", false, "Start session without attaching")
 	crewAtCmd.Flags().StringVar(&crewAccount, "account", "", "Claude Code account handle to use (overrides default)")
 	crewAtCmd.Flags().StringVar(&crewAgentOverride, "agent", "", "Agent alias to run crew worker with (overrides rig/town default)")

@@ -1,10 +1,7 @@
 package cmd
 
 import (
-	"fmt"
 	"testing"
-
-	"github.com/steveyegge/gastown/internal/constants"
 )
 
 // ---------------------------------------------------------------------------
@@ -144,162 +141,6 @@ func TestCategorizeSession(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestDisplayLabel — table-driven tests for AgentSession.displayLabel()
-// ---------------------------------------------------------------------------
-
-func TestDisplayLabel(t *testing.T) {
-	tests := []struct {
-		name     string
-		agent    AgentSession
-		wantFmt  string // expected format string
-		contains []string
-	}{
-		{
-			name:    "mayor label",
-			agent:   AgentSession{Name: "hq-mayor", Type: AgentMayor},
-			wantFmt: fmt.Sprintf("%s%s Mayor#[default]", AgentTypeColors[AgentMayor], constants.EmojiMayor),
-		},
-		{
-			name:    "deacon label",
-			agent:   AgentSession{Name: "hq-deacon", Type: AgentDeacon},
-			wantFmt: fmt.Sprintf("%s%s Deacon#[default]", AgentTypeColors[AgentDeacon], constants.EmojiDeacon),
-		},
-		{
-			name:    "witness label",
-			agent:   AgentSession{Name: "gt-gastown-witness", Type: AgentWitness, Rig: "gastown"},
-			wantFmt: fmt.Sprintf("%s%s gastown/witness#[default]", AgentTypeColors[AgentWitness], constants.EmojiWitness),
-		},
-		{
-			name:    "refinery label",
-			agent:   AgentSession{Name: "gt-myrig-refinery", Type: AgentRefinery, Rig: "myrig"},
-			wantFmt: fmt.Sprintf("%s%s myrig/refinery#[default]", AgentTypeColors[AgentRefinery], constants.EmojiRefinery),
-		},
-		{
-			name:    "crew label",
-			agent:   AgentSession{Name: "gt-gastown-crew-alice", Type: AgentCrew, Rig: "gastown", AgentName: "alice"},
-			wantFmt: fmt.Sprintf("%s%s gastown/crew/alice#[default]", AgentTypeColors[AgentCrew], constants.EmojiCrew),
-		},
-		{
-			name:    "polecat label",
-			agent:   AgentSession{Name: "gt-gastown-bob", Type: AgentPolecat, Rig: "gastown", AgentName: "bob"},
-			wantFmt: fmt.Sprintf("%s%s gastown/bob#[default]", AgentTypeColors[AgentPolecat], constants.EmojiPolecat),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.agent.displayLabel()
-			if got != tt.wantFmt {
-				t.Errorf("displayLabel() = %q, want %q", got, tt.wantFmt)
-			}
-		})
-	}
-}
-
-// TestDisplayLabel_ColorFormat verifies that each agent type has a color
-// code that starts with "#[" and a matching icon from the constants package.
-func TestDisplayLabel_ColorFormat(t *testing.T) {
-	for agentType, color := range AgentTypeColors {
-		if color == "" {
-			t.Errorf("AgentTypeColors[%d] is empty", agentType)
-		}
-		if color[0:2] != "#[" {
-			t.Errorf("AgentTypeColors[%d] = %q, does not start with '#['", agentType, color)
-		}
-	}
-
-	for agentType, icon := range AgentTypeIcons {
-		if icon == "" {
-			t.Errorf("AgentTypeIcons[%d] is empty", agentType)
-		}
-		_ = agentType
-	}
-}
-
-// TestDisplayLabel_UnknownTypeFallback tests the fallback path where displayLabel
-// returns the raw Name when the AgentType doesn't match any known case.
-func TestDisplayLabel_UnknownTypeFallback(t *testing.T) {
-	agent := AgentSession{
-		Name: "mystery-session",
-		Type: AgentType(99), // Unknown type
-	}
-	got := agent.displayLabel()
-	if got != "mystery-session" {
-		t.Errorf("displayLabel() for unknown type = %q, want %q", got, "mystery-session")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// TestShortcutKey — table-driven tests for shortcutKey()
-// ---------------------------------------------------------------------------
-
-func TestShortcutKey(t *testing.T) {
-	tests := []struct {
-		index int
-		want  string
-	}{
-		// Indices 0-8 produce "1"-"9"
-		{0, "1"},
-		{1, "2"},
-		{2, "3"},
-		{3, "4"},
-		{4, "5"},
-		{5, "6"},
-		{6, "7"},
-		{7, "8"},
-		{8, "9"},
-
-		// Index 9+ produces "a"-"z"
-		{9, "a"},
-		{10, "b"},
-		{11, "c"},
-		{34, "z"}, // index 34 = 'a' + 34 - 9 = 'a' + 25 = 'z'
-
-		// Beyond 'z' (index 35+) returns empty
-		{35, ""},
-		{100, ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(fmt.Sprintf("index_%d", tt.index), func(t *testing.T) {
-			got := shortcutKey(tt.index)
-			if got != tt.want {
-				t.Errorf("shortcutKey(%d) = %q, want %q", tt.index, got, tt.want)
-			}
-		})
-	}
-}
-
-// TestShortcutKey_FullRange validates the full range of 1-9, a-z.
-func TestShortcutKey_FullRange(t *testing.T) {
-	// Indices 0-8 should produce "1" through "9"
-	for i := 0; i < 9; i++ {
-		expected := fmt.Sprintf("%d", i+1)
-		got := shortcutKey(i)
-		if got != expected {
-			t.Errorf("shortcutKey(%d) = %q, want %q", i, got, expected)
-		}
-	}
-
-	// Indices 9-34 should produce "a" through "z"
-	for i := 9; i < 35; i++ {
-		expected := string(rune('a' + i - 9))
-		got := shortcutKey(i)
-		if got != expected {
-			t.Errorf("shortcutKey(%d) = %q, want %q", i, got, expected)
-		}
-	}
-
-	// Index 35+ should produce ""
-	for i := 35; i < 40; i++ {
-		got := shortcutKey(i)
-		if got != "" {
-			t.Errorf("shortcutKey(%d) = %q, want empty string", i, got)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
 // TestMergeK8sAgents — tests for mergeK8sAgents dedup & role mapping
 // ---------------------------------------------------------------------------
 
@@ -321,11 +162,8 @@ func TestMergeK8sAgents_RoleMapping(t *testing.T) {
 		"polecat":     AgentPolecat,
 	}
 
-	// Verify each mapping produces a valid AgentType with a color and icon
+	// Verify each mapping produces a valid AgentType with an icon
 	for role, expectedType := range roleToType {
-		if _, ok := AgentTypeColors[expectedType]; !ok {
-			t.Errorf("role %q maps to AgentType %d which has no color", role, expectedType)
-		}
 		if _, ok := AgentTypeIcons[expectedType]; !ok {
 			t.Errorf("role %q maps to AgentType %d which has no icon", role, expectedType)
 		}
@@ -380,48 +218,11 @@ func TestAgentSession_K8sFields(t *testing.T) {
 	if agent.BeadID == "" {
 		t.Error("agent.BeadID should be set for K8s agents")
 	}
-
-	// The display label should still work for K8s agents
-	label := agent.displayLabel()
-	if label == "" {
-		t.Error("K8s agent should still produce a display label")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// TestCategorizeSession_RoundTrip — verifies categorizeSession is consistent
-// with displayLabel for known session patterns.
-// ---------------------------------------------------------------------------
-
-func TestCategorizeSession_RoundTrip(t *testing.T) {
-	sessionNames := []string{
-		"hq-mayor",
-		"hq-deacon",
-		"gt-gastown-witness",
-		"gt-gastown-refinery",
-		"gt-gastown-crew-alice",
-		"gt-gastown-bob",
-	}
-
-	for _, name := range sessionNames {
-		t.Run(name, func(t *testing.T) {
-			agent := categorizeSession(name)
-			if agent == nil {
-				t.Fatalf("categorizeSession(%q) returned nil", name)
-			}
-
-			// displayLabel should never panic or return empty for valid sessions
-			label := agent.displayLabel()
-			if label == "" {
-				t.Errorf("displayLabel() returned empty for %q", name)
-			}
-		})
-	}
 }
 
 // ---------------------------------------------------------------------------
 // TestAgentTypeConsistency — verifies that all AgentType constants have
-// entries in both AgentTypeColors and AgentTypeIcons maps.
+// entries in the AgentTypeIcons map.
 // ---------------------------------------------------------------------------
 
 func TestAgentTypeConsistency(t *testing.T) {
@@ -435,9 +236,6 @@ func TestAgentTypeConsistency(t *testing.T) {
 	}
 
 	for _, at := range allTypes {
-		if _, ok := AgentTypeColors[at]; !ok {
-			t.Errorf("AgentType %d missing from AgentTypeColors", at)
-		}
 		if _, ok := AgentTypeIcons[at]; !ok {
 			t.Errorf("AgentType %d missing from AgentTypeIcons", at)
 		}
