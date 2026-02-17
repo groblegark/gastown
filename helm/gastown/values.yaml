@@ -455,32 +455,6 @@ agentController:
   coopBrokerURL: ""
   coopBrokerTokenSecret: ""
 
-  # Toolchain sidecar profiles
-  sidecarProfiles:
-    toolchain-full:
-      image: "ghcr.io/groblegark/gastown/gastown-toolchain:latest"
-      cpuRequest: "250m"
-      cpuLimit: "2"
-      memoryRequest: "512Mi"
-      memoryLimit: "4Gi"
-    toolchain-minimal:
-      image: "ghcr.io/groblegark/gastown/gastown-toolchain:minimal"
-      cpuRequest: "50m"
-      cpuLimit: "500m"
-      memoryRequest: "128Mi"
-      memoryLimit: "512Mi"
-
-  # Default sidecar profile (empty = no sidecar by default)
-  defaultSidecarProfile: ""
-
-  # Security constraints for custom sidecars
-  sidecarSecurity:
-    registryAllowlist:
-      - "ghcr.io/groblegark/"
-    maxCPU: "2"
-    maxMemory: "4Gi"
-    maxChangesPerHour: 3
-
   # Pod scheduling
   nodeSelector: {}
   tolerations: []
