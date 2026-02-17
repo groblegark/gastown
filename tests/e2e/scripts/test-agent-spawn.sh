@@ -63,7 +63,7 @@ test_agent_containers() {
 run_test "Agent pod ($AGENT_POD) has containers" test_agent_containers
 
 # ── Test 3: Agent pod is fully Ready ─────────────────────────────────
-# CoopBuiltin pods are 1/1, CoopSidecar pods are 2/2, toolchain adds +1.
+# CoopBuiltin pods are 1/1, CoopSidecar pods are 2/2.
 # Accept any N/N where all containers are ready.
 test_agent_ready() {
   local status

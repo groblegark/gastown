@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -291,26 +290,7 @@ func outputToolchainContext() {
 			fmt.Println("| Build | `make`, `gcc`, `g++` |")
 		}
 		fmt.Println("| Utilities | `git`, `curl`, `jq`, `ssh`, `unzip` |")
-		return
 	}
-
-	// Legacy: toolchain sidecar detection (for backwards compatibility)
-	profile := os.Getenv("GT_TOOLCHAIN_PROFILE")
-	image := os.Getenv("GT_TOOLCHAIN_IMAGE")
-	if profile == "" && image == "" {
-		return
-	}
-
-	fmt.Println()
-	fmt.Printf("%s\n\n", style.Bold.Render("## Toolchain Sidecar (legacy)"))
-	if profile != "" {
-		fmt.Printf("Profile: **%s**\n", profile)
-	}
-	if image != "" {
-		fmt.Printf("Image: `%s`\n", image)
-	}
-	fmt.Println()
-	fmt.Println("Use `gt toolchain exec -- <cmd>` to run commands in the sidecar.")
 }
 
 func outputUnknownContext(ctx RoleContext) {

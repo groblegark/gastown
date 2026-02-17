@@ -63,7 +63,7 @@ BEAD_CREATED=false
 
 test_create_crew_bead() {
   # Create an agent bead mimicking what gt crew start would do.
-  # Notes field carries metadata the controller reads (sidecar_profile, etc.).
+  # Notes field carries metadata the controller reads (per-bead overrides).
   # Use single-line values to avoid kube exec multiline issues.
   local output
   output=$(daemon_bd create \
@@ -76,8 +76,7 @@ test_create_crew_bead() {
     --label="rig:${CREW_RIG}" \
     --label="role:crew" \
     --label="agent:${CREW_NAME}" \
-    --description="role_type: crew, rig: ${CREW_RIG}, agent_state: spawning" \
-    --notes="sidecar_profile: toolchain-minimal" 2>&1)
+    --description="role_type: crew, rig: ${CREW_RIG}, agent_state: spawning" 2>&1)
 
   if echo "$output" | grep -q "Created issue"; then
     BEAD_CREATED=true
@@ -159,10 +158,8 @@ test_pod_running() {
 run_test "Crew pod reaches Running state" test_pod_running
 
 # ── Test 5: At least one container is ready ─────────────────────────────
-# Known limitation: AgentSpawn event path does NOT call resolveSidecar(),
-# so E2E test pods get single-container (agent only, no toolchain sidecar).
-# See beads-qq4j. The agent container may crash-loop due to entrypoint
-# running bd version against the daemon before coop starts.
+# The agent container may crash-loop due to entrypoint running bd version
+# against the daemon before coop starts.
 # This test checks both init and regular container statuses.
 CONTAINER_READY=false
 
@@ -195,15 +192,15 @@ test_pod_containers() {
 run_test "At least one container is ready" test_pod_containers
 
 # ── Test 6: Coop health on crew pod (requires agent container ready) ────
-# Coop runs inside the agent container (ports 8080/9090 are on agent, not
-# toolchain sidecar). If the agent crashes, coop is unavailable.
+# Coop runs inside the agent container (ports 8080/9090). If the agent
+# crashes, coop is unavailable.
 test_coop_health() {
   if [[ "$POD_RUNNING" != "true" ]]; then return 1; fi
-  # Check if agent container is specifically ready (not just toolchain)
+  # Check if agent container is specifically ready
   local agent_ready
   agent_ready=$(kube get pod "$CREW_BEAD_ID" -o jsonpath='{.status.containerStatuses[?(@.name=="agent")].ready}' 2>/dev/null)
   if [[ "$agent_ready" != "true" ]]; then
-    log "Agent container not ready (coop runs inside agent, not toolchain sidecar)"
+    log "Agent container not ready (coop runs inside agent)"
     return 1
   fi
   # Try port 9090 first (health-only, always responds).
