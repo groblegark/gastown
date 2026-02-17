@@ -310,16 +310,14 @@ func runWitnessAttach(cmd *cobra.Command, args []string) error {
 	}
 
 	// When connected to a K8s namespace, try K8s attach via bead metadata first.
+	// Always prefer the connected namespace over bead metadata, because
+	// BD_DAEMON_HOST may point to a different daemon with stale namespace info.
 	if ns := getConnectedNamespace(); ns != "" {
 		target := fmt.Sprintf("%s/witness", rigName)
 		if info, err := terminal.ResolveAgentPodInfo(target); err == nil && info.PodName != "" {
-			namespace := info.Namespace
-			if namespace == "" {
-				namespace = ns
-			}
 			fmt.Printf("%s Attaching to K8s Witness pod via coop...\n",
 				style.Bold.Render("☸"))
-			return attachToCoopPodWithBrowser(info.PodName, namespace, witnessBrowser)
+			return attachToCoopPodWithBrowser(info.PodName, ns, witnessBrowser)
 		}
 	}
 

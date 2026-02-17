@@ -236,14 +236,13 @@ func runMayorStopRemote(client *rpcclient.Client) error {
 
 func runMayorAttach(cmd *cobra.Command, args []string) error {
 	// Remote daemon mode: attach via bead metadata (pod name from controller).
+	// Always prefer the connected namespace over bead metadata, because
+	// BD_DAEMON_HOST may point to a different daemon with stale namespace info.
 	if ns := getConnectedNamespace(); ns != "" {
-		if podName, podNS := detectMayorK8sPod(""); podName != "" {
-			if podNS == "" {
-				podNS = ns
-			}
+		if podName, _ := detectMayorK8sPod(""); podName != "" {
 			fmt.Printf("%s Attaching to K8s Mayor pod via coop...\n",
 				style.Bold.Render("☸"))
-			return attachToCoopPodWithBrowser(podName, podNS, mayorBrowser)
+			return attachToCoopPodWithBrowser(podName, ns, mayorBrowser)
 		}
 		return fmt.Errorf("Mayor pod not found. Start with: gt mayor start")
 	}
