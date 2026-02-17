@@ -155,17 +155,12 @@ rbac:
   create: true
 
 # =============================================================================
-# External Secrets (Anthropic API key + git credentials from AWS Secrets Manager)
+# External Secrets (git credentials from AWS Secrets Manager)
 # =============================================================================
 externalSecrets:
   enabled: true
   clusterSecretStore: "aws-secretsmanager"
   refreshInterval: "15m"
-
-  # Anthropic API key
-  anthropicApiKey:
-    remoteRef: ""
-    property: ""
 
   # Git credentials (for clone/push)
   gitCredentials:

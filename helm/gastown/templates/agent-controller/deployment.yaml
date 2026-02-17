@@ -46,10 +46,6 @@ spec:
                   key: token
             - name: AGENT_IMAGE
               value: "{{ .Values.agentController.agentImage.repository }}:{{ .Values.agentController.agentImage.tag }}"
-            {{- if .Values.agentController.apiKeySecret }}
-            - name: API_KEY_SECRET
-              value: {{ .Values.agentController.apiKeySecret }}
-            {{- end }}
             {{- if .Values.agentController.coopImage }}
             - name: COOP_IMAGE
               value: {{ .Values.agentController.coopImage }}

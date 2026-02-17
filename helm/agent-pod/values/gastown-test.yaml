@@ -5,11 +5,9 @@ bdDaemon:
   host: "gastown-daemon.gastown-test.svc.cluster.local"
   port: 9876
 
+# NOTE: No anthropicApiKey — agents use Claude OAuth via claude-credentials secret.
 externalSecrets:
   enabled: true
-  anthropicApiKey:
-    remoteRef: "gastown/anthropic-api-key"
-    property: "ANTHROPIC_API_KEY"
   gitCredentials:
     enabled: true
     remoteRef: "gastown/git-credentials"

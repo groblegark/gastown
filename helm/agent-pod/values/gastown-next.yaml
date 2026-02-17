@@ -58,15 +58,12 @@ bdDaemon:
   host: "gastown-next-bd-daemon.gastown-next.svc.cluster.local"
   port: 9876
 
-# External Secrets — Anthropic API key + git credentials from AWS Secrets Manager
+# External Secrets — git credentials from AWS Secrets Manager
+# NOTE: No anthropicApiKey — agents use Claude OAuth via claude-credentials secret.
 externalSecrets:
   enabled: true
   clusterSecretStore: "aws-secretsmanager"
   refreshInterval: "15m"
-
-  anthropicApiKey:
-    remoteRef: "gastown/anthropic-api-key"
-    property: "ANTHROPIC_API_KEY"
 
   gitCredentials:
     enabled: true

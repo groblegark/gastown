@@ -114,14 +114,6 @@ spec:
             - name: BD_DAEMON_PORT
               value: {{ .Values.bdDaemon.port | quote }}
             {{- end }}
-            # Anthropic API key from ExternalSecret
-            {{- if and .Values.externalSecrets.enabled .Values.externalSecrets.anthropicApiKey.remoteRef }}
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "agent-pod.apiKeySecretName" . }}
-                  key: api-key
-            {{- end }}
             # Git credentials from ExternalSecret
             {{- if and .Values.externalSecrets.enabled .Values.externalSecrets.gitCredentials.enabled .Values.externalSecrets.gitCredentials.remoteRef }}
             - name: GIT_USERNAME

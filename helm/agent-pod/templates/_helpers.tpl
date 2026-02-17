@@ -60,13 +60,6 @@ Service account name
 {{- end }}
 
 {{/*
-Agent config secret name (for Anthropic API key)
-*/}}
-{{- define "agent-pod.apiKeySecretName" -}}
-{{- printf "%s-api-key" (include "agent-pod.fullname" .) }}
-{{- end }}
-
-{{/*
 Git credentials secret name
 */}}
 {{- define "agent-pod.gitCredentialsSecretName" -}}

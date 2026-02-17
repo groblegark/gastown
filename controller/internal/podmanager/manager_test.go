@@ -300,7 +300,7 @@ func TestK8sManager_SecretEnvVars(t *testing.T) {
 		Rig: "gastown", Role: "polecat", AgentName: "furiosa",
 		Image: "agent:latest", Namespace: "gastown",
 		SecretEnv: []SecretEnvSource{
-			{EnvName: "ANTHROPIC_API_KEY", SecretName: "api-keys", SecretKey: "anthropic"},
+			{EnvName: "GIT_USERNAME", SecretName: "git-creds", SecretKey: "username"},
 			{EnvName: "GIT_TOKEN", SecretName: "git-creds", SecretKey: "token"},
 		},
 	}
@@ -318,14 +318,14 @@ func TestK8sManager_SecretEnvVars(t *testing.T) {
 		}
 	}
 
-	if ref, ok := secretEnvs["ANTHROPIC_API_KEY"]; !ok {
-		t.Error("missing ANTHROPIC_API_KEY secret env var")
+	if ref, ok := secretEnvs["GIT_USERNAME"]; !ok {
+		t.Error("missing GIT_USERNAME secret env var")
 	} else {
-		if ref.Name != "api-keys" {
-			t.Errorf("ANTHROPIC_API_KEY secret name = %q, want %q", ref.Name, "api-keys")
+		if ref.Name != "git-creds" {
+			t.Errorf("GIT_USERNAME secret name = %q, want %q", ref.Name, "git-creds")
 		}
-		if ref.Key != "anthropic" {
-			t.Errorf("ANTHROPIC_API_KEY secret key = %q, want %q", ref.Key, "anthropic")
+		if ref.Key != "username" {
+			t.Errorf("GIT_USERNAME secret key = %q, want %q", ref.Key, "username")
 		}
 	}
 

@@ -366,20 +366,6 @@ func buildAgentPodSpec(cfg *config.Config, event beadswatcher.Event) podmanager.
 		spec.ConfigMapName = cm
 	}
 
-	// Wire up ANTHROPIC_API_KEY from event metadata or controller config.
-	apiKeySecret := event.Metadata["api_key_secret"]
-	if apiKeySecret == "" {
-		apiKeySecret = cfg.APIKeySecret
-	}
-	if apiKeySecret != "" {
-		secretKey := metadataOr(event, "api_key_secret_key", "ANTHROPIC_API_KEY")
-		spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
-			EnvName:    "ANTHROPIC_API_KEY",
-			SecretName: apiKeySecret,
-			SecretKey:  secretKey,
-		})
-	}
-
 	// Apply common config (credentials, daemon token, coop, NATS).
 	applyCommonConfig(cfg, &spec)
 

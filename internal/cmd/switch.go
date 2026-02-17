@@ -17,10 +17,10 @@ var switchCmd = &cobra.Command{
 process with updated environment variables. The agent's transport connections
 survive the switch.
 
-Use this to rotate credentials (e.g., ANTHROPIC_API_KEY) without restarting the pod.
+Use this to rotate credentials or update environment without restarting the pod.
 
 Examples:
-  gt switch hq-mayor --env ANTHROPIC_API_KEY=sk-ant-...
+  gt switch hq-mayor --env GIT_TOKEN=ghp_...
   gt switch gt-gastown-crew-k8s --env KEY1=val1 --env KEY2=val2`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSwitch,

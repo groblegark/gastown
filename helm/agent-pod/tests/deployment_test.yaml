@@ -205,32 +205,6 @@ tests:
           any: true
         template: templates/deployment.yaml
 
-  - it: includes Anthropic API key from ExternalSecret
-    set:
-      externalSecrets.enabled: true
-      externalSecrets.anthropicApiKey.remoteRef: "gastown/anthropic-api-key"
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: ANTHROPIC_API_KEY
-            valueFrom:
-              secretKeyRef:
-                name: RELEASE-NAME-agent-pod-api-key
-                key: api-key
-        template: templates/deployment.yaml
-
-  - it: excludes API key env when externalSecrets disabled
-    set:
-      externalSecrets.enabled: false
-    asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: ANTHROPIC_API_KEY
-          any: true
-        template: templates/deployment.yaml
-
   - it: includes git credentials when enabled
     set:
       externalSecrets.enabled: true

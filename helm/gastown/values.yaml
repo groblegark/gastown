@@ -383,9 +383,6 @@ agentController:
 
   replicaCount: 1
 
-  # K8s secret name containing ANTHROPIC_API_KEY for agent pods
-  apiKeySecret: ""
-
   # Coop sidecar image for agent pods (optional, enables PTY-based management)
   coopImage: ""
 

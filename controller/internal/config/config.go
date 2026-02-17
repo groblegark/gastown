@@ -46,9 +46,6 @@ type Config struct {
 	// ports and uses HTTP probes instead of exec probes. No sidecar is added.
 	CoopBuiltin bool
 
-	// APIKeySecret is the K8s secret name containing ANTHROPIC_API_KEY (env: API_KEY_SECRET).
-	APIKeySecret string
-
 	// CredentialsSecret is the K8s secret containing Claude OAuth credentials (env: CLAUDE_CREDENTIALS_SECRET).
 	// Mounted as ~/.claude/.credentials.json in agent pods for Max/Corp accounts.
 	CredentialsSecret string
@@ -137,7 +134,6 @@ func Parse() *Config {
 		DefaultImage:   os.Getenv("AGENT_IMAGE"),
 		CoopImage:      os.Getenv("COOP_IMAGE"),
 		CoopBuiltin:    envBoolOr("COOP_BUILTIN", false),
-		APIKeySecret:      os.Getenv("API_KEY_SECRET"),
 		CredentialsSecret: os.Getenv("CLAUDE_CREDENTIALS_SECRET"),
 		DaemonTokenSecret: os.Getenv("DAEMON_TOKEN_SECRET"),
 		TownName:          envOr("GT_TOWN_NAME", "town"),
@@ -164,7 +160,6 @@ func Parse() *Config {
 	flag.StringVar(&cfg.DefaultImage, "agent-image", cfg.DefaultImage, "Default container image for agent pods")
 	flag.StringVar(&cfg.CoopImage, "coop-image", cfg.CoopImage, "Coop sidecar container image")
 	flag.BoolVar(&cfg.CoopBuiltin, "coop-builtin", cfg.CoopBuiltin, "Agent image has coop built-in (HTTP probes, no sidecar)")
-	flag.StringVar(&cfg.APIKeySecret, "api-key-secret", cfg.APIKeySecret, "K8s secret name containing ANTHROPIC_API_KEY")
 	flag.StringVar(&cfg.CredentialsSecret, "credentials-secret", cfg.CredentialsSecret, "K8s secret with Claude OAuth credentials")
 	flag.StringVar(&cfg.DaemonTokenSecret, "daemon-token-secret", cfg.DaemonTokenSecret, "K8s secret with daemon auth token for agent pods")
 	flag.StringVar(&cfg.TownName, "town-name", cfg.TownName, "Gas Town deployment name")

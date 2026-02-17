@@ -860,42 +860,6 @@ func TestIntegration_SpawnSetsEnvVars(t *testing.T) {
 	}
 }
 
-func TestIntegration_SpawnWithSecretEnv(t *testing.T) {
-	client := fake.NewSimpleClientset()
-	logger := slog.Default()
-	cfg := testConfig()
-	pods := podmanager.New(client, logger)
-	reporter := newRecordingReporter(client, cfg.Namespace, logger)
-	ctx := context.Background()
-
-	event := spawnEvent("gastown", "polecat", "furiosa")
-	event.Metadata["api_key_secret"] = "gastown-api-keys"
-	event.Metadata["api_key_secret_key"] = "ANTHROPIC_API_KEY"
-	if err := handleEvent(ctx, logger, cfg, event, pods, reporter); err != nil {
-		t.Fatalf("handleEvent: %v", err)
-	}
-
-	pod, err := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-polecat-furiosa", metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("pod not created: %v", err)
-	}
-
-	// Find the secret env var.
-	found := false
-	for _, e := range pod.Spec.Containers[0].Env {
-		if e.Name == "ANTHROPIC_API_KEY" && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
-			if e.ValueFrom.SecretKeyRef.Name != "gastown-api-keys" {
-				t.Errorf("secret name = %q, want %q", e.ValueFrom.SecretKeyRef.Name, "gastown-api-keys")
-			}
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("ANTHROPIC_API_KEY secret env var not found")
-	}
-}
-
 func TestIntegration_MultiplePolecatSpawns(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	logger := slog.Default()

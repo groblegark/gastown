@@ -96,7 +96,7 @@ type AgentPodSpec struct {
 	Resources *corev1.ResourceRequirements
 
 	// SecretEnv injects environment variables from K8s Secrets.
-	// Used for API keys (ANTHROPIC_API_KEY) and git credentials.
+	// Used for git credentials and other secret env vars.
 	SecretEnv []SecretEnvSource
 
 	// ConfigMapName is the name of a ConfigMap to mount at MountBeadsConfig.
