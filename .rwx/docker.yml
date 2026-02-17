@@ -652,11 +652,17 @@ tasks:
       unzip -q /tmp/awscli.zip -d /tmp
       /tmp/aws/install --install-dir /tmp/aws-install --bin-dir /tmp/aws-bin
       mkdir -p $LAYER/opt/aws-cli
+      # Copy AWS CLI but skip the "current" symlink (it points to build-time paths).
+      # cp -r follows symlinks, so current/ becomes a dir copy — just delete and re-link.
       cp -r /tmp/aws-install/* $LAYER/opt/aws-cli/
-      # Fix the "current" symlink — cp -r preserves the absolute path to the
-      # temp install dir. Replace with a relative symlink to the version dir.
-      AWS_VER=$(ls $LAYER/opt/aws-cli/v2/ | grep -v current | head -1)
+      rm -rf $LAYER/opt/aws-cli/v2/current
+      AWS_VER=$(ls $LAYER/opt/aws-cli/v2/ | head -1)
       ln -sf "$AWS_VER" $LAYER/opt/aws-cli/v2/current
+      # Also fix the bin/ symlinks (they point to /tmp/aws-install/...)
+      rm -rf $LAYER/opt/aws-cli/bin
+      mkdir -p $LAYER/opt/aws-cli/bin
+      ln -sf /opt/aws-cli/v2/current/bin/aws $LAYER/opt/aws-cli/bin/aws
+      ln -sf /opt/aws-cli/v2/current/bin/aws_completer $LAYER/opt/aws-cli/bin/aws_completer
       # Symlink the aws binary into PATH
       ln -sf /opt/aws-cli/v2/current/bin/aws $LAYER/usr/local/bin/aws
       rm -rf /tmp/awscli.zip /tmp/aws /tmp/aws-install /tmp/aws-bin
@@ -680,8 +686,16 @@ tasks:
       echo "${PLATFORM_VERSION}" > $LAYER/etc/platform-version
       cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
 
-      # Home directory
+      # Home directory (owned by agent user)
       mkdir -p $LAYER/home/agent/gt
+
+      # Fix ownership for sudo — must be root-owned with setuid bit.
+      # The build user's copies lose root ownership; restore it here.
+      sudo chown root:root $LAYER/usr/bin/sudo
+      sudo chmod 4755 $LAYER/usr/bin/sudo
+      sudo chown root:root $LAYER/etc/sudo.conf 2>/dev/null || true
+      # Make home dir owned by agent (UID 1000)
+      sudo chown -R 1000:1000 $LAYER/home/agent
 
       sudo tar -cf /tmp/layer.tar -C $LAYER .
 
