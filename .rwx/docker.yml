@@ -105,6 +105,33 @@ tasks:
       - go.mod
       - go.sum
 
+  # ── Rust toolchain (cached, rebuild when lock changes) ──────────────
+  - key: rust
+    filter:
+      - .rwx/rust-version.lock
+    run: |
+      echo "Installing Rust toolchain (should be cached)..."
+      curl -fsSL --proto '=https' --tlsv1.2 https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain 1.93.0
+
+  # ── Build oj binary from oddjobs (cached, rebuild when lock changes) ─
+  - key: build-oj
+    use: rust
+    filter:
+      - .rwx/oj-version.lock
+    run: |
+      set -ex
+      export PATH="$HOME/.cargo/bin:$PATH"
+      echo "Building oj from source..."
+      git clone --depth 1 --branch main https://github.com/groblegark/oddjobs.git /tmp/oj
+      rm -f /tmp/oj/.cargo/config.toml
+      RUSTC_WRAPPER="" cargo build --manifest-path /tmp/oj/Cargo.toml --release -p oj
+      cp /tmp/oj/target/release/oj oj
+    outputs:
+      artifacts:
+        - key: oj-binary
+          path: oj
+
   # ── Build gt CLI binary → artifact ──────────────────────────────────
   # Reads GASTOWN_VERSION and PLATFORM_VERSION from platform-versions.env
   # for ldflags so `gt version` reports the correct version.
@@ -256,7 +283,7 @@ tasks:
 
   # ── Agent image (ubuntu + apt packages + gt/coop/bd/claude) ────────
   - key: image-agent
-    use: [build-gt, download-coop, download-bd, code]
+    use: [build-gt, download-coop, download-bd, build-oj, code]
     if: ${{ init.ref-name != 'pr' }}
     filter:
       - deploy/agent/entrypoint.sh
@@ -283,9 +310,10 @@ tasks:
       sudo cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /usr/local/bin/coop
       sudo cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux /usr/local/bin/coop-mux 2>/dev/null || true
       sudo cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd /usr/local/bin/bd
+      sudo cp ${{ tasks.build-oj.artifacts.oj-binary }} /usr/local/bin/oj
       sudo ln -sf /usr/local/bin/coop-mux /usr/local/bin/coopmux
       sudo chmod +x /usr/local/bin/gt /usr/local/bin/coop /usr/local/bin/bd \
-        /usr/local/bin/coop-mux 2>/dev/null || true
+        /usr/local/bin/oj /usr/local/bin/coop-mux 2>/dev/null || true
 
       # Install entrypoint
       sudo cp deploy/agent/entrypoint.sh /entrypoint.sh
@@ -312,7 +340,7 @@ tasks:
 
   # ── Toolchain image (Go + Node + Python + AWS/RWX/kubectl + Docker CLI + gt/bd/coop) ──
   - key: image-toolchain
-    use: [code, build-gt, download-coop, download-bd]
+    use: [code, build-gt, download-coop, download-bd, build-oj]
     if: ${{ init.ref-name != 'pr' }}
     filter:
       - .rwx/toolchain-version.lock
@@ -329,6 +357,7 @@ tasks:
       export GT_BIN="${{ tasks.build-gt.artifacts.gt-binary }}"
       export COOP_DIR="${{ tasks.download-coop.artifacts.coop-binaries }}"
       export BD_DIR="${{ tasks.download-bd.artifacts.bd-binaries }}"
+      export OJ_BIN="${{ tasks.build-oj.artifacts.oj-binary }}"
 
       # Run ALL apt and sudo operations in a single sudo bash -c block.
       # WORKAROUND: dpkg operations (apt-get install) corrupt /etc/shadow
@@ -392,14 +421,15 @@ tasks:
         apt-get clean
         rm -rf /var/lib/apt/lists/*
 
-        # Install gt, coop, coopmux, bd binaries (from build artifacts)
+        # Install gt, coop, coopmux, bd, oj binaries (from build artifacts)
         cp "${GT_BIN}" /usr/local/bin/gt
         cp "${COOP_DIR}/coop" /usr/local/bin/coop
         cp "${COOP_DIR}/coop-mux" /usr/local/bin/coop-mux 2>/dev/null || true
         cp "${BD_DIR}/bd" /usr/local/bin/bd
+        cp "${OJ_BIN}" /usr/local/bin/oj
         ln -sf /usr/local/bin/coop-mux /usr/local/bin/coopmux
         chmod +x /usr/local/bin/gt /usr/local/bin/coop /usr/local/bin/bd \
-          /usr/local/bin/coop-mux 2>/dev/null || true
+          /usr/local/bin/oj /usr/local/bin/coop-mux 2>/dev/null || true
 
         # Write platform version for runtime discovery
         echo "${PLATFORM_VERSION}" > /etc/platform-version
@@ -434,7 +464,7 @@ tasks:
   # image.yml — this task adds a CalVer alias so all images share a
   # single version number for deployment.
   - key: push-bd
-    use: [code, download-bd]
+    use: [code, download-bd, build-oj]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -455,12 +485,13 @@ tasks:
         ca-certificates libicu74 netcat-openbsd
       sudo rm -rf /var/lib/apt/lists/*
 
-      # Build layer: bd binary + runtime deps
+      # Build layer: bd + oj binaries + runtime deps
       LAYER=/tmp/layer
       mkdir -p $LAYER/usr/local/bin $LAYER/home/beads $LAYER/etc/ssl/certs
 
       cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd $LAYER/usr/local/bin/bd
-      chmod 755 $LAYER/usr/local/bin/bd
+      cp ${{ tasks.build-oj.artifacts.oj-binary }} $LAYER/usr/local/bin/oj
+      chmod 755 $LAYER/usr/local/bin/bd $LAYER/usr/local/bin/oj
 
       # CA certificates (base ubuntu:24.04 doesn't include them)
       cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
@@ -532,7 +563,7 @@ tasks:
 
   # ── Push agent image to GHCR ──────────────────────────────────────────
   - key: push-agent
-    use: [code, build-gt, download-coop, download-bd]
+    use: [code, build-gt, download-coop, download-bd, build-oj]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -600,9 +631,11 @@ tasks:
       cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /tmp/layer/usr/local/bin/coop
       cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux /tmp/layer/usr/local/bin/coop-mux 2>/dev/null || true
       cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd /tmp/layer/usr/local/bin/bd
+      cp ${{ tasks.build-oj.artifacts.oj-binary }} /tmp/layer/usr/local/bin/oj
       ln -sf coop-mux /tmp/layer/usr/local/bin/coopmux
       chmod +x /tmp/layer/usr/local/bin/gt /tmp/layer/usr/local/bin/coop \
-        /tmp/layer/usr/local/bin/bd /tmp/layer/usr/local/bin/coop-mux 2>/dev/null || true
+        /tmp/layer/usr/local/bin/bd /tmp/layer/usr/local/bin/oj \
+        /tmp/layer/usr/local/bin/coop-mux 2>/dev/null || true
 
       # Install entrypoint
       cp deploy/agent/entrypoint.sh /tmp/layer/entrypoint.sh
@@ -641,7 +674,7 @@ tasks:
   # For simpler rebuilds, use: rwx image build -f .rwx/docker.yml \
   #   --target image-toolchain --push-to ghcr.io/groblegark/gastown/gastown-toolchain:latest
   - key: push-toolchain
-    use: [code, build-gt, download-coop, download-bd]
+    use: [code, build-gt, download-coop, download-bd, build-oj]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -729,14 +762,16 @@ tasks:
       ln -sf /opt/aws-cli/bin/aws $LAYER/usr/local/bin/aws
       rm -rf /tmp/awscli.zip /tmp/aws
 
-      # Install gt, coop, coopmux, bd binaries
+      # Install gt, coop, coopmux, bd, oj binaries
       cp ${{ tasks.build-gt.artifacts.gt-binary }} $LAYER/usr/local/bin/gt
       cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop $LAYER/usr/local/bin/coop
       cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux $LAYER/usr/local/bin/coop-mux 2>/dev/null || true
       cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd $LAYER/usr/local/bin/bd
+      cp ${{ tasks.build-oj.artifacts.oj-binary }} $LAYER/usr/local/bin/oj
       ln -sf coop-mux $LAYER/usr/local/bin/coopmux
       chmod +x $LAYER/usr/local/bin/gt $LAYER/usr/local/bin/coop \
-        $LAYER/usr/local/bin/bd $LAYER/usr/local/bin/coop-mux 2>/dev/null || true
+        $LAYER/usr/local/bin/bd $LAYER/usr/local/bin/oj \
+        $LAYER/usr/local/bin/coop-mux 2>/dev/null || true
 
       # Platform version + entrypoint + home dir
       echo "${PLATFORM_VERSION}" > $LAYER/etc/platform-version

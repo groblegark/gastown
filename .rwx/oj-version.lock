@@ -1,0 +1,5 @@
+# OddJobs (oj) binary version lock — touch to force rebuild
+# oj is built from source (groblegark/oddjobs main branch)
+# Used by: build-oj task in docker.yml
+oj-version=main
+last-update=2026-02-16

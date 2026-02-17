@@ -1,0 +1,4 @@
+# Rust toolchain version lock — touch to force rebuild
+# Used by: build-oj task in docker.yml
+rust-version=1.93.0
+last-update=2026-02-16
