@@ -19,7 +19,7 @@ set -euo pipefail
 #   - gastown.coopBroker.image.tag          → PLATFORM_VERSION
 #   - gastown.agentController.image.tag     → PLATFORM_VERSION
 #   - gastown.agentController.agentImage.tag → PLATFORM_VERSION
-#   - gastown.bd-daemon.image.tag           → BEADS_VERSION
+#   - gastown.bd-daemon.image.tag           → PLATFORM_VERSION (CalVer)
 #
 # Requires:
 #   - platform-versions.env in repo root (source of truth)
@@ -146,9 +146,9 @@ update_tag() {
 
 echo -e "${CYAN}Checking image tags:${NC}"
 
-# 1. Beads daemon image
+# 1. Beads daemon image (CalVer — all images use PLATFORM_VERSION)
 update_tag "repository: ghcr.io/groblegark/beads" \
-    "$BEADS_VERSION" \
+    "$PLATFORM_VERSION" \
     "bd-daemon"
 
 # 2. Coop broker image (gastown-agent)

@@ -116,8 +116,8 @@ check_agent_pod() {
 
 echo -e "${CYAN}Infrastructure:${NC}"
 
-# Daemon
-check_image "bd-daemon" "app.kubernetes.io/component=daemon" "$BEADS_VERSION"
+# Daemon (CalVer — all images use PLATFORM_VERSION)
+check_image "bd-daemon" "app.kubernetes.io/component=daemon" "$PLATFORM_VERSION"
 
 # Controller
 check_image "agent-controller" "app.kubernetes.io/component=agent-controller" "$PLATFORM_VERSION"
@@ -125,8 +125,8 @@ check_image "agent-controller" "app.kubernetes.io/component=agent-controller" "$
 # Coop broker
 check_image "coop-broker" "app.kubernetes.io/component=coop-broker" "$PLATFORM_VERSION"
 
-# Slackbot (uses daemon image tag)
-check_image "slackbot" "app.kubernetes.io/component=slackbot" "$BEADS_VERSION"
+# Slackbot (uses daemon image = PLATFORM_VERSION)
+check_image "slackbot" "app.kubernetes.io/component=slackbot" "$PLATFORM_VERSION"
 
 echo ""
 echo -e "${CYAN}Agent Pods:${NC}"
