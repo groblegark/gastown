@@ -677,7 +677,7 @@ tasks:
           [ -f "$f" ] || continue
           dir="$LAYER$(dirname "$f")"
           mkdir -p "$dir"
-          cp "$f" "$LAYER${f}"
+          cp "$f" "$LAYER${f}" 2>/dev/null || true
         done
       done
       # Also copy shared libs that key binaries link against
