@@ -4,7 +4,7 @@
 >
 > **Current**: 199,402 code lines (quench total: 123,599 source + 75,803 test)
 >
-> **Target**: Remove ~35–45k lines across code, docs, and non-code assets
+> **Target**: Remove ~32–35k lines across code, docs, and non-code assets
 >
 > **Previous round**: Phases 1–9 removed ~55k lines (completed 2026-02-13, commit c8c9884b)
 
@@ -135,38 +135,11 @@ Cascade: only imported by `internal/web/`.
 
 ---
 
-## Phase 3 — Dog System (~3,500 lines)
-
-The dog system creates local git worktrees per rig for persistent helper workers.
-`dog.Manager.Add()` calls `git worktree add`, which requires a local clone — broken
-in K8s-only mode. `internal/dog/` is only imported by `cmd/sling_dog.go`.
-
-### 3a. Delete `internal/dog/` package (2,678 lines)
-
-**Files:**
-- `internal/dog/manager.go` (~290)
-- `internal/dog/session_manager.go` (~300)
-- `internal/dog/types.go` (~280)
-- plus test files (~1,800)
-
-### 3b. Delete dog command and dispatch (319 lines)
-
-**Files:**
-- `internal/cmd/sling_dog.go` (217)
-- `internal/cmd/sling_dog_test.go` (102)
-
-### 3c. Delete dog architecture doc (495 lines)
-
-**Files:**
-- `docs/design/dog-pool-architecture.md` (495)
-
----
-
-## Phase 4 — Local-Only Commands & Packages (~2,700 lines)
+## Phase 3 — Local-Only Commands & Packages (~2,700 lines)
 
 Commands that operate on local machine state. None function in K8s pods.
 
-### 4a. `gt dolt` — local Dolt server management (1,105 lines)
+### 3a. `gt dolt` — local Dolt server management (1,105 lines)
 
 Starts/stops local `dolt sql-server` processes, manages PID files, reads local
 log files. In K8s, Dolt runs as a separate service managed by the daemon.
@@ -177,7 +150,7 @@ log files. In K8s, Dolt runs as a separate service managed by the daemon.
 - `internal/doltserver/doltserver.go` (597)
 - `internal/doltserver/doltserver_test.go` (114)
 
-### 4b. `gt uninstall` + `internal/wrappers/` (349 lines)
+### 3b. `gt uninstall` + `internal/wrappers/` (349 lines)
 
 Removes shell hooks, wrapper scripts (gt-codex, gt-opencode), state/config/cache
 directories from a local machine. `internal/wrappers/` is only imported by
@@ -190,12 +163,12 @@ directories from a local machine. `internal/wrappers/` is only imported by
 - `internal/wrappers/scripts/gt-opencode` (18)
 - `internal/wrappers/scripts/` directory
 
-### 4c. `gt shell` + `internal/shell/` (534 lines)
+### 3c. `gt shell` + `internal/shell/` (534 lines)
 
 Install/remove shell hooks in ~/.zshrc or ~/.bashrc. K8s pods get env vars from
 pod specs. `internal/shell/` is used by `uninstall.go`, `disable.go`, `shell.go`,
 and `doctor/global_state_check.go`. All four consumers are removed in this plan
-(global_state_check.go needs a small edit — see 4d).
+(global_state_check.go needs a small edit — see 3d).
 
 **Files:**
 - `internal/cmd/shell.go` (99)
@@ -205,7 +178,7 @@ and `doctor/global_state_check.go`. All four consumers are removed in this plan
 **Requires:** Update `internal/doctor/global_state_check.go` to drop its
 shell-related check (~10 lines).
 
-### 4d. `gt disable` + `gt enable` (126 lines)
+### 3d. `gt disable` + `gt enable` (126 lines)
 
 Toggle Gas Town enabled/disabled on a local machine. K8s agents are either
 running pods or not.
@@ -214,7 +187,7 @@ running pods or not.
 - `internal/cmd/disable.go` (72)
 - `internal/cmd/enable.go` (54)
 
-### 4e. `gt stale` (122 lines)
+### 3e. `gt stale` (122 lines)
 
 Compares binary build commit against local source repo HEAD. In K8s, binaries are
 baked into container images — there is no source repo to compare against.
@@ -222,7 +195,7 @@ baked into container images — there is no source repo to compare against.
 **Files:**
 - `internal/cmd/stale.go` (122)
 
-### 4f. `gt cleanup` (127 lines)
+### 3f. `gt cleanup` (127 lines)
 
 Finds and kills orphaned Claude processes via OS process inspection. In K8s, each
 agent runs in its own pod managed by the container runtime.
@@ -233,7 +206,7 @@ cannot be cascade-removed here.
 **Files:**
 - `internal/cmd/cleanup.go` (127)
 
-### 4g. `install_integration_test.go` (340 lines)
+### 3g. `install_integration_test.go` (340 lines)
 
 Tests the removed `gt install` command (deleted in previous DEADCODE round, but
 the test file survived).
@@ -243,9 +216,9 @@ the test file survived).
 
 ---
 
-## Phase 5 — Dead Non-Code Files (~10,700 lines)
+## Phase 4 — Dead Non-Code Files (~10,700 lines)
 
-### 5a. Towers of Hanoi formula files (10,221 lines)
+### 4a. Towers of Hanoi formula files (10,221 lines)
 
 Generated durability/stress-test formulas with pre-computed moves. The generator
 script `scripts/gen_hanoi.py` can regenerate them on demand.
@@ -256,7 +229,7 @@ script `scripts/gen_hanoi.py` can regenerate them on demand.
 - `internal/formula/formulas/towers-of-hanoi-7.formula.toml` (812)
 - `internal/formula/formulas/towers-of-hanoi.formula.toml` (105)
 
-### 5b. `npm-package/` directory (442 lines)
+### 4b. `npm-package/` directory (442 lines)
 
 npm distribution wrapper for local `gt` installation via `npm install`. Irrelevant
 in K8s-only mode where the binary is baked into container images.
@@ -270,7 +243,7 @@ in K8s-only mode where the binary is baked into container images.
 - `npm-package/LICENSE` (21)
 - `npm-package/.npmignore` (12)
 
-### 5c. SSH config files (56 lines)
+### 4c. SSH config files (56 lines)
 
 Local dev SSH configs for deprecated gt11 host.
 
@@ -280,25 +253,25 @@ Local dev SSH configs for deprecated gt11 host.
 
 ---
 
-## Phase 6 — Outdated Documentation (~2,900 lines)
+## Phase 5 — Outdated Documentation (~2,900 lines)
 
-### 6a. Completed migration plans (657 lines)
+### 5a. Completed migration plans (657 lines)
 
 **Files:**
 - `docs/rwx-ci-migration-plan.md` (657) — RWX CI migration complete
 
-### 6b. Tmux-era design docs (266 lines)
+### 5b. Tmux-era design docs (266 lines)
 
 **Files:**
 - `docs/tmux-session-namespace-design.md` (266) — tmux fully removed
 
-### 6c. Local-only guides (545 lines)
+### 5c. Local-only guides (545 lines)
 
 **Files:**
 - `docs/INSTALLING.md` (308) — local install guide, K8s-only now
 - `docs/colonization-runbook.md` (237) — local "colonization" setup
 
-### 6d. Old reports and audits (846 lines)
+### 5d. Old reports and audits (846 lines)
 
 **Files:**
 - `docs/reports/hq-8af330.5-bug-categorization.md` (144)
@@ -311,65 +284,65 @@ Local dev SSH configs for deprecated gt11 host.
 - `docs/audit/gt-kube-compatibility.md` (145) — completed audit
 - `gastown/reports/audit-hq-mol-1s1.md` (26)
 
-### 6e. Hanoi generator script (103 lines)
+### 5e. Hanoi generator script (103 lines)
 
-Only needed if keeping Towers of Hanoi TOML files (removed in Phase 5a).
+Only needed if keeping Towers of Hanoi TOML files (removed in Phase 4a).
 
 **Files:**
 - `scripts/gen_hanoi.py` (103)
 
 ---
 
-## Phase 7 — Tmux Vestiges in Surviving Code (est. ~2,000–4,000 lines)
+## Phase 6 — Tmux Vestiges in Surviving Code (est. ~2,000–4,000 lines)
 
 Lower confidence — requires surgical edits within active files rather than whole-file
 deletion. Each item needs careful verification before removal.
 
-### 7a. `internal/cmd/agents.go` — tmux `display-menu` (~200 lines)
+### 6a. `internal/cmd/agents.go` — tmux `display-menu` (~200 lines)
 
 `runAgents()` calls `exec.LookPath("tmux")` and invokes `tmux display-menu` with
 tmux color codes (`#[fg=red,bold]`). The `AgentTypeColors` map and
 `categorizeSession()` function parse legacy tmux session names. Useless in K8s pods.
 
-### 7b. `internal/cmd/witness.go` — tmux `attach-session` (~20 lines)
+### 6b. `internal/cmd/witness.go` — tmux `attach-session` (~20 lines)
 
 `runWitnessAttach` calls `tmux attach-session`. Witnesses run in K8s pods.
 
-### 7c. `internal/config/types.go` — `RuntimeTmuxConfig` struct (~40 lines)
+### 6c. `internal/config/types.go` — `RuntimeTmuxConfig` struct (~40 lines)
 
 `RuntimeTmuxConfig` with `ProcessNames`, `ReadyPromptPrefix`, `ReadyDelayMs`.
 `SleepForReadyDelay()` is called from `polecat/session_manager.go` but is a no-op
 when `ReadyDelayMs == 0` (always true in K8s configs).
 
-### 7d. `internal/lock/lock.go` — `getActiveTmuxSessions()` (~30 lines)
+### 6d. `internal/lock/lock.go` — `getActiveTmuxSessions()` (~30 lines)
 
 Called by `CleanStaleLocks()` for tmux session cross-checking. In K8s mode, there
 are no tmux sessions — the check always finds nothing.
 
-### 7e. `internal/util/orphan.go` — tmux stubs (~50 lines)
+### 6e. `internal/util/orphan.go` — tmux stubs (~50 lines)
 
 `getTmuxSessionPIDs()` returns an empty map unconditionally. Dead session-crossing
 logic in `FindZombieClaudeProcesses` uses it.
 
-### 7f. `internal/cmd/context.go` — `TMUX_SESSION` env var (~5 lines)
+### 6f. `internal/cmd/context.go` — `TMUX_SESSION` env var (~5 lines)
 
 Fallback `os.Getenv("TMUX_SESSION")` that can never trigger in K8s mode.
 
-### 7g. `internal/cmd/crew.go` — `--no-tmux` flag (~10 lines)
+### 6g. `internal/cmd/crew.go` — `--no-tmux` flag (~10 lines)
 
 `crewNoTmux bool` flag is a tmux vestige. In K8s mode, there's no local clone path.
 
-### 7h. `internal/rpcserver/server.go` — stubs (~50 lines)
+### 6h. `internal/rpcserver/server.go` — stubs (~50 lines)
 
 `checkTmux()` returns "not applicable (K8s mode)". `ListSessions()` returns empty
 list. Both can be removed.
 
-### 7i. `internal/sling/spawn.go` — `ExecutionTargetLocal` (~30 lines)
+### 6i. `internal/sling/spawn.go` — `ExecutionTargetLocal` (~30 lines)
 
 `ResolveExecutionTarget()` local path and `ExecutionTargetLocal` constant can never
 succeed — all callers error if target is not K8s.
 
-### 7j. Doctor checks for local scenarios (est. ~1,000 lines)
+### 6j. Doctor checks for local scenarios (est. ~1,000 lines)
 
 Several doctor checks are vestigial for K8s-only mode:
 - `global_state_check.go` (111) — checks shell integration (local-only)
@@ -387,13 +360,12 @@ Several doctor checks are vestigial for K8s-only mode:
 |-------|-------------|-----:|--------:|------:|
 | 1 | Orphaned packages | 4,288 | — | 4,288 |
 | 2 | Web dashboard cascade | 6,307 | 3,842 | 10,149 |
-| 3 | Dog system | 2,997 | 495 | 3,492 |
-| 4 | Local-only commands | 2,703 | — | 2,703 |
-| 5 | Dead non-code files | 316 | 10,403 | 10,719 |
-| 6 | Outdated documentation | — | 2,912 | 2,912 |
-| 7 | Tmux vestiges (est.) | 2,000–4,000 | — | 2,000–4,000 |
-| **Total** | | **~18,600–20,600** | **~17,650** | **~36,300–38,300** |
+| 3 | Local-only commands | 2,703 | — | 2,703 |
+| 4 | Dead non-code files | 316 | 10,403 | 10,719 |
+| 5 | Outdated documentation | — | 2,912 | 2,912 |
+| 6 | Tmux vestiges (est.) | 2,000–4,000 | — | 2,000–4,000 |
+| **Total** | | **~15,600–17,600** | **~17,157** | **~32,800–34,800** |
 
-Phases 1–4 are mechanically verifiable (import graph analysis, zero-importer proof).
-Phase 5–6 are file deletions with no code dependencies.
-Phase 7 requires surgical edits within active files and per-item verification.
+Phases 1–3 are mechanically verifiable (import graph analysis, zero-importer proof).
+Phase 4–5 are file deletions with no code dependencies.
+Phase 6 requires surgical edits within active files and per-item verification.
