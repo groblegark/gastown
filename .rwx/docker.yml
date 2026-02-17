@@ -281,55 +281,114 @@ tasks:
       jq -n '["/controller"]' > $RWX_IMAGE/entrypoint.json
       echo "65534" > $RWX_IMAGE/user
 
-  # ── Agent image (ubuntu + apt packages + gt/coop/bd/claude) ────────
+  # ── Agent image (rich: Go, Python, Rust Analyzer, kubectl, AWS, Docker + gt/coop/bd/claude) ──
+  # Self-sufficient agent image — no toolchain sidecar needed.
   - key: image-agent
     use: [build-gt, download-coop, download-bd, build-oj, code]
     if: ${{ init.ref-name != 'pr' }}
     filter:
       - deploy/agent/entrypoint.sh
       - .node-version
+      - .go-version
       - platform-versions.env
     run: |
-      # WORKAROUND: Do NOT run apt-get update/install here.
-      # On multi-layer overlayfs (4 dependency layers), apt-get update
-      # corrupts /etc/shadow visibility, breaking all subsequent sudo calls.
-      # The base image (rwx/base 1.0.0) already provides git, curl,
-      # ca-certificates, and jq — verified by "0 newly installed" in logs.
-
-      # Install Node.js from binary tarball (version from .node-version)
-      NODE_VERSION=$(cat .node-version)
-      curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
-        | sudo tar -xJ --strip-components=1 -C /usr/local
-
-      # Write platform version for runtime discovery (bd version, gt version)
+      export DEBIAN_FRONTEND=noninteractive
       source platform-versions.env
-      echo "${PLATFORM_VERSION}" | sudo tee /etc/platform-version > /dev/null
+      export PLATFORM_VERSION
 
-      # Install binaries
-      sudo cp ${{ tasks.build-gt.artifacts.gt-binary }} /usr/local/bin/gt
-      sudo cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /usr/local/bin/coop
-      sudo cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux /usr/local/bin/coop-mux 2>/dev/null || true
-      sudo cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd /usr/local/bin/bd
-      sudo cp ${{ tasks.build-oj.artifacts.oj-binary }} /usr/local/bin/oj
-      sudo ln -sf /usr/local/bin/coop-mux /usr/local/bin/coopmux
-      sudo chmod +x /usr/local/bin/gt /usr/local/bin/coop /usr/local/bin/bd \
-        /usr/local/bin/oj /usr/local/bin/coop-mux 2>/dev/null || true
+      # Export artifact paths so sudo -E can pass them into the bash -c block.
+      export GT_BIN="${{ tasks.build-gt.artifacts.gt-binary }}"
+      export COOP_DIR="${{ tasks.download-coop.artifacts.coop-binaries }}"
+      export BD_DIR="${{ tasks.download-bd.artifacts.bd-binaries }}"
+      export OJ_BIN="${{ tasks.build-oj.artifacts.oj-binary }}"
 
-      # Install entrypoint
-      sudo cp deploy/agent/entrypoint.sh /entrypoint.sh
-      sudo chmod +x /entrypoint.sh
+      # Run ALL apt and sudo operations in a single sudo bash -c block.
+      # WORKAROUND: dpkg operations (apt-get install) corrupt /etc/shadow
+      # on RWX overlayfs, breaking subsequent sudo re-authentication.
+      sudo -E bash -c '
+        set -e
 
-      # Create home directory while we still have sudo
-      sudo mkdir -p /home/agent/gt
-      sudo chown -R 1000:1000 /home/agent
+        # Base tools + dev stack
+        apt-get -y update
+        apt-get -y install --no-install-recommends \
+          curl git jq make unzip ca-certificates screen \
+          python3 python3-pip python3-venv \
+          gcc g++ openssh-client libcurl3t64-gnutls sudo
 
-      # WORKAROUND: npm install -g and sed both corrupt /etc/shadow on
-      # multi-layer overlayfs, breaking subsequent sudo calls. Run them
-      # in a single sudo bash -c to avoid re-authentication.
-      sudo bash -c '
+        # Node.js (version from .node-version; binary tarball)
+        NODE_VERSION=$(cat .node-version)
+        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+          | tar -xJ --strip-components=1 -C /usr/local
+
+        # Go (version from .go-version, installer resolves latest patch)
+        GO_VERSION=$(cat .go-version)
+        GO_LATEST=$(curl -fsSL "https://go.dev/dl/?mode=json" | jq -r "[.[] | select(.version | startswith(\"go${GO_VERSION}\"))][0].version")
+        curl -fsSL "https://go.dev/dl/${GO_LATEST}.linux-amd64.tar.gz" | tar -C /usr/local -xz
+        export PATH="/usr/local/go/bin:$PATH"
+        GOPATH="/tmp/go" go install golang.org/x/tools/gopls@latest
+        mv /tmp/go/bin/gopls /usr/local/go/bin/gopls
+        rm -rf /tmp/go
+
+        # Python symlink
+        ln -sf /usr/bin/python3 /usr/bin/python
+
+        # Rust Analyzer
+        curl -fsSL "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" | \
+          gunzip | tee /usr/local/bin/rust-analyzer > /dev/null
+        chmod +x /usr/local/bin/rust-analyzer
+
+        # kubectl
+        KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+        curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+          -o /usr/local/bin/kubectl
+        chmod +x /usr/local/bin/kubectl
+
+        # RWX CLI
+        curl -fsSL "https://github.com/rwx-cloud/cli/releases/latest/download/rwx-linux-x86_64" \
+          -o /usr/local/bin/rwx
+        chmod +x /usr/local/bin/rwx
+
+        # Docker CLI (client only)
+        curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" | \
+          tar -xz --strip-components=1 -C /usr/local/bin docker/docker
+
+        # AWS CLI
+        curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+        unzip -q /tmp/awscli.zip -d /tmp
+        /tmp/aws/install --install-dir /opt/aws-cli --bin-dir /opt/aws-cli/bin
+        ln -sf /opt/aws-cli/bin/aws /usr/local/bin/aws
+        rm -rf /tmp/awscli.zip /tmp/aws
+
+        # Clean up apt
+        apt-get clean
+        rm -rf /var/lib/apt/lists/*
+
+        # Install project binaries
+        cp "${GT_BIN}" /usr/local/bin/gt
+        cp "${COOP_DIR}/coop" /usr/local/bin/coop
+        cp "${COOP_DIR}/coop-mux" /usr/local/bin/coop-mux 2>/dev/null || true
+        cp "${BD_DIR}/bd" /usr/local/bin/bd
+        cp "${OJ_BIN}" /usr/local/bin/oj
+        ln -sf /usr/local/bin/coop-mux /usr/local/bin/coopmux
+        chmod +x /usr/local/bin/gt /usr/local/bin/coop /usr/local/bin/bd \
+          /usr/local/bin/oj /usr/local/bin/coop-mux 2>/dev/null || true
+
+        # Claude Code
         npm install -g @anthropic-ai/claude-code
+
+        # Write platform version for runtime discovery
+        echo "${PLATFORM_VERSION}" > /etc/platform-version
+
+        # Install entrypoint and create home dir
+        cp deploy/agent/entrypoint.sh /entrypoint.sh
+        chmod +x /entrypoint.sh
+        mkdir -p /home/agent/gt
+        chown -R 1000:1000 /home/agent
+
+        # Rename ubuntu→agent in passwd/group
         sed -i "s/^ubuntu:/agent:/" /etc/passwd
         sed -i "s|/home/ubuntu|/home/agent|" /etc/passwd
+        sed -i "s|/bin/sh|/bin/bash|" /etc/passwd
         sed -i "s/^ubuntu:/agent:/" /etc/group
       '
 
@@ -562,6 +621,9 @@ tasks:
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
   # ── Push agent image to GHCR ──────────────────────────────────────────
+  # Rich agent image: includes full dev toolchain (Go, Python, Rust Analyzer,
+  # kubectl, AWS CLI, Docker CLI, ssh) so agents are self-sufficient without
+  # a toolchain sidecar. Replaces the old lean agent + toolchain sidecar model.
   - key: push-agent
     use: [code, build-gt, download-coop, download-bd, build-oj]
     if: ${{ init.ref-name != 'pr' }}
@@ -569,6 +631,7 @@ tasks:
     run: |
       set -ex
       source platform-versions.env
+      export DEBIAN_FRONTEND=noninteractive
 
       # Install crane
       curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
@@ -578,84 +641,139 @@ tasks:
       # Login to GHCR
       echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
 
-      # Install Node.js into layer tree (version from .node-version)
+      LAYER=/tmp/layer
+      mkdir -p $LAYER/usr/local/bin $LAYER/usr/local/go $LAYER/usr/bin
+
+      # ── Node.js (version from .node-version) ──────────────────────────
       NODE_VERSION=$(cat .node-version)
-      mkdir -p /tmp/layer/usr/local
+      mkdir -p $LAYER/usr/local
       curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
-        | tar -xJ --strip-components=1 -C /tmp/layer/usr/local
+        | tar -xJ --strip-components=1 -C $LAYER/usr/local
 
       # Install Claude Code
-      PATH="/tmp/layer/usr/local/bin:$PATH" npm install -g --prefix /tmp/layer/usr/local @anthropic-ai/claude-code
+      PATH="$LAYER/usr/local/bin:$PATH" npm install -g --prefix $LAYER/usr/local @anthropic-ai/claude-code
 
-      # Install system packages (git, curl, jq, screen, icu) into the layer.
-      # The RWX VM is Ubuntu-based so we can apt-get install, then copy
-      # the installed files into the layer tree.
+      # ── System packages ────────────────────────────────────────────────
+      # Install on the build VM (same ubuntu:24.04 base), then copy files
+      # into the layer tree.
       sudo apt-get -y update
       sudo apt-get -y install --no-install-recommends \
-        git curl jq screen ca-certificates libicu74
+        git curl jq screen ca-certificates libicu74 \
+        python3 python3-pip python3-venv \
+        make gcc g++ unzip \
+        openssh-client \
+        libcurl3t64-gnutls sudo
 
       # Extract installed package file lists and copy into layer.
-      # Use dpkg -L for known packages, plus ldd for transitive shared libs.
-      mkdir -p /tmp/layer
       for pkg in git git-man curl jq screen ca-certificates libicu74 \
           liberror-perl libcurl4t64 libnghttp2-14 libbrotli1 \
-          libpsl5t64 libonig5 libexpat1; do
+          libpsl5t64 libonig5 libexpat1 \
+          python3 python3-minimal python3.12 python3.12-minimal \
+          python3-pip python3-venv python3.12-venv \
+          libpython3.12-stdlib libpython3.12-minimal \
+          make gcc g++ unzip \
+          openssh-client libcurl3t64-gnutls sudo; do
         dpkg -L "$pkg" 2>/dev/null | while read -r f; do
           [ -f "$f" ] || continue
-          dir="/tmp/layer$(dirname "$f")"
+          dir="$LAYER$(dirname "$f")"
           mkdir -p "$dir"
-          cp "$f" "/tmp/layer${f}"
+          cp "$f" "$LAYER${f}"
         done
       done
-      # Also copy shared libs that git/curl/bd link against
-      for bin in /usr/bin/git /usr/bin/curl /usr/bin/jq /usr/bin/screen; do
+      # Also copy shared libs that key binaries link against
+      for bin in /usr/bin/git /usr/bin/curl /usr/bin/jq /usr/bin/screen \
+          /usr/bin/python3 /usr/bin/ssh /usr/bin/make /usr/bin/gcc; do
         ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
           [ -f "$lib" ] || continue
-          dir="/tmp/layer$(dirname "$lib")"
+          dir="$LAYER$(dirname "$lib")"
           mkdir -p "$dir"
-          cp -n "$lib" "/tmp/layer${lib}" 2>/dev/null || true
+          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
         done
       done
-      # Copy ICU data and libs (needed by bd binary for unicode normalization)
+      # ICU data and libs (needed by bd binary for unicode normalization)
       find /usr/lib/x86_64-linux-gnu -name 'libicu*.so*' 2>/dev/null | while read -r f; do
-        dir="/tmp/layer$(dirname "$f")"
+        dir="$LAYER$(dirname "$f")"
         mkdir -p "$dir"
-        cp -a "$f" "/tmp/layer${f}"
+        cp -a "$f" "$LAYER${f}"
       done
-      # Copy git-core helpers
-      cp -r /usr/lib/git-core /tmp/layer/usr/lib/ 2>/dev/null || true
+      # git-core helpers (git-remote-https, etc.)
+      cp -r /usr/lib/git-core $LAYER/usr/lib/ 2>/dev/null || true
+      # libcurl-gnutls symlinks (git-remote-https requires this)
+      find /usr/lib/x86_64-linux-gnu -name 'libcurl-gnutls*' 2>/dev/null | while read -r f; do
+        dir="$LAYER$(dirname "$f")"
+        mkdir -p "$dir"
+        cp -a "$f" "$LAYER${f}"
+      done
+      # Python symlink
+      mkdir -p $LAYER/usr/bin
+      ln -sf python3 $LAYER/usr/bin/python
 
-      # Install binaries
-      mkdir -p /tmp/layer/usr/local/bin
-      cp ${{ tasks.build-gt.artifacts.gt-binary }} /tmp/layer/usr/local/bin/gt
-      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop /tmp/layer/usr/local/bin/coop
-      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux /tmp/layer/usr/local/bin/coop-mux 2>/dev/null || true
-      cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd /tmp/layer/usr/local/bin/bd
-      cp ${{ tasks.build-oj.artifacts.oj-binary }} /tmp/layer/usr/local/bin/oj
-      ln -sf coop-mux /tmp/layer/usr/local/bin/coopmux
-      chmod +x /tmp/layer/usr/local/bin/gt /tmp/layer/usr/local/bin/coop \
-        /tmp/layer/usr/local/bin/bd /tmp/layer/usr/local/bin/oj \
-        /tmp/layer/usr/local/bin/coop-mux 2>/dev/null || true
+      # ── Go (version from .go-version + gopls) ─────────────────────────
+      GO_VERSION=$(cat .go-version)
+      GO_LATEST=$(curl -fsSL "https://go.dev/dl/?mode=json" | jq -r "[.[] | select(.version | startswith(\"go${GO_VERSION}\"))][0].version")
+      curl -fsSL "https://go.dev/dl/${GO_LATEST}.linux-amd64.tar.gz" | tar -C $LAYER/usr/local -xz
+      # Build gopls
+      GOROOT=$LAYER/usr/local/go GOPATH=/tmp/gopath $LAYER/usr/local/go/bin/go install golang.org/x/tools/gopls@latest 2>/dev/null || true
+      cp /tmp/gopath/bin/gopls $LAYER/usr/local/go/bin/ 2>/dev/null || true
+      rm -rf /tmp/gopath
 
-      # Install entrypoint
-      cp deploy/agent/entrypoint.sh /tmp/layer/entrypoint.sh
-      chmod +x /tmp/layer/entrypoint.sh
+      # ── Rust Analyzer (LSP server) ────────────────────────────────────
+      curl -fsSL "https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz" \
+        | gunzip > $LAYER/usr/local/bin/rust-analyzer
+      chmod +x $LAYER/usr/local/bin/rust-analyzer
 
-      # Write platform version for runtime discovery
-      mkdir -p /tmp/layer/etc
-      echo "${PLATFORM_VERSION}" > /tmp/layer/etc/platform-version
+      # ── kubectl ────────────────────────────────────────────────────────
+      KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+      curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+        -o $LAYER/usr/local/bin/kubectl
+      chmod +x $LAYER/usr/local/bin/kubectl
 
-      # Create home directory and user config
-      mkdir -p /tmp/layer/home/agent/gt /tmp/layer/etc/ssl/certs
-      cp /etc/ssl/certs/ca-certificates.crt /tmp/layer/etc/ssl/certs/
+      # ── RWX CLI ────────────────────────────────────────────────────────
+      curl -fsSL "https://github.com/rwx-cloud/cli/releases/latest/download/rwx-linux-x86_64" \
+        -o $LAYER/usr/local/bin/rwx
+      chmod +x $LAYER/usr/local/bin/rwx
 
-      tar -cf /tmp/layer.tar -C /tmp/layer .
+      # ── Docker CLI (client only) ──────────────────────────────────────
+      curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" | \
+        tar -xz --strip-components=1 -C $LAYER/usr/local/bin docker/docker
+
+      # ── AWS CLI ────────────────────────────────────────────────────────
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      unzip -q /tmp/awscli.zip -d /tmp
+      mkdir -p $LAYER/opt/aws-cli
+      /tmp/aws/install --install-dir $LAYER/opt/aws-cli --bin-dir $LAYER/opt/aws-cli/bin
+      ln -sf /opt/aws-cli/bin/aws $LAYER/usr/local/bin/aws
+      rm -rf /tmp/awscli.zip /tmp/aws
+
+      # ── Project binaries (gt, coop, bd, oj) ───────────────────────────
+      cp ${{ tasks.build-gt.artifacts.gt-binary }} $LAYER/usr/local/bin/gt
+      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop $LAYER/usr/local/bin/coop
+      cp ${{ tasks.download-coop.artifacts.coop-binaries }}/coop-mux $LAYER/usr/local/bin/coop-mux 2>/dev/null || true
+      cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd $LAYER/usr/local/bin/bd
+      cp ${{ tasks.build-oj.artifacts.oj-binary }} $LAYER/usr/local/bin/oj
+      ln -sf coop-mux $LAYER/usr/local/bin/coopmux
+      chmod +x $LAYER/usr/local/bin/gt $LAYER/usr/local/bin/coop \
+        $LAYER/usr/local/bin/bd $LAYER/usr/local/bin/oj \
+        $LAYER/usr/local/bin/coop-mux 2>/dev/null || true
+
+      # ── Entrypoint + metadata ─────────────────────────────────────────
+      cp deploy/agent/entrypoint.sh $LAYER/entrypoint.sh
+      chmod +x $LAYER/entrypoint.sh
+
+      mkdir -p $LAYER/etc $LAYER/etc/ssl/certs
+      echo "${PLATFORM_VERSION}" > $LAYER/etc/platform-version
+      cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
+
+      # Home directory
+      mkdir -p $LAYER/home/agent/gt
+
+      tar -cf /tmp/layer.tar -C $LAYER .
 
       # Push with platform version tag and latest
       REPO="ghcr.io/groblegark/gastown/gastown-agent"
       crane append --base ubuntu:24.04 --new_tag "${REPO}:${PLATFORM_VERSION}" --new_layer /tmp/layer.tar --platform linux/amd64
 
-      # Set OCI image config (entrypoint, user, workdir) to match image-agent
+      # Set OCI image config (entrypoint, user, workdir)
       crane mutate "${REPO}:${PLATFORM_VERSION}" \
         --entrypoint /entrypoint.sh \
         --user 1000 \
@@ -802,7 +920,7 @@ tasks:
   # ═══════════════════════════════════════════════════════════════════════
 
   - key: helm-bump
-    use: [code, push-bd, push-agent, push-controller, push-toolchain]
+    use: [code, push-bd, push-agent, push-controller]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -816,8 +934,8 @@ tasks:
         echo ""
         echo "Manual bump command:"
         echo "  cd ~/book/fics-helm-chart/charts/gastown"
-        echo "  sed -i '' -E 's|tag: \"20[0-9]{2}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g' values/gastown-next.yaml"
-        echo "  git add values/gastown-next.yaml && git commit -m 'chore: bump to ${PLATFORM_VERSION}' && git push"
+        echo "  sed -i '' -E 's|tag: \"20[0-9]{2}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g' values/gastown-next.yaml values/gastown-rwx.yaml"
+        echo "  git add values/ && git commit -m 'chore: bump to ${PLATFORM_VERSION}' && git push"
         exit 0
       fi
 
@@ -825,19 +943,22 @@ tasks:
       git clone "https://oauth2:${GITLAB_TOKEN}@gitlab.com/PiHealth/CoreFICS/fics-helm-chart.git" /tmp/helm-chart
       cd /tmp/helm-chart
 
-      # Update gastown-next values: replace all CalVer image tags with new PLATFORM_VERSION.
-      VALUES="charts/gastown/values/gastown-next.yaml"
-      if [ -f "$VALUES" ]; then
-        # Replace tag: "YYYY.MM.DD.N" patterns
-        sed -i -E "s|tag: \"20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g" "$VALUES"
-        # Replace inline image references with CalVer tags
-        sed -i -E "s|gastown-toolchain:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|gastown-toolchain:${PLATFORM_VERSION}|g" "$VALUES"
-        sed -i -E "s|gastown-agent:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|gastown-agent:${PLATFORM_VERSION}|g" "$VALUES"
-        sed -i -E "s|agent-controller:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|agent-controller:${PLATFORM_VERSION}|g" "$VALUES"
-        # Replace beads daemon semver tag (v0.x.y) with CalVer.
-        # After first run, daemon tag becomes CalVer and the YYYY.MM.DD.N pattern handles it.
-        sed -i -E "s|tag: \"v[0-9]+\.[0-9]+\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g" "$VALUES"
-      fi
+      # Bump CalVer image tags in gastown values files.
+      bump_values() {
+        local f="$1"
+        if [ ! -f "$f" ]; then
+          echo "Skipping $f (not found)"
+          return
+        fi
+        echo "Bumping tags in $f"
+        sed -i -E "s|tag: \"20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g" "$f"
+        sed -i -E "s|gastown-toolchain:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|gastown-toolchain:${PLATFORM_VERSION}|g" "$f"
+        sed -i -E "s|gastown-agent:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|gastown-agent:${PLATFORM_VERSION}|g" "$f"
+        sed -i -E "s|agent-controller:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|agent-controller:${PLATFORM_VERSION}|g" "$f"
+      }
+
+      bump_values "charts/gastown/values/gastown-next.yaml"
+      bump_values "charts/gastown/values/gastown-rwx.yaml"
 
       # Commit and push if there are changes
       git config user.name "gastown-ci"
@@ -846,7 +967,7 @@ tasks:
       if git diff --cached --quiet; then
         echo "No helm changes needed — tags already at ${PLATFORM_VERSION}"
       else
-        git commit -m "chore(gastown-next): auto-bump images to ${PLATFORM_VERSION} [trigger: ${REF_NAME}]"
+        git commit -m "chore: auto-bump images to ${PLATFORM_VERSION} [trigger: ${REF_NAME}]"
         git push
         echo "Helm values updated to ${PLATFORM_VERSION}"
       fi
@@ -859,7 +980,7 @@ tasks:
   # ═══════════════════════════════════════════════════════════════════════
 
   - key: deploy-rwx
-    use: [code, push-bd, push-agent, push-controller, push-toolchain]
+    use: [code, push-bd, push-agent, push-controller]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -910,15 +1031,12 @@ tasks:
       NS="gastown-rwx"
       RELEASE="gastown-rwx"
 
+      # Image tags are pinned in gastown-rwx.yaml (updated by helm-bump task).
+      # No --set overrides needed — all CalVer tags come from the values file.
       helm upgrade --install "$RELEASE" ./ \
         -n "$NS" --create-namespace \
         --values values.yaml \
         --values values/gastown-rwx.yaml \
-        --set "gastown.bd-daemon.image.tag=${PLATFORM_VERSION}" \
-        --set "gastown.coopBroker.image.tag=${PLATFORM_VERSION}" \
-        --set "gastown.agentController.image.tag=${PLATFORM_VERSION}" \
-        --set "gastown.agentController.agentImage.tag=${PLATFORM_VERSION}" \
-        --set "gastown.agentController.sidecarProfiles.toolchain-full.image=ghcr.io/groblegark/gastown/gastown-toolchain:${PLATFORM_VERSION}" \
         --atomic --timeout 10m \
         --wait
 
