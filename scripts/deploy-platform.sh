@@ -165,42 +165,50 @@ if [[ "$DRY_RUN" == true ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Step 2: Bump platform-versions.env
+# Step 2: Bump platform-versions.env (skip if --skip-build)
 # ---------------------------------------------------------------------------
 
-echo -e "${CYAN}[1/6] Bumping platform-versions.env${NC}"
+if [[ "$SKIP_BUILD" == true ]]; then
+    # Use current version — images already exist
+    NEXT_VERSION="$CURRENT_VERSION"
+    echo -e "${CYAN}[1/6] Using existing platform version${NC}"
+    echo -e "  PLATFORM_VERSION = ${GREEN}$NEXT_VERSION${NC} (no bump)"
+    echo -e "${CYAN}[2/6] Skipping commit (--skip-build)${NC}"
+else
+    echo -e "${CYAN}[1/6] Bumping platform-versions.env${NC}"
 
-sed -i '' "s/^PLATFORM_VERSION=.*/PLATFORM_VERSION=$NEXT_VERSION/" "$REPO_ROOT/platform-versions.env"
+    sed -i '' "s/^PLATFORM_VERSION=.*/PLATFORM_VERSION=$NEXT_VERSION/" "$REPO_ROOT/platform-versions.env"
 
-if [[ -n "$BEADS_VERSION_OVERRIDE" ]]; then
-    sed -i '' "s/^BEADS_VERSION=.*/BEADS_VERSION=$BEADS_VERSION_OVERRIDE/" "$REPO_ROOT/platform-versions.env"
-    echo "  BEADS_VERSION → $BEADS_VERSION_OVERRIDE"
+    if [[ -n "$BEADS_VERSION_OVERRIDE" ]]; then
+        sed -i '' "s/^BEADS_VERSION=.*/BEADS_VERSION=$BEADS_VERSION_OVERRIDE/" "$REPO_ROOT/platform-versions.env"
+        echo "  BEADS_VERSION → $BEADS_VERSION_OVERRIDE"
+    fi
+
+    if [[ -n "$COOP_VERSION_OVERRIDE" ]]; then
+        sed -i '' "s/^COOP_VERSION=.*/COOP_VERSION=$COOP_VERSION_OVERRIDE/" "$REPO_ROOT/platform-versions.env"
+        echo "  COOP_VERSION → $COOP_VERSION_OVERRIDE"
+    fi
+
+    echo -e "  PLATFORM_VERSION → ${GREEN}$NEXT_VERSION${NC}"
+
+    # ---------------------------------------------------------------------------
+    # Step 3: Commit and push
+    # ---------------------------------------------------------------------------
+
+    echo -e "${CYAN}[2/6] Committing and pushing to gastown main${NC}"
+
+    cd "$REPO_ROOT"
+    git add platform-versions.env
+
+    COMMIT_MSG="chore: bump platform to $NEXT_VERSION"
+    [[ -n "$BEADS_VERSION_OVERRIDE" ]] && COMMIT_MSG="$COMMIT_MSG (beads $BEADS_VERSION_OVERRIDE)"
+    [[ -n "$COOP_VERSION_OVERRIDE" ]] && COMMIT_MSG="$COMMIT_MSG (coop $COOP_VERSION_OVERRIDE)"
+
+    git commit -m "$COMMIT_MSG"
+    git push
+
+    echo -e "  ${GREEN}✓ Pushed${NC}"
 fi
-
-if [[ -n "$COOP_VERSION_OVERRIDE" ]]; then
-    sed -i '' "s/^COOP_VERSION=.*/COOP_VERSION=$COOP_VERSION_OVERRIDE/" "$REPO_ROOT/platform-versions.env"
-    echo "  COOP_VERSION → $COOP_VERSION_OVERRIDE"
-fi
-
-echo -e "  PLATFORM_VERSION → ${GREEN}$NEXT_VERSION${NC}"
-
-# ---------------------------------------------------------------------------
-# Step 3: Commit and push
-# ---------------------------------------------------------------------------
-
-echo -e "${CYAN}[2/6] Committing and pushing to gastown main${NC}"
-
-cd "$REPO_ROOT"
-git add platform-versions.env
-
-COMMIT_MSG="chore: bump platform to $NEXT_VERSION"
-[[ -n "$BEADS_VERSION_OVERRIDE" ]] && COMMIT_MSG="$COMMIT_MSG (beads $BEADS_VERSION_OVERRIDE)"
-[[ -n "$COOP_VERSION_OVERRIDE" ]] && COMMIT_MSG="$COMMIT_MSG (coop $COOP_VERSION_OVERRIDE)"
-
-git commit -m "$COMMIT_MSG"
-git push
-
-echo -e "  ${GREEN}✓ Pushed${NC}"
 
 # ---------------------------------------------------------------------------
 # Step 4: Wait for RWX build (or skip)
