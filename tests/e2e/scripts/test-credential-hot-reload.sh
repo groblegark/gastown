@@ -12,7 +12,7 @@
 # Tests:
 #   Phase 1: Infrastructure (mux sessions, broker health, agent reachability)
 #   Phase 2: Credential distribute via mux API (requires merged broker+mux)
-#   Phase 3: Direct session profile push (mux → agent coop /api/v1/session/profiles)
+#   Phase 3: OAuth profile push + rotation (mux → agent coop /api/v1/session/profiles)
 #   Phase 4: Agent health after credential operations
 #
 # Usage:
@@ -284,20 +284,21 @@ print(d.get('distributed', False))
 run_test "Distribute credentials to sessions via mux API" test_distribute
 
 # ═══════════════════════════════════════════════════════════════════
-# Phase 3: Direct session profile push (always testable)
+# Phase 3: OAuth profile push + rotation (always testable)
 # ═══════════════════════════════════════════════════════════════════
 
-# ── Test 6: Push a test profile directly to agent coop ───────────
+# ── Test 6: Push OAuth-format test profile to agent coop ─────────
 test_direct_profile_push() {
   setup_agent || return 1
 
-  # Push a dummy profile to the agent's coop instance.
-  # This tests the POST /api/v1/session/profiles endpoint that the
-  # mux distributor would call. We use a test profile name to avoid
-  # interfering with active credentials.
+  # Push a test profile with an OAuth-format token (sk-ant-oat01- prefix).
+  # This mirrors what the mux distributor does: it extracts the access_token
+  # from the broker's OAuth credentials and pushes it as ANTHROPIC_API_KEY.
+  # We use a dummy token with the correct prefix to verify the profiles
+  # endpoint accepts OAuth-style tokens without special handling.
   local result
   result=$(agent_api "/api/v1/session/profiles" "POST" \
-    '{"profiles":[{"name":"_e2e_test_","credentials":{"ANTHROPIC_API_KEY":"sk-test-dummy"}}]}')
+    '{"profiles":[{"name":"_e2e_oauth_","credentials":{"ANTHROPIC_API_KEY":"sk-ant-oat01-e2e-test-dummy-token-not-real"}}]}')
 
   if [[ -z "$result" ]]; then
     # Older coop versions may not support the profiles endpoint
@@ -309,9 +310,30 @@ test_direct_profile_push() {
   log "Profile push result: $result"
   return 0
 }
-run_test "Push test profile directly to agent coop session" test_direct_profile_push
+run_test "Push OAuth-format test profile to agent coop session" test_direct_profile_push
 
-# ── Test 7: Agent coop lists profiles ────────────────────────────
+# ── Test 7: Push second profile to simulate token rotation ───────
+test_profile_rotation() {
+  setup_agent || return 1
+
+  # Push a second profile to simulate what happens during token rotation:
+  # the mux distributor pushes a new profile with the refreshed access_token.
+  # The agent coop should accept both profiles (old + new) and allow switching.
+  local result
+  result=$(agent_api "/api/v1/session/profiles" "POST" \
+    '{"profiles":[{"name":"_e2e_rotated_","credentials":{"ANTHROPIC_API_KEY":"sk-ant-oat01-e2e-rotated-token-not-real"}}]}')
+
+  if [[ -z "$result" ]]; then
+    log "Profiles endpoint not available for rotation test"
+    return 1
+  fi
+
+  log "Rotated profile push result: $result"
+  return 0
+}
+run_test "Push rotated OAuth profile (simulates token refresh)" test_profile_rotation
+
+# ── Test 8: Agent coop lists both test profiles ──────────────────
 test_list_profiles() {
   setup_agent || return 1
 
@@ -323,22 +345,35 @@ test_list_profiles() {
   fi
 
   log "Agent profiles: $profiles"
-  # Check that our test profile was accepted
-  if echo "$profiles" | grep -q "_e2e_test_"; then
-    log "Test profile found in agent profiles list"
-    return 0
+
+  # Check that both test profiles were accepted
+  local found_oauth=false
+  local found_rotated=false
+  if echo "$profiles" | grep -q "_e2e_oauth_"; then
+    found_oauth=true
+  fi
+  if echo "$profiles" | grep -q "_e2e_rotated_"; then
+    found_rotated=true
   fi
 
-  log "Test profile not found (may have been rejected)"
-  return 1
+  if [[ "$found_oauth" == "true" && "$found_rotated" == "true" ]]; then
+    log "Both test profiles found — rotation path works"
+    return 0
+  elif [[ "$found_oauth" == "true" ]]; then
+    log "OAuth profile found but rotated profile missing"
+    return 1
+  else
+    log "Test profiles not found (may have been rejected)"
+    return 1
+  fi
 }
-run_test "Agent coop lists registered profiles" test_list_profiles
+run_test "Agent coop lists both OAuth test profiles" test_list_profiles
 
 # ═══════════════════════════════════════════════════════════════════
 # Phase 4: Post-condition checks
 # ═══════════════════════════════════════════════════════════════════
 
-# ── Test 8: Agent pod coop still healthy ─────────────────────────
+# ── Test 9: Agent pod coop still healthy ─────────────────────────
 test_agent_still_healthy() {
   setup_agent || return 1
 
@@ -353,7 +388,7 @@ test_agent_still_healthy() {
 }
 run_test "Agent pod coop API still healthy after profile operations" test_agent_still_healthy
 
-# ── Test 9: Mux sessions intact ─────────────────────────────────
+# ── Test 10: Mux sessions intact ────────────────────────────────
 test_mux_sessions_intact() {
   setup_mux || return 1
 
