@@ -570,13 +570,13 @@ tasks:
           cp "$f" "$LAYER${f}" 2>/dev/null || true
         done
       done
-      # sudo config (0440 permissions, cp without sudo fails silently above)
+      # sudo config — the base ubuntu:24.04 image already has /etc/sudoers.
+      # We only need to add a sudoers.d drop-in for the agent user and copy
+      # the sudo helper libraries that dpkg-L missed.
       mkdir -p $LAYER/etc/sudoers.d
-      sudo cp /etc/sudoers $LAYER/etc/sudoers 2>/dev/null || true
-      # Allow agent user (UID 1000) to sudo without password
       echo "agent ALL=(ALL) NOPASSWD: ALL" > $LAYER/etc/sudoers.d/agent
       chmod 0440 $LAYER/etc/sudoers.d/agent
-      # sudo helper libraries
+      # sudo helper libraries (libsudo_util.so etc.)
       mkdir -p $LAYER/usr/libexec/sudo
       cp /usr/libexec/sudo/*.so* $LAYER/usr/libexec/sudo/ 2>/dev/null || true
 
