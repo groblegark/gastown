@@ -263,40 +263,37 @@ fi
 export XDG_STATE_HOME="${STATE_DIR}"
 echo "[entrypoint] XDG_STATE_HOME=${XDG_STATE_HOME}"
 
-# ── Toolchain PATH ──────────────────────────────────────────────────────
+# ── Dev tools PATH ─────────────────────────────────────────────────────
 #
-# The toolchain sidecar exports binaries (gopls, rust-analyzer, etc.) to
-# .toolchain/bin/ on the shared workspace volume. Add it to PATH so Claude
-# Code can spawn LSP servers directly.
+# The agent image includes a full dev toolchain (Go, Python, Rust Analyzer,
+# kubectl, AWS CLI, etc.) installed directly. Add Go bin to PATH.
 
-TOOLBIN="${WORKSPACE}/.toolchain/bin"
-if [ -d "${TOOLBIN}" ]; then
-    export PATH="${TOOLBIN}:${PATH}"
-    echo "[entrypoint] Added ${TOOLBIN} to PATH"
+if [ -d "/usr/local/go/bin" ]; then
+    export PATH="/usr/local/go/bin:${PATH}"
+    echo "[entrypoint] Added /usr/local/go/bin to PATH"
 fi
 
 # ── Claude settings ──────────────────────────────────────────────────────
 #
 # User-level settings (permissions + LSP plugins) written to ~/.claude/settings.json.
-# LSP plugins are enabled conditionally based on toolchain sidecar contents.
+# LSP plugins are always enabled — gopls and rust-analyzer are built into the image.
 # Hooks come from config bead materialization if available, otherwise static.
 
-# Start with base settings JSON (permissions).
+# Start with base settings JSON (permissions + LSP plugins).
 SETTINGS_JSON='{"permissions":{"allow":["Bash(*)","Read(*)","Write(*)","Edit(*)","Glob(*)","Grep(*)","WebFetch(*)","WebSearch(*)"],"deny":[]}}'
 
-# Conditionally add LSP plugins based on which binaries the toolchain exported.
+# Enable LSP plugins (gopls + rust-analyzer are always present in the agent image).
 PLUGINS_JSON=""
-if [ -x "${TOOLBIN}/gopls" ]; then
+if command -v gopls &>/dev/null; then
     PLUGINS_JSON="${PLUGINS_JSON}\"gopls-lsp@claude-plugins-official\":true,"
     echo "[entrypoint] Enabling gopls LSP plugin"
 fi
-if [ -x "${TOOLBIN}/rust-analyzer" ]; then
+if command -v rust-analyzer &>/dev/null; then
     PLUGINS_JSON="${PLUGINS_JSON}\"rust-analyzer-lsp@claude-plugins-official\":true,"
     echo "[entrypoint] Enabling rust-analyzer LSP plugin"
 fi
 
 if [ -n "${PLUGINS_JSON}" ]; then
-    # Strip trailing comma and merge into settings.
     PLUGINS_JSON="{${PLUGINS_JSON%,}}"
     SETTINGS_JSON=$(echo "${SETTINGS_JSON}" | jq --argjson p "${PLUGINS_JSON}" '. + {enabledPlugins: $p}')
 fi
@@ -573,63 +570,29 @@ CLAUDEMD
     esac
 fi
 
-# ── Append toolchain sidecar section to CLAUDE.md if sidecar is configured ──
+# ── Append dev tools section to CLAUDE.md ──────────────────────────────
 # Guard: only append once (prevents duplication on pod restarts)
-if ( [ -n "${GT_TOOLCHAIN_PROFILE:-}" ] || [ -n "${GT_TOOLCHAIN_IMAGE:-}" ] ) && \
-   ! grep -q "## Toolchain Sidecar" "${WORKSPACE}/CLAUDE.md" 2>/dev/null; then
-    cat >> "${WORKSPACE}/CLAUDE.md" <<'TOOLCHAIN'
+if ! grep -q "## Development Tools" "${WORKSPACE}/CLAUDE.md" 2>/dev/null; then
+    cat >> "${WORKSPACE}/CLAUDE.md" <<'DEVTOOLS'
 
-## Toolchain Sidecar
+## Development Tools
 
-This agent has a toolchain sidecar with development tools.
+All tools are installed directly in the agent image — use them from the command line.
 
-### Usage
-```bash
-gt toolchain status            # Show sidecar info
-gt toolchain list              # List available tools
-gt toolchain exec -- <cmd>     # Run command in sidecar
-```
-
-### Examples
-```bash
-gt toolchain exec -- go build ./...
-gt toolchain exec -- npm install
-gt toolchain exec -- python3 script.py
-gt toolchain exec -- aws s3 ls
-```
-
-### Self-Enhancement
-To add tools not in the current sidecar:
-1. Create a Dockerfile extending the current image
-2. Build with kaniko: `gt toolchain exec -- kaniko --context=. --destination=<registry>/<image>:<tag> --cache=true`
-3. Update bead metadata: `bd update $BEAD_ID --set sidecar_image=<registry>/<image>:<tag>`
-4. Your session will resume automatically after pod restart (~30s)
-TOOLCHAIN
-
-    # Add profile-specific details
-    if [ "${GT_TOOLCHAIN_PROFILE:-}" = "toolchain-full" ]; then
-        cat >> "${WORKSPACE}/CLAUDE.md" <<'TOOLCHAIN_FULL'
-
-### Available Tools (toolchain-full profile)
-| Tool | Command |
-|------|---------|
-| Go | `gt toolchain exec -- go` |
-| Node.js | `gt toolchain exec -- node` / `npm` |
-| Python 3 | `gt toolchain exec -- python3` |
-| AWS CLI | `gt toolchain exec -- aws` |
-| Docker CLI | `gt toolchain exec -- docker` (client only) |
-| kubectl | `gt toolchain exec -- kubectl` (or direct via PATH) |
-| RWX CLI | `gt toolchain exec -- rwx` (or direct via PATH) |
-| Kaniko | `gt toolchain exec -- kaniko` (image builder) |
-| git, jq, make, curl | Base tools |
-TOOLCHAIN_FULL
-    elif [ "${GT_TOOLCHAIN_PROFILE:-}" = "toolchain-minimal" ]; then
-        cat >> "${WORKSPACE}/CLAUDE.md" <<'TOOLCHAIN_MINIMAL'
-
-### Available Tools (toolchain-minimal profile)
-- git, jq, make, curl (base tools only)
-TOOLCHAIN_MINIMAL
-    fi
+| Tool | Command | Notes |
+|------|---------|-------|
+| Go | `go build`, `go test` | + `gopls` LSP server |
+| Node.js | `node`, `npm`, `npx` | |
+| Python 3 | `python3`, `pip`, `python3 -m venv` | |
+| Rust | `rust-analyzer` | LSP server (no compiler — use `rustup` if needed) |
+| AWS CLI | `aws` | |
+| Docker CLI | `docker` | Client only (no daemon) |
+| kubectl | `kubectl` | |
+| RWX CLI | `rwx` | |
+| git | `git` | HTTPS + SSH protocols |
+| Build tools | `make`, `gcc`, `g++` | |
+| Utilities | `curl`, `jq`, `unzip`, `ssh` | |
+DEVTOOLS
 fi
 
 # ── Skip Claude onboarding wizard ─────────────────────────────────────────
