@@ -286,10 +286,11 @@ func PhaseToAgentState(phase string) string {
 	}
 }
 
-// isPodReady checks if a pod has the Ready condition set to True.
 // agentBeadID returns the bead ID for a pod. It prefers the explicit
 // gastown.io/bead-id annotation (set by Helm or the controller). If absent,
-// it falls back to constructing gt-{rig}-{role}-{agent} from labels.
+// it uses role-aware naming conventions:
+//   - Singleton town roles (mayor, deacon, witness): gt-{role}
+//   - Polecats and crew: gt-{rig}-{role}-{agent}
 func agentBeadID(pod *corev1.Pod) string {
 	if id := pod.Annotations[podmanager.AnnotationBeadID]; id != "" {
 		return id
@@ -297,6 +298,13 @@ func agentBeadID(pod *corev1.Pod) string {
 	rig := pod.Labels[podmanager.LabelRig]
 	role := pod.Labels[podmanager.LabelRole]
 	agent := pod.Labels[podmanager.LabelAgent]
+
+	// Singleton town roles use gt-{role} naming (no rig or agent suffix).
+	switch role {
+	case "mayor", "deacon", "witness":
+		return "gt-" + role
+	}
+
 	return fmt.Sprintf("gt-%s-%s-%s", rig, role, agent)
 }
 

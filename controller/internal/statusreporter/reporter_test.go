@@ -418,6 +418,98 @@ func TestStubReporter_ReportBackendMetadata(t *testing.T) {
 	}
 }
 
+// --- agentBeadID tests ---
+
+func TestAgentBeadID_AnnotationTakesPrecedence(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				"gastown.io/bead-id": "custom-bead-id",
+			},
+			Labels: map[string]string{
+				"gastown.io/rig":   "gastown",
+				"gastown.io/role":  "polecat",
+				"gastown.io/agent": "furiosa",
+			},
+		},
+	}
+	got := agentBeadID(pod)
+	if got != "custom-bead-id" {
+		t.Errorf("agentBeadID() = %q, want %q", got, "custom-bead-id")
+	}
+}
+
+func TestAgentBeadID_SingletonRoles(t *testing.T) {
+	tests := []struct {
+		role string
+		want string
+	}{
+		{"mayor", "gt-mayor"},
+		{"deacon", "gt-deacon"},
+		{"witness", "gt-witness"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.role, func(t *testing.T) {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"gastown.io/rig":   "town",
+						"gastown.io/role":  tt.role,
+						"gastown.io/agent": "hq",
+					},
+				},
+			}
+			got := agentBeadID(pod)
+			if got != tt.want {
+				t.Errorf("agentBeadID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAgentBeadID_RegularAgent(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				"gastown.io/rig":   "gastown",
+				"gastown.io/role":  "polecat",
+				"gastown.io/agent": "furiosa",
+			},
+		},
+	}
+	got := agentBeadID(pod)
+	if got != "gt-gastown-polecat-furiosa" {
+		t.Errorf("agentBeadID() = %q, want %q", got, "gt-gastown-polecat-furiosa")
+	}
+}
+
+func TestAgentBeadID_CrewAgent(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				"gastown.io/rig":   "gastown",
+				"gastown.io/role":  "crew",
+				"gastown.io/agent": "colonization",
+			},
+		},
+	}
+	got := agentBeadID(pod)
+	if got != "gt-gastown-crew-colonization" {
+		t.Errorf("agentBeadID() = %q, want %q", got, "gt-gastown-crew-colonization")
+	}
+}
+
+func TestAgentBeadID_NoLabelsNoAnnotation(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{},
+	}
+	got := agentBeadID(pod)
+	if got != "gt---" {
+		t.Errorf("agentBeadID() = %q, want %q", got, "gt---")
+	}
+}
+
 // --- Context cancellation ---
 
 func TestBdReporter_ReportPodStatus_CancelledContext(t *testing.T) {
