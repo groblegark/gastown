@@ -665,6 +665,8 @@ tasks:
         libcurl3t64-gnutls sudo
 
       # Extract installed package file lists and copy into layer.
+      # Uses sudo cp because some packages (e.g. sudo) install files with
+      # restricted permissions (e.g. /etc/sudoers is 0440).
       for pkg in git git-man curl jq screen ca-certificates libicu74 \
           liberror-perl libcurl4t64 libnghttp2-14 libbrotli1 \
           libpsl5t64 libonig5 libexpat1 \
@@ -677,7 +679,7 @@ tasks:
           [ -f "$f" ] || continue
           dir="$LAYER$(dirname "$f")"
           mkdir -p "$dir"
-          cp "$f" "$LAYER${f}" 2>/dev/null || true
+          sudo cp "$f" "$LAYER${f}" 2>/dev/null || true
         done
       done
       # Also copy shared libs that key binaries link against
@@ -687,7 +689,7 @@ tasks:
           [ -f "$lib" ] || continue
           dir="$LAYER$(dirname "$lib")"
           mkdir -p "$dir"
-          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+          sudo cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
         done
       done
       # ICU data and libs (needed by bd binary for unicode normalization)
@@ -764,10 +766,12 @@ tasks:
       echo "${PLATFORM_VERSION}" > $LAYER/etc/platform-version
       cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
 
-      # Home directory
+      # Home directory (owned by agent user, UID 1000)
       mkdir -p $LAYER/home/agent/gt
+      sudo chown -R 1000:1000 $LAYER/home/agent
 
-      tar -cf /tmp/layer.tar -C $LAYER .
+      # Fix layer ownership: system files stay root, ensure tar is readable
+      sudo tar -cf /tmp/layer.tar -C $LAYER .
 
       # Push with platform version tag and latest
       REPO="ghcr.io/groblegark/gastown/gastown-agent"
