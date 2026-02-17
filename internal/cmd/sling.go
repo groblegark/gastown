@@ -581,6 +581,32 @@ func runSling(cmd *cobra.Command, args []string) error {
 		// - Base bead left orphaned after gt done
 	}
 
+	// Execute deferred polecat spawn if needed (for rig targets).
+	// This happens AFTER formula instantiation to prevent orphan polecats on failure (GH #gt-e9o).
+	if deferredRigName != "" {
+		// Set HookBead atomically at spawn time to prevent race condition (GH #hq-3d01de).
+		// Without this, the polecat might start before bd update sets the hook.
+		spawnOpts := SlingSpawnOptions{
+			Force:           slingForce,
+			Account:         slingAccount,
+			Create:          slingCreate,
+			HookBead:        beadID,
+			Agent:           slingAgent,
+			ExecutionTarget: slingExecutionTarget,
+		}
+
+		fmt.Printf("  Spawning polecat in %s...\n", deferredRigName)
+		spawnInfo, spawnErr := SpawnPolecatForSling(deferredRigName, spawnOpts)
+		if spawnErr != nil {
+			return fmt.Errorf("spawning polecat: %w", spawnErr)
+		}
+		targetAgent = spawnInfo.AgentID()
+		hookWorkDir = spawnInfo.ClonePath
+
+		// Wake witness and refinery to monitor the new polecat
+		wakeRigAgents(deferredRigName)
+	}
+
 	// Hook the bead using bd update with retry logic.
 	// Dolt can fail with concurrency errors (HTTP 400) when multiple agents write simultaneously.
 	// We retry with exponential backoff and verify the hook actually stuck.
