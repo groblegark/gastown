@@ -375,6 +375,9 @@ func TestK8sManager_SecurityContext(t *testing.T) {
 	if csc.Capabilities == nil || len(csc.Capabilities.Drop) == 0 {
 		t.Error("should drop ALL capabilities")
 	}
+	if len(csc.Capabilities.Add) != 2 {
+		t.Errorf("expected 2 added capabilities (SETUID, SETGID), got %d", len(csc.Capabilities.Add))
+	}
 }
 
 func TestK8sManager_DefaultResources(t *testing.T) {

@@ -410,6 +410,7 @@ func (m *K8sManager) buildContainer(spec AgentPodSpec) corev1.Container {
 			ReadOnlyRootFilesystem:   boolPtr(false),
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
+				Add:  []corev1.Capability{"SETUID", "SETGID"},
 			},
 		},
 	}
