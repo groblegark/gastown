@@ -134,6 +134,11 @@ else
 fi
 NEXT_VERSION="${TODAY}.${NEXT_BUILD}"
 
+# When skipping build, reuse the current version (images already exist)
+if [[ "$SKIP_BUILD" == true ]]; then
+    NEXT_VERSION="$CURRENT_VERSION"
+fi
+
 echo -e "${BOLD}${CYAN}Platform Deploy${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
@@ -149,14 +154,16 @@ if [[ "$DRY_RUN" == true ]]; then
     echo -e "${YELLOW}DRY RUN — no changes will be made.${NC}"
     echo ""
     echo "Would do:"
-    echo "  1. Update platform-versions.env: PLATFORM_VERSION=$NEXT_VERSION"
-    [[ -n "$BEADS_VERSION_OVERRIDE" ]] && echo "     Also: BEADS_VERSION=$BEADS_VERSION_OVERRIDE"
-    [[ -n "$COOP_VERSION_OVERRIDE" ]] && echo "     Also: COOP_VERSION=$COOP_VERSION_OVERRIDE"
-    echo "  2. Commit and push to gastown main"
-    if [[ "$SKIP_BUILD" == false ]]; then
-        echo "  3. Wait for RWX docker.yml to build images"
-    else
+    if [[ "$SKIP_BUILD" == true ]]; then
+        echo "  1. Use existing PLATFORM_VERSION=$NEXT_VERSION (no bump)"
+        echo "  2. (skipped) No commit needed"
         echo "  3. (skipped) Use existing images"
+    else
+        echo "  1. Update platform-versions.env: PLATFORM_VERSION=$NEXT_VERSION"
+        [[ -n "$BEADS_VERSION_OVERRIDE" ]] && echo "     Also: BEADS_VERSION=$BEADS_VERSION_OVERRIDE"
+        [[ -n "$COOP_VERSION_OVERRIDE" ]] && echo "     Also: COOP_VERSION=$COOP_VERSION_OVERRIDE"
+        echo "  2. Commit and push to gastown main"
+        echo "  3. Wait for RWX docker.yml to build images"
     fi
     echo "  4. Run bump-helm-images.sh --apply --commit"
     echo "  5. helm upgrade $NAMESPACE"
