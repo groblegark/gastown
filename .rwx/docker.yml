@@ -866,6 +866,8 @@ tasks:
 
       # ── Build helm dependencies ────────────────────────────────────────
       echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
+      # Remove stale/incomplete subchart directory so helm pulls fresh from OCI
+      rm -rf charts/gastown
       helm dependency build ./
 
       # ── Deploy with --atomic (auto-rollback on failure) ────────────────
