@@ -369,8 +369,8 @@ func TestK8sManager_SecurityContext(t *testing.T) {
 	if csc == nil {
 		t.Fatal("container security context is nil")
 	}
-	if *csc.AllowPrivilegeEscalation {
-		t.Error("AllowPrivilegeEscalation should be false")
+	if !*csc.AllowPrivilegeEscalation {
+		t.Error("AllowPrivilegeEscalation should be true (agents need sudo)")
 	}
 	if csc.Capabilities == nil || len(csc.Capabilities.Drop) == 0 {
 		t.Error("should drop ALL capabilities")

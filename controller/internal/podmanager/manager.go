@@ -403,7 +403,10 @@ func (m *K8sManager) buildContainer(spec AgentPodSpec) corev1.Container {
 		VolumeMounts:    mounts,
 		ImagePullPolicy: corev1.PullAlways,
 		SecurityContext: &corev1.SecurityContext{
-			AllowPrivilegeEscalation: boolPtr(false),
+			// Allow privilege escalation so agents can use sudo to install
+			// packages at runtime. The agent image ships with a NOPASSWD
+			// sudoers entry for the agent user.
+			AllowPrivilegeEscalation: boolPtr(true),
 			ReadOnlyRootFilesystem:   boolPtr(false),
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},

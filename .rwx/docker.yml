@@ -570,12 +570,23 @@ tasks:
           cp "$f" "$LAYER${f}" 2>/dev/null || true
         done
       done
-      # sudo config — the base ubuntu:24.04 image already has /etc/sudoers.
-      # We only need to add a sudoers.d drop-in for the agent user and copy
-      # the sudo helper libraries that dpkg-L missed.
+      # sudo config — create sudoers with correct ownership (root:root, 0440).
+      # Uses sudo to set ownership so the tar archive has correct UIDs.
       mkdir -p $LAYER/etc/sudoers.d
-      echo "agent ALL=(ALL) NOPASSWD: ALL" > $LAYER/etc/sudoers.d/agent
-      chmod 0440 $LAYER/etc/sudoers.d/agent
+      sudo tee $LAYER/etc/sudoers > /dev/null <<'SUDOERS'
+Defaults   env_reset
+Defaults   secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin"
+root ALL=(ALL:ALL) ALL
+%sudo ALL=(ALL:ALL) ALL
+@includedir /etc/sudoers.d
+SUDOERS
+      sudo chmod 0440 $LAYER/etc/sudoers
+      sudo tee $LAYER/etc/sudoers.d/agent > /dev/null <<'EOF'
+agent ALL=(ALL) NOPASSWD: ALL
+EOF
+      sudo chmod 0440 $LAYER/etc/sudoers.d/agent
+      # sudo.conf — must be owned by root
+      sudo cp /etc/sudo.conf $LAYER/etc/sudo.conf 2>/dev/null || true
       # sudo helper libraries (libsudo_util.so etc.)
       mkdir -p $LAYER/usr/libexec/sudo
       cp /usr/libexec/sudo/*.so* $LAYER/usr/libexec/sudo/ 2>/dev/null || true
@@ -648,7 +659,11 @@ tasks:
       /tmp/aws/install --install-dir /tmp/aws-install --bin-dir /tmp/aws-bin
       mkdir -p $LAYER/opt/aws-cli
       cp -r /tmp/aws-install/* $LAYER/opt/aws-cli/
-      # Create a direct symlink to the actual binary (not via bin/ wrapper)
+      # Fix the "current" symlink — cp -r preserves the absolute path to the
+      # temp install dir. Replace with a relative symlink to the version dir.
+      AWS_VER=$(ls $LAYER/opt/aws-cli/v2/ | grep -v current | head -1)
+      ln -sf "$AWS_VER" $LAYER/opt/aws-cli/v2/current
+      # Symlink the aws binary into PATH
       ln -sf /opt/aws-cli/v2/current/bin/aws $LAYER/usr/local/bin/aws
       rm -rf /tmp/awscli.zip /tmp/aws /tmp/aws-install /tmp/aws-bin
 
@@ -674,7 +689,7 @@ tasks:
       # Home directory
       mkdir -p $LAYER/home/agent/gt
 
-      tar -cf /tmp/layer.tar -C $LAYER .
+      sudo tar -cf /tmp/layer.tar -C $LAYER .
 
       # Push with platform version tag and latest
       REPO="ghcr.io/groblegark/gastown/gastown-agent"
