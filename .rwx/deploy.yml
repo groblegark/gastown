@@ -80,7 +80,7 @@ tasks:
       git clone --depth=1 "https://oauth2:${GITLAB_TOKEN}@gitlab.com/PiHealth/CoreFICS/fics-helm-chart.git" /tmp/helm-chart
 
       # ── Bump image tags in gastown-next.yaml ───────────────────────────
-      VALUES_FILE="/tmp/helm-chart/charts/gastown/values/gastown-next.yaml"
+      VALUES_FILE="/tmp/helm-chart/charts/gastown-flat/values/gastown-next.yaml"
       if [ -f "$VALUES_FILE" ]; then
         echo "Bumping CalVer tags in gastown-next.yaml to ${PLATFORM_VERSION}"
         sed -i -E "s|tag: \"20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g" "$VALUES_FILE"
@@ -102,7 +102,7 @@ tasks:
       fi
 
       # ── Build helm dependencies ────────────────────────────────────────
-      cd /tmp/helm-chart/charts/gastown
+      cd /tmp/helm-chart/charts/gastown-flat
       echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
       helm dependency build ./
 
