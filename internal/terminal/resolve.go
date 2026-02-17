@@ -14,11 +14,15 @@ import (
 // The agentID follows the standard format: "rig/polecat" or "rig/crew/name".
 // Backend detection checks the agent bead for a "backend" field set by
 // the K8s pod manager or Coop sidecar deployment.
+//
+// Bare names (e.g., "nux") are resolved by searching all agent beads for
+// matching polecat or crew suffixes.
 func ResolveBackend(agentID string) Backend {
 	// Try the given agentID first, then hq-prefixed form for town-level
 	// shortnames (mayor -> hq-mayor, deacon -> hq-deacon, etc.).
 	candidates := []string{agentID}
-	if !strings.Contains(agentID, "/") && !strings.Contains(agentID, "-") {
+	isBare := !strings.Contains(agentID, "/") && !strings.Contains(agentID, "-")
+	if isBare {
 		candidates = append(candidates, "hq-"+agentID)
 	}
 
@@ -29,6 +33,18 @@ func ResolveBackend(agentID string) Backend {
 			b := NewCoopBackend(coopCfg.CoopConfig)
 			b.AddSession("claude", coopCfg.baseURL)
 			return b
+		}
+	}
+
+	// For bare names, search agent beads by name suffix.
+	if isBare {
+		if beadID := findAgentBeadByName(agentID); beadID != "" {
+			coopCfg, err := resolveCoopConfig(beadID)
+			if err == nil && coopCfg != nil {
+				b := NewCoopBackend(coopCfg.CoopConfig)
+				b.AddSession("claude", coopCfg.baseURL)
+				return b
+			}
 		}
 	}
 
@@ -121,12 +137,17 @@ func getAgentNotes(agentID string) (string, error) {
 }
 
 // ResolveAgentPodInfo looks up an agent's K8s pod metadata from its bead notes.
-// The address can be a shortname ("mayor"), bead ID ("hq-mayor"), or path
-// ("gastown/polecats/furiosa"). Returns pod_name and pod_namespace from the
-// bead's notes field, which are written by the controller's status reporter.
+// The address can be a shortname ("mayor"), bead ID ("hq-mayor"), path
+// ("gastown/polecats/furiosa"), or bare name ("nux"). Returns pod_name and
+// pod_namespace from the bead's notes field, which are written by the
+// controller's status reporter.
+//
+// Bare names are resolved by searching all agent beads for matching
+// polecat or crew suffixes (e.g., "nux" → "gt-gastown-polecat-nux").
 func ResolveAgentPodInfo(address string) (*AgentPodInfo, error) {
 	// Build candidate bead IDs to try.
 	candidates := []string{address}
+	isBare := false
 
 	// Try parsing as an address to get bead ID format.
 	// Import cycle avoidance: we parse the address format inline.
@@ -138,8 +159,8 @@ func ResolveAgentPodInfo(address string) (*AgentPodInfo, error) {
 	case "boot":
 		candidates = []string{"hq-boot"}
 	default:
-		// If it contains slashes, it's a path format — add the hyphenated form.
 		if strings.Contains(address, "/") {
+			// Path format — add the hyphenated form.
 			parts := strings.Split(address, "/")
 			switch len(parts) {
 			case 2:
@@ -153,6 +174,9 @@ func ResolveAgentPodInfo(address string) (*AgentPodInfo, error) {
 				}
 				candidates = append(candidates, fmt.Sprintf("gt-%s-%s-%s", parts[0], role, parts[2]))
 			}
+		} else if !strings.Contains(address, "-") {
+			// Bare name (no slashes, no hyphens) — will search agent beads below.
+			isBare = true
 		}
 	}
 
@@ -170,5 +194,49 @@ func ResolveAgentPodInfo(address string) (*AgentPodInfo, error) {
 		}
 	}
 
+	// For bare names, search all agent beads for matching polecat/crew suffix.
+	if isBare {
+		if beadID := findAgentBeadByName(address); beadID != "" {
+			cfg, err := resolveCoopConfig(beadID)
+			if err == nil && cfg != nil && cfg.podName != "" {
+				return &AgentPodInfo{
+					PodName:   cfg.podName,
+					Namespace: cfg.namespace,
+					CoopURL:   cfg.baseURL,
+				}, nil
+			}
+		}
+	}
+
 	return nil, fmt.Errorf("no pod metadata found for agent %q", address)
+}
+
+// findAgentBeadByName searches all agent beads for one matching a bare name.
+// It looks for bead IDs ending in "-polecat-<name>" or "-crew-<name>".
+// Returns the matching bead ID, or "" if no match is found.
+// If multiple agents match (e.g., same name in different rigs), returns the first.
+func findAgentBeadByName(name string) string {
+	cmd := bdcmd.Command("list", "--label=gt:agent", "--json")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	var issues []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(output, &issues); err != nil {
+		return ""
+	}
+
+	polecatSuffix := "-polecat-" + name
+	crewSuffix := "-crew-" + name
+
+	for _, issue := range issues {
+		if strings.HasSuffix(issue.ID, polecatSuffix) || strings.HasSuffix(issue.ID, crewSuffix) {
+			return issue.ID
+		}
+	}
+
+	return ""
 }

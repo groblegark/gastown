@@ -36,6 +36,7 @@ The nudge/peek pair provides the canonical interface for agent sessions:
 
 Supports town-level agents, polecats, and crew workers:
   - Town-level: mayor, deacon, boot (no rig prefix needed)
+  - Bare names: just the agent name (e.g., furiosa) — auto-resolved
   - Polecats: rig/name format (e.g., greenplace/furiosa)
   - Crew: rig/crew/name format (e.g., beads/crew/dave)
 
@@ -43,6 +44,7 @@ Examples:
   gt peek mayor                      # Town-level: Mayor agent
   gt peek deacon                     # Town-level: Deacon agent
   gt peek boot                       # Town-level: Boot watchdog
+  gt peek nux                        # Bare name: auto-resolves to polecat/crew
   gt peek greenplace/furiosa         # Polecat: last 100 lines (default)
   gt peek greenplace/furiosa 50      # Polecat: last 50 lines
   gt peek beads/crew/dave            # Crew: last 100 lines

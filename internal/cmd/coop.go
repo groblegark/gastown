@@ -27,6 +27,7 @@ var coopCmd = &cobra.Command{
 
 Target formats:
   mayor                        Town-level mayor
+  nux                           Bare name (auto-resolved)
   gastown/witness               Rig witness
   gastown/polecats/nux          Polecat by name
   gastown/crew/max              Crew member

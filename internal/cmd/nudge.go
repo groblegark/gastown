@@ -86,6 +86,9 @@ Role shortcuts (expand to session names):
   witness   Maps to gt-<rig>-witness (uses current rig)
   refinery  Maps to gt-<rig>-refinery (uses current rig)
 
+Bare names (e.g., "nux", "furiosa") are auto-resolved by searching
+agent beads for matching polecat or crew names.
+
 Channel syntax:
   channel:<name>  Nudges all members of a named channel defined in
                   ~/gt/config/messaging.json under "nudge_channels".
