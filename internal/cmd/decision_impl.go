@@ -1069,11 +1069,12 @@ func formatDecisionReminder(workIndicators []string) string {
 	sb.WriteString("\n")
 	sb.WriteString("Before ending this session, consider offering a decision point:\n")
 	sb.WriteString("1. What was accomplished in this session?\n")
-	sb.WriteString("2. What are the next steps or options?\n")
+	sb.WriteString("2. What specific area could we dive deeper on?\n")
 	sb.WriteString("3. Are there architectural choices or scope decisions needed?\n")
 	sb.WriteString("\n")
-	sb.WriteString("Use 'gt decision request' to create a decision, or proceed with handoff if\n")
-	sb.WriteString("the work is self-contained and no human input is needed.\n")
+	sb.WriteString("IMPORTANT: Offer a 'Dive deeper on X' option with a specific, interesting\n")
+	sb.WriteString("direction — not just 'continue' vs 'stop'. Prefer NOT to offer options for\n")
+	sb.WriteString("work already in progress.\n")
 	return sb.String()
 }
 
@@ -1213,6 +1214,11 @@ func checkTurnMarker(sessionID string, soft bool) *TurnBlockResult {
 	return &TurnBlockResult{
 		Decision: "block",
 		Reason: `You must offer a formal decision point using 'gt decision request' before ending this turn. This ensures humans stay informed about progress and can provide guidance.
+
+IMPORTANT GUIDELINES FOR OPTIONS:
+- Do NOT offer a generic "stop" or "pause" option every time. Instead, think about what would be genuinely interesting or valuable to explore next and offer a "Dive deeper on X" option where X is a specific, concrete area related to the current work.
+- Prefer NOT to offer options for work that is already in progress — the human already decided on that. Focus on new directions, unexplored angles, or adjacent improvements.
+- Options should be forward-looking and specific, not just "continue current work" vs "stop".
 
 When the decision is created, it will be assigned a semantic slug (e.g., gt-dec-cache_strategyzfyl8) that makes it easy to identify in Slack and logs. Use clear, descriptive prompts so the generated slug is meaningful.`,
 	}
@@ -1402,11 +1408,17 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 		Decision: "block",
 		Reason: `You must offer a formal decision point using 'gt decision request' before ending this turn. This ensures humans stay informed about progress and can provide guidance.
 
+IMPORTANT GUIDELINES FOR OPTIONS:
+- Do NOT offer a generic "stop" or "pause" option every time. Instead, think about what would be genuinely interesting or valuable to explore next and offer a "Dive deeper on X" option where X is a specific, concrete area related to the current work.
+- Prefer NOT to offer options for work that is already in progress — the human already decided on that. Focus on new directions, unexplored angles, or adjacent improvements.
+- Options should be forward-looking and specific, not just "continue current work" vs "stop".
+
 Example:
   gt decision request \
-    --prompt "What should we do next?" \
-    --option "Continue: Keep working on current task" \
-    --option "Pause: Wait for further guidance"
+    --prompt "Completed the auth refactor. What next?" \
+    --option "Dive deeper on token rotation: Add automatic refresh with jitter" \
+    --option "Harden error paths: Add structured error types for auth failures" \
+    --option "Move on: This area is good enough for now"
 
 When the decision is created, it will be assigned a semantic slug (e.g., gt-dec-cache_strategyzfyl8) that makes it easy to identify in Slack and logs. Use clear, descriptive prompts so the generated slug is meaningful.`,
 	}

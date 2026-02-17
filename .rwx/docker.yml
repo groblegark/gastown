@@ -784,7 +784,7 @@ tasks:
   # ═══════════════════════════════════════════════════════════════════════
 
   - key: deploy-rwx
-    use: [code, push-bd, push-agent, push-controller]
+    use: helm-bump
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |

@@ -1,0 +1,137 @@
+# Deploy to gastown-next — manual CLI trigger only.
+#
+# Deploys the gastown helm chart to the gastown-next namespace using image tags
+# from platform-versions.env. Unlike deploy-rwx (in docker.yml), this workflow
+# is intentionally manual — gastown-next is the pre-prod staging environment
+# and deploys should be deliberate.
+#
+# Usage:
+#   rwx run .rwx/deploy.yml --init commit-sha=$(git rev-parse HEAD) --wait
+#
+# The workflow:
+#   1. Clones gastown (for platform-versions.env)
+#   2. Clones fics-helm-chart (for helm values)
+#   3. Bumps CalVer image tags in gastown-next.yaml
+#   4. Commits + pushes the helm chart changes
+#   5. Runs helm upgrade --install with --atomic (auto-rollback on failure)
+#   6. Verifies pod health
+#
+# Prerequisites (RWX vault secrets):
+#   E2E_AWS_ACCESS_KEY_ID, E2E_AWS_SECRET_ACCESS_KEY — EKS auth
+#   E2E_EKS_CLUSTER — cluster name (america-e2e-eks)
+#   GHCR_TOKEN, GITHUB_USER — GHCR image pull + helm registry
+#   GITLAB_TOKEN — fics-helm-chart repo access
+
+on:
+  cli:
+    init:
+      commit-sha: ${{ event.git.sha }}
+
+base:
+  image: ubuntu:24.04
+  config: rwx/base 1.0.0
+
+tasks:
+  - key: code
+    call: git/clone 2.0.3
+    with:
+      repository: https://github.com/groblegark/gastown.git
+      ref: ${{ init.commit-sha }}
+
+  - key: deploy-next
+    use: code
+    cache: false
+    run: |
+      set -ex
+      source platform-versions.env
+
+      # ── Validate ─────────────────────────────────────────────────────────
+      if [ -z "${AWS_ACCESS_KEY_ID}" ]; then
+        echo "AWS credentials not set — cannot deploy."
+        echo "Add E2E_AWS_ACCESS_KEY_ID and E2E_AWS_SECRET_ACCESS_KEY to the RWX vault."
+        exit 1
+      fi
+      if [ -z "${GITLAB_TOKEN}" ]; then
+        echo "GITLAB_TOKEN not set — cannot clone helm chart."
+        exit 1
+      fi
+
+      echo "Deploying gastown-next with platform version ${PLATFORM_VERSION}"
+      echo "  BEADS_VERSION=${BEADS_VERSION}"
+      echo "  COOP_VERSION=${COOP_VERSION}"
+      echo "  GASTOWN_VERSION=${GASTOWN_VERSION}"
+
+      # ── Install tools ──────────────────────────────────────────────────
+      # kubectl
+      KUBE_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+      curl -fsSL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
+      sudo install /tmp/kubectl /usr/local/bin/kubectl
+
+      # helm
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      # ── Configure kubeconfig ───────────────────────────────────────────
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      unzip -q /tmp/awscli.zip -d /tmp
+      sudo /tmp/aws/install
+      aws eks update-kubeconfig --name "${EKS_CLUSTER}" --region us-east-1
+
+      # ── Clone helm chart repo ──────────────────────────────────────────
+      git clone --depth=1 "https://oauth2:${GITLAB_TOKEN}@gitlab.com/PiHealth/CoreFICS/fics-helm-chart.git" /tmp/helm-chart
+
+      # ── Bump image tags in gastown-next.yaml ───────────────────────────
+      VALUES_FILE="/tmp/helm-chart/charts/gastown/values/gastown-next.yaml"
+      if [ -f "$VALUES_FILE" ]; then
+        echo "Bumping CalVer tags in gastown-next.yaml to ${PLATFORM_VERSION}"
+        sed -i -E "s|tag: \"20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g" "$VALUES_FILE"
+        sed -i -E "s|gastown-agent:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|gastown-agent:${PLATFORM_VERSION}|g" "$VALUES_FILE"
+        sed -i -E "s|agent-controller:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|agent-controller:${PLATFORM_VERSION}|g" "$VALUES_FILE"
+      fi
+
+      # Commit and push tag bumps
+      cd /tmp/helm-chart
+      git config user.name "gastown-ci"
+      git config user.email "matthew.baker@pihealth.ai"
+      git add -A
+      if git diff --cached --quiet; then
+        echo "No helm changes needed — tags already at ${PLATFORM_VERSION}"
+      else
+        git commit -m "chore: bump gastown-next images to ${PLATFORM_VERSION}"
+        git push
+        echo "Helm values committed: gastown-next → ${PLATFORM_VERSION}"
+      fi
+
+      # ── Build helm dependencies ────────────────────────────────────────
+      cd /tmp/helm-chart/charts/gastown
+      echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
+      rm -rf charts/gastown
+      helm dependency build ./
+
+      # ── Deploy with --atomic (auto-rollback on failure) ────────────────
+      NS="gastown-next"
+      RELEASE="gastown-next"
+
+      helm upgrade --install "$RELEASE" ./ \
+        -n "$NS" --create-namespace \
+        --values values.yaml \
+        --values values/gastown-next.yaml \
+        --atomic --timeout 10m \
+        --wait
+
+      echo "Deployed ${RELEASE} to ${NS} with platform version ${PLATFORM_VERSION}"
+
+      # ── Health check ───────────────────────────────────────────────────
+      echo "Checking pod health..."
+      kubectl get pods -n "$NS" -o wide
+      kubectl wait --for=condition=Ready pods -l app.kubernetes.io/component=daemon -n "$NS" --timeout=120s || true
+
+      echo ""
+      echo "Deploy complete: ${NS} → platform ${PLATFORM_VERSION}"
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.E2E_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.E2E_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+      EKS_CLUSTER: ${{ secrets.E2E_EKS_CLUSTER }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+      GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
