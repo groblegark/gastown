@@ -115,6 +115,7 @@ tasks:
         -n "$NS" --create-namespace \
         --values values.yaml \
         --values values/gastown-next.yaml \
+        --history-max 10 \
         --atomic --timeout 10m \
         --wait
 
