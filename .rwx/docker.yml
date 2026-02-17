@@ -665,8 +665,10 @@ tasks:
         libcurl3t64-gnutls sudo
 
       # Extract installed package file lists and copy into layer.
-      # Uses sudo cp because some packages (e.g. sudo) install files with
-      # restricted permissions (e.g. /etc/sudoers is 0440).
+      # Skip files we can't read (e.g. /etc/sudoers is 0440) — the binaries
+      # and libraries are the important parts, not config files.
+      # IMPORTANT: Do NOT use sudo here — it creates root-owned dirs in $LAYER
+      # that break subsequent non-sudo writes (Go, Node, kubectl, etc.).
       for pkg in git git-man curl jq screen ca-certificates libicu74 \
           liberror-perl libcurl4t64 libnghttp2-14 libbrotli1 \
           libpsl5t64 libonig5 libexpat1 \
@@ -679,7 +681,7 @@ tasks:
           [ -f "$f" ] || continue
           dir="$LAYER$(dirname "$f")"
           mkdir -p "$dir"
-          sudo cp "$f" "$LAYER${f}" 2>/dev/null || true
+          cp "$f" "$LAYER${f}" 2>/dev/null || true
         done
       done
       # Also copy shared libs that key binaries link against
@@ -689,14 +691,14 @@ tasks:
           [ -f "$lib" ] || continue
           dir="$LAYER$(dirname "$lib")"
           mkdir -p "$dir"
-          sudo cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
         done
       done
       # ICU data and libs (needed by bd binary for unicode normalization)
       find /usr/lib/x86_64-linux-gnu -name 'libicu*.so*' 2>/dev/null | while read -r f; do
         dir="$LAYER$(dirname "$f")"
         mkdir -p "$dir"
-        cp -a "$f" "$LAYER${f}"
+        cp -a "$f" "$LAYER${f}" 2>/dev/null || true
       done
       # git-core helpers (git-remote-https, etc.)
       cp -r /usr/lib/git-core $LAYER/usr/lib/ 2>/dev/null || true
@@ -704,7 +706,7 @@ tasks:
       find /usr/lib/x86_64-linux-gnu -name 'libcurl-gnutls*' 2>/dev/null | while read -r f; do
         dir="$LAYER$(dirname "$f")"
         mkdir -p "$dir"
-        cp -a "$f" "$LAYER${f}"
+        cp -a "$f" "$LAYER${f}" 2>/dev/null || true
       done
       # Python symlink
       mkdir -p $LAYER/usr/bin
@@ -767,12 +769,10 @@ tasks:
       echo "${PLATFORM_VERSION}" > $LAYER/etc/platform-version
       cp /etc/ssl/certs/ca-certificates.crt $LAYER/etc/ssl/certs/
 
-      # Home directory (owned by agent user, UID 1000)
+      # Home directory
       mkdir -p $LAYER/home/agent/gt
-      sudo chown -R 1000:1000 $LAYER/home/agent
 
-      # Fix layer ownership: system files stay root, ensure tar is readable
-      sudo tar -cf /tmp/layer.tar -C $LAYER .
+      tar -cf /tmp/layer.tar -C $LAYER .
 
       # Push with platform version tag and latest
       REPO="ghcr.io/groblegark/gastown/gastown-agent"
