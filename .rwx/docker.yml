@@ -571,19 +571,11 @@ tasks:
         done
       done
       # sudo config — create sudoers with correct ownership (root:root, 0440).
-      # Uses sudo to set ownership so the tar archive has correct UIDs.
+      # Uses printf to avoid '@' in heredoc (RWX YAML parser chokes on it).
       mkdir -p $LAYER/etc/sudoers.d
-      sudo tee $LAYER/etc/sudoers > /dev/null <<'SUDOERS'
-Defaults   env_reset
-Defaults   secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin"
-root ALL=(ALL:ALL) ALL
-%sudo ALL=(ALL:ALL) ALL
-@includedir /etc/sudoers.d
-SUDOERS
+      printf 'Defaults   env_reset\nDefaults   secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin"\nroot ALL=(ALL:ALL) ALL\n#includedir /etc/sudoers.d\n' | sudo tee $LAYER/etc/sudoers > /dev/null
       sudo chmod 0440 $LAYER/etc/sudoers
-      sudo tee $LAYER/etc/sudoers.d/agent > /dev/null <<'EOF'
-agent ALL=(ALL) NOPASSWD: ALL
-EOF
+      printf 'agent ALL=(ALL) NOPASSWD: ALL\n' | sudo tee $LAYER/etc/sudoers.d/agent > /dev/null
       sudo chmod 0440 $LAYER/etc/sudoers.d/agent
       # sudo.conf — must be owned by root
       sudo cp /etc/sudo.conf $LAYER/etc/sudo.conf 2>/dev/null || true
