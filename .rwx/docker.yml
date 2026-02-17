@@ -841,7 +841,7 @@ tasks:
 
       # Commit and push if there are changes
       git config user.name "gastown-ci"
-      git config user.email "ci@gastown.dev"
+      git config user.email "matthew.baker@pihealth.ai"
       git add -A
       if git diff --cached --quiet; then
         echo "No helm changes needed — tags already at ${PLATFORM_VERSION}"
@@ -901,9 +901,11 @@ tasks:
 
       # ── Build helm dependencies ────────────────────────────────────────
       echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
-      # Remove stale/incomplete subchart directory so helm pulls fresh from OCI
-      rm -rf charts/gastown
-      helm dependency build ./
+      # The gastown subchart (charts/gastown/) is committed in the helm repo
+      # and NOT yet published to OCI registry. Build the subchart's own deps
+      # (bd-daemon from OCI), then skip parent dep-build since the subchart
+      # is already present locally.
+      helm dependency build charts/gastown/
 
       # ── Deploy with --atomic (auto-rollback on failure) ────────────────
       NS="gastown-rwx"
