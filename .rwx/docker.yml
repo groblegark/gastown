@@ -918,12 +918,29 @@ tasks:
       rm -rf charts/gastown
       helm dependency update ./
 
-      # ── Deploy with --atomic (auto-rollback on failure) ────────────────
+      # ── Deploy with retry on lock conflict ───────────────────────────────
       NS="gastown-rwx"
       RELEASE="gastown-rwx"
 
+      # Concurrent pipeline runs can leave the Helm release in a stuck
+      # pending-upgrade/pending-install state. Detect and recover.
+      # Check for stuck release BEFORE deploying.
+      STUCK=$(helm history "$RELEASE" -n "$NS" --max 1 -o json 2>/dev/null \
+        | jq -r '.[0].status // "none"')
+      if echo "$STUCK" | grep -qE "pending-(upgrade|install|rollback)"; then
+        echo "Helm release is stuck in '${STUCK}' — rolling back..."
+        LAST_GOOD=$(helm history "$RELEASE" -n "$NS" --max 20 -o json \
+          | jq -r '[.[] | select(.status == "deployed")] | last | .revision')
+        if [ -n "$LAST_GOOD" ] && [ "$LAST_GOOD" != "null" ]; then
+          echo "Rolling back to last deployed revision: ${LAST_GOOD}"
+          helm rollback "$RELEASE" "$LAST_GOOD" -n "$NS" --wait --timeout 5m
+        else
+          echo "No deployed revision found — rolling back to previous"
+          helm rollback "$RELEASE" 0 -n "$NS" --wait --timeout 5m
+        fi
+      fi
+
       # Image tags are pinned in gastown-rwx.yaml (updated by helm-bump task).
-      # No --set overrides needed — all CalVer tags come from the values file.
       helm upgrade --install "$RELEASE" ./ \
         -n "$NS" --create-namespace \
         --values values.yaml \
