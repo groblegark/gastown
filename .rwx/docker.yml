@@ -355,8 +355,10 @@ tasks:
         # AWS CLI
         curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
         unzip -q /tmp/awscli.zip -d /tmp
-        /tmp/aws/install --install-dir /opt/aws-cli --bin-dir /opt/aws-cli/bin
-        ln -sf /opt/aws-cli/bin/aws /usr/local/bin/aws
+        /tmp/aws/install --install-dir /opt/aws-cli --bin-dir /usr/local/bin
+        # Fix "current" symlink — installer resolves it relative to temp dir
+        AWSVER=$(ls /opt/aws-cli/v2/ | grep -v current | head -1)
+        ln -sfn "/opt/aws-cli/v2/${AWSVER}" /opt/aws-cli/v2/current
         rm -rf /tmp/awscli.zip /tmp/aws
 
         # Clean up apt

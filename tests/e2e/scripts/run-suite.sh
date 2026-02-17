@@ -81,6 +81,7 @@ MODULES=(
   "git-mirror-clone"
   # Phase 2: Agent capabilities
   "agent-entrypoint"
+  "agent-image"
   "agent-spawn"
   "agent-state"
   "agent-io"
