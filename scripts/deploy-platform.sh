@@ -221,11 +221,30 @@ else
     if [[ "$STATUS" == "succeeded" ]]; then
         echo -e "  ${GREEN}✓ Build succeeded${NC} (RunID: $RUN_ID)"
     else
-        echo -e "  ${RED}✗ Build failed${NC} (RunID: $RUN_ID)"
-        echo ""
-        echo "  Check logs: rwx results $RUN_ID"
-        [[ -n "$RUN_ID" ]] && rwx results "$RUN_ID" 2>&1 | tail -10
-        exit 1
+        echo -e "  ${YELLOW}⚠ Pipeline finished with status: $STATUS${NC} (RunID: $RUN_ID)"
+        echo "  Checking if images were pushed despite pipeline status..."
+
+        # Verify the images actually exist on GHCR (push tasks may have
+        # succeeded even if deploy-rwx or other non-push tasks failed).
+        IMAGES_OK=true
+        for img in "ghcr.io/groblegark/beads:$NEXT_VERSION" \
+                   "ghcr.io/groblegark/gastown/agent-controller:$NEXT_VERSION" \
+                   "ghcr.io/groblegark/gastown/gastown-agent:$NEXT_VERSION"; do
+            if crane digest "$img" &>/dev/null; then
+                echo -e "    ${GREEN}✓${NC} $img"
+            else
+                echo -e "    ${RED}✗${NC} $img (not found)"
+                IMAGES_OK=false
+            fi
+        done
+
+        if [[ "$IMAGES_OK" == true ]]; then
+            echo -e "  ${GREEN}✓ All images available — continuing deploy${NC}"
+        else
+            echo -e "  ${RED}✗ Missing images — cannot deploy${NC}"
+            echo "  Check logs: rwx results $RUN_ID"
+            exit 1
+        fi
     fi
 fi
 
