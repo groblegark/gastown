@@ -717,6 +717,7 @@ tasks:
       # Build gopls
       GOROOT=$LAYER/usr/local/go GOPATH=/tmp/gopath $LAYER/usr/local/go/bin/go install golang.org/x/tools/gopls@latest 2>/dev/null || true
       cp /tmp/gopath/bin/gopls $LAYER/usr/local/go/bin/ 2>/dev/null || true
+      chmod -R u+w /tmp/gopath 2>/dev/null || true
       rm -rf /tmp/gopath
 
       # ── Rust Analyzer (LSP server) ────────────────────────────────────
