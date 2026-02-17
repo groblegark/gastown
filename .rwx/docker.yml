@@ -724,13 +724,13 @@ tasks:
   # Helm chart publish — publish bd-daemon + gastown charts with CalVer
   # ═══════════════════════════════════════════════════════════════════════
 
-  # Publishes both charts to oci://ghcr.io/groblegark/charts with the same
-  # CalVer tag as the images (PLATFORM_VERSION). This means a single version
-  # number (e.g. 2026.02.17.13) identifies the exact image AND chart versions.
+  # Publishes the bd-daemon chart to oci://ghcr.io/groblegark/charts with the
+  # same CalVer tag as the images (PLATFORM_VERSION). This means a single
+  # version number (e.g. 2026.02.17.13) identifies the exact image AND chart.
   #
   # The bd-daemon chart is cloned from the beads repo (its source of truth),
-  # version overridden to CalVer, and published. The gastown chart's bd-daemon
-  # dependency is also overridden to point to the CalVer bd-daemon chart.
+  # version overridden to CalVer, and published. The gastown chart lives in
+  # fics-helm-chart and depends on bd-daemon directly (no GHCR publishing).
   - key: helm-publish-charts
     use: code
     if: ${{ init.ref-name != 'pr' }}
@@ -769,20 +769,9 @@ tasks:
       helm push "/tmp/helm-packages/bd-daemon-${CHART_VERSION}.tgz" "oci://ghcr.io/groblegark/charts"
       echo "Published bd-daemon:${CHART_VERSION}"
 
-      # ── Publish gastown chart with CalVer ─────────────────────────────────
-      GT_CHART="helm/gastown"
-      echo "Overriding gastown chart version to ${CHART_VERSION}"
-      sed -i "s/^version:.*/version: ${CHART_VERSION}/" "$GT_CHART/Chart.yaml"
-      sed -i "s/^appVersion:.*/appVersion: \"${PLATFORM_VERSION}\"/" "$GT_CHART/Chart.yaml"
-
-      # Point gastown's bd-daemon dependency at the CalVer version we just published.
-      # Target only the indented version under dependencies (not the top-level version).
-      sed -i -E "/name: bd-daemon/{n;s/version: \"[^\"]*\"/version: \"${CHART_VERSION}\"/}" "$GT_CHART/Chart.yaml"
-
-      helm dependency update "$GT_CHART"
-      helm package "$GT_CHART" --destination /tmp/helm-packages
-      helm push "/tmp/helm-packages/gastown-${CHART_VERSION}.tgz" "oci://ghcr.io/groblegark/charts"
-      echo "Published gastown:${CHART_VERSION}"
+      # NOTE: gastown chart is no longer published to GHCR — it lives in
+      # fics-helm-chart and depends on bd-daemon directly. The helm-bump task
+      # updates fics-helm-chart's Chart.yaml with the CalVer bd-daemon version.
     env:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
@@ -836,16 +825,17 @@ tasks:
       bump_values "charts/gastown/values/gastown-next.yaml"
       bump_values "charts/gastown/values/gastown-rwx.yaml"
 
-      # Bump the outer gastown Chart.yaml to use SemVer-encoded CalVer charts.
-      # Chart version/dependency use CHART_VERSION (3-component SemVer).
+      # Bump the gastown Chart.yaml — version, appVersion, and bd-daemon dependency.
+      # Chart version uses CHART_VERSION (3-component SemVer: YYYY.MMDD.N).
       # appVersion uses PLATFORM_VERSION (4-component CalVer, informational).
+      # bd-daemon dependency points to the CalVer version just published by helm-publish-charts.
       OUTER_CHART="charts/gastown/Chart.yaml"
       if [ -f "$OUTER_CHART" ]; then
-        echo "Bumping chart dependency in $OUTER_CHART → ${CHART_VERSION}"
+        echo "Bumping chart in $OUTER_CHART → ${CHART_VERSION}"
         sed -i "s/^version:.*/version: ${CHART_VERSION}/" "$OUTER_CHART"
         sed -i "s/^appVersion:.*/appVersion: \"${PLATFORM_VERSION}\"/" "$OUTER_CHART"
-        # Update gastown subchart dependency version (matches "~0.7.0" or any version string)
-        sed -i -E "/name: gastown/{n;s/version: \"[^\"]*\"/version: \"${CHART_VERSION}\"/}" "$OUTER_CHART"
+        # Update bd-daemon dependency version
+        sed -i -E "/name: bd-daemon/{n;s/version: .*/version: \"${CHART_VERSION}\"/}" "$OUTER_CHART"
       fi
 
       # Commit and push if there are changes
@@ -912,10 +902,9 @@ tasks:
 
       # ── Build helm dependencies ────────────────────────────────────────
       echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
-      # Remove stale subchart dir and regenerate deps from updated Chart.yaml.
-      # Use 'update' not 'build' — helm-bump changed the dependency version
-      # so Chart.lock is out of sync.
-      rm -rf charts/gastown
+      # Regenerate deps from updated Chart.yaml. Use 'update' not 'build' —
+      # helm-bump changed the bd-daemon dependency version so Chart.lock
+      # may be out of sync.
       helm dependency update ./
 
       # ── Deploy with retry on lock conflict ───────────────────────────────
