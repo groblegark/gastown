@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -79,13 +80,16 @@ func (c *CoopPodConnection) Open(ctx context.Context) error {
 	args = append(args, c.PodName, fmt.Sprintf("%d:%d", c.localPort, c.CoopPort))
 
 	c.portFwdCmd = exec.CommandContext(ctx, "kubectl", args...)
-	// Discard stdout/stderr to avoid blocking — port-forward is noisy.
+	// Capture stderr for diagnostics on failure.
+	var stderrBuf strings.Builder
+	c.portFwdCmd.Stderr = &stderrBuf
 	if err := c.portFwdCmd.Start(); err != nil {
 		return fmt.Errorf("starting port-forward: %w", err)
 	}
 
 	slog.Info("port-forward started",
 		"pod", c.PodName,
+		"namespace", c.Namespace,
 		"local_port", c.localPort,
 		"remote_port", c.CoopPort,
 	)
@@ -93,9 +97,13 @@ func (c *CoopPodConnection) Open(ctx context.Context) error {
 	// Wait for coop health endpoint to respond.
 	healthURL := fmt.Sprintf("http://localhost:%d/api/v1/health", c.localPort)
 	if err := waitForHealth(ctx, healthURL, 15*time.Second); err != nil {
-		// Kill port-forward if health never comes up.
+		// Include port-forward stderr in error for diagnostics.
+		stderr := strings.TrimSpace(stderrBuf.String())
 		c.portFwdCmd.Process.Kill()
 		c.portFwdCmd.Wait()
+		if stderr != "" {
+			return fmt.Errorf("waiting for coop health: %w (kubectl: %s)", err, stderr)
+		}
 		return fmt.Errorf("waiting for coop health: %w", err)
 	}
 
@@ -154,20 +162,24 @@ func waitForHealth(ctx context.Context, url string, timeout time.Duration) error
 	defer ticker.Stop()
 
 	client := &http.Client{Timeout: 2 * time.Second}
+	var lastErr error
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline:
-			return fmt.Errorf("timeout after %s waiting for %s", timeout, url)
+			return fmt.Errorf("timeout after %s waiting for %s (last error: %v)", timeout, url, lastErr)
 		case <-ticker.C:
 			resp, err := client.Get(url)
-			if err == nil {
-				resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					return nil
-				}
+			if err != nil {
+				lastErr = err
+				continue
 			}
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+			lastErr = fmt.Errorf("status %d", resp.StatusCode)
 		}
 	}
 }

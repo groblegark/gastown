@@ -115,13 +115,12 @@ func resolveCoopTarget(target string) (string, string) {
 	}
 
 	// Try resolving via bead metadata (written by the controller's status reporter).
+	// Always prefer the connected namespace (from gt connect) over bead metadata,
+	// because BD_DAEMON_HOST may point to a different daemon than the connected
+	// namespace, causing ResolveAgentPodInfo to return a stale namespace.
 	info, err := terminal.ResolveAgentPodInfo(target)
 	if err == nil && info.PodName != "" {
-		namespace := info.Namespace
-		if namespace == "" {
-			namespace = ns
-		}
-		return info.PodName, namespace
+		return info.PodName, ns
 	}
 
 	// If target is a direct pod name (gt-* prefix), use it with the env namespace.
