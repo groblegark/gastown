@@ -561,7 +561,8 @@ tasks:
           python3-pip python3-venv python3.12-venv \
           libpython3.12-stdlib libpython3.12-minimal \
           make gcc g++ unzip \
-          openssh-client libcurl3t64-gnutls sudo; do
+          openssh-client libcurl3t64-gnutls sudo \
+          libapparmor1; do
         dpkg -L "$pkg" 2>/dev/null | while read -r f; do
           [ -f "$f" ] || continue
           dir="$LAYER$(dirname "$f")"
@@ -569,9 +570,20 @@ tasks:
           cp "$f" "$LAYER${f}" 2>/dev/null || true
         done
       done
+      # sudo config (0440 permissions, cp without sudo fails silently above)
+      mkdir -p $LAYER/etc/sudoers.d
+      sudo cp /etc/sudoers $LAYER/etc/sudoers 2>/dev/null || true
+      # Allow agent user (UID 1000) to sudo without password
+      echo "agent ALL=(ALL) NOPASSWD: ALL" > $LAYER/etc/sudoers.d/agent
+      chmod 0440 $LAYER/etc/sudoers.d/agent
+      # sudo helper libraries
+      mkdir -p $LAYER/usr/libexec/sudo
+      cp /usr/libexec/sudo/*.so* $LAYER/usr/libexec/sudo/ 2>/dev/null || true
+
       # Also copy shared libs that key binaries link against
       for bin in /usr/bin/git /usr/bin/curl /usr/bin/jq /usr/bin/screen \
-          /usr/bin/python3 /usr/bin/ssh /usr/bin/make /usr/bin/gcc; do
+          /usr/bin/python3 /usr/bin/ssh /usr/bin/make /usr/bin/gcc \
+          /usr/bin/sudo; do
         ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
           [ -f "$lib" ] || continue
           dir="$LAYER$(dirname "$lib")"
@@ -628,12 +640,17 @@ tasks:
         tar -xz --strip-components=1 -C $LAYER/usr/local/bin docker/docker
 
       # ── AWS CLI ────────────────────────────────────────────────────────
+      # Install to a temp location first, then move into layer tree.
+      # The installer creates symlinks with absolute paths — installing
+      # directly into $LAYER produces broken symlinks pointing to /tmp/layer/...
       curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
       unzip -q /tmp/awscli.zip -d /tmp
+      /tmp/aws/install --install-dir /tmp/aws-install --bin-dir /tmp/aws-bin
       mkdir -p $LAYER/opt/aws-cli
-      /tmp/aws/install --install-dir $LAYER/opt/aws-cli --bin-dir $LAYER/opt/aws-cli/bin
-      ln -sf /opt/aws-cli/bin/aws $LAYER/usr/local/bin/aws
-      rm -rf /tmp/awscli.zip /tmp/aws
+      cp -r /tmp/aws-install/* $LAYER/opt/aws-cli/
+      # Create a direct symlink to the actual binary (not via bin/ wrapper)
+      ln -sf /opt/aws-cli/v2/current/bin/aws $LAYER/usr/local/bin/aws
+      rm -rf /tmp/awscli.zip /tmp/aws /tmp/aws-install /tmp/aws-bin
 
       # ── Project binaries (gt, coop, bd, oj) ───────────────────────────
       cp ${{ tasks.build-gt.artifacts.gt-binary }} $LAYER/usr/local/bin/gt
