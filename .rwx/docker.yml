@@ -359,6 +359,11 @@ tasks:
         curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" | \
           tar -xz --strip-components=1 -C /usr/local/bin docker/docker
 
+        # GitHub CLI (gh)
+        GH_VERSION=$(curl -fsSI "https://github.com/cli/cli/releases/latest" | grep -i location | sed "s|.*/tag/v||" | tr -d "\r\n")
+        curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+          | tar -xz --strip-components=1 -C /usr/local gh_${GH_VERSION}_linux_amd64/bin/gh
+
         # AWS CLI
         curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
         unzip -q /tmp/awscli.zip -d /tmp
@@ -654,6 +659,12 @@ tasks:
       # ── Docker CLI (client only) ──────────────────────────────────────
       curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" | \
         tar -xz --strip-components=1 -C $LAYER/usr/local/bin docker/docker
+
+      # ── GitHub CLI (gh) ─────────────────────────────────────────────
+      GH_VERSION=$(curl -fsSI "https://github.com/cli/cli/releases/latest" | grep -i location | sed "s|.*/tag/v||" | tr -d "\r\n")
+      curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+        | tar -xz --strip-components=2 -C $LAYER/usr/local/bin gh_${GH_VERSION}_linux_amd64/bin/gh
+      chmod +x $LAYER/usr/local/bin/gh
 
       # ── AWS CLI ────────────────────────────────────────────────────────
       # Install to a temp location first, then move into layer tree.
