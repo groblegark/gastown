@@ -37,7 +37,7 @@ checksum:
   algorithm: sha256
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ .Version }}-next"
 
 changelog:
   sort: asc
@@ -52,7 +52,7 @@ changelog:
 release:
   draft: false
   prerelease: auto
-  name_template: "v{{.Version}}"
+  name_template: "{{.Version}}"
 
 announce:
   skip: true

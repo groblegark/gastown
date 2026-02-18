@@ -90,7 +90,7 @@ func (v beadsVersion) compare(other beadsVersion) int {
 }
 
 // Pre-compiled regex for beads version parsing
-var beadsVersionRe = regexp.MustCompile(`bd version (\d+\.\d+(?:\.\d+)?(?:-\w+)?)`)
+var beadsVersionRe = regexp.MustCompile(`bd version (\d+\.\d+(?:\.\d+)*(?:-\w+)?)`)
 
 func getBeadsVersion() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
