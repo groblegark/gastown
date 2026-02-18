@@ -2,6 +2,7 @@ package statusreporter
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -507,6 +508,205 @@ func TestAgentBeadID_NoLabelsNoAnnotation(t *testing.T) {
 	got := agentBeadID(pod)
 	if got != "gt---" {
 		t.Errorf("agentBeadID() = %q, want %q", got, "gt---")
+	}
+}
+
+// --- HTTPReporter tests ---
+
+// mockBeadUpdater records calls for testing.
+type mockBeadUpdater struct {
+	notesCalls      []mockNotesCall
+	stateCalls      []mockStateCall
+	notesErr        error
+	stateErr        error
+}
+
+type mockNotesCall struct {
+	beadID string
+	notes  string
+}
+
+type mockStateCall struct {
+	beadID string
+	state  string
+}
+
+func (m *mockBeadUpdater) UpdateBeadNotes(_ context.Context, beadID, notes string) error {
+	m.notesCalls = append(m.notesCalls, mockNotesCall{beadID, notes})
+	return m.notesErr
+}
+
+func (m *mockBeadUpdater) UpdateAgentState(_ context.Context, beadID, state string) error {
+	m.stateCalls = append(m.stateCalls, mockStateCall{beadID, state})
+	return m.stateErr
+}
+
+func TestHTTPReporter_ReportPodStatus_Success(t *testing.T) {
+	mock := &mockBeadUpdater{}
+	client := fake.NewSimpleClientset()
+	r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+	err := r.ReportPodStatus(context.Background(), "gt-gastown-polecat-furiosa", PodStatus{
+		PodName:   "gt-gastown-polecat-furiosa",
+		Namespace: "gastown",
+		Phase:     "Running",
+		Ready:     true,
+	})
+	if err != nil {
+		t.Errorf("ReportPodStatus() = %v, want nil", err)
+	}
+
+	if len(mock.stateCalls) != 1 {
+		t.Fatalf("expected 1 state call, got %d", len(mock.stateCalls))
+	}
+	if mock.stateCalls[0].beadID != "gt-gastown-polecat-furiosa" {
+		t.Errorf("beadID = %q, want %q", mock.stateCalls[0].beadID, "gt-gastown-polecat-furiosa")
+	}
+	if mock.stateCalls[0].state != "working" {
+		t.Errorf("state = %q, want %q", mock.stateCalls[0].state, "working")
+	}
+
+	m := r.Metrics()
+	if m.StatusReportsTotal != 1 {
+		t.Errorf("reports total = %d, want 1", m.StatusReportsTotal)
+	}
+	if m.StatusReportErrors != 0 {
+		t.Errorf("report errors = %d, want 0", m.StatusReportErrors)
+	}
+}
+
+func TestHTTPReporter_ReportPodStatus_AllPhases(t *testing.T) {
+	mock := &mockBeadUpdater{}
+	client := fake.NewSimpleClientset()
+	r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+	phases := []struct {
+		phase string
+		state string
+	}{
+		{"Pending", "spawning"},
+		{"Running", "working"},
+		{"Succeeded", "done"},
+		{"Failed", "failed"},
+	}
+
+	for _, p := range phases {
+		err := r.ReportPodStatus(context.Background(), "gt-gastown-polecat-test", PodStatus{
+			PodName: "gt-gastown-polecat-test",
+			Phase:   p.phase,
+		})
+		if err != nil {
+			t.Errorf("ReportPodStatus(%s) = %v, want nil", p.phase, err)
+		}
+	}
+
+	if len(mock.stateCalls) != 4 {
+		t.Fatalf("expected 4 state calls, got %d", len(mock.stateCalls))
+	}
+	for i, p := range phases {
+		if mock.stateCalls[i].state != p.state {
+			t.Errorf("call %d: state = %q, want %q", i, mock.stateCalls[i].state, p.state)
+		}
+	}
+}
+
+func TestHTTPReporter_ReportPodStatus_SkipsUnknownPhase(t *testing.T) {
+	mock := &mockBeadUpdater{}
+	client := fake.NewSimpleClientset()
+	r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+	err := r.ReportPodStatus(context.Background(), "gt-gastown-polecat-test", PodStatus{
+		PodName: "gt-gastown-polecat-test",
+		Phase:   "Unknown",
+	})
+	if err != nil {
+		t.Errorf("ReportPodStatus(Unknown) = %v, want nil", err)
+	}
+
+	if len(mock.stateCalls) != 0 {
+		t.Errorf("expected 0 state calls for unknown phase, got %d", len(mock.stateCalls))
+	}
+}
+
+func TestHTTPReporter_ReportPodStatus_DaemonFailure(t *testing.T) {
+	mock := &mockBeadUpdater{stateErr: fmt.Errorf("daemon unavailable")}
+	client := fake.NewSimpleClientset()
+	r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+	err := r.ReportPodStatus(context.Background(), "gt-gastown-polecat-test", PodStatus{
+		PodName: "gt-gastown-polecat-test",
+		Phase:   "Running",
+	})
+	if err == nil {
+		t.Error("ReportPodStatus() should return error when daemon fails")
+	}
+
+	m := r.Metrics()
+	if m.StatusReportErrors != 1 {
+		t.Errorf("report errors = %d, want 1", m.StatusReportErrors)
+	}
+}
+
+func TestHTTPReporter_ReportBackendMetadata_Success(t *testing.T) {
+	mock := &mockBeadUpdater{}
+	client := fake.NewSimpleClientset()
+	r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+	err := r.ReportBackendMetadata(context.Background(), "gt-gastown-polecat-test", BackendMetadata{
+		PodName:   "gt-gastown-polecat-test",
+		Namespace: "gastown",
+		Backend:   "coop",
+		CoopURL:   "http://10.0.0.1:8080",
+	})
+	if err != nil {
+		t.Errorf("ReportBackendMetadata() = %v, want nil", err)
+	}
+
+	if len(mock.notesCalls) != 1 {
+		t.Fatalf("expected 1 notes call, got %d", len(mock.notesCalls))
+	}
+	if mock.notesCalls[0].beadID != "gt-gastown-polecat-test" {
+		t.Errorf("beadID = %q, want %q", mock.notesCalls[0].beadID, "gt-gastown-polecat-test")
+	}
+}
+
+func TestHTTPReporter_SyncAll_WithPods(t *testing.T) {
+	mock := &mockBeadUpdater{}
+	pods := []runtime.Object{
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gt-gastown-polecat-furiosa",
+				Namespace: "gastown",
+				Labels: map[string]string{
+					"app.kubernetes.io/name": "gastown",
+					"gastown.io/rig":         "gastown",
+					"gastown.io/role":        "polecat",
+					"gastown.io/agent":       "furiosa",
+				},
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				Conditions: []corev1.PodCondition{
+					{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+				},
+			},
+		},
+	}
+
+	client := fake.NewSimpleClientset(pods...)
+	r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+	err := r.SyncAll(context.Background())
+	if err != nil {
+		t.Errorf("SyncAll() = %v, want nil", err)
+	}
+
+	// Should have called UpdateAgentState for the running pod.
+	if len(mock.stateCalls) != 1 {
+		t.Fatalf("expected 1 state call, got %d", len(mock.stateCalls))
+	}
+	if mock.stateCalls[0].state != "working" {
+		t.Errorf("state = %q, want %q", mock.stateCalls[0].state, "working")
 	}
 }
 
