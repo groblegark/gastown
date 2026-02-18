@@ -107,6 +107,11 @@ MODULES=(
   "gt-attach"
   "gt-crew"
   "gt-rig"
+  # Phase 2.8: HA & zero-downtime
+  "daemon-ha"
+  "daemon-pdb"
+  "dolt-failover"
+  "rolling-upgrade"
   # Phase 3: Advanced health & lifecycle
   "agent-lifecycle"
   "controller-create-pod"
