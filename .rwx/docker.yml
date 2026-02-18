@@ -15,7 +15,7 @@
 #
 # VERSIONING:
 # All component versions are pinned in platform-versions.env (repo root).
-# All images are tagged with PLATFORM_VERSION (CalVer: YYYY.MM.DD.N).
+# All images are tagged with PLATFORM_VERSION (CalVer: YYYY.MDD.N).
 # To rebuild: bump versions in platform-versions.env, commit, run:
 #   rwx run .rwx/docker.yml --init commit-sha=$(git rev-parse HEAD) --wait
 #
@@ -739,12 +739,8 @@ tasks:
       set -ex
       source platform-versions.env
 
-      # Convert CalVer YYYY.MM.DD.N → SemVer-compatible YYYY.MMDD.N
-      # Helm requires valid SemVer (3 components). This encoding preserves
-      # sort order and is clearly derived from the CalVer date.
-      # Example: 2026.02.17.13 → 2026.217.13
-      IFS='.' read -r YEAR MONTH DAY BUILD <<< "$PLATFORM_VERSION"
-      CHART_VERSION="${YEAR}.${MONTH#0}${DAY}.${BUILD}"
+      # CalVer YYYY.MDD.N is already valid 3-part semver — use directly as chart version.
+      CHART_VERSION="${PLATFORM_VERSION}"
       echo "Platform version: ${PLATFORM_VERSION} → chart version: ${CHART_VERSION}"
 
       # Install helm
@@ -788,9 +784,8 @@ tasks:
       set -e
       source platform-versions.env
 
-      # Convert CalVer YYYY.MM.DD.N → SemVer YYYY.MMDD.N (same as helm-publish-charts)
-      IFS='.' read -r YEAR MONTH DAY BUILD <<< "$PLATFORM_VERSION"
-      CHART_VERSION="${YEAR}.${MONTH#0}${DAY}.${BUILD}"
+      # CalVer YYYY.MDD.N is already valid 3-part semver — use directly as chart version.
+      CHART_VERSION="${PLATFORM_VERSION}"
 
       # Skip if no GitLab token configured
       if [ -z "${GITLAB_TOKEN}" ]; then
@@ -799,7 +794,7 @@ tasks:
         echo ""
         echo "Manual bump command:"
         echo "  cd ~/book/fics-helm-chart/charts/gastown"
-        echo "  sed -i '' -E 's|tag: \"20[0-9]{2}\\.[0-9]{2}\\.[0-9]{2}\\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g' values/gastown-next.yaml values/gastown-rwx.yaml"
+        echo "  sed -i '' -E 's|tag: \"20[0-9]{2}\\.[0-9]+\\.[0-9]+(\\.[0-9]+)?\"|tag: \"${PLATFORM_VERSION}\"|g' values/gastown-next.yaml values/gastown-rwx.yaml"
         echo "  git add values/ && git commit -m 'chore: bump to ${PLATFORM_VERSION}' && git push"
         exit 0
       fi
@@ -809,7 +804,7 @@ tasks:
       cd /tmp/helm-chart
 
       # Bump CalVer image tags in gastown values files.
-      # Image tags use 4-component CalVer (PLATFORM_VERSION), not SemVer.
+      # Matches both old 4-part (20XX.XX.XX.N) and new 3-part (20XX.XXX.N) CalVer.
       bump_values() {
         local f="$1"
         if [ ! -f "$f" ]; then
@@ -817,17 +812,16 @@ tasks:
           return
         fi
         echo "Bumping tags in $f"
-        sed -i -E "s|tag: \"20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g" "$f"
-        sed -i -E "s|gastown-agent:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|gastown-agent:${PLATFORM_VERSION}|g" "$f"
-        sed -i -E "s|agent-controller:20[0-9]{2}\.[0-9]{2}\.[0-9]{2}\.[0-9]+|agent-controller:${PLATFORM_VERSION}|g" "$f"
+        sed -i -E "s|tag: \"20[0-9]{2}\.[0-9]+\.[0-9]+(\.[0-9]+)?\"|tag: \"${PLATFORM_VERSION}\"|g" "$f"
+        sed -i -E "s|gastown-agent:20[0-9]{2}\.[0-9]+\.[0-9]+(\.[0-9]+)?|gastown-agent:${PLATFORM_VERSION}|g" "$f"
+        sed -i -E "s|agent-controller:20[0-9]{2}\.[0-9]+\.[0-9]+(\.[0-9]+)?|agent-controller:${PLATFORM_VERSION}|g" "$f"
       }
 
       bump_values "charts/gastown/values/gastown-next.yaml"
       bump_values "charts/gastown/values/gastown-rwx.yaml"
 
       # Bump the gastown Chart.yaml — version, appVersion, and bd-daemon dependency.
-      # Chart version uses CHART_VERSION (3-component SemVer: YYYY.MMDD.N).
-      # appVersion uses PLATFORM_VERSION (4-component CalVer, informational).
+      # Both chart version and appVersion use PLATFORM_VERSION (3-part CalVer YYYY.MDD.N).
       # bd-daemon dependency points to the CalVer version just published by helm-publish-charts.
       OUTER_CHART="charts/gastown/Chart.yaml"
       if [ -f "$OUTER_CHART" ]; then
