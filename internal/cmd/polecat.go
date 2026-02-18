@@ -491,6 +491,8 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 		// State color
 		stateStr := string(displayState)
 		switch displayState {
+		case polecat.StateSpawning:
+			stateStr = style.Dim.Render(stateStr + " ⏳")
 		case polecat.StateWorking:
 			stateStr = style.Info.Render(stateStr)
 		case polecat.StateStuck:

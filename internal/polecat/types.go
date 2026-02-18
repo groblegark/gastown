@@ -24,6 +24,9 @@ import "time"
 type State string
 
 const (
+	// StateSpawning means the polecat is starting up (K8s pod pending/initializing).
+	StateSpawning State = "spawning"
+
 	// StateWorking means the polecat session is actively working on an issue.
 	// This is the initial and primary state for transient polecats.
 	// Working is the ONLY healthy operating state - there is no idle pool.

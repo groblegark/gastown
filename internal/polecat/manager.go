@@ -1007,7 +1007,26 @@ func (m *Manager) ReconcilePool() {
 		}
 	}
 
-	m.ReconcilePoolWith(namesWithDirs, namesWithSessions)
+	// Get names with active K8s agent beads (spawning/working state, no local dir).
+	// Without this, K8s polecats are invisible to allocation and the same name
+	// gets reused, causing pod name collisions. (hq-5ttxzl.2)
+	var namesFromBeads []string
+	if agentBeads, err := m.beads.ListAgentBeads(); err == nil {
+		for _, issue := range agentBeads {
+			if !beads.HasLabel(issue, "execution_target:k8s") {
+				continue
+			}
+			if issue.AgentState != "spawning" && issue.AgentState != "working" {
+				continue
+			}
+			name := extractPolecatNameFromBeadID(issue.ID)
+			if name != "" {
+				namesFromBeads = append(namesFromBeads, name)
+			}
+		}
+	}
+
+	m.ReconcilePoolWith(namesWithDirs, namesWithSessions, namesFromBeads)
 
 	// Prune any stale git worktree entries (handles manually deleted directories)
 	if repoGit, err := m.repoBase(); err == nil {
@@ -1015,15 +1034,27 @@ func (m *Manager) ReconcilePool() {
 	}
 }
 
+// extractPolecatNameFromBeadID extracts the polecat name from a bead ID.
+// Bead IDs follow the pattern: PREFIX-RIGNAME-polecat-NAME (e.g., "gt-gastown-polecat-furiosa").
+func extractPolecatNameFromBeadID(id string) string {
+	const marker = "-polecat-"
+	idx := strings.Index(id, marker)
+	if idx < 0 {
+		return ""
+	}
+	return id[idx+len(marker):]
+}
+
 // ReconcilePoolWith reconciles the name pool given lists of names from different sources.
 // This is the testable core of ReconcilePool.
 //
 // - namesWithDirs: names that have existing worktree directories (in use)
 // - namesWithSessions: names that have active sessions
+// - namesFromBeads: names with active K8s agent beads (spawning/working, no local dir)
 //
 // Names with sessions but no directories are orphans and their sessions are killed.
-// Only namesWithDirs are marked as in-use for allocation.
-func (m *Manager) ReconcilePoolWith(namesWithDirs, namesWithSessions []string) {
+// Names from all sources (dirs + beads) are marked as in-use for allocation.
+func (m *Manager) ReconcilePoolWith(namesWithDirs, namesWithSessions []string, namesFromBeads ...[]string) {
 	dirSet := make(map[string]bool)
 	for _, name := range namesWithDirs {
 		dirSet[name] = true
@@ -1037,7 +1068,15 @@ func (m *Manager) ReconcilePoolWith(namesWithDirs, namesWithSessions []string) {
 		}
 	}
 
-	m.namePool.Reconcile(namesWithDirs)
+	// Combine directory names and K8s bead names for allocation.
+	// K8s polecats have no local directories but their names must still be
+	// reserved to prevent collisions. (hq-5ttxzl.2)
+	allInUse := append([]string{}, namesWithDirs...)
+	if len(namesFromBeads) > 0 && namesFromBeads[0] != nil {
+		allInUse = append(allInUse, namesFromBeads[0]...)
+	}
+
+	m.namePool.Reconcile(allInUse)
 	// Note: No Save() needed - InUse is transient state, only OverflowNext is persisted
 
 	// Clean up orphaned polecat state (fixes #698)

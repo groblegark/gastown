@@ -657,6 +657,93 @@ func TestReconcilePoolWith_OrphanDoesNotBlockAllocation(t *testing.T) {
 	}
 }
 
+// TestReconcilePoolWith_K8sBeadNamesBlockAllocation verifies that K8s polecat
+// names from agent beads are marked in-use, preventing name collisions. (hq-5ttxzl.2)
+func TestReconcilePoolWith_K8sBeadNamesBlockAllocation(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "reconcile-k8s-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	r := &rig.Rig{
+		Name: "myrig",
+		Path: tmpDir,
+	}
+	m := NewManager(r, nil)
+
+	// furiosa is a K8s polecat (no local dir, but active in beads)
+	m.ReconcilePoolWith([]string{}, []string{}, []string{"furiosa"})
+
+	// furiosa should be in-use — allocation should skip it
+	name, err := m.namePool.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	if name == "furiosa" {
+		t.Errorf("allocated K8s in-use name %q, should have skipped", name)
+	}
+	if name != "nux" {
+		t.Errorf("expected nux (2nd name), got %q", name)
+	}
+}
+
+// TestReconcilePoolWith_K8sAndLocalCombined verifies that both local dirs
+// and K8s bead names are combined for allocation. (hq-5ttxzl.2)
+func TestReconcilePoolWith_K8sAndLocalCombined(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "reconcile-combined-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	r := &rig.Rig{
+		Name: "myrig",
+		Path: tmpDir,
+	}
+	m := NewManager(r, nil)
+
+	// furiosa has local dir, nux is K8s-only
+	m.ReconcilePoolWith([]string{"furiosa"}, []string{}, []string{"nux"})
+
+	// Both should be in-use — should get slit (3rd)
+	name, err := m.namePool.Allocate()
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	if name == "furiosa" || name == "nux" {
+		t.Errorf("allocated in-use name %q, should have skipped", name)
+	}
+	if name != "slit" {
+		t.Errorf("expected slit (3rd name), got %q", name)
+	}
+}
+
+func TestExtractPolecatNameFromBeadID(t *testing.T) {
+	tests := []struct {
+		id   string
+		want string
+	}{
+		{"gt-gastown-polecat-furiosa", "furiosa"},
+		{"gt-beads-polecat-nux", "nux"},
+		{"gt-mayor", ""},
+		{"gt-gastown-crew-alpha", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.id, func(t *testing.T) {
+			got := extractPolecatNameFromBeadID(tt.id)
+			if got != tt.want {
+				t.Errorf("extractPolecatNameFromBeadID(%q) = %q, want %q", tt.id, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildBranchName(t *testing.T) {
 	tmpDir := t.TempDir()
 

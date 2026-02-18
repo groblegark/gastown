@@ -2,6 +2,7 @@ package statusreporter
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
 
@@ -10,6 +11,35 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 )
+
+// --- mock BeadUpdater for HTTPReporter tests ---
+
+type mockBeadUpdater struct {
+	notesCalls      []mockNotesCall
+	stateCalls      []mockStateCall
+	notesErr        error
+	stateErr        error
+}
+
+type mockNotesCall struct {
+	beadID string
+	notes  string
+}
+
+type mockStateCall struct {
+	beadID string
+	state  string
+}
+
+func (m *mockBeadUpdater) UpdateBeadNotes(_ context.Context, beadID, notes string) error {
+	m.notesCalls = append(m.notesCalls, mockNotesCall{beadID, notes})
+	return m.notesErr
+}
+
+func (m *mockBeadUpdater) UpdateAgentState(_ context.Context, beadID, state string) error {
+	m.stateCalls = append(m.stateCalls, mockStateCall{beadID, state})
+	return m.stateErr
+}
 
 // --- PhaseToAgentState tests ---
 
@@ -527,4 +557,157 @@ func TestBdReporter_ReportPodStatus_CancelledContext(t *testing.T) {
 	})
 	// May or may not error depending on timing. Just ensure no panic.
 	_ = err
+}
+
+// --- HTTPReporter.ReportPodStatus tests ---
+
+func TestHTTPReporter_ReportPodStatus_UpdatesState(t *testing.T) {
+	mock := &mockBeadUpdater{}
+	client := fake.NewSimpleClientset()
+	r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+	err := r.ReportPodStatus(context.Background(), "gt-gastown-polecat-furiosa", PodStatus{
+		PodName: "gt-gastown-polecat-furiosa",
+		Phase:   "Running",
+		Ready:   true,
+	})
+	if err != nil {
+		t.Errorf("ReportPodStatus() error = %v, want nil", err)
+	}
+
+	if len(mock.stateCalls) != 1 {
+		t.Fatalf("expected 1 state call, got %d", len(mock.stateCalls))
+	}
+	if mock.stateCalls[0].beadID != "gt-gastown-polecat-furiosa" {
+		t.Errorf("beadID = %q, want %q", mock.stateCalls[0].beadID, "gt-gastown-polecat-furiosa")
+	}
+	if mock.stateCalls[0].state != "working" {
+		t.Errorf("state = %q, want %q", mock.stateCalls[0].state, "working")
+	}
+
+	m := r.Metrics()
+	if m.StatusReportsTotal != 1 {
+		t.Errorf("reports total = %d, want 1", m.StatusReportsTotal)
+	}
+	if m.StatusReportErrors != 0 {
+		t.Errorf("report errors = %d, want 0", m.StatusReportErrors)
+	}
+}
+
+func TestHTTPReporter_ReportPodStatus_AllPhases(t *testing.T) {
+	phases := []struct {
+		phase string
+		state string
+	}{
+		{"Pending", "spawning"},
+		{"Running", "working"},
+		{"Succeeded", "done"},
+		{"Failed", "failed"},
+	}
+
+	for _, p := range phases {
+		t.Run(p.phase, func(t *testing.T) {
+			mock := &mockBeadUpdater{}
+			client := fake.NewSimpleClientset()
+			r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+			err := r.ReportPodStatus(context.Background(), "gt-test", PodStatus{
+				PodName: "gt-test",
+				Phase:   p.phase,
+			})
+			if err != nil {
+				t.Errorf("ReportPodStatus(%s) error = %v", p.phase, err)
+			}
+			if len(mock.stateCalls) != 1 {
+				t.Fatalf("expected 1 state call, got %d", len(mock.stateCalls))
+			}
+			if mock.stateCalls[0].state != p.state {
+				t.Errorf("state = %q, want %q", mock.stateCalls[0].state, p.state)
+			}
+		})
+	}
+}
+
+func TestHTTPReporter_ReportPodStatus_SkipsUnknownPhase(t *testing.T) {
+	mock := &mockBeadUpdater{}
+	client := fake.NewSimpleClientset()
+	r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+	err := r.ReportPodStatus(context.Background(), "gt-test", PodStatus{
+		PodName: "gt-test",
+		Phase:   "Unknown",
+	})
+	if err != nil {
+		t.Errorf("ReportPodStatus(Unknown) error = %v, want nil", err)
+	}
+
+	if len(mock.stateCalls) != 0 {
+		t.Errorf("expected 0 state calls for unknown phase, got %d", len(mock.stateCalls))
+	}
+
+	m := r.Metrics()
+	if m.StatusReportsTotal != 1 {
+		t.Errorf("reports total = %d, want 1", m.StatusReportsTotal)
+	}
+}
+
+func TestHTTPReporter_ReportPodStatus_DaemonError(t *testing.T) {
+	mock := &mockBeadUpdater{stateErr: fmt.Errorf("daemon unavailable")}
+	client := fake.NewSimpleClientset()
+	r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+	err := r.ReportPodStatus(context.Background(), "gt-test", PodStatus{
+		PodName: "gt-test",
+		Phase:   "Running",
+	})
+	if err == nil {
+		t.Error("ReportPodStatus() should return error when daemon fails")
+	}
+
+	m := r.Metrics()
+	if m.StatusReportErrors != 1 {
+		t.Errorf("report errors = %d, want 1", m.StatusReportErrors)
+	}
+}
+
+func TestHTTPReporter_SyncAll_UpdatesAgentStates(t *testing.T) {
+	pods := []runtime.Object{
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gt-gastown-polecat-furiosa",
+				Namespace: "gastown",
+				Labels: map[string]string{
+					"app.kubernetes.io/name": "gastown",
+					"gastown.io/rig":         "gastown",
+					"gastown.io/role":        "polecat",
+					"gastown.io/agent":       "furiosa",
+				},
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				Conditions: []corev1.PodCondition{
+					{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+				},
+			},
+		},
+	}
+
+	mock := &mockBeadUpdater{}
+	client := fake.NewSimpleClientset(pods...)
+	r := NewHTTPReporter(mock, client, "gastown", slog.Default())
+
+	err := r.SyncAll(context.Background())
+	if err != nil {
+		t.Errorf("SyncAll() error = %v, want nil", err)
+	}
+
+	if len(mock.stateCalls) != 1 {
+		t.Fatalf("expected 1 state call, got %d", len(mock.stateCalls))
+	}
+	if mock.stateCalls[0].beadID != "gt-gastown-polecat-furiosa" {
+		t.Errorf("beadID = %q, want %q", mock.stateCalls[0].beadID, "gt-gastown-polecat-furiosa")
+	}
+	if mock.stateCalls[0].state != "working" {
+		t.Errorf("state = %q, want %q", mock.stateCalls[0].state, "working")
+	}
 }
