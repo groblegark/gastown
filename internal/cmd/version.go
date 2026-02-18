@@ -12,14 +12,14 @@ import (
 
 // Version information - set at build time via ldflags
 var (
-	// Uses CalVer format: YYYY.MM.DD.N (e.g., 2026.02.18.0)
-	Version = "2026.02.18.0"
+	// Uses CalVer format: YYYY.MMDD.N (e.g., 2026.0218.0) — 3-part for semver compatibility.
+	Version = "2026.0218.0"
 	// Build can be set via ldflags at compile time
 	Build = "dev"
 	// Commit and Branch - the git revision the binary was built from (optional ldflag)
 	Commit = ""
 	Branch = ""
-	// PlatformVersion is the unified CalVer tag (YYYY.MM.DD.N) shared by all
+	// PlatformVersion is the unified CalVer tag (YYYY.MMDD.N) shared by all
 	// gastown images (agent, controller, toolchain, gt). Set by docker.yml.
 	PlatformVersion = ""
 	// BuiltProperly is set to "1" by `make build`. If empty, the binary was built
