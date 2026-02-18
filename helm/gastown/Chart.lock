@@ -1,6 +1,6 @@
 dependencies:
 - name: bd-daemon
   repository: oci://ghcr.io/groblegark/charts
-  version: 0.2.54
-digest: sha256:68d2d3a4f629ca8e4f2e14dc082dafc7e98df8455663bcd27d1df000c7ebf88c
-generated: "2026-02-17T14:00:19.662011-08:00"
+  version: 0.2.55
+digest: sha256:fe70cec125afe52b066b24550d1b5e3b3fc272e0bb821eebb016200f6108e9b1
+generated: "2026-02-17T19:11:52.079392-08:00"
