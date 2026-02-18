@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -168,17 +169,24 @@ func runNudge(cmd *cobra.Command, args []string) error {
 
 	// Expand role shortcuts to session names and resolve backend.
 	// These shortcuts let users type "mayor" instead of "gt-mayor".
+	// When connected to a K8s namespace, use port-forward for all roles. (bd-5we9b)
 	switch target {
 	case "mayor", "mayor/":
-		backend := terminal.ResolveBackend("mayor")
-		sessionName := session.MayorSessionName()
-		exists, err := backend.HasSession(sessionName)
-		if err != nil || !exists {
-			fmt.Printf("%s Mayor not running, nudge skipped\n", style.Dim.Render("○"))
-			return nil
-		}
-		if err := backend.NudgeSession(sessionName, message); err != nil {
-			return fmt.Errorf("nudging mayor: %w", err)
+		if ns := getConnectedNamespace(); ns != "" {
+			if err := nudgeViaPortForward("mayor", ns, message); err != nil {
+				return fmt.Errorf("nudging mayor: %w", err)
+			}
+		} else {
+			backend := terminal.ResolveBackend("mayor")
+			sessionName := session.MayorSessionName()
+			exists, err := backend.HasSession(sessionName)
+			if err != nil || !exists {
+				fmt.Printf("%s Mayor not running, nudge skipped\n", style.Dim.Render("○"))
+				return nil
+			}
+			if err := backend.NudgeSession(sessionName, message); err != nil {
+				return fmt.Errorf("nudging mayor: %w", err)
+			}
 		}
 		fmt.Printf("%s Nudged mayor\n", style.Bold.Render("✓"))
 		if townRoot != "" {
@@ -187,28 +195,34 @@ func runNudge(cmd *cobra.Command, args []string) error {
 		_ = events.LogFeed(events.TypeNudge, sender, events.NudgePayload("", "mayor", message))
 		return nil
 	case "witness", "refinery":
-		// These need the current rig
-		roleInfo, err := GetRole()
-		if err != nil {
-			return fmt.Errorf("cannot determine rig for %s shortcut: %w", target, err)
-		}
-		if roleInfo.Rig == "" {
-			return fmt.Errorf("cannot determine rig for %s shortcut (not in a rig context)", target)
-		}
-		var sessionName string
-		if target == "witness" {
-			sessionName = session.WitnessSessionName(roleInfo.Rig)
+		if ns := getConnectedNamespace(); ns != "" {
+			if err := nudgeViaPortForward(target, ns, message); err != nil {
+				return fmt.Errorf("nudging %s: %w", target, err)
+			}
 		} else {
-			sessionName = session.RefinerySessionName(roleInfo.Rig)
-		}
-		backend := terminal.ResolveBackend(target)
-		exists, bErr := backend.HasSession(sessionName)
-		if bErr != nil || !exists {
-			fmt.Printf("%s %s not running, nudge skipped\n", style.Dim.Render("○"), target)
-			return nil
-		}
-		if err := backend.NudgeSession(sessionName, message); err != nil {
-			return fmt.Errorf("nudging %s: %w", target, err)
+			// These need the current rig
+			roleInfo, err := GetRole()
+			if err != nil {
+				return fmt.Errorf("cannot determine rig for %s shortcut: %w", target, err)
+			}
+			if roleInfo.Rig == "" {
+				return fmt.Errorf("cannot determine rig for %s shortcut (not in a rig context)", target)
+			}
+			var sessionName string
+			if target == "witness" {
+				sessionName = session.WitnessSessionName(roleInfo.Rig)
+			} else {
+				sessionName = session.RefinerySessionName(roleInfo.Rig)
+			}
+			backend := terminal.ResolveBackend(target)
+			exists, bErr := backend.HasSession(sessionName)
+			if bErr != nil || !exists {
+				fmt.Printf("%s %s not running, nudge skipped\n", style.Dim.Render("○"), target)
+				return nil
+			}
+			if err := backend.NudgeSession(sessionName, message); err != nil {
+				return fmt.Errorf("nudging %s: %w", target, err)
+			}
 		}
 		fmt.Printf("%s Nudged %s\n", style.Bold.Render("✓"), target)
 		if townRoot != "" {
@@ -221,24 +235,24 @@ func runNudge(cmd *cobra.Command, args []string) error {
 	// Special case: "deacon" target maps to the Deacon session.
 	// Uses ResolveBackend to support Coop (K8s) and local backends.
 	if target == "deacon" || target == "deacon/" {
-		deaconSession := session.DeaconSessionName()
-
-		backend := terminal.ResolveBackend("deacon")
-		exists, err := backend.HasSession(deaconSession)
-		if err != nil || !exists {
-			// Deacon not running - this is not an error, just log and return.
-			// Common in K8s where deacon may not be deployed.
-			fmt.Printf("%s Deacon not running, nudge skipped\n", style.Dim.Render("○"))
-			return nil
-		}
-
-		if err := backend.NudgeSession(deaconSession, message); err != nil {
-			return fmt.Errorf("nudging deacon: %w", err)
+		if ns := getConnectedNamespace(); ns != "" {
+			if err := nudgeViaPortForward("deacon", ns, message); err != nil {
+				return fmt.Errorf("nudging deacon: %w", err)
+			}
+		} else {
+			deaconSession := session.DeaconSessionName()
+			backend := terminal.ResolveBackend("deacon")
+			exists, err := backend.HasSession(deaconSession)
+			if err != nil || !exists {
+				fmt.Printf("%s Deacon not running, nudge skipped\n", style.Dim.Render("○"))
+				return nil
+			}
+			if err := backend.NudgeSession(deaconSession, message); err != nil {
+				return fmt.Errorf("nudging deacon: %w", err)
+			}
 		}
 
 		fmt.Printf("%s Nudged deacon\n", style.Bold.Render("✓"))
-
-		// Log nudge event
 		if townRoot != "" {
 			_ = LogNudge(townRoot, "deacon", message)
 		}
@@ -246,12 +260,26 @@ func runNudge(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Try remote backend first (K8s-hosted agents via Coop).
-	// This works for any target format (rig/polecat, raw agent bead ID, etc.).
+	// Try remote backend (K8s-hosted agents via Coop).
+	// When running outside K8s (developer workstation), ResolveBackend returns
+	// a CoopBackend with the internal pod IP which is unreachable. Use port-forward
+	// when connected to a namespace. (bd-5we9b)
+	if ns := getConnectedNamespace(); ns != "" {
+		if err := nudgeViaPortForward(target, ns, message); err != nil {
+			return fmt.Errorf("nudging remote session: %w", err)
+		}
+		fmt.Printf("%s Nudged %s (remote)\n", style.Bold.Render("✓"), target)
+		if townRoot != "" {
+			_ = LogNudge(townRoot, target, message)
+		}
+		_ = events.LogFeed(events.TypeNudge, sender, events.NudgePayload("", target, message))
+		return nil
+	}
+
+	// In-cluster path: ResolveBackend returns CoopBackend with reachable pod IP.
 	remoteBackend := terminal.ResolveBackend(target)
 	switch remoteBackend.(type) {
 	case *terminal.CoopBackend:
-		// Remote pod: session is always named "claude"
 		if err := remoteBackend.NudgeSession("claude", message); err != nil {
 			return fmt.Errorf("nudging remote session: %w", err)
 		}
@@ -264,6 +292,37 @@ func runNudge(cmd *cobra.Command, args []string) error {
 	}
 
 	return fmt.Errorf("no backend found for target %q (is the agent running?)", target)
+}
+
+// nudgeViaPortForward uses kubectl port-forward to reach an agent pod's coop API.
+// This is the path used when running outside K8s (developer workstation). (bd-5we9b)
+func nudgeViaPortForward(target, ns, message string) error {
+	podName, _ := resolveCoopTarget(target)
+	if podName == "" {
+		// resolveCoopTarget needs a connected namespace. Try bead metadata as fallback.
+		podInfo, err := terminal.ResolveAgentPodInfo(target)
+		if err != nil {
+			return fmt.Errorf("cannot find pod for %q: run 'gt connect <namespace>' or ensure agent bead has pod metadata", target)
+		}
+		podName = podInfo.PodName
+	}
+
+	conn := terminal.NewCoopPodConnection(terminal.CoopPodConnectionConfig{
+		PodName:   podName,
+		Namespace: ns,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := conn.Open(ctx); err != nil {
+		return fmt.Errorf("connecting to pod %s: %w", podName, err)
+	}
+	defer conn.Close()
+
+	backend := terminal.NewCoopBackend(terminal.CoopConfig{})
+	backend.AddSession("claude", conn.LocalURL())
+	return backend.NudgeSession("claude", message)
 }
 
 // runNudgeChannel nudges all members of a named channel.
