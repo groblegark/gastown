@@ -836,6 +836,9 @@ tasks:
         sed -i "s/^appVersion:.*/appVersion: \"${PLATFORM_VERSION}\"/" "$OUTER_CHART"
         # Update bd-daemon dependency version
         sed -i -E "/name: bd-daemon/{n;s/version: .*/version: \"${CHART_VERSION}\"/}" "$OUTER_CHART"
+        # Regenerate Chart.lock so helm upgrade works without manual dep update. (bd-vz2zi)
+        echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
+        helm dependency update "$(dirname "$OUTER_CHART")"
       fi
 
       # Commit and push if there are changes
@@ -851,6 +854,8 @@ tasks:
       fi
     env:
       GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
       REF_NAME: ${{ init.ref-name }}
 
   # ═══════════════════════════════════════════════════════════════════════
