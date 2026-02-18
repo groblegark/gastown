@@ -13,6 +13,9 @@
 #   rwx run .rwx/docker.yml --init commit-sha=$(git rev-parse HEAD) --target push-bd
 #   rwx run .rwx/docker.yml --init commit-sha=$(git rev-parse HEAD) --target push-agent
 #
+# To also deploy to gastown-next (staging), add --init deploy-next=true:
+#   rwx run .rwx/docker.yml --init commit-sha=$(git rev-parse HEAD) --init deploy-next=true --wait
+#
 # VERSIONING:
 # All component versions are pinned in platform-versions.env (repo root).
 # All images are tagged with PLATFORM_VERSION (CalVer: YYYY.MDD.N).
@@ -32,6 +35,7 @@ on:
         commit-sha: ${{ event.git.sha }}
         ref-name: ${{ event.git.ref }}
         beads-version: ""
+        deploy-next: ""
       status-checks:
         name: Docker
     pull_request:
@@ -39,6 +43,7 @@ on:
         commit-sha: ${{ event.git.sha }}
         ref-name: pr
         beads-version: ""
+        deploy-next: ""
       status-checks:
         - tasks: [build-gt, build-controller, download-coop, download-bd]
           name: Docker
@@ -49,6 +54,7 @@ on:
         ref-name: ${{ event.dispatch.params.trigger-source }}
         beads-version: ${{ event.dispatch.params.beads-version }}
         coop-version: ${{ event.dispatch.params.coop-version }}
+        deploy-next: ""
       params:
         - key: trigger-source
           name: Trigger source
@@ -74,6 +80,7 @@ on:
       ref-name: cli
       beads-version: ""
       coop-version: ""
+      deploy-next: ""
 
 base:
   image: ubuntu:24.04
@@ -933,6 +940,100 @@ tasks:
         -n "$NS" --create-namespace \
         --values values.yaml \
         --values values/gastown-rwx.yaml \
+        --history-max 10 \
+        --atomic --timeout 10m \
+        --wait
+
+      echo "Deployed ${RELEASE} to ${NS} with platform version ${PLATFORM_VERSION}"
+
+      # ── Health check ───────────────────────────────────────────────────
+      echo "Checking pod health..."
+      kubectl get pods -n "$NS" -o wide
+      kubectl wait --for=condition=Ready pods -l app.kubernetes.io/component=daemon -n "$NS" --timeout=120s || true
+
+      echo ""
+      echo "Deploy complete: ${NS} → platform ${PLATFORM_VERSION}"
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.E2E_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.E2E_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+      EKS_CLUSTER: ${{ secrets.E2E_EKS_CLUSTER }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+      GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Deploy to gastown-next — opt-in only (CLI init param)
+  # ═══════════════════════════════════════════════════════════════════════
+  # Usage:
+  #   rwx run .rwx/docker.yml --init commit-sha=$(git rev-parse HEAD) --init deploy-next=true --wait
+  # This builds images, pushes, bumps helm, deploys to gastown-rwx AND gastown-next.
+  # Without --init deploy-next=true, this task is skipped (normal behavior).
+
+  - key: deploy-next
+    use: helm-bump
+    if: ${{ init.deploy-next == 'true' }}
+    cache: false
+    run: |
+      set -ex
+      source platform-versions.env
+
+      # Skip if no AWS credentials configured
+      if [ -z "${AWS_ACCESS_KEY_ID}" ]; then
+        echo "AWS credentials not set — skipping deploy-next."
+        exit 0
+      fi
+
+      # ── Install tools ──────────────────────────────────────────────────
+      KUBE_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+      curl -fsSL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
+      sudo install /tmp/kubectl /usr/local/bin/kubectl
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      # ── Configure kubeconfig ───────────────────────────────────────────
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      unzip -q /tmp/awscli.zip -d /tmp
+      sudo /tmp/aws/install
+      aws eks update-kubeconfig --name "${EKS_CLUSTER}" --region us-east-1
+
+      # ── Helm chart repo (inherited from helm-bump, or fresh clone) ─────
+      if [ -d /tmp/helm-chart ]; then
+        echo "Reusing helm chart from helm-bump task"
+      elif [ -n "${GITLAB_TOKEN}" ]; then
+        git clone --depth=1 "https://oauth2:${GITLAB_TOKEN}@gitlab.com/PiHealth/CoreFICS/fics-helm-chart.git" /tmp/helm-chart
+      else
+        echo "GITLAB_TOKEN not set — cannot clone helm chart. Skipping deploy."
+        exit 0
+      fi
+
+      cd /tmp/helm-chart/charts/gastown
+
+      # ── Build helm dependencies ────────────────────────────────────────
+      echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
+      helm dependency update ./
+
+      # ── Deploy with --atomic ───────────────────────────────────────────
+      NS="gastown-next"
+      RELEASE="gastown-next"
+
+      # Check for stuck release BEFORE deploying.
+      STUCK=$(helm history "$RELEASE" -n "$NS" --max 1 -o json 2>/dev/null \
+        | jq -r '.[0].status // "none"')
+      if echo "$STUCK" | grep -qE "pending-(upgrade|install|rollback)"; then
+        echo "Helm release is stuck in '${STUCK}' — rolling back..."
+        LAST_GOOD=$(helm history "$RELEASE" -n "$NS" --max 20 -o json \
+          | jq -r '[.[] | select(.status == "deployed")] | last | .revision')
+        if [ -n "$LAST_GOOD" ] && [ "$LAST_GOOD" != "null" ]; then
+          helm rollback "$RELEASE" "$LAST_GOOD" -n "$NS" --wait --timeout 5m
+        else
+          helm rollback "$RELEASE" 0 -n "$NS" --wait --timeout 5m
+        fi
+      fi
+
+      helm upgrade --install "$RELEASE" ./ \
+        -n "$NS" --create-namespace \
+        --values values.yaml \
+        --values values/gastown-next.yaml \
         --history-max 10 \
         --atomic --timeout 10m \
         --wait
