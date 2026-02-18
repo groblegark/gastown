@@ -2,12 +2,39 @@
 package beads
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
+
+// extractJSON finds and returns the last valid JSON object from output that
+// may contain mixed human-readable text and JSON. This handles the case where
+// bd decision create --json emits notifications/hook output before the JSON.
+// We search from the end because the JSON object is always the last thing output.
+func extractJSON(data []byte) []byte {
+	// Find the last '}' character and work backwards to find its matching '{'
+	end := bytes.LastIndexByte(data, '}')
+	if end < 0 {
+		return nil
+	}
+	// Walk backwards to find the matching opening '{'
+	depth := 0
+	for i := end; i >= 0; i-- {
+		switch data[i] {
+		case '}':
+			depth++
+		case '{':
+			depth--
+			if depth == 0 {
+				return data[i : end+1]
+			}
+		}
+	}
+	return nil
+}
 
 // maxTitleLength is the maximum length for issue titles in the database.
 // Dolt schema uses VARCHAR(500), so we use 450 to leave room for resolution markers.
@@ -316,13 +343,20 @@ func (b *Beads) CreateBdDecision(fields *DecisionFields) (*Issue, error) {
 		return nil, fmt.Errorf("bd decision create: %w", err)
 	}
 
-	// Parse the JSON response
+	// Parse the JSON response.
+	// bd decision create --json may emit human-readable text before the JSON
+	// object (notifications, hook output, etc.), so extract the first valid
+	// JSON object from the output rather than parsing the whole thing.
+	jsonBytes := extractJSON(out)
+	if jsonBytes == nil {
+		return nil, fmt.Errorf("parsing bd decision create output: no JSON object found in output")
+	}
 	var result struct {
 		ID      string `json:"id"`
 		Prompt  string `json:"prompt"`
 		Urgency string `json:"urgency,omitempty"`
 	}
-	if err := json.Unmarshal(out, &result); err != nil {
+	if err := json.Unmarshal(jsonBytes, &result); err != nil {
 		return nil, fmt.Errorf("parsing bd decision create output: %w", err)
 	}
 
