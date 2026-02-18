@@ -274,9 +274,9 @@ func (b *Beads) CreateBdDecision(fields *DecisionFields) (*Issue, error) {
 	}
 
 	// Build bd decision create command.
-	// --wait=false prevents bd from blocking for a response (up to 1h default).
-	// The caller handles awaiting/notification separately via mail routing. (Fix: gt-elt)
-	args := []string{"decision", "create", "--json", "--wait=false",
+	// --no-wait returns immediately without blocking for a response (gt-lquqdp).
+	// The caller handles awaiting/notification separately via mail routing.
+	args := []string{"decision", "create", "--json", "--no-wait",
 		"--prompt=" + fields.Question,
 		"--options=" + string(optionsJSON),
 	}
