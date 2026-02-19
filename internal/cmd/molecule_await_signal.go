@@ -241,11 +241,12 @@ func calculateEffectiveTimeout(idleCycles int) (time.Duration, error) {
 	return time.ParseDuration(awaitSignalTimeout)
 }
 
-// waitForActivitySignal starts bd activity --follow and waits for any output.
-// Returns immediately when a line is received, or when context is canceled.
+// waitForActivitySignal starts bd activity --follow --json and waits for a
+// meaningful event. Skips noise events (agent pod heartbeats, metadata-only
+// updates) that would cause premature wakeups. (hq-tmvc6u)
 func waitForActivitySignal(ctx context.Context, workDir string) (*AwaitSignalResult, error) {
-	// Start bd activity --follow
-	cmd := bdcmd.CommandContextInDir(ctx, workDir, "activity", "--follow")
+	// Start bd activity --follow --json so we can parse and filter events.
+	cmd := bdcmd.CommandContextInDir(ctx, workDir, "activity", "--follow", "--json")
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -260,13 +261,18 @@ func waitForActivitySignal(ctx context.Context, workDir string) (*AwaitSignalRes
 	signalCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 
-	// Read lines in goroutine
+	// Read lines in goroutine, filtering out noise events.
 	go func() {
 		scanner := bufio.NewScanner(stdout)
-		if scanner.Scan() {
-			// Got a line - this is our signal
-			signalCh <- scanner.Text()
-		} else if err := scanner.Err(); err != nil {
+		for scanner.Scan() {
+			line := scanner.Text()
+			if isMeaningfulActivityEvent(line) {
+				signalCh <- line
+				return
+			}
+			// Skip noise — keep scanning for a real event.
+		}
+		if err := scanner.Err(); err != nil {
 			errCh <- err
 		}
 	}()
@@ -295,6 +301,49 @@ func waitForActivitySignal(ctx context.Context, workDir string) (*AwaitSignalRes
 			Reason: "timeout",
 		}, nil
 	}
+}
+
+// activityEventJSON is a minimal struct for filtering bd activity --json output.
+// Only the fields needed for noise detection are parsed. (hq-tmvc6u)
+type activityEventJSON struct {
+	Type      string `json:"type"`
+	IssueType string `json:"issue_type"`
+	IssueID   string `json:"issue_id"`
+}
+
+// isMeaningfulActivityEvent parses a JSON activity line and returns true if it
+// represents a meaningful change (new work, status transitions, issue
+// creation/deletion). Returns false for noise: agent pod heartbeats, metadata-
+// only updates on agent beads, and other routine operations. (hq-tmvc6u)
+func isMeaningfulActivityEvent(line string) bool {
+	var ev activityEventJSON
+	if err := json.Unmarshal([]byte(line), &ev); err != nil {
+		// Can't parse — treat as meaningful to avoid silently dropping events.
+		return true
+	}
+
+	// Always meaningful: create, delete, status changes, molecule operations.
+	switch ev.Type {
+	case "create", "delete", "status", "bonded", "squashed", "burned":
+		return true
+	case "comment":
+		// Comments on agent beads are noise (heartbeat metadata); others are real.
+		return !isAgentIssueType(ev.IssueType)
+	case "update":
+		// Updates to agent beads are predominantly pod heartbeats and label churn.
+		// Real work arrives as status/create/bonded events, not updates to agent beads.
+		return !isAgentIssueType(ev.IssueType)
+	default:
+		// Unknown type — treat as meaningful.
+		return true
+	}
+}
+
+// isAgentIssueType returns true for issue types that represent agent management
+// beads (not real work). These generate frequent heartbeat and status mutations
+// that are noise for await-signal purposes. (hq-tmvc6u)
+func isAgentIssueType(issueType string) bool {
+	return issueType == "agent"
 }
 
 // GetCurrentStepBackoff retrieves backoff config from the current step.
