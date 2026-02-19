@@ -118,6 +118,7 @@ MODULES=(
   "ws-reconnect"
   "session-persistence"
   "pvc-recovery"
+  "nats-durability"
   "dolt-s3-sync"
   "controller-failsafe"
   "slack-bot-health"
