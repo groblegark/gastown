@@ -50,6 +50,13 @@ type MergeQueueConfig struct {
 	// DeleteMergedBranches controls whether to delete branches after merge.
 	DeleteMergedBranches bool `json:"delete_merged_branches"`
 
+	// RunQuench controls whether to run quench quality checks before merging.
+	// Requires quench binary on PATH and quench.toml in the repo root. (hq-tqn7y9.4)
+	RunQuench bool `json:"run_quench"`
+
+	// QuenchTimeout is the timeout for quench checks (default: 60s).
+	QuenchTimeout time.Duration `json:"quench_timeout"`
+
 	// RetryFlakyTests is the number of times to retry flaky tests.
 	RetryFlakyTests int `json:"retry_flaky_tests"`
 
@@ -293,6 +300,8 @@ func (e *Engineer) LoadConfig() error {
 		PollInterval         *string     `json:"poll_interval"`
 		MaxConcurrent        *int        `json:"max_concurrent"`
 		PROptions            *PROptions  `json:"pr_options"`
+		RunQuench            *bool       `json:"run_quench"`
+		QuenchTimeout        *string     `json:"quench_timeout"`
 	}
 
 	if err := json.Unmarshal(rawConfig.MergeQueue, &mqRaw); err != nil {
@@ -340,6 +349,16 @@ func (e *Engineer) LoadConfig() error {
 	if mqRaw.PROptions != nil {
 		e.config.PROptions = mqRaw.PROptions
 	}
+	if mqRaw.RunQuench != nil {
+		e.config.RunQuench = *mqRaw.RunQuench
+	}
+	if mqRaw.QuenchTimeout != nil {
+		dur, err := time.ParseDuration(*mqRaw.QuenchTimeout)
+		if err != nil {
+			return fmt.Errorf("invalid quench_timeout %q: %w", *mqRaw.QuenchTimeout, err)
+		}
+		e.config.QuenchTimeout = dur
+	}
 
 	// Validate strategy
 	if e.config.Strategy != "" && !IsValidMergeStrategy(e.config.Strategy) {
@@ -362,11 +381,12 @@ func (e *Engineer) Config() *MergeQueueConfig {
 
 // ProcessResult contains the result of processing a merge request.
 type ProcessResult struct {
-	Success     bool
-	MergeCommit string
-	Error       string
-	Conflict    bool
-	TestsFailed bool
+	Success       bool
+	MergeCommit   string
+	Error         string
+	Conflict      bool
+	TestsFailed   bool
+	QualityFailed bool // quench quality check failed (hq-tqn7y9.4)
 }
 
 // ProcessMR processes a single merge request from a beads issue.
@@ -479,7 +499,17 @@ func (e *Engineer) doDirectMerge(ctx context.Context, branch, target, sourceIssu
 		}
 	}
 
-	// Step 4: Run tests if configured
+	// Step 4: Run quench quality checks if configured (hq-tqn7y9.4)
+	if e.config.RunQuench {
+		_, _ = fmt.Fprintln(e.output, "[Engineer] Running quench quality checks...")
+		result := e.runQuench(ctx, branch, target)
+		if !result.Success {
+			return result
+		}
+		_, _ = fmt.Fprintln(e.output, "[Engineer] Quality checks passed")
+	}
+
+	// Step 5: Run tests if configured
 	if e.config.RunTests && e.config.TestCommand != "" {
 		_, _ = fmt.Fprintf(e.output, "[Engineer] Running tests: %s\n", e.config.TestCommand)
 		result := e.runTests(ctx)
@@ -493,7 +523,7 @@ func (e *Engineer) doDirectMerge(ctx context.Context, branch, target, sourceIssu
 		_, _ = fmt.Fprintln(e.output, "[Engineer] Tests passed")
 	}
 
-	// Step 5: Perform the actual merge using squash merge
+	// Step 6: Perform the actual merge using squash merge
 	// Get the original commit message from the polecat branch to preserve the
 	// conventional commit format (feat:/fix:) instead of creating redundant merge commits
 	originalMsg, err := e.git.GetBranchCommitMessage(branch)
@@ -524,7 +554,7 @@ func (e *Engineer) doDirectMerge(ctx context.Context, branch, target, sourceIssu
 		}
 	}
 
-	// Step 6: Get the merge commit SHA
+	// Step 7: Get the merge commit SHA
 	mergeCommit, err := e.git.Rev("HEAD")
 	if err != nil {
 		return ProcessResult{
@@ -533,7 +563,7 @@ func (e *Engineer) doDirectMerge(ctx context.Context, branch, target, sourceIssu
 		}
 	}
 
-	// Step 7: Push to origin
+	// Step 8: Push to origin
 	_, _ = fmt.Fprintf(e.output, "[Engineer] Pushing to origin/%s...\n", target)
 	if err := e.git.Push("origin", target, false); err != nil {
 		return ProcessResult{
@@ -596,7 +626,17 @@ func (e *Engineer) doPRMerge(ctx context.Context, branch, target, sourceIssue st
 		}
 	}
 
-	// Step 3: Run tests if configured
+	// Step 3: Run quench quality checks if configured (hq-tqn7y9.4)
+	if e.config.RunQuench {
+		_, _ = fmt.Fprintln(e.output, "[Engineer] Running quench quality checks...")
+		result := e.runQuench(ctx, branch, target)
+		if !result.Success {
+			return result
+		}
+		_, _ = fmt.Fprintln(e.output, "[Engineer] Quality checks passed")
+	}
+
+	// Step 4: Run tests if configured
 	if e.config.RunTests && e.config.TestCommand != "" {
 		_, _ = fmt.Fprintf(e.output, "[Engineer] Running tests: %s\n", e.config.TestCommand)
 		result := e.runTests(ctx)
@@ -610,7 +650,7 @@ func (e *Engineer) doPRMerge(ctx context.Context, branch, target, sourceIssue st
 		_, _ = fmt.Fprintln(e.output, "[Engineer] Tests passed")
 	}
 
-	// Step 4: Push rebased branch to origin
+	// Step 5: Push rebased branch to origin
 	_, _ = fmt.Fprintf(e.output, "[Engineer] Pushing rebased branch to origin/%s...\n", branch)
 	if err := e.git.Push("origin", branch, true); err != nil { // force push after rebase
 		return ProcessResult{
@@ -619,7 +659,7 @@ func (e *Engineer) doPRMerge(ctx context.Context, branch, target, sourceIssue st
 		}
 	}
 
-	// Step 5: Create PR via gh CLI
+	// Step 6: Create PR via gh CLI
 	prInfo, err := e.createGitHubPR(ctx, branch, target, sourceIssue)
 	if err != nil {
 		return ProcessResult{
@@ -789,6 +829,65 @@ func (e *Engineer) runTests(ctx context.Context) ProcessResult {
 		Success:     false,
 		TestsFailed: true,
 		Error:       fmt.Sprintf("tests failed after %d attempts: %v", maxRetries, lastErr),
+	}
+}
+
+// runQuench runs quench quality checks on the source branch diff against target.
+// Uses `quench check --format json --base <target>` to check only the diff.
+// Runs in the repo workdir where quench.toml is expected. (hq-tqn7y9.4)
+func (e *Engineer) runQuench(ctx context.Context, branch, target string) ProcessResult {
+	timeout := e.config.QuenchTimeout
+	if timeout == 0 {
+		timeout = 60 * time.Second
+	}
+
+	qctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Checkout the source branch for checking
+	if err := e.git.Checkout(branch); err != nil {
+		return ProcessResult{
+			Success: false,
+			Error:   fmt.Sprintf("quench: failed to checkout %s: %v", branch, err),
+		}
+	}
+
+	// Run quench check scoped to the diff against target.
+	// --format json gives machine-readable output; --base scopes to changed files.
+	cmd := exec.CommandContext(qctx, "quench", "check", "--format", "json", "--base", target) //nolint:gosec // G204: args are from trusted rig config
+	cmd.Dir = e.workDir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	// Restore target branch for subsequent steps (tests, merge).
+	if checkoutErr := e.git.Checkout(target); checkoutErr != nil {
+		_, _ = fmt.Fprintf(e.output, "[Engineer] Warning: failed to restore checkout to %s: %v\n", target, checkoutErr)
+	}
+
+	if err == nil {
+		return ProcessResult{Success: true}
+	}
+
+	if qctx.Err() != nil {
+		return ProcessResult{
+			Success: false,
+			Error:   fmt.Sprintf("quench: timed out after %s", timeout),
+		}
+	}
+
+	// Log quench output for debugging
+	_, _ = fmt.Fprintf(e.output, "[Engineer] Quench check failed:\n%s\n", stdout.String())
+	if stderr.Len() > 0 {
+		_, _ = fmt.Fprintf(e.output, "[Engineer] Quench stderr:\n%s\n", stderr.String())
+	}
+
+	return ProcessResult{
+		Success:       false,
+		QualityFailed: true,
+		Error:         fmt.Sprintf("quench quality checks failed: %s", strings.TrimSpace(stdout.String())),
 	}
 }
 

@@ -515,6 +515,67 @@ func TestLoadMergeQueueConfigFromPath(t *testing.T) {
 	}
 }
 
+func TestEngineer_LoadConfig_WithQuench(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "engineer-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	config := map[string]interface{}{
+		"type":    "rig",
+		"version": 1,
+		"name":    "test-rig",
+		"merge_queue": map[string]interface{}{
+			"enabled":        true,
+			"target_branch":  "main",
+			"run_quench":     true,
+			"quench_timeout": "90s",
+		},
+	}
+
+	data, _ := json.MarshalIndent(config, "", "  ")
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.json"), data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &rig.Rig{
+		Name: "test-rig",
+		Path: tmpDir,
+	}
+
+	e := NewEngineer(r)
+
+	if err := e.LoadConfig(); err != nil {
+		t.Errorf("unexpected error loading config: %v", err)
+	}
+
+	if !e.config.RunQuench {
+		t.Error("expected RunQuench to be true")
+	}
+	if e.config.QuenchTimeout != 90*time.Second {
+		t.Errorf("expected QuenchTimeout 90s, got %v", e.config.QuenchTimeout)
+	}
+}
+
+func TestProcessResult_QualityFailed(t *testing.T) {
+	result := ProcessResult{
+		Success:       false,
+		QualityFailed: true,
+		Error:         "quench quality checks failed",
+	}
+
+	if result.Success {
+		t.Error("expected Success to be false")
+	}
+	if !result.QualityFailed {
+		t.Error("expected QualityFailed to be true")
+	}
+	if !strings.Contains(result.Error, "quench") {
+		t.Errorf("expected error to mention quench, got %q", result.Error)
+	}
+}
+
 func TestParsePRNumber(t *testing.T) {
 	tests := []struct {
 		url  string

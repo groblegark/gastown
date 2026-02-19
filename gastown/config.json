@@ -1,0 +1,19 @@
+{
+  "type": "rig",
+  "version": 1,
+  "name": "gastown",
+  "git_url": "https://github.com/groblegark/gastown.git",
+  "default_branch": "main",
+  "created_at": "2026-02-16T11:30:04.242481-08:00",
+  "beads": {
+    "prefix": "gt"
+  },
+  "merge_queue": {
+    "enabled": true,
+    "strategy": "direct_merge",
+    "target_branch": "main",
+    "run_quench": true,
+    "quench_timeout": "60s",
+    "delete_merged_branches": true
+  }
+}
