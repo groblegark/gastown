@@ -232,6 +232,17 @@ func outputCrewContext(ctx RoleContext) {
 	fmt.Println("Mail can be hooked for ad-hoc instructions: `gt hook attach <mail-id>`")
 	fmt.Println("If mail is on your hook, read and execute its instructions (GUPP applies).")
 	fmt.Println()
+	fmt.Println("## Work Completion Protocol")
+	fmt.Println("After completing work, you MUST autonomously cycle — never wait for instructions:")
+	fmt.Println("1. `bd close <issue>` — close the completed issue")
+	fmt.Println("2. `gt hook` — check for new hooked work")
+	fmt.Println("3. `gt mail inbox` — check for new messages")
+	fmt.Println("4. `bd ready` — find available unblocked work")
+	fmt.Println("5. If work found → claim it and execute")
+	fmt.Println("6. If nothing available → `gt handoff` to free the session")
+	fmt.Println()
+	fmt.Println("**NEVER** output 'standing by' or 'awaiting instructions'. GUPP: you are a piston, not a prompt.")
+	fmt.Println()
 	fmt.Printf("Crew: %s | Rig: %s\n",
 		style.Dim.Render(ctx.Polecat), style.Dim.Render(ctx.Rig))
 }
@@ -392,7 +403,8 @@ func outputStartupDirective(ctx RoleContext) {
 		fmt.Println("3. If there's a 🤝 HANDOFF message, read it and continue the work")
 		fmt.Println("4. Check for attached work: `gt hook`")
 		fmt.Println("   - If attachment found → **RUN IT** (no human input needed)")
-		fmt.Println("   - If no attachment → await user instruction")
+		fmt.Println("   - If no attachment → check `bd ready` for available work")
+		fmt.Println("5. If no work found anywhere → call `gt handoff` to free the session")
 	case RoleDeacon:
 		// Skip startup protocol if paused - the pause message was already shown
 		paused, _, _ := deacon.IsPaused(ctx.TownRoot)
