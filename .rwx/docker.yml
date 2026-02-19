@@ -441,7 +441,7 @@ tasks:
 
       # Build layer: bd + oj binaries + runtime deps
       LAYER=/tmp/layer
-      mkdir -p $LAYER/usr/local/bin $LAYER/home/beads $LAYER/etc/ssl/certs
+      mkdir -p $LAYER/usr/local/bin $LAYER/home/beads/.runtime $LAYER/etc/ssl/certs
 
       cp ${{ tasks.download-bd.artifacts.bd-binaries }}/bd $LAYER/usr/local/bin/bd
       cp ${{ tasks.build-oj.artifacts.oj-binary }} $LAYER/usr/local/bin/oj
@@ -456,6 +456,10 @@ tasks:
         mkdir -p "$dir"
         cp -a "$lib" "$dir/"
       done
+
+      # Ensure /home/beads is owned by the container user (uid 1000)
+      # so bd can create .runtime subdirectories at runtime
+      sudo chown -R 1000:1000 $LAYER/home/beads
 
       tar -cf /tmp/layer.tar -C $LAYER .
 
