@@ -3,6 +3,7 @@ package advice
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -112,7 +113,10 @@ func QueryHooks(agentID, trigger string) ([]*Hook, error) {
 func RunHooksForTrigger(workDir, agentID, trigger string) ([]*HookResult, error) {
 	hooks, err := QueryHooks(agentID, trigger)
 	if err != nil {
-		return nil, fmt.Errorf("querying hooks: %w", err)
+		// Advice query failed (daemon unreachable, bd not installed, etc.).
+		// Degrade gracefully — don't block the calling workflow. (gt-bgkru6)
+		fmt.Fprintf(os.Stderr, "Warning: advice query failed (hooks skipped): %v\n", err)
+		return nil, nil
 	}
 
 	if len(hooks) == 0 {
