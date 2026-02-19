@@ -59,10 +59,13 @@ agent:
               - key: per-mr
                 operator: DoesNotExist
 
-# Coopmux — auto-register with coopmux for mux + credential distribution
-coopBroker:
-  url: "http://gastown-next-coop-broker:9800"
-  authTokenSecret: "gastown-next-bd-daemon-daemon-token"
+# Coopmux — disabled to avoid auth conflict warning.
+# When coopBroker is set, coopmux pushes ANTHROPIC_API_KEY via profiles,
+# which conflicts with the OAuth .credentials.json already mounted.
+# gastown-uat uses the same pattern (OAuth-only, no coopBroker).
+# coopBroker:
+#   url: "http://gastown-next-coop-broker:9800"
+#   authTokenSecret: "gastown-next-bd-daemon-daemon-token"
 
 # BD daemon connection (in-cluster service)
 bdDaemon:
