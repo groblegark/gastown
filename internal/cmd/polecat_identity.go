@@ -266,9 +266,9 @@ func runPolecatIdentityList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Get all agent beads
+	// Get all agent beads for this rig using cross-rig listing. (bd-ys8ol)
 	bd := beads.New(r.Path)
-	agentBeads, err := bd.ListAgentBeads()
+	agentBeads, err := bd.ListAgentBeadsForRig(rigName)
 	if err != nil {
 		return fmt.Errorf("listing agent beads: %w", err)
 	}

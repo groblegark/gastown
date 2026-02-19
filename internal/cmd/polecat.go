@@ -432,10 +432,12 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 			})
 		}
 
-		// Discover K8s polecats from agent beads (no local worktree)
-		// Use rig root (not mayor/rig which may not exist in K8s mode)
+		// Discover K8s polecats from agent beads (no local worktree).
+		// Use cross-rig listing (--rig flag) so the daemon queries the correct
+		// prefix for this rig. Without this, all rigs resolve to the town prefix
+		// and miss agent beads in other prefix scopes. (bd-ys8ol)
 		rigBeads := beads.New(r.Path)
-		agentBeadMap, err := rigBeads.ListAgentBeads()
+		agentBeadMap, err := rigBeads.ListAgentBeadsForRig(r.Name)
 		if err == nil {
 			for _, issue := range agentBeadMap {
 				if !beads.HasLabel(issue, "execution_target:k8s") {

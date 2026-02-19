@@ -721,3 +721,26 @@ func (b *Beads) ListAgentBeads() (map[string]*Issue, error) {
 
 	return result, nil
 }
+
+// ListAgentBeadsForRig returns agent beads for a specific rig using cross-rig
+// listing (--rig flag). This is needed because each rig has its own prefix
+// (e.g., "bd-" for beads, "gt-" for gastown), and the default ListAgentBeads
+// only queries the prefix of the current BEADS_DIR scope. (bd-ys8ol)
+func (b *Beads) ListAgentBeadsForRig(rigName string) (map[string]*Issue, error) {
+	out, err := b.run("list", "--rig="+rigName, "--label=gt:agent", "--json")
+	if err != nil {
+		return nil, err
+	}
+
+	var issues []*Issue
+	if err := json.Unmarshal(out, &issues); err != nil {
+		return nil, fmt.Errorf("parsing bd list output: %w", err)
+	}
+
+	result := make(map[string]*Issue, len(issues))
+	for _, issue := range issues {
+		result[issue.ID] = issue
+	}
+
+	return result, nil
+}

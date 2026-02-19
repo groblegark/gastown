@@ -340,7 +340,8 @@ func displayDryRunSafetyCheck(target polecatTarget) {
 func discoverK8sPolecatTargets(r *rig.Rig, rigName string, mgr *polecat.Manager, localNames map[string]bool) []polecatTarget {
 	rigBeadsPath := filepath.Join(r.Path, "mayor", "rig")
 	rigBeads := beads.New(rigBeadsPath)
-	agentBeadMap, err := rigBeads.ListAgentBeads()
+	// Use cross-rig listing to query the correct prefix for this rig. (bd-ys8ol)
+	agentBeadMap, err := rigBeads.ListAgentBeadsForRig(rigName)
 	if err != nil {
 		return nil
 	}
