@@ -3,10 +3,78 @@ package terminal
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/steveyegge/gastown/internal/bdcmd"
+	"github.com/steveyegge/gastown/internal/config"
 )
+
+// discoverTownRoot finds the Gas Town root directory.
+// Checks GT_ROOT env var first, then walks up from cwd.
+func discoverTownRoot() string {
+	if root := os.Getenv("GT_ROOT"); root != "" {
+		return root
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "mayor", "town.json")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+// resolveRigAgent tries to resolve a rig/name agent by constructing the
+// proper bead ID using the rig's configured prefix from rigs.json.
+// Returns the resolved coop config, or nil if not found.
+func resolveRigAgent(rigName, agentName string) *coopResolvedConfig {
+	townRoot := discoverTownRoot()
+	if townRoot == "" {
+		return nil
+	}
+	prefix := config.GetRigPrefix(townRoot, rigName)
+
+	// Try as polecat first, then crew.
+	// Inline the bead ID construction to avoid importing the beads package
+	// (which would create an import cycle: terminal → beads → runtime → terminal).
+	candidates := []string{
+		agentBeadID(prefix, rigName, "polecat", agentName),
+		agentBeadID(prefix, rigName, "crew", agentName),
+	}
+	for _, beadID := range candidates {
+		cfg, err := resolveCoopConfig(beadID)
+		if err == nil && cfg != nil {
+			return cfg
+		}
+	}
+	return nil
+}
+
+// agentBeadID constructs an agent bead ID from prefix, rig, role, and name.
+// Mirrors beads.AgentBeadIDWithPrefix logic to avoid import cycles.
+// When prefix == rig, the rig component is omitted to avoid duplication
+// (e.g., "fhc-polecat-name" instead of "fhc-fhc-polecat-name").
+func agentBeadID(prefix, rig, role, name string) string {
+	if prefix == rig {
+		if name == "" {
+			return prefix + "-" + role
+		}
+		return prefix + "-" + role + "-" + name
+	}
+	if name == "" {
+		return prefix + "-" + rig + "-" + role
+	}
+	return prefix + "-" + rig + "-" + role + "-" + name
+}
 
 // ResolveBackend returns the appropriate Backend for the given agent.
 // All agents are Coop-backed in the K8s-only architecture.
@@ -26,21 +94,6 @@ func ResolveBackend(agentID string) Backend {
 		candidates = append(candidates, "hq-"+agentID)
 	}
 
-	// Handle rig/name format (e.g., "beads/obsidian", "gastown/polecats/furiosa").
-	// Extract the agent name for bead search if direct lookup fails.
-	var extractedName string
-	if strings.Contains(agentID, "/") {
-		parts := strings.Split(agentID, "/")
-		switch len(parts) {
-		case 2:
-			// rig/name — name is a polecat or crew member
-			extractedName = parts[1]
-		case 3:
-			// rig/type/name — name is the third component
-			extractedName = parts[2]
-		}
-	}
-
 	for _, id := range candidates {
 		// Check if agent has Coop backend metadata
 		coopCfg, err := resolveCoopConfig(id)
@@ -51,15 +104,28 @@ func ResolveBackend(agentID string) Backend {
 		}
 	}
 
-	// For bare names or rig/name paths, search agent beads by name suffix.
-	searchName := ""
-	if isBare {
-		searchName = agentID
-	} else if extractedName != "" {
-		searchName = extractedName
+	// For rig/name paths, construct the bead ID using the rig's configured prefix.
+	if strings.Contains(agentID, "/") {
+		parts := strings.Split(agentID, "/")
+		var rigName, agentName string
+		switch len(parts) {
+		case 2:
+			rigName, agentName = parts[0], parts[1]
+		case 3:
+			rigName, agentName = parts[0], parts[2]
+		}
+		if rigName != "" && agentName != "" {
+			if cfg := resolveRigAgent(rigName, agentName); cfg != nil {
+				b := NewCoopBackend(cfg.CoopConfig)
+				b.AddSession("claude", cfg.baseURL)
+				return b
+			}
+		}
 	}
-	if searchName != "" {
-		if beadID := findAgentBeadByName(searchName); beadID != "" {
+
+	// For bare names, search agent beads by name suffix.
+	if isBare {
+		if beadID := findAgentBeadByName(agentID); beadID != "" {
 			coopCfg, err := resolveCoopConfig(beadID)
 			if err == nil && coopCfg != nil {
 				b := NewCoopBackend(coopCfg.CoopConfig)
@@ -181,19 +247,28 @@ func ResolveAgentPodInfo(address string) (*AgentPodInfo, error) {
 		candidates = []string{"hq-boot"}
 	default:
 		if strings.Contains(address, "/") {
-			// Path format — add the hyphenated form.
+			// Path format — construct bead ID using the rig's configured prefix.
 			parts := strings.Split(address, "/")
+			townRoot := discoverTownRoot()
+			prefix := "gt" // fallback
+			if townRoot != "" && len(parts) >= 1 {
+				prefix = config.GetRigPrefix(townRoot, parts[0])
+			}
 			switch len(parts) {
 			case 2:
-				// rig/role → gt-rig-role-hq
-				candidates = append(candidates, fmt.Sprintf("gt-%s-%s-hq", parts[0], parts[1]))
+				// rig/name — could be a role (witness) or polecat/crew name
+				candidates = append(candidates,
+					agentBeadID(prefix, parts[0], parts[1], ""),     // as role singleton
+					agentBeadID(prefix, parts[0], "polecat", parts[1]), // as polecat
+					agentBeadID(prefix, parts[0], "crew", parts[1]),   // as crew
+				)
 			case 3:
-				// rig/type/name → gt-rig-type-name
+				// rig/type/name → prefix-rig-type-name
 				role := parts[1]
 				if role == "polecats" {
 					role = "polecat"
 				}
-				candidates = append(candidates, fmt.Sprintf("gt-%s-%s-%s", parts[0], role, parts[2]))
+				candidates = append(candidates, agentBeadID(prefix, parts[0], role, parts[2]))
 			}
 		} else if !strings.Contains(address, "-") {
 			// Bare name (no slashes, no hyphens) — will search agent beads below.
