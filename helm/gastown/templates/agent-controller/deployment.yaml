@@ -70,6 +70,9 @@ spec:
             {{- if .Values.agentController.watcherTransport }}
             - name: WATCHER_TRANSPORT
               value: {{ .Values.agentController.watcherTransport }}
+            {{- else if or .Values.agentController.natsURL (index .Values "bd-daemon" "nats" "enabled") }}
+            - name: WATCHER_TRANSPORT
+              value: nats
             {{- end }}
             {{- if .Values.agentController.natsURL }}
             - name: NATS_URL
