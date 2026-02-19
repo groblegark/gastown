@@ -609,6 +609,16 @@ tasks:
           cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
         done
       done
+      # gcc internal executables (cc1, cc1plus, lto1) link against libisl,
+      # libmpc, libmpfr — not captured by ldd on /usr/bin/gcc (the driver).
+      find /usr/libexec/gcc -name 'cc1*' -o -name 'lto1' 2>/dev/null | while read -r bin; do
+        ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
+          [ -f "$lib" ] || continue
+          dir="$LAYER$(dirname "$lib")"
+          mkdir -p "$dir"
+          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+        done
+      done
       # ICU data and libs (needed by bd binary for unicode normalization)
       find /usr/lib/x86_64-linux-gnu -name 'libicu*.so*' 2>/dev/null | while read -r f; do
         dir="$LAYER$(dirname "$f")"
