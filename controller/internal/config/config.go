@@ -113,6 +113,20 @@ type Config struct {
 	// This prevents memory pressure from simultaneous pod initialization.
 	SpawnBurstLimit int
 
+	// LeaderElection enables K8s lease-based leader election (env: ENABLE_LEADER_ELECTION).
+	// When true, only the leader replica reconciles; others wait passively.
+	// Required for running multiple replicas safely.
+	LeaderElection bool
+
+	// LeaderElectionID is the name of the Lease resource used for leader election
+	// (env: LEADER_ELECTION_ID). Default: "agent-controller-leader".
+	LeaderElectionID string
+
+	// LeaderElectionIdentity is the unique identity of this controller instance
+	// (env: POD_NAME). Typically set from the Kubernetes downward API.
+	// Default: hostname.
+	LeaderElectionIdentity string
+
 	// RigCache maps rig name → metadata, populated at runtime from rig beads
 	// in the daemon. Not parsed from env/flags.
 	RigCache map[string]RigCacheEntry
@@ -157,8 +171,11 @@ func Parse() *Config {
 		Transport:         envOr("WATCHER_TRANSPORT", "sse"),
 		NatsConsumerName:  os.Getenv("NATS_CONSUMER_NAME"),
 		SyncInterval:      envDurationOr("SYNC_INTERVAL", 60*time.Second),
-		MaxConcurrentPods: envIntOr("MAX_CONCURRENT_PODS", 0),
-		SpawnBurstLimit:   envIntOr("SPAWN_BURST_LIMIT", 3),
+		MaxConcurrentPods:      envIntOr("MAX_CONCURRENT_PODS", 0),
+		SpawnBurstLimit:        envIntOr("SPAWN_BURST_LIMIT", 3),
+		LeaderElection:         envBoolOr("ENABLE_LEADER_ELECTION", false),
+		LeaderElectionID:       envOr("LEADER_ELECTION_ID", "agent-controller-leader"),
+		LeaderElectionIdentity: envOr("POD_NAME", hostname()),
 	}
 
 	flag.StringVar(&cfg.DaemonHost, "daemon-host", cfg.DaemonHost, "BD Daemon hostname")
@@ -187,6 +204,8 @@ func Parse() *Config {
 	flag.DurationVar(&cfg.SyncInterval, "sync-interval", cfg.SyncInterval, "Interval for periodic pod status sync")
 	flag.IntVar(&cfg.MaxConcurrentPods, "max-concurrent-pods", cfg.MaxConcurrentPods, "Max agent pods (0=unlimited)")
 	flag.IntVar(&cfg.SpawnBurstLimit, "spawn-burst-limit", cfg.SpawnBurstLimit, "Max pods to create per reconcile pass")
+	flag.BoolVar(&cfg.LeaderElection, "leader-election", cfg.LeaderElection, "Enable K8s lease-based leader election")
+	flag.StringVar(&cfg.LeaderElectionID, "leader-election-id", cfg.LeaderElectionID, "Name of the Lease resource for leader election")
 	flag.Parse()
 
 	return cfg
@@ -225,5 +244,13 @@ func envDurationOr(key string, fallback time.Duration) time.Duration {
 		}
 	}
 	return fallback
+}
+
+func hostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return "unknown"
+	}
+	return h
 }
 

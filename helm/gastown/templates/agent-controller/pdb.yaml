@@ -1,0 +1,14 @@
+{{- if and .Values.agentController.enabled .Values.agentController.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "gastown.agentController.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.agentController.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.agentController.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "gastown.agentController.selectorLabels" . | nindent 6 }}
+{{- end }}

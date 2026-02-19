@@ -18,9 +18,12 @@ import (
 	"syscall"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 
 	"github.com/steveyegge/gastown/controller/internal/beadswatcher"
 	"github.com/steveyegge/gastown/controller/internal/config"
@@ -89,10 +92,64 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	if err := run(ctx, logger, cfg, k8sClient, watcher, pods, status, rec, daemon); err != nil {
-		logger.Error("controller stopped", "error", err)
-		os.Exit(1)
+	runFn := func(ctx context.Context) {
+		if err := run(ctx, logger, cfg, k8sClient, watcher, pods, status, rec, daemon); err != nil {
+			logger.Error("controller stopped", "error", err)
+			os.Exit(1)
+		}
 	}
+
+	if cfg.LeaderElection {
+		runLeaderElection(ctx, logger, cfg, k8sClient, runFn)
+	} else {
+		runFn(ctx)
+	}
+}
+
+// runLeaderElection starts the leader election loop. Only the leader runs
+// the controller loop (runFn). When leadership is lost, the process exits
+// so that Kubernetes restarts it and it can rejoin the election.
+func runLeaderElection(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient kubernetes.Interface, runFn func(ctx context.Context)) {
+	id := cfg.LeaderElectionIdentity
+	logger.Info("starting leader election",
+		"id", id,
+		"lease", cfg.LeaderElectionID,
+		"namespace", cfg.Namespace)
+
+	lock := &resourcelock.LeaseLock{
+		LeaseMeta: metav1.ObjectMeta{
+			Name:      cfg.LeaderElectionID,
+			Namespace: cfg.Namespace,
+		},
+		Client: k8sClient.CoordinationV1(),
+		LockConfig: resourcelock.ResourceLockConfig{
+			Identity: id,
+		},
+	}
+
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+		Lock:            lock,
+		LeaseDuration:   15 * time.Second,
+		RenewDeadline:   10 * time.Second,
+		RetryPeriod:     2 * time.Second,
+		ReleaseOnCancel: true,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(ctx context.Context) {
+				logger.Info("elected as leader, starting controller")
+				runFn(ctx)
+			},
+			OnStoppedLeading: func() {
+				logger.Error("lost leader election, exiting")
+				os.Exit(1)
+			},
+			OnNewLeader: func(identity string) {
+				if identity == id {
+					return
+				}
+				logger.Info("new leader elected", "leader", identity)
+			},
+		},
+	})
 }
 
 // run is the main controller loop. It reads beads events and dispatches

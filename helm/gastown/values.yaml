@@ -463,6 +463,11 @@ agentController:
   coopBrokerURL: ""
   coopBrokerTokenSecret: ""
 
+  # Pod disruption budget for safe rolling deploys (only useful with replicaCount > 1)
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
   # Pod scheduling
   nodeSelector: {}
   tolerations: []

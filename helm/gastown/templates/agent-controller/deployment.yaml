@@ -8,6 +8,11 @@ metadata:
     {{- include "gastown.agentController.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.agentController.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       {{- include "gastown.agentController.selectorLabels" . | nindent 6 }}
@@ -33,6 +38,14 @@ spec:
           env:
             - name: NAMESPACE
               value: {{ .Release.Namespace }}
+            {{- if gt (int .Values.agentController.replicaCount) 1 }}
+            - name: ENABLE_LEADER_ELECTION
+              value: "true"
+            {{- end }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: BD_DAEMON_HOST
               value: {{ include "gastown.daemon.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
             - name: BD_DAEMON_PORT
