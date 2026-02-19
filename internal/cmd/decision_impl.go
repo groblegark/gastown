@@ -1408,6 +1408,11 @@ func runDecisionTurnMark(cmd *cobra.Command, args []string) error {
 }
 
 func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
+	// DEPRECATED: gt decision turn-check is deprecated.
+	// Use 'bd bus emit --hook=Stop' instead, which routes through the event bus
+	// and reads the stop_decision prompt from config beads.
+	fmt.Fprintf(os.Stderr, "[turn-check] DEPRECATED: 'gt decision turn-check' is deprecated. Use 'bd bus emit --hook=Stop' instead.\n")
+
 	input, err := readTurnHookInput()
 	if err != nil {
 		if decisionTurnCheckVerbose {

@@ -352,7 +352,7 @@ if [ "${MATERIALIZED}" = "0" ]; then
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && gt prime --hook && (gt mail check --inject || true) && (gt nudge deacon session-started || true)"
+            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && gt prime --hook && (case \"$GT_ROLE\" in polecat|witness|refinery|deacon|boot) gt mail check --inject;; esac || true) && (gt nudge deacon session-started || true)"
           }
         ]
       }
@@ -396,7 +396,7 @@ if [ "${MATERIALIZED}" = "0" ]; then
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && _stdin=$(cat) && echo \"$_stdin\" | gt decision turn-check --soft"
+            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && _stdin=$(cat) && echo \"$_stdin\" | bd bus emit --hook=Stop"
           }
         ]
       }
@@ -414,7 +414,7 @@ HOOKS
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && gt prime --hook && (gt nudge deacon session-started || true)"
+            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && gt prime --hook && (case \"$GT_ROLE\" in polecat|witness|refinery|deacon|boot) gt mail check --inject;; esac || true) && (gt nudge deacon session-started || true)"
           }
         ]
       }
@@ -458,7 +458,7 @@ HOOKS
         "hooks": [
           {
             "type": "command",
-            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && _stdin=$(cat) && echo \"$_stdin\" | gt decision turn-check"
+            "command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && _stdin=$(cat) && echo \"$_stdin\" | bd bus emit --hook=Stop"
           }
         ]
       }
