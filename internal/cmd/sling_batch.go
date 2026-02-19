@@ -23,11 +23,10 @@ func runBatchSling(beadIDs []string, rigName string, townBeadsDir string) error 
 		}
 	}
 
-	// Warn about convoy batching if slinging many beads without --convoy
+	// Suggest convoy batching if slinging many beads without --convoy
 	const batchWarningThreshold = 3
-	if len(beadIDs) >= batchWarningThreshold && slingConvoy == "" && !slingNoConvoy {
-		fmt.Printf("%s Slinging %d beads will create %d separate convoys\n", style.Warning.Render("⚠"), len(beadIDs), len(beadIDs))
-		fmt.Printf("  To batch into a single convoy:\n")
+	if len(beadIDs) >= batchWarningThreshold && slingConvoy == "" {
+		fmt.Printf("%s Slinging %d beads without a convoy — consider batching:\n", style.Dim.Render("tip:"), len(beadIDs))
 		fmt.Printf("    gt convoy create \"Batch name\" %s\n", strings.Join(beadIDs, " "))
 		fmt.Printf("  Or use --convoy <convoy-id> to add all to existing convoy\n\n")
 	}
@@ -102,27 +101,12 @@ func runBatchSling(beadIDs []string, rigName string, townBeadsDir string) error 
 		targetAgent := spawnInfo.AgentID()
 		hookWorkDir := spawnInfo.ClonePath
 
-		// Convoy handling: add to specified convoy, or auto-convoy
-		if !slingNoConvoy {
-			if slingConvoy != "" {
-				// User specified convoy to add to
-				if err := addToConvoy(slingConvoy, beadID); err != nil {
-					fmt.Printf("  %s Could not add to convoy %s: %v\n", style.Dim.Render("Warning:"), slingConvoy, err)
-				} else {
-					fmt.Printf("  %s Added to convoy 🚚 %s\n", style.Bold.Render("→"), slingConvoy)
-				}
+		// Convoy handling: only add to specified convoy (no auto-create)
+		if slingConvoy != "" {
+			if err := addToConvoy(slingConvoy, beadID); err != nil {
+				fmt.Printf("  %s Could not add to convoy %s: %v\n", style.Dim.Render("Warning:"), slingConvoy, err)
 			} else {
-				existingConvoy := isTrackedByConvoy(beadID)
-				if existingConvoy == "" {
-					convoyID, err := createAutoConvoy(beadID, info.Title, targetAgent)
-					if err != nil {
-						fmt.Printf("  %s Could not create auto-convoy: %v\n", style.Dim.Render("Warning:"), err)
-					} else {
-						fmt.Printf("  %s Created convoy 🚚 %s\n", style.Bold.Render("→"), convoyID)
-					}
-				} else {
-					fmt.Printf("  %s Already tracked by convoy %s\n", style.Dim.Render("○"), existingConvoy)
-				}
+				fmt.Printf("  %s Added to convoy %s\n", style.Bold.Render("→"), slingConvoy)
 			}
 		}
 

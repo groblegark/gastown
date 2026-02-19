@@ -430,16 +430,16 @@ exit /b 0
 	prevOn := slingOnTarget
 	prevVars := slingVars
 	prevDryRun := slingDryRun
-	prevNoConvoy := slingNoConvoy
+
 	t.Cleanup(func() {
 		slingOnTarget = prevOn
 		slingVars = prevVars
 		slingDryRun = prevDryRun
-		slingNoConvoy = prevNoConvoy
+
 	})
 
 	slingDryRun = false
-	slingNoConvoy = true
+
 	slingVars = nil
 	slingOnTarget = "gt-abc123"
 
@@ -623,16 +623,16 @@ exit /b 0
 	prevOn := slingOnTarget
 	prevVars := slingVars
 	prevDryRun := slingDryRun
-	prevNoConvoy := slingNoConvoy
+
 	t.Cleanup(func() {
 		slingOnTarget = prevOn
 		slingVars = prevVars
 		slingDryRun = prevDryRun
-		slingNoConvoy = prevNoConvoy
+
 	})
 
 	slingDryRun = false
-	slingNoConvoy = true
+
 	slingVars = nil
 	slingOnTarget = "gt-abc123"
 
@@ -851,14 +851,14 @@ exit /b 0
 
 	// Save and restore global flags
 	prevDryRun := slingDryRun
-	prevNoConvoy := slingNoConvoy
+
 	t.Cleanup(func() {
 		slingDryRun = prevDryRun
-		slingNoConvoy = prevNoConvoy
+
 	})
 
 	slingDryRun = true
-	slingNoConvoy = true
+
 
 	// Prevent real nudge from firing during tests (causes agent self-interruption)
 	t.Setenv("GT_TEST_NO_NUDGE", "1")
@@ -1127,16 +1127,16 @@ exit /b 0
 	prevOn := slingOnTarget
 	prevVars := slingVars
 	prevDryRun := slingDryRun
-	prevNoConvoy := slingNoConvoy
+
 	t.Cleanup(func() {
 		slingOnTarget = prevOn
 		slingVars = prevVars
 		slingDryRun = prevDryRun
-		slingNoConvoy = prevNoConvoy
+
 	})
 
 	slingDryRun = false
-	slingNoConvoy = true
+
 	slingVars = nil
 	slingOnTarget = "" // No --on target, we want to test rig target
 
@@ -1343,16 +1343,16 @@ exit /b 0
 	prevOn := slingOnTarget
 	prevVars := slingVars
 	prevDryRun := slingDryRun
-	prevNoConvoy := slingNoConvoy
+
 	t.Cleanup(func() {
 		slingOnTarget = prevOn
 		slingVars = prevVars
 		slingDryRun = prevDryRun
-		slingNoConvoy = prevNoConvoy
+
 	})
 
 	slingDryRun = false
-	slingNoConvoy = true
+
 	slingVars = nil
 	slingOnTarget = "gt-abc123" // The bug bead we're applying formula to
 
@@ -1483,16 +1483,16 @@ exit /b 0
 
 	// Save and restore global flags
 	prevDryRun := slingDryRun
-	prevNoConvoy := slingNoConvoy
+
 	prevNoMerge := slingNoMerge
 	t.Cleanup(func() {
 		slingDryRun = prevDryRun
-		slingNoConvoy = prevNoConvoy
+
 		slingNoMerge = prevNoMerge
 	})
 
 	slingDryRun = false
-	slingNoConvoy = true
+
 	slingNoMerge = true // This is what we're testing
 
 	if err := runSling(nil, []string{"gt-test123"}); err != nil {
@@ -1586,14 +1586,14 @@ exit 0
 
 	// Save and restore global flags
 	prevDryRun := slingDryRun
-	prevNoConvoy := slingNoConvoy
+
 	t.Cleanup(func() {
 		slingDryRun = prevDryRun
-		slingNoConvoy = prevNoConvoy
+
 	})
 
 	slingDryRun = true
-	slingNoConvoy = true
+
 
 	// Run sling (dry-run mode, self-target)
 	_ = runSling(nil, []string{"gt-test123"})

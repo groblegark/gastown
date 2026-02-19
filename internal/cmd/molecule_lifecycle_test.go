@@ -154,16 +154,16 @@ exit /b 0
 	prevOn := slingOnTarget
 	prevVars := slingVars
 	prevDryRun := slingDryRun
-	prevNoConvoy := slingNoConvoy
+
 	t.Cleanup(func() {
 		slingOnTarget = prevOn
 		slingVars = prevVars
 		slingDryRun = prevDryRun
-		slingNoConvoy = prevNoConvoy
+
 	})
 
 	slingDryRun = false
-	slingNoConvoy = true
+
 	slingVars = nil
 	slingOnTarget = "gt-abc123" // The base bead
 
@@ -356,16 +356,16 @@ exit /b 0
 	prevOn := slingOnTarget
 	prevVars := slingVars
 	prevDryRun := slingDryRun
-	prevNoConvoy := slingNoConvoy
+
 	t.Cleanup(func() {
 		slingOnTarget = prevOn
 		slingVars = prevVars
 		slingDryRun = prevDryRun
-		slingNoConvoy = prevNoConvoy
+
 	})
 
 	slingDryRun = false
-	slingNoConvoy = true
+
 	slingVars = nil
 	slingOnTarget = "gt-abc123" // The base bead
 

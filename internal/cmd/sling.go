@@ -32,18 +32,13 @@ This is THE command for assigning work in Gas Town. It handles:
   - Auto-spawning polecats when target is a rig
   - Dispatching to dogs (Deacon's helper workers)
   - Formula instantiation and wisp creation
-  - Auto-convoy creation for dashboard visibility
 
-Auto-Convoy (disabled by default):
-  Sling no longer auto-creates convoys. Use --convoy to explicitly add work
-  to an existing convoy, or pass --no-convoy=false to opt in to auto-creation.
+Convoy Integration:
+  Sling does NOT auto-create convoys. Use --convoy to add work to an existing
+  convoy for batch tracking. Create convoys explicitly with 'gt convoy create'.
 
-  gt sling gt-abc gastown                    # No convoy created (default)
-  gt sling gt-abc gastown --no-convoy=false  # Opt in to auto-convoy creation
-
-Convoy Batching:
-  Use --convoy to add multiple issues to a single convoy instead of creating
-  separate convoys for each. This is recommended when slinging related work.
+  gt sling gt-abc gastown                     # Direct dispatch, no convoy
+  gt sling gt-abc gastown --convoy hq-cv-xyz  # Add to existing convoy
 
   # Create convoy first, then add issues to it
   gt convoy create "Release v2.0" gt-abc
@@ -118,7 +113,6 @@ var (
 	slingForce         bool   // --force: force spawn even if polecat has unread mail
 	slingAccount       string // --account: Claude Code account handle to use
 	slingAgent         string // --agent: override runtime agent for this sling/spawn
-	slingNoConvoy      bool   // --no-convoy: skip auto-convoy creation
 	slingConvoy        string // --convoy: add to existing convoy instead of creating new one
 	slingNoMerge        bool   // --no-merge: skip merge queue on completion (for upstream PRs/human review)
 	slingMergeStrategy  string // --merge: merge strategy (direct/mr/local)
@@ -139,8 +133,7 @@ func init() {
 	slingCmd.Flags().BoolVar(&slingForce, "force", false, "Force spawn even if polecat has unread mail")
 	slingCmd.Flags().StringVar(&slingAccount, "account", "", "Claude Code account handle to use")
 	slingCmd.Flags().StringVar(&slingAgent, "agent", "", "Override agent/runtime for this sling (e.g., claude, gemini, codex, or custom alias)")
-	slingCmd.Flags().BoolVar(&slingNoConvoy, "no-convoy", true, "Skip auto-convoy creation for single-issue sling (default: true)")
-	slingCmd.Flags().StringVar(&slingConvoy, "convoy", "", "Add to existing convoy instead of creating new one")
+	slingCmd.Flags().StringVar(&slingConvoy, "convoy", "", "Add to existing convoy")
 	slingCmd.Flags().BoolVar(&slingHookRawBead, "hook-raw-bead", false, "Hook raw bead without default formula (expert mode)")
 	slingCmd.Flags().BoolVar(&slingNoMerge, "no-merge", false, "Skip merge queue on completion (keep work on feature branch for review)")
 	slingCmd.Flags().StringVar(&slingMergeStrategy, "merge", "", "Merge strategy: direct (push to main), mr (refinery), local (merge locally)")
@@ -483,37 +476,16 @@ func runSling(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Or use 'gt workload %s' to see full queue\n\n", targetAgent)
 	}
 
-	// Convoy handling: explicit --convoy always works, auto-convoy only when opted in
+	// Convoy handling: only add to existing convoy if explicitly requested via --convoy
 	if slingConvoy != "" && formulaName == "" {
-		// User explicitly specified a convoy to add to
 		if slingDryRun {
 			fmt.Printf("Would add %s to convoy %s\n", beadID, slingConvoy)
 		} else {
 			if err := addToConvoy(slingConvoy, beadID); err != nil {
 				fmt.Printf("%s Could not add to convoy %s: %v\n", style.Dim.Render("Warning:"), slingConvoy, err)
 			} else {
-				fmt.Printf("%s Added to convoy 🚚 %s\n", style.Bold.Render("→"), slingConvoy)
+				fmt.Printf("%s Added to convoy %s\n", style.Bold.Render("→"), slingConvoy)
 			}
-		}
-	} else if !slingNoConvoy && formulaName == "" {
-		// Auto-convoy creation (opt-in via --no-convoy=false)
-		existingConvoy := isTrackedByConvoy(beadID)
-		if existingConvoy == "" {
-			if slingDryRun {
-				fmt.Printf("Would create convoy 'Work: %s'\n", info.Title)
-				fmt.Printf("Would add tracking relation to %s\n", beadID)
-			} else {
-				convoyID, err := createAutoConvoy(beadID, info.Title, targetAgent)
-				if err != nil {
-					// Log warning but don't fail - convoy is optional
-					fmt.Printf("%s Could not create auto-convoy: %v\n", style.Dim.Render("Warning:"), err)
-				} else {
-					fmt.Printf("%s Created convoy 🚚 %s\n", style.Bold.Render("→"), convoyID)
-					fmt.Printf("  Tracking: %s\n", beadID)
-				}
-			}
-		} else {
-			fmt.Printf("%s Already tracked by convoy %s\n", style.Dim.Render("○"), existingConvoy)
 		}
 	}
 
@@ -818,12 +790,12 @@ func callSling(args []string) error {
 	// Save and restore flag state
 	saved := struct {
 		subject, message, onTarget, slingArgs, account, agent, convoy, merge, execTarget string
-		dryRun, hookRawBead, create, force, noConvoy, noMerge, owned                     bool
+		dryRun, hookRawBead, create, force, noMerge, owned                               bool
 		vars                                                                               []string
 	}{
 		slingSubject, slingMessage, slingOnTarget, slingArgs, slingAccount, slingAgent,
 		slingConvoy, slingMergeStrategy, slingExecutionTarget,
-		slingDryRun, slingHookRawBead, slingCreate, slingForce, slingNoConvoy, slingNoMerge, slingOwned,
+		slingDryRun, slingHookRawBead, slingCreate, slingForce, slingNoMerge, slingOwned,
 		slingVars,
 	}
 	defer func() {
@@ -840,7 +812,6 @@ func callSling(args []string) error {
 		slingHookRawBead = saved.hookRawBead
 		slingCreate = saved.create
 		slingForce = saved.force
-		slingNoConvoy = saved.noConvoy
 		slingNoMerge = saved.noMerge
 		slingOwned = saved.owned
 		slingVars = saved.vars
@@ -860,7 +831,6 @@ func callSling(args []string) error {
 	slingHookRawBead = false
 	slingCreate = false
 	slingForce = false
-	slingNoConvoy = true // default: no auto-convoy
 	slingNoMerge = false
 	slingOwned = false
 	slingVars = nil
