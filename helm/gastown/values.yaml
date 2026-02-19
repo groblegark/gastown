@@ -510,6 +510,10 @@ coopBroker:
     tokenUrl: "https://platform.claude.com/v1/oauth/token"
     deviceAuthUrl: "https://console.anthropic.com/v1/oauth/device/code"
     refreshMarginSecs: 300
+    # Set to false to treat credentials as static (no OAuth refresh).
+    # When false, the broker stores and distributes tokens but does not
+    # attempt to refresh them. Useful with long-lived API keys.
+    reauth: true
   # Additional accounts (list of {name, provider, clientId, tokenUrl, deviceAuthUrl, refreshMarginSecs})
   extraAccounts: []
 

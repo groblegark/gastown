@@ -16,7 +16,8 @@ data:
           "token_url": {{ .Values.coopBroker.credentials.tokenUrl | quote }},
           "client_id": {{ .Values.coopBroker.credentials.clientId | quote }},
           "device_auth_url": {{ .Values.coopBroker.credentials.deviceAuthUrl | quote }},
-          "auth_url": {{ .Values.coopBroker.credentials.authorizeUrl | default "https://claude.ai/oauth/authorize" | quote }}
+          "auth_url": {{ .Values.coopBroker.credentials.authorizeUrl | default "https://claude.ai/oauth/authorize" | quote }},
+          "reauth": {{ if kindIs "bool" .Values.coopBroker.credentials.reauth }}{{ .Values.coopBroker.credentials.reauth }}{{ else }}true{{ end }}
         }
         {{- range .Values.coopBroker.extraAccounts }}
         ,{
@@ -25,7 +26,8 @@ data:
           "token_url": {{ .tokenUrl | default "https://platform.claude.com/v1/oauth/token" | quote }},
           "client_id": {{ .clientId | default "9d1c250a-e61b-44d9-88ed-5944d1962f5e" | quote }},
           "device_auth_url": {{ .deviceAuthUrl | default "https://console.anthropic.com/v1/oauth/device/code" | quote }},
-          "auth_url": {{ .authorizeUrl | default "https://claude.ai/oauth/authorize" | quote }}
+          "auth_url": {{ .authorizeUrl | default "https://claude.ai/oauth/authorize" | quote }},
+          "reauth": {{ if kindIs "bool" .reauth }}{{ .reauth }}{{ else }}true{{ end }}
         }
         {{- end }}
       ]

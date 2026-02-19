@@ -166,6 +166,11 @@ agentController:
 # Coop Broker — enabled for terminal mux and credential distribution
 coopBroker:
   enabled: true
+  credentials:
+    # Disable OAuth refresh — treat tokens as static credentials.
+    # Agents get credentials from the mounted claude-credentials secret;
+    # the broker distributes but does not refresh them.
+    reauth: false
   image:
     repository: ghcr.io/groblegark/gastown/gastown-agent
     tag: "latest"
