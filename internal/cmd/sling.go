@@ -583,7 +583,43 @@ func runSling(cmd *cobra.Command, args []string) error {
 
 	// Execute deferred polecat spawn if needed (for rig targets).
 	// This happens AFTER formula instantiation to prevent orphan polecats on failure (GH #gt-e9o).
-	if deferredRigName != "" {
+	var ojDispatch *OjDispatchInfo
+	if deferredRigName != "" && ojSlingEnabled() {
+		// OJ dispatch path: OJ daemon manages workspace creation, agent spawn,
+		// step execution, monitoring, crash recovery, and cleanup.
+		// GT still owns: name allocation, formula instantiation, bead lifecycle.
+		fmt.Printf("  Dispatching to OJ daemon for %s...\n", deferredRigName)
+
+		if err := ensureOjRunbook(townRoot); err != nil {
+			return fmt.Errorf("ensuring OJ runbook: %w", err)
+		}
+
+		instructions := getBeadInstructions(beadID)
+		base := GetBeadBase(beadID)
+
+		spawnOpts := SlingSpawnOptions{
+			Force:   slingForce,
+			Account: slingAccount,
+			Create:  slingCreate,
+			Agent:   slingAgent,
+		}
+
+		ojInfo, ojErr := dispatchToOj(deferredRigName, spawnOpts, beadID, instructions, base, townRoot)
+		if ojErr != nil {
+			return fmt.Errorf("OJ dispatch failed: %w", ojErr)
+		}
+		ojDispatch = ojInfo
+		targetAgent = ojInfo.AgentID
+
+		// Store OJ job ID in bead for health checking
+		if err := storeOjJobIDInBead(beadID, ojInfo.JobID); err != nil {
+			fmt.Printf("%s Could not store OJ job ID in bead: %v\n", style.Dim.Render("Warning:"), err)
+		}
+
+		// Wake witness and refinery to monitor the new polecat
+		wakeRigAgents(deferredRigName)
+	} else if deferredRigName != "" {
+		// Legacy tmux path: GT manages polecat lifecycle directly.
 		// Set HookBead atomically at spawn time to prevent race condition (GH #hq-3d01de).
 		// Without this, the polecat might start before bd update sets the hook.
 		spawnOpts := SlingSpawnOptions{
@@ -761,8 +797,12 @@ func runSling(cmd *cobra.Command, args []string) error {
 
 	// Send nudge to start working.
 	// Skip for freshly spawned polecats - SessionManager.Start() already sent StartupNudge.
+	// Skip for OJ dispatch - OJ daemon owns the agent lifecycle.
 	freshlySpawned := deferredRigName != ""
-	if freshlySpawned {
+	if ojDispatch != nil {
+		// OJ dispatch: OJ daemon manages agent lifecycle, no nudge needed
+		fmt.Printf("%s OJ job dispatched: %s\n", style.Bold.Render("▶"), ojDispatch.JobID)
+	} else if freshlySpawned {
 		// Fresh polecat already got StartupNudge from SessionManager.Start()
 	} else {
 		// Try nudging via backend (Coop/K8s)

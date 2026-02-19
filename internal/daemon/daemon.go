@@ -1045,6 +1045,13 @@ func (d *Daemon) checkPolecatHealth(rigName, polecatName string) {
 		return
 	}
 
+	// Check if this polecat is OJ-managed (OJ daemon owns lifecycle)
+	ojJobID := getOjJobIDFromBead(info.HookBead)
+	if ojJobID != "" {
+		d.checkOjPolecatHealth(rigName, polecatName, info.HookBead, ojJobID)
+		return
+	}
+
 	// Check if this polecat is Coop-managed (K8s pod with coop sidecar)
 	coopURL := getCoopURLFromNotes(info.Notes)
 	if coopURL != "" {
@@ -1160,6 +1167,87 @@ func (d *Daemon) queryCoopAgentState(coopURL string) (string, error) {
 	}
 
 	return result.State, nil
+}
+
+// getOjJobIDFromBead reads the OJ job ID from a work bead's attachment fields.
+// Returns empty string if the bead has no OJ job ID (not OJ-managed).
+func getOjJobIDFromBead(beadID string) string {
+	if beadID == "" {
+		return ""
+	}
+
+	showCmd := exec.Command("bd", "show", beadID, "--json", "--allow-stale")
+	out, err := showCmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	var issues []beads.Issue
+	if err := json.Unmarshal(out, &issues); err != nil || len(issues) == 0 {
+		return ""
+	}
+
+	fields := beads.ParseAttachmentFields(&issues[0])
+	if fields == nil {
+		return ""
+	}
+	return fields.OjJobID
+}
+
+// checkOjPolecatHealth checks health of an OJ-managed polecat.
+// Queries the OJ daemon for job state and maps it to health status.
+func (d *Daemon) checkOjPolecatHealth(rigName, polecatName, hookBead, ojJobID string) {
+	state, err := d.queryOjJobState(ojJobID)
+	if err != nil {
+		// Can't reach OJ daemon — might be transient.
+		d.logger.Printf("Cannot query OJ job %s for %s/%s: %v", ojJobID, rigName, polecatName, err)
+		return
+	}
+
+	switch state {
+	case "running", "pending":
+		// Job is alive — nothing to do
+		return
+	case "completed":
+		// Job completed — agent finished work, witness will handle cleanup
+		d.logger.Printf("OJ job %s completed for %s/%s (hook_bead=%s)",
+			ojJobID, rigName, polecatName, hookBead)
+	case "failed", "crashed", "cancelled":
+		d.logger.Printf("OJ JOB %s: polecat %s/%s (hook_bead=%s, job=%s)",
+			strings.ToUpper(state), rigName, polecatName, hookBead, ojJobID)
+		d.recordSessionDeath(fmt.Sprintf("oj-%s-%s", rigName, polecatName))
+		d.notifyWitnessOfCrashedPolecat(rigName, polecatName, hookBead,
+			fmt.Errorf("OJ job %s in state: %s", ojJobID, state))
+	default:
+		d.logger.Printf("Unknown OJ job state %q for %s/%s (job=%s)", state, rigName, polecatName, ojJobID)
+	}
+}
+
+// queryOjJobState queries the OJ daemon for a job's current state.
+// Returns the state string (running, pending, completed, failed, crashed, cancelled).
+func (d *Daemon) queryOjJobState(jobID string) (string, error) {
+	cmd := exec.Command("oj", "job", "show", jobID, "--json") //nolint:gosec // G204: jobID is from bead data
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return "", fmt.Errorf("oj job show failed: %s\n%s", exitErr, string(exitErr.Stderr))
+		}
+		return "", fmt.Errorf("oj job show failed: %w", err)
+	}
+
+	var result struct {
+		State  string `json:"state"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return "", fmt.Errorf("parsing OJ job response: %w", err)
+	}
+
+	// Prefer "state" field, fall back to "status"
+	if result.State != "" {
+		return result.State, nil
+	}
+	return result.Status, nil
 }
 
 // recordSessionDeath records a session death and checks for mass death pattern.
