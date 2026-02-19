@@ -61,7 +61,7 @@ tasks:
     use: git-config
     run: |
       go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
-      golangci-lint run --timeout=5m
+      golangci-lint run --timeout=5m $(go list ./...)
     filter:
       - .golangci.yml
 
@@ -77,9 +77,6 @@ tasks:
       go install github.com/steveyegge/beads/cmd/bd@v0.47.1
       export PATH="$(go env GOPATH)/bin:$PATH"
       go test -tags=integration -timeout=5m -v ./internal/cmd/...
-    filter:
-      - go.mod
-      - go.sum
 
   # ── Beads JSONL change guard ──────────────────────────────────────────
   - key: beads-changes-check
