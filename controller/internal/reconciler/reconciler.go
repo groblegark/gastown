@@ -115,7 +115,24 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		}
 	}
 
+	// Count active (non-Failed, non-orphan) pods for concurrency limiting.
+	// Only count pods that are in the desired set — orphans were just deleted.
+	activePods := 0
+	for name, pod := range actualMap {
+		if _, inDesired := desired[name]; inDesired && pod.Status.Phase != corev1.PodFailed {
+			activePods++
+		}
+	}
+
 	// Create missing pods and recreate failed pods.
+	// Respect SpawnBurstLimit (max pods created per pass) and
+	// MaxConcurrentPods (total active pod cap).
+	burstLimit := r.cfg.SpawnBurstLimit
+	if burstLimit <= 0 {
+		burstLimit = 3 // safety default
+	}
+	created := 0
+
 	for name, bead := range desired {
 		if pod, exists := actualMap[name]; exists {
 			// Pod exists. Check if it's in a terminal failed state.
@@ -124,6 +141,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				if err := r.pods.DeleteAgentPod(ctx, name, pod.Namespace); err != nil {
 					return fmt.Errorf("deleting failed pod %s: %w", name, err)
 				}
+				activePods-- // no longer active after deletion
 				// Fall through to create.
 			} else {
 				// Pod is Running or Pending. Check if spec has drifted.
@@ -136,11 +154,26 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 					if err := r.pods.DeleteAgentPod(ctx, name, pod.Namespace); err != nil {
 						return fmt.Errorf("deleting pod for update %s: %w", name, err)
 					}
+					activePods-- // no longer active after deletion
 					// Fall through to create with new spec.
 				} else {
 					continue
 				}
 			}
+		}
+
+		// Check burst limit.
+		if created >= burstLimit {
+			r.logger.Info("spawn burst limit reached, deferring remaining pods",
+				"limit", burstLimit, "deferred", name)
+			continue
+		}
+
+		// Check max concurrent pods.
+		if r.cfg.MaxConcurrentPods > 0 && activePods >= r.cfg.MaxConcurrentPods {
+			r.logger.Info("max concurrent pods reached, deferring pod",
+				"limit", r.cfg.MaxConcurrentPods, "active", activePods, "deferred", name)
+			continue
 		}
 
 		// Create the pod.
@@ -150,6 +183,14 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		if err := r.pods.CreateAgentPod(ctx, spec); err != nil {
 			return fmt.Errorf("creating pod %s: %w", name, err)
 		}
+		created++
+		activePods++
+	}
+
+	if created > 0 || len(desired) > len(actualMap) {
+		r.logger.Info("reconcile pass complete",
+			"created", created, "active", activePods,
+			"desired", len(desired), "burst_limit", burstLimit)
 	}
 
 	return nil

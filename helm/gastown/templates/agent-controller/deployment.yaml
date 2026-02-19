@@ -107,6 +107,14 @@ spec:
             {{- end }}
             - name: DEFAULT_SERVICE_ACCOUNT
               value: {{ include "gastown.agentPod.serviceAccountName" . }}
+            {{- if .Values.agentController.maxConcurrentPods }}
+            - name: MAX_CONCURRENT_PODS
+              value: {{ .Values.agentController.maxConcurrentPods | quote }}
+            {{- end }}
+            {{- if .Values.agentController.spawnBurstLimit }}
+            - name: SPAWN_BURST_LIMIT
+              value: {{ .Values.agentController.spawnBurstLimit | quote }}
+            {{- end }}
           resources:
             {{- toYaml .Values.agentController.resources | nindent 12 }}
       {{- with .Values.agentController.nodeSelector }}

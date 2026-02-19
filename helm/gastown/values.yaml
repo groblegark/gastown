@@ -447,6 +447,12 @@ agentController:
       cpu: 500m
       memory: 256Mi
 
+  # Max agent pods that can exist simultaneously (0 = unlimited)
+  maxConcurrentPods: 0
+
+  # Max pods to create in a single reconciliation pass (prevents memory pressure)
+  spawnBurstLimit: 3
+
   # Coopmux URL (set when coopBroker is enabled in this chart)
   # Agent pods will receive COOP_BROKER_URL + COOP_BROKER_TOKEN env vars
   coopBrokerURL: ""

@@ -103,6 +103,16 @@ type Config struct {
 	// Default: 60s.
 	SyncInterval time.Duration
 
+	// MaxConcurrentPods is the maximum number of agent pods that can exist
+	// simultaneously (env: MAX_CONCURRENT_PODS). 0 means unlimited.
+	// When the limit is reached, new pods are queued until existing ones finish.
+	MaxConcurrentPods int
+
+	// SpawnBurstLimit is the maximum number of pods to create in a single
+	// reconciliation pass (env: SPAWN_BURST_LIMIT). Default: 3.
+	// This prevents memory pressure from simultaneous pod initialization.
+	SpawnBurstLimit int
+
 	// RigCache maps rig name → git mirror service name, populated at runtime
 	// from rig beads in the daemon. Not parsed from env/flags.
 	RigCache map[string]RigCacheEntry
@@ -148,6 +158,8 @@ func Parse() *Config {
 		Transport:         envOr("WATCHER_TRANSPORT", "sse"),
 		NatsConsumerName:  os.Getenv("NATS_CONSUMER_NAME"),
 		SyncInterval:      envDurationOr("SYNC_INTERVAL", 60*time.Second),
+		MaxConcurrentPods: envIntOr("MAX_CONCURRENT_PODS", 0),
+		SpawnBurstLimit:   envIntOr("SPAWN_BURST_LIMIT", 3),
 	}
 
 	flag.StringVar(&cfg.DaemonHost, "daemon-host", cfg.DaemonHost, "BD Daemon hostname")
@@ -174,6 +186,8 @@ func Parse() *Config {
 	flag.StringVar(&cfg.Transport, "transport", cfg.Transport, "Event transport: sse or nats")
 	flag.StringVar(&cfg.NatsConsumerName, "nats-consumer-name", cfg.NatsConsumerName, "Durable consumer name for JetStream")
 	flag.DurationVar(&cfg.SyncInterval, "sync-interval", cfg.SyncInterval, "Interval for periodic pod status sync")
+	flag.IntVar(&cfg.MaxConcurrentPods, "max-concurrent-pods", cfg.MaxConcurrentPods, "Max agent pods (0=unlimited)")
+	flag.IntVar(&cfg.SpawnBurstLimit, "spawn-burst-limit", cfg.SpawnBurstLimit, "Max pods to create per reconcile pass")
 	flag.Parse()
 
 	return cfg

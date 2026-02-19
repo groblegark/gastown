@@ -37,10 +37,11 @@ const testNamespace = "gastown"
 
 func testCfg() *config.Config {
 	return &config.Config{
-		Namespace:    testNamespace,
-		DaemonHost:   "localhost",
-		DaemonPort:   9876,
-		DefaultImage: "gastown-agent:test",
+		Namespace:       testNamespace,
+		DaemonHost:      "localhost",
+		DaemonPort:      9876,
+		DefaultImage:    "gastown-agent:test",
+		SpawnBurstLimit: 10, // high default for tests — individual tests override
 	}
 }
 
@@ -608,5 +609,109 @@ func TestReconcile_Idempotent(t *testing.T) {
 	}
 	if !nameSet["gt-gastown-crew-k8s"] {
 		t.Error("gt-gastown-crew-k8s should still exist")
+	}
+}
+
+func TestReconcile_SpawnBurstLimit(t *testing.T) {
+	// 5 beads, no pods, burst limit 2 -> only 2 pods created per pass.
+	client := fake.NewSimpleClientset()
+	cfg := testCfg()
+	cfg.SpawnBurstLimit = 2
+
+	lister := &mockBeadLister{beads: []daemonclient.AgentBead{
+		bead("town", "mayor", "hq"),
+		bead("gastown", "crew", "k8s"),
+		bead("gastown", "polecat", "furiosa"),
+		bead("gastown", "polecat", "nux"),
+		bead("gastown", "polecat", "slit"),
+	}}
+	pods := podmanager.New(client, slog.Default())
+	r := New(lister, pods, cfg, slog.Default(), testSpecBuilder)
+
+	ctx := context.Background()
+	if err := r.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	names := listPodNames(t, client, testNamespace)
+	if len(names) != 2 {
+		t.Fatalf("expected 2 pods (burst limit), got %d: %v", len(names), names)
+	}
+}
+
+func TestReconcile_MaxConcurrentPods(t *testing.T) {
+	// 3 beads, 2 running pods (one matching, one orphan), max concurrent = 2.
+	// Orphan should be deleted. But only 1 new pod can be created (2 - 1 remaining = 1 slot).
+	client := fake.NewSimpleClientset()
+	cfg := testCfg()
+	cfg.MaxConcurrentPods = 2
+
+	// One matching pod (will not be touched), one orphan (will be deleted).
+	createFakePod(t, client, "gt-town-mayor-hq", testNamespace, "Running")
+	createFakePod(t, client, "gt-gastown-crew-old", testNamespace, "Running")
+
+	lister := &mockBeadLister{beads: []daemonclient.AgentBead{
+		bead("town", "mayor", "hq"),
+		bead("gastown", "polecat", "furiosa"),
+		bead("gastown", "polecat", "nux"),
+	}}
+	pods := podmanager.New(client, slog.Default())
+	r := New(lister, pods, cfg, slog.Default(), testSpecBuilder)
+
+	ctx := context.Background()
+	if err := r.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	names := listPodNames(t, client, testNamespace)
+	// After: orphan deleted (1 active remaining), then max 2 total means 1 new can be created.
+	// So: 1 original + 1 new = 2 pods.
+	if len(names) != 2 {
+		t.Fatalf("expected 2 pods (max concurrent), got %d: %v", len(names), names)
+	}
+}
+
+func TestReconcile_BurstLimitConvergesOverMultiplePasses(t *testing.T) {
+	// 4 beads, burst limit 2 -> first pass creates 2, second pass creates remaining 2.
+	client := fake.NewSimpleClientset()
+	cfg := testCfg()
+	cfg.SpawnBurstLimit = 2
+
+	allBeads := []daemonclient.AgentBead{
+		bead("town", "mayor", "hq"),
+		bead("gastown", "crew", "k8s"),
+		bead("gastown", "polecat", "furiosa"),
+		bead("gastown", "polecat", "nux"),
+	}
+
+	lister := &mockBeadLister{beads: allBeads}
+	pods := podmanager.New(client, slog.Default())
+	r := New(lister, pods, cfg, slog.Default(), testSpecBuilder)
+
+	ctx := context.Background()
+
+	// First pass: creates 2.
+	if err := r.Reconcile(ctx); err != nil {
+		t.Fatalf("first Reconcile: %v", err)
+	}
+	names := listPodNames(t, client, testNamespace)
+	if len(names) != 2 {
+		t.Fatalf("after first pass: expected 2 pods, got %d: %v", len(names), names)
+	}
+
+	// Set pods to Running so they're not treated as Failed.
+	for _, name := range names {
+		pod, _ := client.CoreV1().Pods(testNamespace).Get(ctx, name, metav1.GetOptions{})
+		pod.Status.Phase = corev1.PodRunning
+		client.CoreV1().Pods(testNamespace).UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+	}
+
+	// Second pass: creates remaining 2.
+	if err := r.Reconcile(ctx); err != nil {
+		t.Fatalf("second Reconcile: %v", err)
+	}
+	names = listPodNames(t, client, testNamespace)
+	if len(names) != 4 {
+		t.Fatalf("after second pass: expected 4 pods, got %d: %v", len(names), names)
 	}
 }
