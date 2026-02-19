@@ -120,6 +120,7 @@ MODULES=(
   "pvc-recovery"
   "nats-durability"
   "dolt-s3-sync"
+  "controller-crash-recovery"
   "controller-failsafe"
   "slack-bot-health"
   "slack-bot-decisions"
