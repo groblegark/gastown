@@ -399,6 +399,11 @@ agentController:
   # Gas Town deployment name (defaults to release name)
   townName: ""
 
+  # Event transport for beads watcher: "sse" or "nats".
+  # Auto-set to "nats" when NATS is available (natsURL or bd-daemon.nats.enabled).
+  # NATS JetStream provides guaranteed delivery; SSE can lose events on reconnect.
+  watcherTransport: ""
+
   # NATS server URL for event bus integration (e.g., "nats://daemon-svc:4222")
   natsURL: ""
 
