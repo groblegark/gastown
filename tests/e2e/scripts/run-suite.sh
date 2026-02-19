@@ -117,6 +117,7 @@ MODULES=(
   "mux-restart-persistence"
   "ws-reconnect"
   "session-persistence"
+  "pvc-recovery"
   "dolt-s3-sync"
   "controller-failsafe"
   "slack-bot-health"
