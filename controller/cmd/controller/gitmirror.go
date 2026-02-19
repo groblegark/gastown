@@ -34,7 +34,13 @@ func provisionGitMirrors(ctx context.Context, logger *slog.Logger, client kubern
 		// Check if deployment already exists.
 		_, err := client.AppsV1().Deployments(cfg.Namespace).Get(ctx, svcName, metav1.GetOptions{})
 		if err == nil {
-			continue // already exists
+			// Deployment exists — ensure cache has the service name so agent
+			// pods use the mirror instead of cloning from GitHub directly.
+			if entry.GitMirrorSvc == "" {
+				entry.GitMirrorSvc = svcName
+				cfg.RigCache[name] = entry
+			}
+			continue
 		}
 		if !errors.IsNotFound(err) {
 			logger.Warn("failed to check git-mirror deployment", "rig", name, "error", err)
@@ -219,11 +225,11 @@ done
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("50m"),
-									corev1.ResourceMemory: resource.MustParse("64Mi"),
+									corev1.ResourceMemory: resource.MustParse("128Mi"),
 								},
 								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("200m"),
-									corev1.ResourceMemory: resource.MustParse("256Mi"),
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
 								},
 							},
 						},
