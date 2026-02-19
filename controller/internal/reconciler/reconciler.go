@@ -23,13 +23,14 @@ type SpecBuilder func(cfg *config.Config, rig, role, agentName string, metadata 
 // Reconciler diffs desired state (agent beads) against actual state (K8s pods)
 // and creates/deletes pods to converge.
 type Reconciler struct {
-	lister       daemonclient.BeadLister
-	pods         podmanager.Manager
-	cfg          *config.Config
-	logger       *slog.Logger
-	specBuilder  SpecBuilder
-	mu           sync.Mutex // prevent concurrent reconciles
-	digestTracker *ImageDigestTracker
+	lister         daemonclient.BeadLister
+	pods           podmanager.Manager
+	cfg            *config.Config
+	logger         *slog.Logger
+	specBuilder    SpecBuilder
+	mu             sync.Mutex // prevent concurrent reconciles
+	digestTracker  *ImageDigestTracker
+	upgradeTracker *UpgradeTracker
 }
 
 // New creates a Reconciler.
@@ -41,12 +42,13 @@ func New(
 	specBuilder SpecBuilder,
 ) *Reconciler {
 	return &Reconciler{
-		lister:        lister,
-		pods:          pods,
-		cfg:           cfg,
-		logger:        logger,
-		specBuilder:   specBuilder,
-		digestTracker: NewImageDigestTracker(logger, 5*time.Minute),
+		lister:         lister,
+		pods:           pods,
+		cfg:            cfg,
+		logger:         logger,
+		specBuilder:    specBuilder,
+		digestTracker:  NewImageDigestTracker(logger, 5*time.Minute),
+		upgradeTracker: NewUpgradeTracker(logger),
 	}
 }
 
@@ -124,6 +126,32 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		}
 	}
 
+	// Clean stale upgrade entries (pods deleted but never recreated).
+	r.upgradeTracker.CleanStaleUpgrades(10 * time.Minute)
+	r.upgradeTracker.Reset()
+
+	// Phase 1: Scan all pods for drift and register with upgrade tracker.
+	// This builds the full picture before making any upgrade decisions.
+	driftReasons := make(map[string]string)
+	for name, bead := range desired {
+		pod, exists := actualMap[name]
+		if !exists || pod.Status.Phase == corev1.PodFailed {
+			continue // Missing or failed pods are handled in phase 2
+		}
+		desiredSpec := r.specBuilder(r.cfg, bead.Rig, bead.Role, bead.AgentName, bead.Metadata)
+		desiredSpec.BeadID = bead.ID
+		reason := podDriftReason(desiredSpec, &pod, r.digestTracker)
+		if reason != "" {
+			driftReasons[name] = reason
+			r.upgradeTracker.RegisterDrift(name, bead.Role)
+		}
+
+		// Clear upgrade tracking for pods that have been successfully recreated.
+		if IsPodReady(&pod) {
+			r.upgradeTracker.ClearUpgrading(name)
+		}
+	}
+
 	// Create missing pods and recreate failed pods.
 	// Respect SpawnBurstLimit (max pods created per pass) and
 	// MaxConcurrentPods (total active pod cap).
@@ -143,22 +171,23 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 				}
 				activePods-- // no longer active after deletion
 				// Fall through to create.
-			} else {
-				// Pod is Running or Pending. Check if spec has drifted.
-				desiredSpec := r.specBuilder(r.cfg, bead.Rig, bead.Role, bead.AgentName, bead.Metadata)
-				desiredSpec.BeadID = bead.ID
-				reason := podDriftReason(desiredSpec, &pod, r.digestTracker)
-				if reason != "" {
-					r.logger.Info("spec drift detected, recreating pod",
-						"pod", name, "reason", reason)
-					if err := r.pods.DeleteAgentPod(ctx, name, pod.Namespace); err != nil {
-						return fmt.Errorf("deleting pod for update %s: %w", name, err)
-					}
-					activePods-- // no longer active after deletion
-					// Fall through to create with new spec.
-				} else {
+			} else if reason, hasDrift := driftReasons[name]; hasDrift {
+				// Pod has spec drift. Use role-aware upgrade strategy.
+				if !r.upgradeTracker.CanUpgrade(name, bead.Role) {
+					r.logger.Info("spec drift detected but upgrade deferred by strategy",
+						"pod", name, "role", bead.Role, "reason", reason)
 					continue
 				}
+				r.logger.Info("spec drift detected, upgrading pod",
+					"pod", name, "role", bead.Role, "reason", reason)
+				if err := r.pods.DeleteAgentPod(ctx, name, pod.Namespace); err != nil {
+					return fmt.Errorf("deleting pod for update %s: %w", name, err)
+				}
+				r.upgradeTracker.MarkUpgrading(name)
+				activePods-- // no longer active after deletion
+				// Fall through to create with new spec.
+			} else {
+				continue
 			}
 		}
 
