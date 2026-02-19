@@ -7,21 +7,30 @@ option go_package = "github.com/steveyegge/gastown/mobile/gen/gastown/v1;gastown
 import "google/protobuf/timestamp.proto";
 import "gastown/v1/common.proto";
 
-// StatusService provides town and rig status information
+// StatusService provides town and infrastructure status information.
+// A "town" is the top-level Gas Town deployment containing rigs (workspaces),
+// agents, and infrastructure services (Dolt, tmux, beads).
 service StatusService {
-  // GetTownStatus returns the full status of the town
+  // GetTownStatus returns the full status of the town including overseer info,
+  // global agents (Mayor, Deacon), and per-rig status with agent details.
+  // Use fast=true to skip mail lookups for quicker responses.
   rpc GetTownStatus(GetTownStatusRequest) returns (GetTownStatusResponse);
 
-  // GetRigStatus returns status for a specific rig
+  // GetRigStatus returns detailed status for a specific rig including
+  // polecats, crews, hooks, and merge queue summary.
   rpc GetRigStatus(GetRigStatusRequest) returns (GetRigStatusResponse);
 
-  // GetAgentStatus returns status for a specific agent
+  // GetAgentStatus returns runtime status for a specific agent including
+  // session info, hooked work, and state.
   rpc GetAgentStatus(GetAgentStatusRequest) returns (GetAgentStatusResponse);
 
-  // WatchStatus streams status updates in real-time
+  // WatchStatus streams status updates in real-time. Emits updates when
+  // agent state changes, rigs are modified, or town-level changes occur.
   rpc WatchStatus(WatchStatusRequest) returns (stream StatusUpdate);
 
   // HealthCheck returns structured health of all system components
+  // (daemon, dolt, tmux, beads). Suitable for K8s readiness/liveness probes.
+  // Status is "healthy", "degraded", or "unhealthy".
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 }
 

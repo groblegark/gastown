@@ -7,38 +7,55 @@ option go_package = "github.com/steveyegge/gastown/gen/gastown/v1;gastownv1";
 import "google/protobuf/timestamp.proto";
 import "gastown/v1/common.proto";
 
-// AgentService provides unified management of crew workers and polecats
+// AgentService provides unified management of Gas Town agents:
+//
+//   - **Crew** — persistent workers with dedicated workspaces and branches
+//   - **Polecats** — ephemeral workers spawned for individual tasks
+//   - **Witness** — per-rig monitoring agent
+//   - **Mayor/Deacon** — town-level coordination agents
+//
+// Agent lifecycle: spawn/start → working → done → cleanup.
+// Each agent has a tmux session, a git worktree, and an agent bead for state tracking.
 service AgentService {
-  // ListAgents returns all agents (crew + polecats) in a rig or town
+  // ListAgents returns all agents in a rig or across the town.
+  // Filter by rig, type, and stopped/global inclusion.
   rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
 
-  // GetAgent returns details for a specific agent
+  // GetAgent returns details for a specific agent including recent terminal output.
   rpc GetAgent(GetAgentRequest) returns (GetAgentResponse);
 
-  // SpawnPolecat creates a new polecat in a rig
+  // SpawnPolecat creates a new ephemeral polecat agent in a rig.
+  // Optionally hooks a bead immediately and starts a Claude Code session.
   rpc SpawnPolecat(SpawnPolecatRequest) returns (SpawnPolecatResponse);
 
-  // StartCrew starts a crew worker session
+  // StartCrew starts (or restarts) a crew worker's Claude Code session.
+  // If create=true and the crew doesn't exist, creates it first.
   rpc StartCrew(StartCrewRequest) returns (StartCrewResponse);
 
-  // StopAgent stops an agent's session
+  // StopAgent stops an agent's session. If the agent has incomplete work,
+  // returns had_incomplete_work=true. Use force=true to stop anyway.
   rpc StopAgent(StopAgentRequest) returns (StopAgentResponse);
 
-  // NudgeAgent sends a message to an agent's terminal
+  // NudgeAgent sends a text message to an agent's terminal session
+  // (injected via tmux send-keys). Used for directing agent attention.
   rpc NudgeAgent(NudgeAgentRequest) returns (NudgeAgentResponse);
 
-  // PeekAgent returns recent terminal output from an agent
+  // PeekAgent captures recent terminal output from an agent's tmux session.
+  // Returns up to `lines` lines of scrollback (default 50).
   rpc PeekAgent(PeekAgentRequest) returns (PeekAgentResponse);
 
-  // WatchAgents streams agent status updates
+  // WatchAgents streams agent status updates in real-time. Emits events
+  // when agents are spawned, started, stopped, or change state.
   rpc WatchAgents(WatchAgentsRequest) returns (stream AgentUpdate);
 
   // CreateCrew creates a crew workspace by writing an agent bead.
-  // The controller watches bead events and creates the crew pod.
+  // In K8s, the controller watches bead events and creates the crew pod.
+  // Locally, creates the git worktree and tmux session.
   rpc CreateCrew(CreateCrewRequest) returns (CreateCrewResponse);
 
   // RemoveCrew removes a crew workspace by closing/deleting the agent bead.
-  // The controller reacts to the bead close/delete event to remove the pod.
+  // In K8s, the controller reacts to the bead event to remove the pod.
+  // Use purge=true to delete the bead entirely (vs just closing).
   rpc RemoveCrew(RemoveCrewRequest) returns (RemoveCrewResponse);
 }
 

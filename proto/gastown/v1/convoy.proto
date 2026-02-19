@@ -7,24 +7,35 @@ option go_package = "github.com/steveyegge/gastown/mobile/gen/gastown/v1;gastown
 import "google/protobuf/timestamp.proto";
 import "gastown/v1/common.proto";
 
-// ConvoyService manages convoys - batches of tracked work
+// ConvoyService manages convoys — batches of tracked work items that
+// progress together. A convoy tracks multiple beads and reports aggregate
+// progress (e.g., "3/5 completed"). Convoys can trigger notifications
+// and merge queue actions when all tracked work completes.
+//
+// Merge strategies control how completed work lands:
+//   - direct: Push directly to main
+//   - mr: Go through refinery merge queue
+//   - local: Merge locally, push to main
 service ConvoyService {
-  // ListConvoys returns convoys filtered by status
+  // ListConvoys returns convoys filtered by status (open/closed/all).
+  // Set tree=true to include tracked issues in the response.
   rpc ListConvoys(ListConvoysRequest) returns (ListConvoysResponse);
 
-  // GetConvoyStatus returns detailed status for a convoy
+  // GetConvoyStatus returns detailed status for a convoy including
+  // all tracked issues with their current status and assigned workers.
   rpc GetConvoyStatus(GetConvoyStatusRequest) returns (GetConvoyStatusResponse);
 
-  // CreateConvoy creates a new convoy tracking issues
+  // CreateConvoy creates a new convoy tracking the given issues.
   rpc CreateConvoy(CreateConvoyRequest) returns (CreateConvoyResponse);
 
-  // AddToConvoy adds issues to an existing convoy
+  // AddToConvoy adds issues to an existing convoy. Reopens the convoy
+  // if it was previously closed.
   rpc AddToConvoy(AddToConvoyRequest) returns (AddToConvoyResponse);
 
-  // CloseConvoy closes a convoy
+  // CloseConvoy closes a convoy. Optionally sends notifications.
   rpc CloseConvoy(CloseConvoyRequest) returns (CloseConvoyResponse);
 
-  // WatchConvoys streams convoy updates in real-time
+  // WatchConvoys streams convoy updates (created, updated, closed) in real-time.
   rpc WatchConvoys(WatchConvoysRequest) returns (stream ConvoyUpdate);
 }
 

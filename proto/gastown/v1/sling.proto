@@ -6,21 +6,34 @@ option go_package = "github.com/steveyegge/gastown/mobile/gen/gastown/v1;gastown
 
 import "gastown/v1/common.proto";
 
-// SlingService manages work dispatch - assigning beads to agents
+// SlingService manages work dispatch — assigning beads (issues) to agents.
+// "Slinging" is the core work-assignment primitive: it hooks a bead to an agent,
+// optionally spawns a new polecat (ephemeral worker), and creates a convoy
+// for tracking the work batch.
+//
+// The sling flow:
+//   1. Caller specifies bead_id + target (rig or agent address)
+//   2. Server finds/creates an agent, sets bead status to "hooked"
+//   3. Agent receives startup context with the hooked bead
+//   4. On completion, agent closes the bead and the hook is released
 service SlingService {
-  // Sling assigns a bead to a target agent
+  // Sling assigns a bead to a target agent. If targeting a rig and `create` is
+  // true, spawns a new polecat. Returns the target agent path and convoy info.
   rpc Sling(SlingRequest) returns (SlingResponse);
 
-  // SlingFormula instantiates and slings a formula
+  // SlingFormula instantiates a formula template and slings the resulting work.
+  // Formulas are predefined task templates with variable substitution.
   rpc SlingFormula(SlingFormulaRequest) returns (SlingFormulaResponse);
 
-  // SlingBatch slings multiple beads to polecats in parallel
+  // SlingBatch slings multiple beads in parallel, each to its own polecat.
+  // Optionally creates a single convoy to track all beads as a batch.
   rpc SlingBatch(SlingBatchRequest) returns (SlingBatchResponse);
 
-  // Unsling removes work from an agent's hook
+  // Unsling removes work from an agent's hook, reverting the bead to "open"
+  // status. Use force=true to unsling incomplete work.
   rpc Unsling(UnslingRequest) returns (UnslingResponse);
 
-  // GetWorkload returns all hooked work for an agent
+  // GetWorkload returns all beads currently hooked to an agent.
   rpc GetWorkload(GetWorkloadRequest) returns (GetWorkloadResponse);
 }
 

@@ -7,26 +7,39 @@ option go_package = "github.com/steveyegge/gastown/mobile/gen/gastown/v1;gastown
 import "google/protobuf/timestamp.proto";
 import "gastown/v1/common.proto";
 
-// DecisionService handles human-in-the-loop decision points
+// DecisionService handles human-in-the-loop decision points.
+//
+// Agents create decisions when they need human/captain input — typically at
+// session boundaries via the stop hook. The decision contains a question,
+// available options, and context. A human or captain agent resolves the
+// decision by choosing an option with a rationale.
+//
+// Decision lifecycle: created → (pending) → resolved | cancelled
+//
+// Decisions support chaining (predecessor_id) and hierarchy (parent_bead)
+// for complex multi-step workflows.
 service DecisionService {
-  // ListPending returns all pending decisions
+  // ListPending returns all unresolved, uncancelled decisions.
+  // Filter by minimum urgency or requesting agent.
   rpc ListPending(ListPendingRequest) returns (ListPendingResponse);
 
-  // GetDecision returns a specific decision
+  // GetDecision returns full details for a specific decision by ID.
   rpc GetDecision(GetDecisionRequest) returns (GetDecisionResponse);
 
-  // CreateDecision creates a new decision request
-  // This is the primary way to create decisions when gtmobile is running,
-  // enabling real-time notification via the event bus.
+  // CreateDecision creates a new decision request and emits a
+  // DECISION_REQUESTED event to the activity bus for real-time notification.
   rpc CreateDecision(CreateDecisionRequest) returns (CreateDecisionResponse);
 
-  // Resolve resolves a decision with the chosen option
+  // Resolve resolves a pending decision by selecting an option (1-indexed)
+  // and providing a rationale. Emits a DECISION_RESOLVED event and
+  // delivers the response to the requesting agent's inbox.
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
 
-  // Cancel cancels a pending decision
+  // Cancel cancels a pending decision with a reason.
   rpc Cancel(CancelRequest) returns (CancelResponse);
 
-  // WatchDecisions streams new decision requests
+  // WatchDecisions streams new pending decisions in real-time.
+  // Filter by minimum urgency level.
   rpc WatchDecisions(WatchDecisionsRequest) returns (stream Decision);
 }
 

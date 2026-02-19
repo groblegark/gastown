@@ -7,24 +7,32 @@ option go_package = "github.com/steveyegge/gastown/mobile/gen/gastown/v1;gastown
 import "google/protobuf/timestamp.proto";
 import "gastown/v1/common.proto";
 
-// MailService handles inter-agent and human messaging
+// MailService handles inter-agent and human messaging.
+// Messages are stored as beads issues (type=message) in the shared database,
+// enabling offline delivery and git-backed persistence.
+//
+// Delivery modes:
+//   - QUEUE: Delivered to agent's inbox, drained on next hook fire
+//   - INTERRUPT: Injected directly into agent's tmux session
+//
+// Messages support threads (reply_to), priorities, and CC recipients.
 service MailService {
-  // ListInbox returns messages for an address
+  // ListInbox returns messages for an address with optional unread-only filter.
   rpc ListInbox(ListInboxRequest) returns (ListInboxResponse);
 
-  // ReadMessage returns a specific message
+  // ReadMessage returns a specific message by ID.
   rpc ReadMessage(ReadMessageRequest) returns (ReadMessageResponse);
 
-  // SendMessage sends a new message
+  // SendMessage sends a new message. Supports direct, reply, and CC delivery.
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
 
-  // MarkRead marks a message as read
+  // MarkRead marks a message as read (equivalent to closing the message issue).
   rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);
 
-  // DeleteMessage deletes a message
+  // DeleteMessage permanently removes a message.
   rpc DeleteMessage(DeleteMessageRequest) returns (DeleteMessageResponse);
 
-  // WatchInbox streams new messages in real-time
+  // WatchInbox streams new messages as they arrive for the given address.
   rpc WatchInbox(WatchInboxRequest) returns (stream Message);
 }
 

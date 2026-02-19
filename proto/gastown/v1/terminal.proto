@@ -6,23 +6,29 @@ option go_package = "github.com/steveyegge/gastown/mobile/gen/gastown/v1";
 
 import "gastown/v1/common.proto";
 
-// TerminalService provides access to tmux terminal output for Gas Town agents.
+// TerminalService provides access to agent tmux terminal sessions.
+// Each agent runs in a tmux session; this service enables remote
+// observation and interaction with those sessions.
 service TerminalService {
-  // PeekSession captures the last N lines from a tmux session's pane
+  // PeekSession captures the last N lines from a tmux session's pane.
+  // Use all=true to capture full scrollback history.
   rpc PeekSession(PeekSessionRequest) returns (PeekSessionResponse);
 
-  // ListSessions returns all active tmux sessions
+  // ListSessions returns all active tmux sessions, optionally filtered
+  // by prefix (e.g., "gt-" for Gas Town sessions).
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
 
-  // HasSession checks if a specific session exists
+  // HasSession checks if a specific tmux session exists.
   rpc HasSession(HasSessionRequest) returns (HasSessionResponse);
 
-  // WatchSession streams terminal output updates in real-time
+  // WatchSession streams terminal output updates at a configurable interval.
+  // Useful for building real-time terminal viewers.
   rpc WatchSession(WatchSessionRequest) returns (stream TerminalUpdate);
 
-  // SendInput sends text input to a terminal session (Phase 5: remote nudging).
-  // For local agents, routes to tmux send-keys.
+  // SendInput sends text input to a terminal session via tmux send-keys.
+  // For local agents, routes directly to tmux.
   // For K8s-hosted agents, routes via SSH to the pod's tmux session.
+  // Set nudge=true to send with Enter key and serialization.
   rpc SendInput(SendInputRequest) returns (SendInputResponse);
 }
 

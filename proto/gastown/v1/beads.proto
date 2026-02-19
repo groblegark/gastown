@@ -7,54 +7,76 @@ option go_package = "github.com/steveyegge/gastown/gen/gastown/v1;gastownv1";
 import "google/protobuf/timestamp.proto";
 import "gastown/v1/common.proto";
 
-// BeadsService provides issue tracking operations via the bd/beads CLI
+// BeadsService provides full CRUD issue tracking operations backed by
+// the bd/beads git-native issue tracker. Issues (called "beads") support
+// priorities (0-4), statuses (open → in_progress → closed), dependencies,
+// labels, comments, and hierarchical parent-child relationships.
+//
+// All write operations are attributed to the authenticated actor and
+// propagate through the Dolt database → JSONL export → git sync pipeline.
 service BeadsService {
-  // ListIssues returns issues matching filters
+  // ListIssues returns issues matching the provided filters.
+  // Supports pagination via limit/offset. Results are ordered by priority
+  // then creation time. Use status/type/label/assignee filters to narrow results.
   rpc ListIssues(ListIssuesRequest) returns (ListIssuesResponse);
 
-  // GetIssue returns a single issue by ID
+  // GetIssue returns a single issue by ID with full details including
+  // dependency lists, labels, and child issue IDs.
   rpc GetIssue(GetIssueRequest) returns (GetIssueResponse);
 
-  // CreateIssue creates a new issue
+  // CreateIssue creates a new issue. Returns the created issue with
+  // its auto-generated hash-based ID (e.g., "gt-abc123").
+  // Set the `id` field to override auto-generation (for deterministic IDs).
   rpc CreateIssue(CreateIssueRequest) returns (CreateIssueResponse);
 
-  // UpdateIssue updates an existing issue
+  // UpdateIssue updates an existing issue. Only fields that are set in the
+  // request are modified — omitted fields are left unchanged.
+  // Label management supports add/remove/set-all semantics.
   rpc UpdateIssue(UpdateIssueRequest) returns (UpdateIssueResponse);
 
-  // CloseIssues closes one or more issues
+  // CloseIssues closes one or more issues atomically.
+  // Returns the count of successfully closed issues and any failed IDs.
   rpc CloseIssues(CloseIssuesRequest) returns (CloseIssuesResponse);
 
-  // ReopenIssues reopens one or more closed issues
+  // ReopenIssues reopens one or more previously closed issues.
   rpc ReopenIssues(ReopenIssuesRequest) returns (ReopenIssuesResponse);
 
-  // SearchIssues searches issues by text query
+  // SearchIssues performs full-text search across issue titles and descriptions.
+  // Combines text search with optional status/type/label/assignee/priority filters.
   rpc SearchIssues(SearchIssuesRequest) returns (SearchIssuesResponse);
 
-  // GetReadyIssues returns issues ready to work (not blocked)
+  // GetReadyIssues returns open issues with no unresolved blocking dependencies.
+  // These are the issues agents should pick up next. Results are ordered by
+  // priority (lowest number = highest priority).
   rpc GetReadyIssues(GetReadyIssuesRequest) returns (GetReadyIssuesResponse);
 
-  // GetBlockedIssues returns issues blocked by dependencies
+  // GetBlockedIssues returns issues that have unresolved blocking dependencies.
   rpc GetBlockedIssues(GetBlockedIssuesRequest) returns (GetBlockedIssuesResponse);
 
-  // AddDependency adds a dependency between issues
+  // AddDependency creates a dependency relationship between two issues.
+  // Supports depends-on, blocks, and tracks relationship types.
+  // Circular dependency detection prevents invalid graphs.
   rpc AddDependency(AddDependencyRequest) returns (AddDependencyResponse);
 
-  // RemoveDependency removes a dependency between issues
+  // RemoveDependency removes a dependency relationship between two issues.
   rpc RemoveDependency(RemoveDependencyRequest) returns (RemoveDependencyResponse);
 
-  // ListDependencies lists dependencies for an issue
+  // ListDependencies returns issues related to the given issue via dependencies.
+  // Direction "up" returns what this issue depends on; "down" returns dependents.
   rpc ListDependencies(ListDependenciesRequest) returns (ListDependenciesResponse);
 
-  // AddComment adds a comment to an issue
+  // AddComment adds a text comment to an issue, attributed to the given author.
   rpc AddComment(AddCommentRequest) returns (AddCommentResponse);
 
-  // ListComments lists comments on an issue
+  // ListComments returns comments on an issue, ordered by creation time.
   rpc ListComments(ListCommentsRequest) returns (ListCommentsResponse);
 
-  // ManageLabels adds or removes labels from an issue
+  // ManageLabels atomically adds and/or removes labels from an issue.
+  // Returns the updated label set.
   rpc ManageLabels(ManageLabelsRequest) returns (ManageLabelsResponse);
 
-  // GetStats returns repository statistics
+  // GetStats returns aggregate repository statistics: total, open, closed,
+  // in-progress, and blocked issue counts.
   rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
 }
 

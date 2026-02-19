@@ -7,17 +7,24 @@ option go_package = "github.com/steveyegge/gastown/mobile/gen/gastown/v1";
 import "google/protobuf/struct.proto";
 
 // ActivityService provides access to the Gas Town event/activity feed.
+// Events track all significant actions: sling, hook, spawn, kill, nudge,
+// decisions, merges, and session lifecycle. Two feeds are available:
+//   - **Raw**: All events, append-only audit log
+//   - **Curated**: Aggregated, human-friendly feed for dashboards
 service ActivityService {
-  // ListEvents returns events from the activity feed
+  // ListEvents returns events from the activity feed, with filtering by
+  // type, actor, rig, visibility, and time range.
   rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
 
-  // WatchEvents streams new events in real-time
+  // WatchEvents streams new events in real-time with optional initial backfill.
   rpc WatchEvents(WatchEventsRequest) returns (stream ActivityEvent);
 
-  // EmitEvent writes a new event to the activity log
+  // EmitEvent writes a custom event to the activity log. Used by external
+  // integrations (CI/CD, deploy tools) to record events in the feed.
   rpc EmitEvent(EmitEventRequest) returns (EmitEventResponse);
 
-  // StreamLogs streams log entries from agent log sources in real-time
+  // StreamLogs streams log entries from agent log sources (activity feed,
+  // town lifecycle log, or daemon log). Supports tail + follow pattern.
   rpc StreamLogs(StreamLogsRequest) returns (stream LogEntry);
 }
 
