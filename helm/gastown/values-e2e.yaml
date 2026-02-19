@@ -184,9 +184,6 @@ coopBroker:
       cpu: 250m
       memory: 256Mi
 
-# No git mirrors for E2E (optional component)
-gitMirrors: {}
-
 # Registry pull secrets — ExternalSecrets for docker.io and registry.gitlab.com
 # docker-hub short name resolves directly; gitlab needs full name via --set:
 #   --set registrySecrets.registries.gitlab-registry.remoteRef=<full-secret-name>
