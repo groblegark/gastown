@@ -444,23 +444,16 @@ func agentIDToBeadID(agentID, townRoot string) string {
 
 	rig := parts[0]
 
-	// Get town name for town-level agent bead IDs (gt-w7sr31)
-	// All rig-level agents now use hq-<town>-<rig>-<role>[-<name>] format
-	townName, err := workspace.GetTownName(townRoot)
-	if err != nil {
-		// Fall back to empty town name (generates hq-<rig>-<role>-<name>)
-		townName = ""
-	}
+	prefix := beads.GetPrefixForRig(townRoot, rig)
 
 	switch {
 	case len(parts) == 2 && parts[1] == "witness":
-		return beads.WitnessBeadIDTown(townName, rig)
+		return beads.WitnessBeadIDWithPrefix(prefix, rig)
 	case len(parts) == 2 && parts[1] == "refinery":
-		return beads.RefineryBeadIDTown(townName, rig)
+		return beads.RefineryBeadIDWithPrefix(prefix, rig)
 	case len(parts) == 3 && parts[1] == "crew":
-		return beads.CrewBeadIDTown(townName, rig, parts[2])
+		return beads.CrewBeadIDWithPrefix(prefix, rig, parts[2])
 	case len(parts) == 3 && parts[1] == "polecats":
-		prefix := beads.GetPrefixForRig(townRoot, rig)
 		return beads.PolecatBeadIDWithPrefix(prefix, rig, parts[2])
 	case len(parts) == 3 && parts[0] == "deacon" && parts[1] == "dogs":
 		// Dogs are town-level agents with hq- prefix
