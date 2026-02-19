@@ -18,6 +18,7 @@ import (
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/runtime"
 	"github.com/steveyegge/gastown/internal/style"
+	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/witness"
 )
@@ -449,12 +450,27 @@ func runPolecatList(cmd *cobra.Command, args []string) error {
 				if state == "" {
 					state = polecat.StateWorking
 				}
+
+				// Discover live state from coop session health (hq-9abtgq.2).
+				// The bead's agent_state may be stuck at "spawning" even though
+				// the agent is actually running. Check the coop endpoint to
+				// determine the real state.
+				sessionRunning := false
+				if backend := terminal.ResolveBackend(issue.ID); backend != nil {
+					if alive, err := backend.HasSession("claude"); err == nil && alive {
+						sessionRunning = true
+						if state == polecat.StateSpawning {
+							state = polecat.StateWorking
+						}
+					}
+				}
+
 				allPolecats = append(allPolecats, PolecatListItem{
 					Rig:            r.Name,
 					Name:           name,
 					State:          state,
 					Issue:          issue.HookBead,
-					SessionRunning: false,
+					SessionRunning: sessionRunning,
 					Target:         "k8s",
 				})
 			}
@@ -769,13 +785,28 @@ func runPolecatStatusK8s(r *rig.Rig, rigName, polecatName string) error {
 		state = polecat.State("unknown")
 	}
 
+	// Discover live state from coop session health (hq-9abtgq.2).
+	// The bead's agent_state may be stuck at "spawning" even after the
+	// agent has booted and coop has registered. Check the coop endpoint
+	// to determine real state.
+	sessionRunning := false
+	if backend := terminal.ResolveBackend(agentBeadID); backend != nil {
+		if alive, err := backend.HasSession("claude"); err == nil && alive {
+			sessionRunning = true
+			if state == polecat.StateSpawning {
+				state = polecat.StateWorking
+			}
+		}
+	}
+
 	if polecatStatusJSON {
 		status := PolecatStatus{
-			Rig:    rigName,
-			Name:   polecatName,
-			State:  state,
-			Issue:  issue.HookBead,
-			Target: "k8s",
+			Rig:            rigName,
+			Name:           polecatName,
+			State:          state,
+			Issue:          issue.HookBead,
+			SessionRunning: sessionRunning,
+			Target:         "k8s",
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -799,6 +830,13 @@ func runPolecatStatusK8s(r *rig.Rig, rigName, polecatName string) error {
 	}
 	fmt.Printf("  State:         %s\n", stateStr)
 	fmt.Printf("  Target:        %s\n", style.Info.Render("k8s"))
+
+	// Session info
+	if sessionRunning {
+		fmt.Printf("  Session:       %s\n", style.Success.Render("running"))
+	} else {
+		fmt.Printf("  Session:       %s\n", style.Dim.Render("not detected"))
+	}
 
 	// Issue
 	if issue.HookBead != "" {
