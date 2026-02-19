@@ -1344,6 +1344,56 @@ func TestBuildPod_MayorPersistentStorage(t *testing.T) {
 	t.Error("workspace volume not found")
 }
 
+// TestBuildPod_ClaudeStatePersistence verifies that persistent roles (mayor, crew)
+// get a subPath mount at ~/.claude backed by the workspace PVC, while ephemeral
+// roles (polecat) do not.
+func TestBuildPod_ClaudeStatePersistence(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	mgr := New(client, slog.Default())
+
+	tests := []struct {
+		role      string
+		hasPVC    bool
+		wantMount bool
+	}{
+		{"mayor", true, true},
+		{"crew", true, true},
+		{"witness", true, true},
+		{"polecat", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.role, func(t *testing.T) {
+			spec := AgentPodSpec{
+				Rig: "gastown", Role: tt.role, AgentName: "test",
+				Image: "agent:latest", Namespace: "gastown",
+			}
+			if tt.hasPVC {
+				spec.WorkspaceStorage = &WorkspaceStorageSpec{
+					Size:             "10Gi",
+					StorageClassName: "gp2",
+				}
+			}
+
+			pod := mgr.buildPod(spec)
+			agent := pod.Spec.Containers[0]
+
+			found := false
+			for _, m := range agent.VolumeMounts {
+				if m.MountPath == MountClaudeState && m.SubPath == SubPathClaudeState {
+					found = true
+					if m.Name != VolumeWorkspace {
+						t.Errorf("claude state mount volume = %q, want %q", m.Name, VolumeWorkspace)
+					}
+				}
+			}
+			if found != tt.wantMount {
+				t.Errorf("claude state mount found = %v, want %v", found, tt.wantMount)
+			}
+		})
+	}
+}
+
 func TestBuildPod_AgentStartupProbe(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	mgr := New(client, slog.Default())

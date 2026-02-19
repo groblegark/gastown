@@ -54,6 +54,10 @@ const (
 	// Session persistence: state dir on the workspace PVC.
 	MountStateDir = "/home/agent/gt/.state"
 
+	// Claude state: subPath mount so .claude/ is backed by the workspace PVC.
+	MountClaudeState    = "/home/agent/.claude"
+	SubPathClaudeState  = ".state/claude"
+
 	// Container constants.
 	ContainerName = "agent"
 	AgentUID      = int64(1000)
@@ -666,6 +670,17 @@ func (m *K8sManager) buildVolumeMounts(spec AgentPodSpec) []corev1.VolumeMount {
 			Name:      VolumeBeadsConfig,
 			MountPath: MountBeadsConfig,
 			ReadOnly:  true,
+		})
+	}
+
+	// Claude state: mount workspace subPath at ~/.claude so Claude Code's
+	// persistent memory (.claude/projects/*.jsonl) survives pod recreation.
+	// Only for roles with persistent workspace storage (bd-48ary).
+	if spec.WorkspaceStorage != nil {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      VolumeWorkspace,
+			MountPath: MountClaudeState,
+			SubPath:   SubPathClaudeState,
 		})
 	}
 
