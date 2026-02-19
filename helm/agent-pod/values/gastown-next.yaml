@@ -59,10 +59,10 @@ agent:
               - key: per-mr
                 operator: DoesNotExist
 
-# Coopmux — disabled to avoid auth conflict warning.
-# When coopBroker is set, coopmux pushes ANTHROPIC_API_KEY via profiles,
-# which conflicts with the OAuth .credentials.json already mounted.
-# gastown-uat uses the same pattern (OAuth-only, no coopBroker).
+# Coopmux — disabled at agent-pod level; the gastown umbrella chart
+# controls the coop-broker deployment and agent-controller wiring.
+# The broker now pushes CLAUDE_CODE_OAUTH_TOKEN (not ANTHROPIC_API_KEY)
+# which Claude Code handles without the "custom API key" prompt.
 # coopBroker:
 #   url: "http://gastown-next-coop-broker:9800"
 #   authTokenSecret: "gastown-next-bd-daemon-daemon-token"
