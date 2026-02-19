@@ -91,9 +91,6 @@ var rigRemoveCmd = &cobra.Command{
 // rigRegisterPrefix stores the --prefix flag value for gt rig register.
 var rigRegisterPrefix string
 
-// rigRegisterGitMirror stores the --git-mirror flag value.
-var rigRegisterGitMirror string
-
 // rigRegisterBranch stores the --branch flag value.
 var rigRegisterBranch string
 
@@ -111,13 +108,12 @@ where each pod clones its own repo via an init container. It:
 Labels set on the rig bead:
   - prefix:<X>           Issue ID prefix for this rig
   - git_url:<url>        Git repository URL
-  - git_mirror:<svc>     In-cluster git mirror service name (optional)
   - default_branch:<br>  Default branch (default: main)
   - state:active         Rig operational state
 
 Example:
   gt rig register beads https://github.com/groblegark/beads --prefix bd
-  gt rig register gastown https://github.com/groblegark/gastown --prefix gt --git-mirror git-mirror-gastown`,
+  gt rig register gastown https://github.com/groblegark/gastown --prefix gt`,
 	Args: cobra.ExactArgs(2),
 	RunE: runRigRegister,
 }
@@ -337,7 +333,6 @@ func init() {
 	rigAddCmd.Flags().BoolVar(&rigAddAdoptForce, "force", false, "With --adopt, register even if git remote cannot be detected")
 
 	rigRegisterCmd.Flags().StringVar(&rigRegisterPrefix, "prefix", "", "Beads issue prefix (required)")
-	rigRegisterCmd.Flags().StringVar(&rigRegisterGitMirror, "git-mirror", "", "In-cluster git mirror service name")
 	rigRegisterCmd.Flags().StringVar(&rigRegisterBranch, "branch", "main", "Default branch name")
 
 	rigResetCmd.Flags().BoolVar(&rigResetHandoff, "handoff", false, "Clear handoff content")
@@ -811,10 +806,6 @@ func runRigRegister(_ *cobra.Command, args []string) error {
 		fmt.Sprintf("default_branch:%s", rigRegisterBranch),
 		"state:active",
 	}
-	if rigRegisterGitMirror != "" {
-		labels = append(labels, fmt.Sprintf("git_mirror:%s", rigRegisterGitMirror))
-	}
-
 	// Use explicit ID: hq-<prefix>-rig-<name> (lives in town beads, not rig-specific DB).
 	rigBeadID := fmt.Sprintf("hq-%s-rig-%s", rigRegisterPrefix, name)
 
@@ -846,9 +837,6 @@ func runRigRegister(_ *cobra.Command, args []string) error {
 	fmt.Printf("  Repository: %s\n", gitURL)
 	fmt.Printf("  Prefix: %s\n", rigRegisterPrefix)
 	fmt.Printf("  Branch: %s\n", rigRegisterBranch)
-	if rigRegisterGitMirror != "" {
-		fmt.Printf("  Git mirror: %s\n", rigRegisterGitMirror)
-	}
 	if townRoot == "" {
 		fmt.Printf("  %s Daemon-only mode (no local workspace)\n", style.Dim.Render("ℹ"))
 	}

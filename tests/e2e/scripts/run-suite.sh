@@ -10,7 +10,7 @@
 #
 # Options:
 #   --namespace NAME    Target namespace (default: gastown-next)
-#   --skip MODULE       Skip a module (can repeat, e.g. --skip git-mirror)
+#   --skip MODULE       Skip a module (can repeat, e.g. --skip dolt-health)
 #   --only MODULE       Run only this module
 #   --with-mux          Also run Playwright mux.spec.js tests
 #   --junit-dir DIR     Write JUnit XML per module to DIR (for Captain/CI)
@@ -77,8 +77,6 @@ MODULES=(
   "nats-health"
   "coop-broker-health"
   "controller-health"
-  "git-mirror-health"
-  "git-mirror-clone"
   # Phase 2: Agent capabilities
   "agent-entrypoint"
   "agent-image"
