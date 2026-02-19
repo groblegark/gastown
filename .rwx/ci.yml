@@ -47,9 +47,10 @@ tasks:
   - key: embedded-formulas
     use: git-config
     run: |
+      cp -r internal/formula/formulas/ /tmp/formulas-before
       go build -v ./cmd/gt
       go generate ./internal/formula/...
-      if ! git diff --exit-code internal/formula/formulas/; then
+      if ! diff -r /tmp/formulas-before internal/formula/formulas/; then
         echo "ERROR: Committed formulas out of sync"
         echo "Run: go generate ./... && git add -A && git commit"
         exit 1
