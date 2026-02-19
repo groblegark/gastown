@@ -767,6 +767,8 @@ CREDS_FILE="${CLAUDE_STATE}/.credentials.json"
 
 refresh_credentials() {
     sleep 30  # Let Claude start first
+    local consecutive_failures=0
+    local max_failures=5  # Exit after 5 consecutive failures (25 min of retries)
     while true; do
         sleep 300  # Check every 5 minutes
 
@@ -786,6 +788,7 @@ refresh_credentials() {
         now_ms=$(date +%s)000
         remaining_ms=$((expires_at - now_ms))
         if [ "${remaining_ms}" -gt 3600000 ]; then
+            consecutive_failures=0  # Token still valid, reset counter
             continue  # More than 1 hour left, skip
         fi
 
@@ -794,7 +797,13 @@ refresh_credentials() {
         response=$(curl -sf "${OAUTH_TOKEN_URL}" \
             -H 'Content-Type: application/json' \
             -d "{\"grant_type\":\"refresh_token\",\"refresh_token\":\"${refresh_token}\",\"client_id\":\"${OAUTH_CLIENT_ID}\"}" 2>/dev/null) || {
-            echo "[entrypoint] WARNING: OAuth refresh request failed"
+            consecutive_failures=$((consecutive_failures + 1))
+            echo "[entrypoint] WARNING: OAuth refresh request failed (attempt ${consecutive_failures}/${max_failures})"
+            if [ "${consecutive_failures}" -ge "${max_failures}" ]; then
+                echo "[entrypoint] FATAL: OAuth refresh failed ${max_failures} consecutive times, terminating pod"
+                kill -TERM $$ 2>/dev/null || kill -TERM 1 2>/dev/null
+                exit 1
+            fi
             continue
         }
 
@@ -804,9 +813,18 @@ refresh_credentials() {
         expires_in=$(echo "${response}" | jq -r '.expires_in // 0' 2>/dev/null)
 
         if [ -z "${new_access_token}" ] || [ -z "${new_refresh_token}" ]; then
-            echo "[entrypoint] WARNING: OAuth refresh returned invalid response"
+            consecutive_failures=$((consecutive_failures + 1))
+            echo "[entrypoint] WARNING: OAuth refresh returned invalid response (attempt ${consecutive_failures}/${max_failures})"
+            if [ "${consecutive_failures}" -ge "${max_failures}" ]; then
+                echo "[entrypoint] FATAL: OAuth refresh failed ${max_failures} consecutive times, terminating pod"
+                kill -TERM $$ 2>/dev/null || kill -TERM 1 2>/dev/null
+                exit 1
+            fi
             continue
         fi
+
+        # Success — reset failure counter
+        consecutive_failures=0
 
         # Compute new expiresAt (current time + expires_in seconds, in ms)
         new_expires_at=$(( $(date +%s) * 1000 + expires_in * 1000 ))

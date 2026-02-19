@@ -26,6 +26,21 @@ func ResolveBackend(agentID string) Backend {
 		candidates = append(candidates, "hq-"+agentID)
 	}
 
+	// Handle rig/name format (e.g., "beads/obsidian", "gastown/polecats/furiosa").
+	// Extract the agent name for bead search if direct lookup fails.
+	var extractedName string
+	if strings.Contains(agentID, "/") {
+		parts := strings.Split(agentID, "/")
+		switch len(parts) {
+		case 2:
+			// rig/name — name is a polecat or crew member
+			extractedName = parts[1]
+		case 3:
+			// rig/type/name — name is the third component
+			extractedName = parts[2]
+		}
+	}
+
 	for _, id := range candidates {
 		// Check if agent has Coop backend metadata
 		coopCfg, err := resolveCoopConfig(id)
@@ -36,9 +51,15 @@ func ResolveBackend(agentID string) Backend {
 		}
 	}
 
-	// For bare names, search agent beads by name suffix.
+	// For bare names or rig/name paths, search agent beads by name suffix.
+	searchName := ""
 	if isBare {
-		if beadID := findAgentBeadByName(agentID); beadID != "" {
+		searchName = agentID
+	} else if extractedName != "" {
+		searchName = extractedName
+	}
+	if searchName != "" {
+		if beadID := findAgentBeadByName(searchName); beadID != "" {
 			coopCfg, err := resolveCoopConfig(beadID)
 			if err == nil && coopCfg != nil {
 				b := NewCoopBackend(coopCfg.CoopConfig)
