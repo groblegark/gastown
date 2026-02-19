@@ -1162,6 +1162,208 @@ func NudgeCrewWithDecision(workDir, rigName string, info *ResolvedDecisionInfo) 
 	return sessionName, nil
 }
 
+// OrphanedMolecule represents a molecule that has no active polecat working on it.
+type OrphanedMolecule struct {
+	MoleculeID string // Root molecule bead ID
+	Title      string // Molecule title
+	CreatedAt  string // When the molecule was created
+	Children   int    // Number of child step beads
+}
+
+// FindOrphanedMolecules finds mol-polecat-work molecules that have no active polecat.
+// A molecule is orphaned when:
+// 1. It is still open (not closed)
+// 2. It has children (step beads) — indicating it's a molecule root, not a leaf bead
+// 3. No open agent bead has it (or its parent base bead) as hook_bead
+// 4. It was created more than gracePeriod ago (to avoid closing newly-created molecules)
+//
+// This addresses the bug where crashed polecats leave mol-polecat-work molecules
+// and all their children open forever, causing issue tracker bloat.
+func FindOrphanedMolecules(workDir, rigName string, gracePeriod time.Duration) ([]*OrphanedMolecule, error) {
+	townRoot, err := workspace.Find(workDir)
+	if err != nil || townRoot == "" {
+		return nil, fmt.Errorf("finding town root: %w", err)
+	}
+
+	rigPath := filepath.Join(townRoot, rigName)
+	bd := beads.New(rigPath)
+
+	// Step 1: Collect all hook_bead values from open agent beads in this rig.
+	// These are molecules (or base beads) that are actively being worked on.
+	activeHooks := make(map[string]bool)
+
+	agentBeads, err := bd.ListAgentBeads()
+	if err != nil {
+		return nil, fmt.Errorf("listing agent beads: %w", err)
+	}
+
+	polecatSuffix := fmt.Sprintf("%s-polecat-", rigName)
+	for agentID, issue := range agentBeads {
+		if !strings.Contains(agentID, polecatSuffix) {
+			continue
+		}
+		// Only consider open/active agent beads
+		if issue.Status == "closed" {
+			continue
+		}
+		// Use HookBead from list output (populated from db column)
+		if issue.HookBead != "" {
+			activeHooks[issue.HookBead] = true
+		}
+	}
+
+	// Step 2: Find open beads that have children (molecule roots).
+	// We look for beads with the "instantiated_from" pattern in children,
+	// which indicates they are formula-instantiated molecules.
+	// Use a broad search for open beads, then filter to those with children.
+	allOpen, err := bd.List(beads.ListOptions{
+		Status:   "open",
+		Priority: -1,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing open beads: %w", err)
+	}
+
+	// Also check "hooked" and "pinned" status beads that might be stale
+	hookedBeads, err := bd.List(beads.ListOptions{
+		Status:   "hooked",
+		Priority: -1,
+	})
+	if err == nil {
+		allOpen = append(allOpen, hookedBeads...)
+	}
+
+	now := time.Now()
+	var orphans []*OrphanedMolecule
+
+	for _, issue := range allOpen {
+		// Skip beads without children (not molecule roots)
+		if len(issue.Children) == 0 {
+			continue
+		}
+
+		// Skip agent beads (they have gt:agent label)
+		if beads.HasLabel(issue, "gt:agent") {
+			continue
+		}
+
+		// Skip beads that are actively hooked by an agent
+		if activeHooks[issue.ID] {
+			continue
+		}
+
+		// Check if the molecule's description contains mol-polecat-work indicators
+		// (instantiated_from reference or formula markers)
+		isMolPolecat := strings.Contains(issue.Description, "mol-polecat-work") ||
+			strings.Contains(issue.Title, "mol-polecat-work")
+		if !isMolPolecat {
+			// Also check if any child has "instantiated_from" pointing to a
+			// mol-polecat-work formula — this is a more reliable indicator
+			// but more expensive. For now, also accept beads whose children
+			// have step-like descriptions.
+			hasStepChildren := false
+			for _, childID := range issue.Children {
+				child, err := bd.Show(childID)
+				if err != nil {
+					continue
+				}
+				if strings.Contains(child.Description, "instantiated_from:") ||
+					strings.Contains(child.Description, "step:") {
+					hasStepChildren = true
+					break
+				}
+			}
+			if !hasStepChildren {
+				continue
+			}
+		}
+
+		// Apply grace period: skip recently created molecules
+		if issue.CreatedAt != "" {
+			created, err := time.Parse(time.RFC3339, issue.CreatedAt)
+			if err == nil && now.Sub(created) < gracePeriod {
+				continue
+			}
+			// Try alternate date format
+			created, err = time.Parse("2006-01-02T15:04:05Z", issue.CreatedAt)
+			if err == nil && now.Sub(created) < gracePeriod {
+				continue
+			}
+		}
+
+		orphans = append(orphans, &OrphanedMolecule{
+			MoleculeID: issue.ID,
+			Title:      issue.Title,
+			CreatedAt:  issue.CreatedAt,
+			Children:   len(issue.Children),
+		})
+	}
+
+	return orphans, nil
+}
+
+// CloseOrphanedMolecule closes an orphaned molecule and all its descendant step beads.
+// Returns the number of beads closed (including the root).
+func CloseOrphanedMolecule(workDir, rigName string, mol *OrphanedMolecule) (int, error) {
+	townRoot, err := workspace.Find(workDir)
+	if err != nil || townRoot == "" {
+		return 0, fmt.Errorf("finding town root: %w", err)
+	}
+
+	rigPath := filepath.Join(townRoot, rigName)
+	bd := beads.New(rigPath)
+
+	// Recursively close all descendant step issues
+	childrenClosed := closeDescendantsRecursive(bd, mol.MoleculeID)
+
+	// Close the root molecule bead itself
+	reason := "orphan-gc: polecat crashed, molecule has no active worker"
+	if err := bd.CloseWithReason(reason, mol.MoleculeID); err != nil {
+		return childrenClosed, fmt.Errorf("closing molecule root %s: %w", mol.MoleculeID, err)
+	}
+
+	return childrenClosed + 1, nil
+}
+
+// closeDescendantsRecursive recursively closes all descendant issues of a parent.
+// Returns the count of issues closed. Non-fatal on errors.
+func closeDescendantsRecursive(bd *beads.Beads, parentID string) int {
+	children, err := bd.List(beads.ListOptions{
+		Parent: parentID,
+		Status: "all",
+	})
+	if err != nil || len(children) == 0 {
+		return 0
+	}
+
+	totalClosed := 0
+
+	// Recurse into grandchildren first
+	for _, child := range children {
+		totalClosed += closeDescendantsRecursive(bd, child.ID)
+	}
+
+	// Close direct children that are still open
+	var idsToClose []string
+	for _, child := range children {
+		if child.Status != "closed" {
+			idsToClose = append(idsToClose, child.ID)
+		}
+	}
+
+	if len(idsToClose) > 0 {
+		reason := "orphan-gc: parent molecule orphaned"
+		if err := bd.CloseWithReason(reason, idsToClose...); err != nil {
+			// Non-fatal
+			fmt.Printf("Warning: could not close children of %s: %v\n", parentID, err)
+		} else {
+			totalClosed += len(idsToClose)
+		}
+	}
+
+	return totalClosed
+}
+
 // MarkDecisionNotified marks a decision as having been notified to the crew.
 // This prevents duplicate notifications.
 func MarkDecisionNotified(workDir, decisionID string) error {
