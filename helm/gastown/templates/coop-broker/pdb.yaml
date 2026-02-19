@@ -1,0 +1,14 @@
+{{- if and .Values.coopBroker.enabled .Values.coopBroker.pdb.enabled (gt (int .Values.coopBroker.replicaCount) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "gastown.coopBroker.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.coopBroker.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.coopBroker.pdb.maxUnavailable | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "gastown.coopBroker.selectorLabels" . | nindent 6 }}
+{{- end }}

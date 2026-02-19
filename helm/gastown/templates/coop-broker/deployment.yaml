@@ -8,8 +8,16 @@ metadata:
     {{- include "gastown.coopBroker.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.coopBroker.replicaCount }}
+  {{- if gt (int .Values.coopBroker.replicaCount) 1 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  {{- else }}
   strategy:
     type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "gastown.coopBroker.selectorLabels" . | nindent 6 }}

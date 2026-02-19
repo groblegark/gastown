@@ -495,9 +495,11 @@ coopBroker:
   # NATS connection (auto-wired from bd-daemon NATS if empty)
   natsURL: ""
 
-  # Persistence: write credentials to PVC so they survive restarts
+  # Persistence: previously used for OAuth credentials.json, now
+  # deprecated after switch to static API keys (bd-szvrb).
+  # Disable for multi-replica deployments (RWO PVC is incompatible).
   persistence:
-    enabled: true
+    enabled: false
     size: 100Mi
     storageClass: ""
     path: "/var/lib/coop/credentials/credentials.json"
@@ -565,6 +567,11 @@ coopBroker:
     limits:
       cpu: 500m
       memory: 256Mi
+
+  # Pod Disruption Budget (active when replicaCount > 1).
+  pdb:
+    enabled: false
+    maxUnavailable: 1
 
   # Pod scheduling
   nodeSelector: {}
