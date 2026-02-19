@@ -277,11 +277,11 @@ func mergeK8sAgents(agents []*AgentSession, seen map[string]bool, townRoot strin
 	}
 
 	for _, s := range sessions {
-		if s.Target != "k8s" || seen[s.TmuxSession] {
+		if s.Target != "k8s" || seen[s.SessionName] {
 			continue
 		}
 		agent := &AgentSession{
-			Name:      s.TmuxSession,
+			Name:      s.SessionName,
 			Rig:       s.Rig,
 			AgentName: s.Name,
 			K8s:       true,
@@ -307,7 +307,7 @@ func mergeK8sAgents(agents []*AgentSession, seen map[string]bool, townRoot strin
 			agent.Type = AgentPolecat
 		}
 		agents = append(agents, agent)
-		seen[s.TmuxSession] = true
+		seen[s.SessionName] = true
 	}
 	return agents
 }

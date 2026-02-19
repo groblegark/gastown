@@ -348,8 +348,8 @@ func TestMergeK8sAgents_Dedup(t *testing.T) {
 
 	initialLen := len(agents)
 
-	// The seen map would prevent any K8s session with the same TmuxSession
-	// name from being added. Verify the precondition.
+	// The seen map would prevent any K8s session with the same SessionName
+	// from being added. Verify the precondition.
 	for _, a := range agents {
 		if !seen[a.Name] {
 			t.Errorf("agent %q not in seen map", a.Name)

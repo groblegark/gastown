@@ -10,7 +10,7 @@ import (
 )
 
 // discoverSessionNames discovers all agent sessions via the SessionRegistry
-// and returns their TmuxSession names. This is the K8s-native replacement for
+// and returns their session names. This is the K8s-native replacement for
 // listing sessions.
 //
 // townRoot is optional — if empty, the function tries workspace.FindFromCwd().
@@ -32,8 +32,8 @@ func discoverSessionNames(townRoot string) []string {
 
 	var names []string
 	for _, s := range sessions {
-		if s.TmuxSession != "" {
-			names = append(names, s.TmuxSession)
+		if s.SessionName != "" {
+			names = append(names, s.SessionName)
 		}
 	}
 	return names
@@ -56,8 +56,8 @@ func discoverSessionNamesForRig(townRoot, rigName string) []string {
 
 	var names []string
 	for _, s := range sessions {
-		if s.TmuxSession != "" {
-			names = append(names, s.TmuxSession)
+		if s.SessionName != "" {
+			names = append(names, s.SessionName)
 		}
 	}
 	return names

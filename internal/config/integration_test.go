@@ -3,7 +3,7 @@
 // This integration test verifies that custom agents defined in rig-level
 // settings/config.json are correctly loaded and used when spawning polecats.
 // It creates a stub agent, configures it at the rig level, and verifies
-// the agent is actually used via tmux session capture.
+// the agent is actually used via session capture.
 
 package config
 
@@ -23,7 +23,7 @@ import (
 // 1. Creates a stub agent script that echoes identifiable output
 // 2. Sets up a minimal town/rig with the custom agent configured
 // 3. Verifies that BuildPolecatStartupCommand uses the custom agent
-// 4. Optionally spawns a tmux session and verifies output (if tmux available)
+// 4. Optionally spawns a session and verifies output (if tmux available)
 func TestRigLevelCustomAgentIntegration(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
@@ -105,13 +105,13 @@ func TestRigLevelCustomAgentIntegration(t *testing.T) {
 		}
 	})
 
-	// Test 5: Tmux integration (skip if tmux not available)
-	t.Run("TmuxSessionWithCustomAgent", func(t *testing.T) {
+	// Test 5: Session integration (skip if tmux not available)
+	t.Run("SessionWithCustomAgent", func(t *testing.T) {
 		if _, err := exec.LookPath("tmux"); err != nil {
 			t.Skip("tmux not available, skipping session test")
 		}
 
-		testTmuxSessionWithStubAgent(t, tmpDir, stubAgentPath, rigName)
+		testSessionWithStubAgent(t, tmpDir, stubAgentPath, rigName)
 	})
 }
 
@@ -273,7 +273,7 @@ func pollForOutput(t *testing.T, sessionName, expected string, timeout time.Dura
 	return captureTmuxPane(t, sessionName, 50), false
 }
 
-func testTmuxSessionWithStubAgent(t *testing.T, tmpDir, stubAgentPath, rigName string) {
+func testSessionWithStubAgent(t *testing.T, tmpDir, stubAgentPath, rigName string) {
 	t.Helper()
 
 	sessionName := fmt.Sprintf("gt-test-pid%d-%d", os.Getpid(), time.Now().UnixNano())
@@ -338,7 +338,7 @@ func testTmuxSessionWithStubAgent(t *testing.T, tmpDir, stubAgentPath, rigName s
 		t.Logf("Note: Agent may have exited before capture. Output:\n%s", output)
 	}
 
-	t.Logf("Tmux session test completed successfully")
+	t.Logf("Session test completed successfully")
 }
 
 // captureTmuxPane captures the output from a tmux pane.

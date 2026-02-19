@@ -869,9 +869,9 @@ func detectTownRootFromCwd() string {
 	return ""
 }
 
-// getCurrentTmuxSession returns the current session name.
+// getCurrentSession returns the current session name.
 // Uses GT_SESSION or TMUX_SESSION env vars.
-func getCurrentTmuxSession() (string, error) {
+func getCurrentSession() (string, error) {
 	if s := os.Getenv("GT_SESSION"); s != "" {
 		return s, nil
 	}

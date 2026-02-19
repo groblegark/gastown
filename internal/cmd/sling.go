@@ -619,7 +619,7 @@ func runSling(cmd *cobra.Command, args []string) error {
 		// Wake witness and refinery to monitor the new polecat
 		wakeRigAgents(deferredRigName)
 	} else if deferredRigName != "" {
-		// Legacy tmux path: GT manages polecat lifecycle directly.
+		// Legacy path: GT manages polecat lifecycle directly.
 		// Set HookBead atomically at spawn time to prevent race condition (GH #hq-3d01de).
 		// Without this, the polecat might start before bd update sets the hook.
 		spawnOpts := SlingSpawnOptions{

@@ -1899,8 +1899,8 @@ func (c *Client) PeekSession(ctx context.Context, session string, lines int, all
 	return result.Output, result.Lines, result.Exists, nil
 }
 
-// ListTmuxSessions returns all active sessions via RPC.
-func (c *Client) ListTmuxSessions(ctx context.Context, prefix string) ([]string, error) {
+// ListSessions returns all active sessions via RPC.
+func (c *Client) ListSessions(ctx context.Context, prefix string) ([]string, error) {
 	body := map[string]interface{}{}
 	if prefix != "" {
 		body["prefix"] = prefix
@@ -1943,8 +1943,8 @@ func (c *Client) ListTmuxSessions(ctx context.Context, prefix string) ([]string,
 	return result.Sessions, nil
 }
 
-// HasTmuxSession checks if a specific session exists via RPC.
-func (c *Client) HasTmuxSession(ctx context.Context, session string) (bool, error) {
+// HasSession checks if a specific session exists via RPC.
+func (c *Client) HasSession(ctx context.Context, session string) (bool, error) {
 	body := map[string]interface{}{
 		"session": session,
 	}

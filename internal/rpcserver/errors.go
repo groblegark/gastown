@@ -40,7 +40,7 @@ func unavailableErr(msg string, err error, retryAfterSecs int) *connect.Error {
 	return withRetryAfter(connErr, retryAfterSecs)
 }
 
-// cmdExecErr handles errors from external command execution (gt CLI, tmux, etc).
+// cmdExecErr handles errors from external command execution (gt CLI, coop, etc).
 // It logs full details for server-side debugging but returns a sanitized error
 // to the client, preventing internal file paths and stack traces from leaking.
 func cmdExecErr(operation string, err error, output []byte) *connect.Error {

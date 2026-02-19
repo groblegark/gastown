@@ -37,10 +37,10 @@ func isK8sMode() bool {
 	return os.Getenv("KUBERNETES_SERVICE_HOST") != ""
 }
 
-// getTmuxSessionPIDs returns a set of PIDs belonging to managed sessions.
-// In K8s mode, there are no sessions, so this returns an empty set.
+// getSessionPIDs returns a set of PIDs belonging to managed sessions.
+// In K8s mode (Coop backend), there are no local sessions, so this returns an empty set.
 // Orphan detection relies solely on TTY-based and age-based checks.
-func getTmuxSessionPIDs() map[int]bool {
+func getSessionPIDs() map[int]bool {
 	return make(map[int]bool)
 }
 
@@ -228,7 +228,7 @@ func FindOrphanedClaudeProcesses() ([]OrphanedProcess, error) {
 
 	// Get PIDs belonging to valid Gas Town sessions.
 	// These should not be killed even if they show TTY "?" during startup.
-	protectedPIDs := getTmuxSessionPIDs()
+	protectedPIDs := getSessionPIDs()
 
 	// Also protect our own process and parent (defense-in-depth, gt-trf7ok).
 	self := selfPIDs()
@@ -331,7 +331,7 @@ func FindZombieClaudeProcesses() ([]ZombieProcess, error) {
 	}
 
 	// Get ALL valid PIDs (panes + their children) from active sessions
-	validPIDs := getTmuxSessionPIDs()
+	validPIDs := getSessionPIDs()
 
 	// Also protect our own process and parent (defense-in-depth, gt-trf7ok).
 	self := selfPIDs()

@@ -97,8 +97,8 @@ func runCrewAt(cmd *cobra.Command, args []string) error {
 	// Ensure crew workspace is on default branch (persistent roles should not use feature branches)
 	ensureDefaultBranch(worker.ClonePath, fmt.Sprintf("Crew workspace %s/%s", r.Name, name), r.Path)
 
-	// If --no-tmux, just print the path
-	if crewNoTmux {
+	// If --path-only, just print the path
+	if crewPathOnly {
 		fmt.Println(worker.ClonePath)
 		return nil
 	}

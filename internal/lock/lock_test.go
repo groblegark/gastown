@@ -461,7 +461,7 @@ func (m *mockCmd) Output() ([]byte, error) {
 	return m.output, m.err
 }
 
-func TestGetActiveTmuxSessions(t *testing.T) {
+func TestGetActiveSessions(t *testing.T) {
 	// Save and restore execCommand
 	origExecCommand := execCommand
 	defer func() { execCommand = origExecCommand }()
@@ -471,7 +471,7 @@ func TestGetActiveTmuxSessions(t *testing.T) {
 		return &mockCmd{output: []byte("session1:$1\nsession2:$2\n")}
 	}
 
-	sessions := getActiveTmuxSessions()
+	sessions := getActiveSessions()
 
 	// Should contain session names and IDs
 	expected := map[string]bool{

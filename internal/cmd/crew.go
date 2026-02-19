@@ -13,7 +13,7 @@ var (
 	crewJSON          bool
 	crewForce         bool
 	crewPurge         bool
-	crewNoTmux        bool
+	crewPathOnly      bool
 	crewDetached      bool
 	crewMessage       string
 	crewAccount       string
@@ -345,7 +345,7 @@ func init() {
 	crewListCmd.Flags().BoolVar(&crewJSON, "json", false, "Output as JSON")
 
 	crewAtCmd.Flags().StringVar(&crewRig, "rig", "", "Rig to use")
-	crewAtCmd.Flags().BoolVar(&crewNoTmux, "no-tmux", false, "Just print directory path")
+	crewAtCmd.Flags().BoolVar(&crewPathOnly, "path-only", false, "Just print directory path")
 	crewAtCmd.Flags().BoolVarP(&crewDetached, "detached", "d", false, "Start session without attaching")
 	crewAtCmd.Flags().StringVar(&crewAccount, "account", "", "Claude Code account handle to use (overrides default)")
 	crewAtCmd.Flags().StringVar(&crewAgentOverride, "agent", "", "Agent alias to run crew worker with (overrides rig/town default)")

@@ -262,7 +262,7 @@ func checkAgentHealth(townRoot string, report *PreflightReport) {
 	if sessions, err := reg.DiscoverAll(ctx, registry.DiscoverOpts{CheckLiveness: true}); err == nil {
 		for _, s := range sessions {
 			if s.Alive {
-				allSessions[s.TmuxSession] = true
+				allSessions[s.SessionName] = true
 				allSessions[s.ID] = true
 			}
 		}

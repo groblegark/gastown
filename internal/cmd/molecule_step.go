@@ -420,7 +420,7 @@ func handleStepContinue(cwd, townRoot, _ string, nextStep *beads.Issue, dryRun b
 	}
 
 	// Get current session for respawn
-	currentSession, err := getCurrentTmuxSession()
+	currentSession, err := getCurrentSession()
 	if err != nil {
 		return fmt.Errorf("getting session name: %w", err)
 	}

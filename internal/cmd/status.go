@@ -321,7 +321,7 @@ func runStatusOnce(_ *cobra.Command, _ []string) error {
 		if sessions, err := reg.DiscoverAll(ctx, registry.DiscoverOpts{CheckLiveness: true}); err == nil {
 			for _, s := range sessions {
 				if s.Alive {
-					allSessions[s.TmuxSession] = true
+					allSessions[s.SessionName] = true
 					// Also key by bead ID for K8s agents (coop liveness)
 					allSessions[s.ID] = true
 				}

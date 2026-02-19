@@ -433,7 +433,7 @@ func (s *StatusServer) HealthCheck(
 	components = append(components, s.checkDolt())
 
 	// Check terminal sessions
-	components = append(components, s.checkTmux())
+	components = append(components, s.checkTerminal())
 
 	// Check beads
 	components = append(components, s.checkBeads())
@@ -520,13 +520,13 @@ func (s *StatusServer) checkDolt() *gastownv1.ComponentHealth {
 	}
 }
 
-// checkTmux reports terminal sessions as not applicable (K8s mode uses coop backend).
-func (s *StatusServer) checkTmux() *gastownv1.ComponentHealth {
+// checkTerminal reports terminal session backend status (Coop backend in K8s mode).
+func (s *StatusServer) checkTerminal() *gastownv1.ComponentHealth {
 	return &gastownv1.ComponentHealth{
-		Name:      "tmux",
+		Name:      "terminal",
 		Healthy:   true,
 		LatencyMs: 0,
-		Message:   "not applicable (K8s mode, sessions managed via coop backend)",
+		Message:   "coop backend (K8s mode)",
 	}
 }
 

@@ -354,8 +354,9 @@ type RuntimeConfig struct {
 	// Hooks config controls runtime hook installation (if supported).
 	Hooks *RuntimeHooksConfig `json:"hooks,omitempty"`
 
-	// Tmux config controls process detection and readiness heuristics.
-	Tmux *RuntimeTmuxConfig `json:"tmux,omitempty"`
+	// Readiness config controls process detection and readiness heuristics.
+	// JSON key kept as "tmux" for backwards compatibility with existing configs.
+	Readiness *RuntimeReadinessConfig `json:"tmux,omitempty"`
 
 	// Instructions controls the per-workspace instruction file name.
 	Instructions *RuntimeInstructionsConfig `json:"instructions,omitempty"`
@@ -384,8 +385,8 @@ type RuntimeHooksConfig struct {
 	SettingsFile string `json:"settings_file,omitempty"`
 }
 
-// RuntimeTmuxConfig controls session heuristics for detecting runtime readiness.
-type RuntimeTmuxConfig struct {
+// RuntimeReadinessConfig controls session heuristics for detecting runtime readiness.
+type RuntimeReadinessConfig struct {
 	// ProcessNames are pane commands that indicate the runtime is running.
 	ProcessNames []string `json:"process_names,omitempty"`
 
@@ -509,20 +510,20 @@ func normalizeRuntimeConfig(rc *RuntimeConfig) *RuntimeConfig {
 		rc.Hooks.SettingsFile = defaultHooksFile(rc.Provider)
 	}
 
-	if rc.Tmux == nil {
-		rc.Tmux = &RuntimeTmuxConfig{}
+	if rc.Readiness == nil {
+		rc.Readiness = &RuntimeReadinessConfig{}
 	}
 
-	if rc.Tmux.ProcessNames == nil {
-		rc.Tmux.ProcessNames = defaultProcessNames(rc.Provider, rc.Command)
+	if rc.Readiness.ProcessNames == nil {
+		rc.Readiness.ProcessNames = defaultProcessNames(rc.Provider, rc.Command)
 	}
 
-	if rc.Tmux.ReadyPromptPrefix == "" {
-		rc.Tmux.ReadyPromptPrefix = defaultReadyPromptPrefix(rc.Provider)
+	if rc.Readiness.ReadyPromptPrefix == "" {
+		rc.Readiness.ReadyPromptPrefix = defaultReadyPromptPrefix(rc.Provider)
 	}
 
-	if rc.Tmux.ReadyDelayMs == 0 {
-		rc.Tmux.ReadyDelayMs = defaultReadyDelayMs(rc.Provider)
+	if rc.Readiness.ReadyDelayMs == 0 {
+		rc.Readiness.ReadyDelayMs = defaultReadyDelayMs(rc.Provider)
 	}
 
 	if rc.Instructions == nil {

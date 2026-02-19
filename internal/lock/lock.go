@@ -233,7 +233,7 @@ func CleanStaleLocks(root string) (int, error) {
 	}
 
 	// Get active sessions to verify locks
-	activeSessions := getActiveTmuxSessions()
+	activeSessions := getActiveSessions()
 	sessionSet := make(map[string]bool)
 	for _, s := range activeSessions {
 		sessionSet[s] = true
@@ -258,10 +258,11 @@ func CleanStaleLocks(root string) (int, error) {
 	return cleaned, nil
 }
 
-// getActiveTmuxSessions returns a list of active session identifiers.
+// getActiveSessions returns a list of active session identifiers.
+// Falls back to tmux list-sessions for local sessions.
 // Returns both session names (gt-foo-bar) and session IDs in various formats
 // (%N, $N) to handle different lock file formats.
-func getActiveTmuxSessions() []string {
+func getActiveSessions() []string {
 	// Get both session name and ID to handle different lock formats
 	// Format: "session_name:session_id" e.g., "gt-beads-crew-dave:$55"
 	cmd := execCommand("tmux", "list-sessions", "-F", "#{session_name}:#{session_id}")

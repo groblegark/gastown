@@ -1327,15 +1327,15 @@ func fillRuntimeDefaults(rc *RuntimeConfig) *RuntimeConfig {
 		}
 	}
 
-	if rc.Tmux != nil {
-		result.Tmux = &RuntimeTmuxConfig{
-			ReadyPromptPrefix: rc.Tmux.ReadyPromptPrefix,
-			ReadyDelayMs:      rc.Tmux.ReadyDelayMs,
+	if rc.Readiness != nil {
+		result.Readiness = &RuntimeReadinessConfig{
+			ReadyPromptPrefix: rc.Readiness.ReadyPromptPrefix,
+			ReadyDelayMs:      rc.Readiness.ReadyDelayMs,
 		}
 		// Deep copy ProcessNames slice
-		if rc.Tmux.ProcessNames != nil {
-			result.Tmux.ProcessNames = make([]string, len(rc.Tmux.ProcessNames))
-			copy(result.Tmux.ProcessNames, rc.Tmux.ProcessNames)
+		if rc.Readiness.ProcessNames != nil {
+			result.Readiness.ProcessNames = make([]string, len(rc.Readiness.ProcessNames))
+			copy(result.Readiness.ProcessNames, rc.Readiness.ProcessNames)
 		}
 	}
 
@@ -1776,7 +1776,7 @@ func BuildCrewStartupCommandWithAgentOverride(rigName, crewName, rigPath, prompt
 	return BuildStartupCommandWithAgentOverride(envVars, rigPath, prompt, agentOverride)
 }
 
-// ExpectedPaneCommands returns tmux pane command names that indicate the runtime is running.
+// ExpectedPaneCommands returns process command names that indicate the runtime is running.
 // Claude can report as "node" (older versions) or "claude" (newer versions).
 // Other runtimes typically report their executable name.
 func ExpectedPaneCommands(rc *RuntimeConfig) []string {
