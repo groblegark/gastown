@@ -66,7 +66,6 @@ const (
 	// Init container constants.
 	InitCloneName  = "init-clone"
 	InitCloneImage = "public.ecr.aws/docker/library/alpine:3.20"
-	GitDaemonPort    = 9418
 
 	// Coop sidecar constants.
 	CoopContainerName       = "coop"
@@ -139,14 +138,9 @@ type AgentPodSpec struct {
 	// shareProcessNamespace is enabled, and backend metadata is set to "coop".
 	CoopSidecar *CoopSidecarSpec
 
-	// GitMirrorService is the in-cluster git mirror service name for this rig
-	// (e.g., "git-mirror-beads"). When set and the role needs code access
-	// (polecat, crew, refinery), an init container is added that clones from
-	// git://<service>:9418/<rig>.git into the workspace.
-	GitMirrorService string
-
-	// GitURL is the actual upstream repository URL (e.g., "https://github.com/...").
-	// Used to set the git remote origin after cloning from the mirror.
+	// GitURL is the upstream repository URL (e.g., "https://github.com/...").
+	// When set and the role needs code access (polecat, crew, refinery),
+	// an init container clones from this URL into the workspace.
 	GitURL string
 
 	// GitDefaultBranch is the branch to checkout after cloning (default: "main").
@@ -885,14 +879,13 @@ func roleNeedsCode(role string) bool {
 }
 
 // buildInitCloneContainer creates an init container that clones the rig's repo
-// into the workspace. Prefers in-cluster git mirror for speed, falls back to
-// cloning directly from GitURL (GitHub) when no mirror is available.
+// into the workspace from GitURL.
 // Returns nil if the role doesn't need code or no clone source is configured.
 func (m *K8sManager) buildInitCloneContainer(spec AgentPodSpec) *corev1.Container {
 	if !roleNeedsCode(spec.Role) {
 		return nil
 	}
-	if spec.GitMirrorService == "" && spec.GitURL == "" {
+	if spec.GitURL == "" {
 		return nil
 	}
 
@@ -901,10 +894,7 @@ func (m *K8sManager) buildInitCloneContainer(spec AgentPodSpec) *corev1.Containe
 		branch = "main"
 	}
 
-	var script string
-	if spec.GitMirrorService != "" {
-		// Clone from in-cluster git mirror (fast, cached).
-		script = fmt.Sprintf(`set -e
+	script := fmt.Sprintf(`set -e
 apk add --no-cache git
 git config --global --add safe.directory '%s/%s/work'
 WORK_DIR="%s/%s/work"
@@ -915,38 +905,12 @@ if [ -d "$WORK_DIR/.git" ]; then
   git checkout %s
   git pull --ff-only || true
 else
-  echo "Cloning from mirror %s..."
-  mkdir -p "$(dirname "$WORK_DIR")"
-  git clone -b %s git://%s:%d/%s.git "$WORK_DIR"
-  cd "$WORK_DIR"
-fi
-`, MountWorkspace, spec.Rig, MountWorkspace, spec.Rig, branch, spec.GitMirrorService, branch, spec.GitMirrorService, GitDaemonPort, spec.Rig)
-
-		// Set origin to actual GitHub URL for pushes.
-		if spec.GitURL != "" {
-			script += fmt.Sprintf(`git remote set-url origin %s
-`, spec.GitURL)
-		}
-	} else {
-		// No git mirror available — clone directly from GitHub.
-		script = fmt.Sprintf(`set -e
-apk add --no-cache git
-git config --global --add safe.directory '%s/%s/work'
-WORK_DIR="%s/%s/work"
-if [ -d "$WORK_DIR/.git" ]; then
-  echo "Repo already cloned, fetching updates..."
-  cd "$WORK_DIR"
-  git fetch --all --prune
-  git checkout %s
-  git pull --ff-only || true
-else
-  echo "Cloning from %s (no git mirror)..."
+  echo "Cloning from %s..."
   mkdir -p "$(dirname "$WORK_DIR")"
   git clone -b %s %s "$WORK_DIR"
   cd "$WORK_DIR"
 fi
 `, MountWorkspace, spec.Rig, MountWorkspace, spec.Rig, branch, spec.GitURL, branch, spec.GitURL)
-	}
 
 	// Configure git identity from agent env vars.
 	script += fmt.Sprintf(`git config user.name "%s"
