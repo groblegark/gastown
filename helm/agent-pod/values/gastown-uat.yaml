@@ -77,7 +77,7 @@ resourceQuota:
   hard:
     requests.cpu: "8"
     requests.memory: "16Gi"
-    limits.cpu: "16"
-    limits.memory: "32Gi"
+    limits.cpu: "40"
+    limits.memory: "40Gi"
     pods: "10"
     persistentvolumeclaims: "5"
