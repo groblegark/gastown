@@ -1192,6 +1192,98 @@ type TurnBlockResult struct {
 	Reason   string `json:"reason"`
 }
 
+// defaultTurnCheckPrompt is the fallback prompt when the config bead is
+// unavailable (daemon down, bead not seeded, etc.).
+const defaultTurnCheckPrompt = `You must offer a formal decision point using 'gt decision request' before ending this turn. This ensures humans stay informed about progress and can provide guidance.
+
+IMPORTANT GUIDELINES FOR OPTIONS:
+- Do NOT offer a generic "stop" or "pause" option every time. Instead, think about what would be genuinely interesting or valuable to explore next and offer a "Dive deeper on X" option where X is a specific, concrete area related to the current work.
+- Prefer NOT to offer options for work that is already in progress — the human already decided on that. Focus on new directions, unexplored angles, or adjacent improvements.
+- Options should be forward-looking and specific, not just "continue current work" vs "stop".
+
+When the decision is created, it will be assigned a semantic slug (e.g., gt-dec-cache_strategyzfyl8) that makes it easy to identify in Slack and logs. Use clear, descriptive prompts so the generated slug is meaningful.`
+
+// loadTurnCheckPromptFromConfig loads the agent_decision_prompt from the
+// claude-hooks config bead (hq-cfg-claude-hooks-global). Performs template
+// expansion for {{ACTOR}} and {{ROSTER_SUMMARY}}. Returns empty string if
+// the config bead is unavailable or the prompt field is not set.
+func loadTurnCheckPromptFromConfig() string {
+	townRoot, err := workspace.FindFromCwd()
+	if err != nil {
+		return ""
+	}
+
+	bd := beads.New(beads.ResolveBeadsDir(townRoot))
+
+	// Load claude-hooks config beads — there may be multiple with different
+	// scopes (global, per-rig, per-agent). We iterate and let later beads
+	// override earlier ones (same pattern as beads/gate_session.go).
+	issues, err := bd.ListConfigBeadsByCategory("claude-hooks")
+	if err != nil {
+		return ""
+	}
+
+	var prompt string
+	var enabled *bool
+	for _, issue := range issues {
+		fields := beads.ParseConfigFields(issue.Description)
+		if fields.Metadata == "" {
+			continue
+		}
+
+		var data map[string]interface{}
+		if err := json.Unmarshal([]byte(fields.Metadata), &data); err != nil {
+			continue
+		}
+
+		if sd, ok := data["stop_decision"].(map[string]interface{}); ok {
+			if p, ok := sd["agent_decision_prompt"].(string); ok && p != "" {
+				prompt = p
+			}
+			if e, ok := sd["enabled"].(bool); ok {
+				enabled = &e
+			}
+		}
+	}
+
+	// Check enabled state — disabled means no config prompt (use default).
+	if enabled != nil && !*enabled {
+		return ""
+	}
+
+	if prompt == "" {
+		return ""
+	}
+
+	// Template expansion: {{ACTOR}}
+	actor := detectSender()
+	if actor == "" || actor == "unknown" {
+		actor = os.Getenv("BD_ACTOR")
+	}
+	if actor != "" {
+		prompt = strings.ReplaceAll(prompt, "{{ACTOR}}", actor)
+	}
+
+	// Template expansion: {{ROSTER_SUMMARY}}
+	// The gt CLI doesn't have direct daemon roster access, so we provide a
+	// placeholder instructing the agent to check the roster themselves.
+	if strings.Contains(prompt, "{{ROSTER_SUMMARY}}") {
+		prompt = strings.ReplaceAll(prompt, "{{ROSTER_SUMMARY}}",
+			"(Run 'bd ready' and 'bd news' to see current roster and available work)")
+	}
+
+	return prompt
+}
+
+// getTurnCheckPrompt returns the prompt for turn-check blocking.
+// Tries config bead first, falls back to hardcoded default.
+func getTurnCheckPrompt() string {
+	if prompt := loadTurnCheckPromptFromConfig(); prompt != "" {
+		return prompt
+	}
+	return defaultTurnCheckPrompt
+}
+
 // checkTurnMarker checks if a decision was offered this turn.
 // Returns nil if allowed, or a TurnBlockResult if blocked.
 // If soft is true, never blocks (just returns nil).
@@ -1210,17 +1302,10 @@ func checkTurnMarker(sessionID string, soft bool) *TurnBlockResult {
 		return nil
 	}
 
-	// Strict mode - block
+	// Strict mode - block with config bead prompt (or fallback)
 	return &TurnBlockResult{
 		Decision: "block",
-		Reason: `You must offer a formal decision point using 'gt decision request' before ending this turn. This ensures humans stay informed about progress and can provide guidance.
-
-IMPORTANT GUIDELINES FOR OPTIONS:
-- Do NOT offer a generic "stop" or "pause" option every time. Instead, think about what would be genuinely interesting or valuable to explore next and offer a "Dive deeper on X" option where X is a specific, concrete area related to the current work.
-- Prefer NOT to offer options for work that is already in progress — the human already decided on that. Focus on new directions, unexplored angles, or adjacent improvements.
-- Options should be forward-looking and specific, not just "continue current work" vs "stop".
-
-When the decision is created, it will be assigned a semantic slug (e.g., gt-dec-cache_strategyzfyl8) that makes it easy to identify in Slack and logs. Use clear, descriptive prompts so the generated slug is meaningful.`,
+		Reason:   getTurnCheckPrompt(),
 	}
 }
 
@@ -1406,21 +1491,7 @@ func runDecisionTurnCheck(cmd *cobra.Command, args []string) error {
 
 	result := &TurnBlockResult{
 		Decision: "block",
-		Reason: `You must offer a formal decision point using 'gt decision request' before ending this turn. This ensures humans stay informed about progress and can provide guidance.
-
-IMPORTANT GUIDELINES FOR OPTIONS:
-- Do NOT offer a generic "stop" or "pause" option every time. Instead, think about what would be genuinely interesting or valuable to explore next and offer a "Dive deeper on X" option where X is a specific, concrete area related to the current work.
-- Prefer NOT to offer options for work that is already in progress — the human already decided on that. Focus on new directions, unexplored angles, or adjacent improvements.
-- Options should be forward-looking and specific, not just "continue current work" vs "stop".
-
-Example:
-  gt decision request \
-    --prompt "Completed the auth refactor. What next?" \
-    --option "Dive deeper on token rotation: Add automatic refresh with jitter" \
-    --option "Harden error paths: Add structured error types for auth failures" \
-    --option "Move on: This area is good enough for now"
-
-When the decision is created, it will be assigned a semantic slug (e.g., gt-dec-cache_strategyzfyl8) that makes it easy to identify in Slack and logs. Use clear, descriptive prompts so the generated slug is meaningful.`,
+		Reason:   getTurnCheckPrompt(),
 	}
 	out, _ := json.Marshal(result)
 	fmt.Println(string(out))
