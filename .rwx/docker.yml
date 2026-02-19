@@ -579,7 +579,7 @@ tasks:
           dir="$LAYER$(dirname "$f")"
           mkdir -p "$dir"
           cp "$f" "$LAYER${f}" 2>/dev/null || true
-        done
+        done || true  # dpkg -L returns 1 for uninstalled packages; don't fail
       done
       # sudo config — create sudoers with correct ownership (root:root, 0440).
       # Uses printf to avoid '@' in heredoc (RWX YAML parser chokes on it).
