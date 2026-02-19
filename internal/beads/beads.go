@@ -785,6 +785,24 @@ func (b *Beads) CloseWithReason(reason string, ids ...string) error {
 	return err
 }
 
+// CloseWithReasonForce closes one or more issues with a reason and --force flag.
+// The force flag allows closing pinned issues and issues with open dependencies.
+func (b *Beads) CloseWithReasonForce(reason string, ids ...string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	args := append([]string{"close"}, ids...)
+	args = append(args, "--reason="+reason, "--force")
+
+	if sessionID := runtime.SessionIDFromEnv(); sessionID != "" {
+		args = append(args, "--session="+sessionID)
+	}
+
+	_, err := b.run(args...)
+	return err
+}
+
 // Release moves an in_progress issue back to open status.
 // This is used to recover stuck steps when a worker dies mid-task.
 // It clears the assignee so the step can be claimed by another worker.

@@ -1179,29 +1179,46 @@ type OrphanedMolecule struct {
 //
 // This addresses the bug where crashed polecats leave mol-polecat-work molecules
 // and all their children open forever, causing issue tracker bloat.
+//
+// When rigName is empty and scope is "town", scans town-level beads (hq- prefix).
+// When rigName is set, scans rig-level beads only.
 func FindOrphanedMolecules(workDir, rigName string, gracePeriod time.Duration) ([]*OrphanedMolecule, error) {
+	return FindOrphanedMoleculesWithScope(workDir, rigName, gracePeriod, "rig")
+}
+
+// FindOrphanedMoleculesWithScope finds orphaned molecules at the specified scope.
+// scope can be "rig" (rig-level beads) or "town" (town-level hq- beads).
+func FindOrphanedMoleculesWithScope(workDir, rigName string, gracePeriod time.Duration, scope string) ([]*OrphanedMolecule, error) {
 	townRoot, err := workspace.Find(workDir)
 	if err != nil || townRoot == "" {
 		return nil, fmt.Errorf("finding town root: %w", err)
 	}
 
-	rigPath := filepath.Join(townRoot, rigName)
-	bd := beads.New(rigPath)
+	// Choose beads path based on scope
+	var beadsPath string
+	switch scope {
+	case "town":
+		// Town-level beads are at the town root (hq- prefix)
+		beadsPath = townRoot
+	default:
+		// Rig-level beads are at the rig path
+		beadsPath = filepath.Join(townRoot, rigName)
+	}
+	bd := beads.New(beadsPath)
 
-	// Step 1: Collect all hook_bead values from open agent beads in this rig.
+	// Step 1: Collect all hook_bead values from open agent beads.
 	// These are molecules (or base beads) that are actively being worked on.
+	// For town scope, we also need to check the town-level agent beads.
 	activeHooks := make(map[string]bool)
 
-	agentBeads, err := bd.ListAgentBeads()
+	// Always check town-level agent beads (they have hq- prefix and live at townRoot)
+	townBd := beads.New(townRoot)
+	agentBeads, err := townBd.ListAgentBeads()
 	if err != nil {
 		return nil, fmt.Errorf("listing agent beads: %w", err)
 	}
 
-	polecatSuffix := fmt.Sprintf("%s-polecat-", rigName)
-	for agentID, issue := range agentBeads {
-		if !strings.Contains(agentID, polecatSuffix) {
-			continue
-		}
+	for _, issue := range agentBeads {
 		// Only consider open/active agent beads
 		if issue.Status == "closed" {
 			continue
@@ -1209,6 +1226,21 @@ func FindOrphanedMolecules(workDir, rigName string, gracePeriod time.Duration) (
 		// Use HookBead from list output (populated from db column)
 		if issue.HookBead != "" {
 			activeHooks[issue.HookBead] = true
+		}
+	}
+
+	// For rig scope, also check rig-level agent beads
+	if scope == "rig" {
+		rigAgentBeads, err := bd.ListAgentBeads()
+		if err == nil {
+			for _, issue := range rigAgentBeads {
+				if issue.Status == "closed" {
+					continue
+				}
+				if issue.HookBead != "" {
+					activeHooks[issue.HookBead] = true
+				}
+			}
 		}
 	}
 
@@ -1305,20 +1337,32 @@ func FindOrphanedMolecules(workDir, rigName string, gracePeriod time.Duration) (
 // CloseOrphanedMolecule closes an orphaned molecule and all its descendant step beads.
 // Returns the number of beads closed (including the root).
 func CloseOrphanedMolecule(workDir, rigName string, mol *OrphanedMolecule) (int, error) {
+	return CloseOrphanedMoleculeWithScope(workDir, rigName, mol, "rig")
+}
+
+// CloseOrphanedMoleculeWithScope closes an orphaned molecule at the specified scope.
+// scope can be "rig" or "town".
+func CloseOrphanedMoleculeWithScope(workDir, rigName string, mol *OrphanedMolecule, scope string) (int, error) {
 	townRoot, err := workspace.Find(workDir)
 	if err != nil || townRoot == "" {
 		return 0, fmt.Errorf("finding town root: %w", err)
 	}
 
-	rigPath := filepath.Join(townRoot, rigName)
-	bd := beads.New(rigPath)
+	var beadsPath string
+	switch scope {
+	case "town":
+		beadsPath = townRoot
+	default:
+		beadsPath = filepath.Join(townRoot, rigName)
+	}
+	bd := beads.New(beadsPath)
 
-	// Recursively close all descendant step issues
+	// Recursively close all descendant step issues (with --force for dependency chains)
 	childrenClosed := closeDescendantsRecursive(bd, mol.MoleculeID)
 
-	// Close the root molecule bead itself
+	// Close the root molecule bead itself (with --force)
 	reason := "orphan-gc: polecat crashed, molecule has no active worker"
-	if err := bd.CloseWithReason(reason, mol.MoleculeID); err != nil {
+	if err := bd.CloseWithReasonForce(reason, mol.MoleculeID); err != nil {
 		return childrenClosed, fmt.Errorf("closing molecule root %s: %w", mol.MoleculeID, err)
 	}
 
@@ -1353,7 +1397,7 @@ func closeDescendantsRecursive(bd *beads.Beads, parentID string) int {
 
 	if len(idsToClose) > 0 {
 		reason := "orphan-gc: parent molecule orphaned"
-		if err := bd.CloseWithReason(reason, idsToClose...); err != nil {
+		if err := bd.CloseWithReasonForce(reason, idsToClose...); err != nil {
 			// Non-fatal
 			fmt.Printf("Warning: could not close children of %s: %v\n", parentID, err)
 		} else {

@@ -17,6 +17,7 @@ var (
 	molGCDryRun      bool
 	molGCJSON        bool
 	molGCGracePeriod string
+	molGCScope       string
 )
 
 var moleculeGCCmd = &cobra.Command{
@@ -34,9 +35,13 @@ A molecule is considered orphaned when:
   - No active polecat agent bead has it hooked
   - It was created more than --grace-period ago (default: 1h)
 
+Use --scope=town to scan town-level beads (hq- prefix) instead of rig-level.
+This catches orphaned molecules dispatched by the mayor or cross-rig workflows.
+
 Examples:
-  gt mol gc gastown               # Close orphaned molecules in gastown rig
-  gt mol gc gastown --dry-run     # Preview what would be closed
+  gt mol gc gastown                     # Close orphaned molecules in gastown rig
+  gt mol gc gastown --dry-run           # Preview what would be closed
+  gt mol gc gastown --scope town        # Scan town-level (hq-) beads
   gt mol gc gastown --grace-period 30m  # Shorter grace period`,
 	Args: cobra.ExactArgs(1),
 	RunE: runMoleculeGC,
@@ -46,6 +51,7 @@ func init() {
 	moleculeGCCmd.Flags().BoolVar(&molGCDryRun, "dry-run", false, "Preview what would be closed without closing")
 	moleculeGCCmd.Flags().BoolVar(&molGCJSON, "json", false, "Output as JSON")
 	moleculeGCCmd.Flags().StringVar(&molGCGracePeriod, "grace-period", "1h", "Grace period before considering a molecule orphaned (e.g., 30m, 2h)")
+	moleculeGCCmd.Flags().StringVar(&molGCScope, "scope", "rig", "Scope to scan: 'rig' for rig-level beads, 'town' for town-level (hq-) beads")
 
 	moleculeCmd.AddCommand(moleculeGCCmd)
 }
@@ -54,6 +60,7 @@ func init() {
 type MolGCResult struct {
 	DryRun       bool                `json:"dry_run"`
 	RigName      string              `json:"rig_name"`
+	Scope        string              `json:"scope"`
 	OrphansFound int                 `json:"orphans_found"`
 	BeadsClosed  int                 `json:"beads_closed"`
 	Orphans      []MolGCOrphanEntry  `json:"orphans,omitempty"`
@@ -71,6 +78,11 @@ type MolGCOrphanEntry struct {
 func runMoleculeGC(cmd *cobra.Command, args []string) error {
 	rigName := args[0]
 
+	// Validate scope
+	if molGCScope != "rig" && molGCScope != "town" {
+		return fmt.Errorf("invalid scope %q: must be 'rig' or 'town'", molGCScope)
+	}
+
 	// Parse grace period
 	gracePeriod, err := time.ParseDuration(molGCGracePeriod)
 	if err != nil {
@@ -87,8 +99,8 @@ func runMoleculeGC(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not in a Gas Town workspace")
 	}
 
-	// Find orphaned molecules
-	orphans, err := witness.FindOrphanedMolecules(townRoot, rigName, gracePeriod)
+	// Find orphaned molecules at the specified scope
+	orphans, err := witness.FindOrphanedMoleculesWithScope(townRoot, rigName, gracePeriod, molGCScope)
 	if err != nil {
 		return fmt.Errorf("finding orphaned molecules: %w", err)
 	}
@@ -98,19 +110,25 @@ func runMoleculeGC(cmd *cobra.Command, args []string) error {
 			result := MolGCResult{
 				DryRun:       molGCDryRun,
 				RigName:      rigName,
+				Scope:        molGCScope,
 				OrphansFound: 0,
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(result)
 		}
-		fmt.Printf("%s No orphaned molecules found in %s\n", style.Dim.Render("○"), rigName)
+		scopeLabel := rigName
+		if molGCScope == "town" {
+			scopeLabel = rigName + " (town-level)"
+		}
+		fmt.Printf("%s No orphaned molecules found in %s\n", style.Dim.Render("○"), scopeLabel)
 		return nil
 	}
 
 	result := MolGCResult{
 		DryRun:       molGCDryRun,
 		RigName:      rigName,
+		Scope:        molGCScope,
 		OrphansFound: len(orphans),
 		Orphans:      make([]MolGCOrphanEntry, 0, len(orphans)),
 	}
@@ -140,7 +158,7 @@ func runMoleculeGC(cmd *cobra.Command, args []string) error {
 			fmt.Printf("Closing %d orphaned molecule(s) in %s...\n", len(orphans), rigName)
 		}
 		for _, mol := range orphans {
-			closed, err := witness.CloseOrphanedMolecule(townRoot, rigName, mol)
+			closed, err := witness.CloseOrphanedMoleculeWithScope(townRoot, rigName, mol, molGCScope)
 			entry := MolGCOrphanEntry{
 				MoleculeID: mol.MoleculeID,
 				Title:      mol.Title,
