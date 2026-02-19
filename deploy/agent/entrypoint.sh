@@ -240,12 +240,18 @@ COOP_STATE="${STATE_DIR}/coop"
 
 mkdir -p "${CLAUDE_STATE}" "${COOP_STATE}"
 
-# Symlink ~/.claude → PVC-backed directory.
+# Persist ~/.claude on PVC.
 CLAUDE_DIR="${HOME}/.claude"
-# Remove the ephemeral dir (or stale symlink) and replace with symlink.
-rm -rf "${CLAUDE_DIR}"
-ln -sfn "${CLAUDE_STATE}" "${CLAUDE_DIR}"
-echo "[entrypoint] Linked ${CLAUDE_DIR} → ${CLAUDE_STATE} (PVC-backed)"
+# If ~/.claude is a mount point (subPath mount from controller, bd-48ary),
+# it's already PVC-backed — skip the symlink dance.  Otherwise, replace
+# the ephemeral dir/stale symlink with a symlink to the PVC directory.
+if mountpoint -q "${CLAUDE_DIR}" 2>/dev/null; then
+    echo "[entrypoint] ${CLAUDE_DIR} is a mount point (subPath) — already PVC-backed"
+else
+    rm -rf "${CLAUDE_DIR}"
+    ln -sfn "${CLAUDE_STATE}" "${CLAUDE_DIR}"
+    echo "[entrypoint] Linked ${CLAUDE_DIR} → ${CLAUDE_STATE} (PVC-backed)"
+fi
 
 # Seed credentials from K8s secret mount if PVC doesn't have them yet.
 # IMPORTANT: Don't overwrite PVC credentials on restart — the refresh loop
