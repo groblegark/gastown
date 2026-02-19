@@ -42,6 +42,17 @@ agent:
                 operator: In
                 values:
                   - on-demand
+        - weight: 80
+          preference:
+            matchExpressions:
+              - key: karpenter.k8s.aws/instance-family
+                operator: In
+                values:
+                  - c5
+                  - c5a
+                  - c6i
+                  - c6a
+                  - c7i
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
           - matchExpressions:

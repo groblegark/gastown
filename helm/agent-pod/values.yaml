@@ -52,7 +52,7 @@ agent:
       cpu: 500m
       memory: 1Gi
     limits:
-      cpu: 2
+      cpu: 4
       memory: 4Gi
 
   # Probes — use coop HTTP health endpoints by default
@@ -106,6 +106,17 @@ agent:
                 operator: In
                 values:
                   - on-demand
+        - weight: 80
+          preference:
+            matchExpressions:
+              - key: karpenter.k8s.aws/instance-family
+                operator: In
+                values:
+                  - c5
+                  - c5a
+                  - c6i
+                  - c6a
+                  - c7i
 
   # Security contexts
   podSecurityContext:

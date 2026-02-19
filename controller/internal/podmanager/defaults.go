@@ -14,6 +14,7 @@ type PodDefaults struct {
 	ServiceAccountName string
 	NodeSelector       map[string]string
 	Tolerations        []corev1.Toleration
+	Affinity           *corev1.Affinity
 	Env                map[string]string
 	SecretEnv          []SecretEnvSource
 	ConfigMapName      string
@@ -52,6 +53,9 @@ func MergePodDefaults(base, override *PodDefaults) *PodDefaults {
 	}
 	if len(override.Tolerations) > 0 {
 		result.Tolerations = override.Tolerations
+	}
+	if override.Affinity != nil {
+		result.Affinity = override.Affinity
 	}
 	if len(override.Env) > 0 {
 		result.Env = mergeMaps(result.Env, override.Env)
@@ -93,6 +97,9 @@ func ApplyDefaults(spec *AgentPodSpec, defaults *PodDefaults) {
 	}
 	if len(spec.Tolerations) == 0 && len(defaults.Tolerations) > 0 {
 		spec.Tolerations = defaults.Tolerations
+	}
+	if spec.Affinity == nil && defaults.Affinity != nil {
+		spec.Affinity = defaults.Affinity
 	}
 	if spec.ConfigMapName == "" && defaults.ConfigMapName != "" {
 		spec.ConfigMapName = defaults.ConfigMapName
@@ -185,6 +192,41 @@ func DefaultPodDefaultsForRole(role string) *PodDefaults {
 		// Agent image is x86-only; pin to amd64 nodes.
 		NodeSelector: map[string]string{
 			"kubernetes.io/arch": "amd64",
+		},
+		// Prefer on-demand, compute-optimized nodes; exclude per-MR nodes.
+		Affinity: &corev1.Affinity{
+			NodeAffinity: &corev1.NodeAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+					{
+						Weight: 100,
+						Preference: corev1.NodeSelectorTerm{
+							MatchExpressions: []corev1.NodeSelectorRequirement{{
+								Key:      "karpenter.sh/capacity-type",
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"on-demand"},
+							}},
+						},
+					},
+					{
+						Weight: 80,
+						Preference: corev1.NodeSelectorTerm{
+							MatchExpressions: []corev1.NodeSelectorRequirement{{
+								Key:      "karpenter.k8s.aws/instance-family",
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"c5", "c5a", "c6i", "c6a", "c7i"},
+							}},
+						},
+					},
+				},
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+						MatchExpressions: []corev1.NodeSelectorRequirement{{
+							Key:      "per-mr",
+							Operator: corev1.NodeSelectorOpDoesNotExist,
+						}},
+					}},
+				},
+			},
 		},
 	}
 

@@ -35,7 +35,7 @@ const (
 
 	// Default resource values.
 	DefaultCPURequest    = "500m"
-	DefaultCPULimit      = "2"
+	DefaultCPULimit      = "4"
 	DefaultMemoryRequest = "1Gi"
 	DefaultMemoryLimit   = "4Gi"
 
@@ -114,6 +114,9 @@ type AgentPodSpec struct {
 
 	// Tolerations for the pod.
 	Tolerations []corev1.Toleration
+
+	// Affinity rules for pod scheduling (e.g. prefer compute-optimized nodes).
+	Affinity *corev1.Affinity
 
 	// WorkspaceStorage configures a PVC for persistent workspace.
 	// Used by crew pods. If nil, an EmptyDir is used for polecat pods.
@@ -366,6 +369,9 @@ func (m *K8sManager) buildPod(spec AgentPodSpec) *corev1.Pod {
 	}
 	if len(spec.Tolerations) > 0 {
 		podSpec.Tolerations = spec.Tolerations
+	}
+	if spec.Affinity != nil {
+		podSpec.Affinity = spec.Affinity
 	}
 
 	// Polecats are one-shot; use a 30s termination grace period.
