@@ -73,8 +73,14 @@ tasks:
   - key: integration
     use: build
     run: |
-      go install github.com/steveyegge/beads/cmd/bd@v0.52.0
-      export PATH="$(pwd):$(go env GOPATH)/bin:$PATH"
+      source platform-versions.env
+      VERSION_NUM=${BEADS_VERSION#v}
+      echo "Downloading bd ${BEADS_VERSION} for linux_amd64"
+      curl -fsSL "https://github.com/groblegark/beads/releases/download/${BEADS_VERSION}/beads_${VERSION_NUM}_linux_amd64.tar.gz" \
+        -o /tmp/bd.tar.gz
+      mkdir -p /tmp/bd-bin
+      tar -xzf /tmp/bd.tar.gz -C /tmp/bd-bin
+      export PATH="$(pwd):/tmp/bd-bin:$(go env GOPATH)/bin:$PATH"
       go test -tags=integration -timeout=5m -v ./internal/cmd/...
 
   # ── Beads JSONL change guard ──────────────────────────────────────────
