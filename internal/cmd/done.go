@@ -633,42 +633,25 @@ notifyWitness:
 			}
 		}
 
-		// Step 1b (K8s only): Close the agent bead directly to trigger pod deletion.
-		// Previously, gt done only mailed the Witness and relied on it to call
-		// gt polecat nuke to close the bead. This made the Witness a single point
-		// of failure — if it was slow or crashed, pods lingered indefinitely.
-		// Now: gt done closes the bead directly for clean completions, and the
-		// K8s controller's bead watcher immediately triggers pod deletion.
-		// The Witness still receives POLECAT_DONE mail for its bookkeeping.
-		if isRunningInK8s() && doneCleanupStatus == "clean" {
-			ctx := RoleContext{
-				Role:     roleInfo.Role,
-				Rig:      roleInfo.Rig,
-				Polecat:  roleInfo.Polecat,
-				TownRoot: townRoot,
-				WorkDir:  cwd,
-			}
-			if beadID := getAgentBeadID(ctx); beadID != "" {
-				bd := beads.New(townRoot)
-				reason := fmt.Sprintf("gt done: %s (cleanup_status=clean)", exitType)
-				if err := bd.CloseWithReason(reason, beadID); err != nil {
-					// Non-fatal: Witness will close the bead as fallback
-					style.PrintWarning("could not close agent bead %s: %v (Witness will handle)", beadID, err)
-				} else {
-					fmt.Printf("%s Agent bead closed — controller will terminate pod\n", style.Bold.Render("✓"))
-				}
-			}
-		}
-
-		// Step 2: Kill our own session (this terminates Claude and the shell)
-		// This is the last thing we do - the process will be terminated via Coop signal
-		// All exit types kill the session - "done means gone"
+		// Step 2: Terminate the session.
+		// In K8s mode, agent bead closure (done above in updateAgentStateOnDone)
+		// triggers controller pod deletion. The process will be killed by kubelet
+		// when the pod is terminated. We still call os.Exit as a fallback.
+		//
+		// For local mode, use Coop to signal session termination.
 		fmt.Printf("%s Terminating session (done means gone)\n", style.Bold.Render("→"))
-		if err := selfKillSession(townRoot, roleInfo); err != nil {
-			// If session kill fails, fall through to os.Exit
-			style.PrintWarning("session kill failed: %v", err)
+		if isRunningInK8s() {
+			// K8s teardown: Agent bead is already closed. Controller will delete
+			// the pod, and kubelet will SIGTERM the container. Fall through to
+			// os.Exit(0) as immediate cleanup rather than waiting for controller.
+			fmt.Printf("%s Agent bead closed — controller will delete pod\n", style.Bold.Render("✓"))
+		} else {
+			if err := selfKillSession(townRoot, roleInfo); err != nil {
+				// If session kill fails, fall through to os.Exit
+				style.PrintWarning("session kill failed: %v", err)
+			}
+			// If selfKillSession succeeds, we won't reach here (process terminated via Coop)
 		}
-		// If selfKillSession succeeds, we won't reach here (process terminated via Coop)
 	}
 
 	// Fallback exit for non-polecats or if self-clean failed
@@ -816,6 +799,21 @@ func updateAgentStateOnDone(cwd, townRoot, exitType, _ string) { // issueID unus
 				fmt.Fprintf(os.Stderr, "Warning: couldn't update agent %s cleanup status: %v\n", agentBeadID, err)
 				return
 			}
+		}
+	}
+
+	// K8s teardown: Close the agent bead to trigger controller-managed pod deletion.
+	// In K8s mode, coop session kill doesn't work (the coop backend doesn't register
+	// K8s pod sessions). Instead, we close the agent bead, which removes the pod from
+	// the controller's desired state. The reconciler then deletes the orphan pod,
+	// and kubelet terminates the container — completing the teardown.
+	//
+	// This is the beads-first teardown: agent bead closure IS the canonical signal
+	// for "this agent is done." The controller translates that into pod lifecycle.
+	if isRunningInK8s() {
+		reason := fmt.Sprintf("gt done: %s", exitType)
+		if err := bd.CloseAndClearAgentBead(agentBeadID, reason); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: couldn't close agent bead %s: %v\n", agentBeadID, err)
 		}
 	}
 }
