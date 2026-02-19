@@ -60,10 +60,6 @@ tasks:
   - key: lint
     use: git-config
     run: |
-      echo "=== DEBUG: pwd=$(pwd), go.mod exists=$(test -f go.mod && echo yes || echo no) ==="
-      ls -la go.mod 2>&1 || true
-      go env GOMOD 2>&1
-      echo "=== END DEBUG ==="
       go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
       export PATH="$(go env GOPATH)/bin:$PATH"
       golangci-lint run --timeout=5m ./cmd/... ./gen/... ./internal/...
