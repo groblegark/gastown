@@ -49,5 +49,4 @@ tasks:
       fi
     env:
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
-      CGO_ENABLED: "1"
       TAG: ${{ init.tag }}

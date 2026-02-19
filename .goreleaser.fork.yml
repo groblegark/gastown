@@ -1,5 +1,6 @@
 # GoReleaser config for groblegark/gastown fork releases.
-# Only linux/amd64 for now — cross-compile needs extra toolchains.
+# Builds gt CLI for Linux and macOS (amd64 + arm64).
+# No CGO dependencies — pure Go cross-compilation works on Linux runners.
 
 version: 2
 
@@ -8,15 +9,64 @@ before:
     - go mod tidy
 
 builds:
+  # Linux amd64 — primary target for K8s agents and CI.
   - id: gt-linux-amd64
     main: ./cmd/gt
     binary: gt
     env:
-      - CGO_ENABLED=1
+      - CGO_ENABLED=0
     goos:
       - linux
     goarch:
       - amd64
+    ldflags:
+      - -s -w
+      - -X github.com/steveyegge/gastown/internal/cmd.Version={{.Version}}
+      - -X github.com/steveyegge/gastown/internal/cmd.Build={{.ShortCommit}}
+      - -X github.com/steveyegge/gastown/internal/cmd.Commit={{.Commit}}
+
+  # Linux arm64 — for ARM-based K8s nodes (Graviton, etc.).
+  - id: gt-linux-arm64
+    main: ./cmd/gt
+    binary: gt
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/steveyegge/gastown/internal/cmd.Version={{.Version}}
+      - -X github.com/steveyegge/gastown/internal/cmd.Build={{.ShortCommit}}
+      - -X github.com/steveyegge/gastown/internal/cmd.Commit={{.Commit}}
+
+  # macOS amd64 (Intel Macs).
+  - id: gt-darwin-amd64
+    main: ./cmd/gt
+    binary: gt
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w
+      - -X github.com/steveyegge/gastown/internal/cmd.Version={{.Version}}
+      - -X github.com/steveyegge/gastown/internal/cmd.Build={{.ShortCommit}}
+      - -X github.com/steveyegge/gastown/internal/cmd.Commit={{.Commit}}
+
+  # macOS arm64 (Apple Silicon — M1/M2/M3/M4).
+  - id: gt-darwin-arm64
+    main: ./cmd/gt
+    binary: gt
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - arm64
     ldflags:
       - -s -w
       - -X github.com/steveyegge/gastown/internal/cmd.Version={{.Version}}
