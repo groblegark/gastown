@@ -570,6 +570,8 @@ tasks:
           python3-pip python3-venv python3.12-venv \
           libpython3.12-stdlib libpython3.12-minimal \
           make gcc g++ unzip \
+          gcc-14 g++-14 cpp-14 libgcc-14-dev \
+          gcc-13 g++-13 cpp-13 libgcc-13-dev \
           openssh-client libcurl3t64-gnutls sudo \
           libapparmor1; do
         dpkg -L "$pkg" 2>/dev/null | while read -r f; do
@@ -611,6 +613,19 @@ tasks:
       done
       # git-core helpers (git-remote-https, etc.)
       cp -r /usr/lib/git-core $LAYER/usr/lib/ 2>/dev/null || true
+      # gcc internal executables (cc1, cc1plus, lto1, etc.)
+      if [ -d /usr/libexec/gcc ]; then
+        mkdir -p $LAYER/usr/libexec
+        cp -r /usr/libexec/gcc $LAYER/usr/libexec/ 2>/dev/null || true
+      fi
+      # gcc/g++ support libraries (crtbegin.o, libgcc.a, etc.)
+      for d in /usr/lib/gcc/x86_64-linux-gnu/14 /usr/lib/gcc/x86_64-linux-gnu/13; do
+        if [ -d "$d" ]; then
+          mkdir -p "$LAYER$d"
+          cp -a "$d"/* "$LAYER$d/" 2>/dev/null || true
+          break
+        fi
+      done
       # libcurl-gnutls symlinks (git-remote-https requires this)
       find /usr/lib/x86_64-linux-gnu -name 'libcurl-gnutls*' 2>/dev/null | while read -r f; do
         dir="$LAYER$(dirname "$f")"
