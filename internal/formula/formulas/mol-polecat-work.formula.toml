@@ -361,9 +361,44 @@ go build ./...
 **Exit criteria:** All tests pass, new code has appropriate test coverage."""
 
 [[steps]]
+id = "quench-check"
+title = "Run quench quality checks"
+needs = ["run-tests"]
+description = """
+Verify code quality metrics before final commit. (hq-tqn7y9.5)
+
+**1. Run quench check:**
+```bash
+quench check
+```
+
+This verifies:
+- File size limits (lines and tokens)
+- Escape hatch patterns (panic, nolint)
+- Test coverage for source changes
+- Ratchet constraints (no quality regression)
+
+**2. If quench passes:**
+All quality metrics are satisfied. Proceed to cleanup-workspace.
+
+**3. If quench fails:**
+Read the failure output carefully:
+
+| Failure | Action |
+|---------|--------|
+| file_too_large | Split file into smaller modules |
+| escape_hatch | Add suppression comment with rationale |
+| test_coverage | Add tests for new/changed code |
+| ratchet_violation | Reduce complexity, don't expand limits |
+
+Fix the issues, commit, and re-run `quench check`.
+
+**Exit criteria:** Quench check passes with no errors."""
+
+[[steps]]
 id = "cleanup-workspace"
 title = "Clean up workspace"
-needs = ["run-tests"]
+needs = ["quench-check"]
 description = """
 Ensure workspace is pristine before handoff.
 
