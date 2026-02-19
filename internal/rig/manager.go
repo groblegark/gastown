@@ -853,6 +853,12 @@ func (m *Manager) initAgentBeads(rigPath, rigName, prefix string) error {
 		if _, err := bd.CreateAgentBead(agent.id, agent.desc, fields); err != nil {
 			return fmt.Errorf("creating %s: %w", agent.id, err)
 		}
+
+		// Add execution_target:k8s label so the controller reconciles this agent into a pod.
+		if err := bd.AddLabel(agent.id, "execution_target:k8s"); err != nil {
+			fmt.Printf("   Warning: could not add execution_target label to %s: %v\n", agent.id, err)
+		}
+
 		fmt.Printf("   ✓ Created agent bead: %s\n", agent.id)
 	}
 
