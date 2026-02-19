@@ -964,6 +964,12 @@ tasks:
         fi
       fi
 
+      # Delete StatefulSets that have immutable field changes (Kubernetes
+      # forbids in-place updates to most StatefulSet spec fields).
+      # --cascade=orphan keeps pods running during the upgrade.
+      kubectl delete statefulset -n "$NS" -l app.kubernetes.io/instance="$RELEASE" \
+        --cascade=orphan --ignore-not-found 2>&1 || true
+
       # Image tags are pinned in gastown-rwx.yaml (updated by helm-bump task).
       helm upgrade --install "$RELEASE" ./ \
         -n "$NS" --create-namespace \
