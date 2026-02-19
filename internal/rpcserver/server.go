@@ -672,6 +672,7 @@ func (s *DecisionServer) ListPending(
 				Label:       opt.Label,
 				Description: opt.Description,
 				Recommended: opt.Recommended,
+				BeadId:      opt.BeadID,
 			})
 		}
 
@@ -716,6 +717,7 @@ func (s *DecisionServer) GetDecision(
 			Label:       opt.Label,
 			Description: opt.Description,
 			Recommended: opt.Recommended,
+			BeadId:      opt.BeadID,
 		})
 	}
 
@@ -752,6 +754,7 @@ func (s *DecisionServer) CreateDecision(
 			Label:       opt.Label,
 			Description: opt.Description,
 			Recommended: opt.Recommended,
+			BeadID:      opt.BeadId,
 		})
 	}
 
@@ -798,6 +801,7 @@ func (s *DecisionServer) CreateDecision(
 			Label:       opt.Label,
 			Description: opt.Description,
 			Recommended: opt.Recommended,
+			BeadId:      opt.BeadID,
 		})
 	}
 
@@ -880,6 +884,7 @@ func (s *DecisionServer) Resolve(
 			Label:       opt.Label,
 			Description: opt.Description,
 			Recommended: opt.Recommended,
+			BeadId:      opt.BeadID,
 		})
 	}
 
@@ -932,6 +937,13 @@ func (s *DecisionServer) Resolve(
 			issue.ID, chosenIndex, len(fields.Options), len(options))
 	}
 	go notify.DecisionResolved(s.townRoot, issue.ID, *fields, chosenLabel, fields.Rationale, resolvedBy)
+
+	// Auto-assign bead if the chosen option references one (bd-isufm)
+	if chosenIndex > 0 {
+		if assignedID := client.AutoAssignBeadFromDecision(fields, chosenIndex); assignedID != "" {
+			log.Printf("Auto-assigned bead %s to %s from decision %s", assignedID, fields.RequestedBy, issue.ID)
+		}
+	}
 
 	return connect.NewResponse(&gastownv1.ResolveResponse{Decision: decision}), nil
 }
@@ -1007,6 +1019,7 @@ func (s *DecisionServer) WatchDecisions(
 					Label:       opt.Label,
 					Description: opt.Description,
 					Recommended: opt.Recommended,
+					BeadId:      opt.BeadID,
 				})
 			}
 
@@ -1081,6 +1094,7 @@ func (s *DecisionServer) WatchDecisions(
 							Label:       opt.Label,
 							Description: opt.Description,
 							Recommended: opt.Recommended,
+							BeadId:      opt.BeadID,
 						})
 					}
 
@@ -1130,6 +1144,7 @@ func (s *DecisionServer) WatchDecisions(
 						Label:       opt.Label,
 						Description: opt.Description,
 						Recommended: opt.Recommended,
+						BeadId:      opt.BeadID,
 					})
 				}
 
@@ -1648,7 +1663,11 @@ func serializeOptionsForSSE(options []*gastownv1.DecisionOption) string {
 		if opt.Recommended {
 			rec = ",\"recommended\":true"
 		}
-		parts = append(parts, fmt.Sprintf("{\"label\":\"%s\"%s%s}", escapeJSON(opt.Label), desc, rec))
+		bid := ""
+		if opt.BeadId != "" {
+			bid = fmt.Sprintf(",\"bead_id\":\"%s\"", escapeJSON(opt.BeadId))
+		}
+		parts = append(parts, fmt.Sprintf("{\"label\":\"%s\"%s%s%s}", escapeJSON(opt.Label), desc, rec, bid))
 	}
 	return "[" + strings.Join(parts, ",") + "]"
 }
@@ -1669,7 +1688,11 @@ func serializeBeadsOptionsForSSE(options []beads.DecisionOption) string {
 		if opt.Recommended {
 			rec = ",\"recommended\":true"
 		}
-		parts = append(parts, fmt.Sprintf("{\"label\":\"%s\"%s%s}", escapeJSON(opt.Label), desc, rec))
+		bid := ""
+		if opt.BeadID != "" {
+			bid = fmt.Sprintf(",\"bead_id\":\"%s\"", escapeJSON(opt.BeadID))
+		}
+		parts = append(parts, fmt.Sprintf("{\"label\":\"%s\"%s%s%s}", escapeJSON(opt.Label), desc, rec, bid))
 	}
 	return "[" + strings.Join(parts, ",") + "]"
 }
@@ -2964,6 +2987,7 @@ func RunServer(cfg ServerConfig) error {
 				Label:       opt.Label,
 				Description: opt.Description,
 				Recommended: opt.Recommended,
+				BeadId:      opt.BeadID,
 			})
 		}
 		decision := &gastownv1.Decision{

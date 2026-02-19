@@ -29,6 +29,7 @@ type DecisionOptionData struct {
 	Label       string
 	Description string
 	Recommended bool
+	BeadID      string // Optional bead ID this option references (for auto-assign on selection)
 }
 
 // DecisionPublisher is a function that publishes a new decision to the event bus.

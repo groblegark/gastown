@@ -826,6 +826,7 @@ type DecisionOption struct {
 	Label         string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
 	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
 	Recommended   bool                   `protobuf:"varint,3,opt,name=recommended,proto3" json:"recommended,omitempty"`
+	BeadId        string                 `protobuf:"bytes,4,opt,name=bead_id,json=beadId,proto3" json:"bead_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -879,6 +880,13 @@ func (x *DecisionOption) GetRecommended() bool {
 		return x.Recommended
 	}
 	return false
+}
+
+func (x *DecisionOption) GetBeadId() string {
+	if x != nil {
+		return x.BeadId
+	}
+	return ""
 }
 
 var File_gastown_v1_decision_proto protoreflect.FileDescriptor

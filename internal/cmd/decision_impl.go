@@ -583,8 +583,11 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 	// Notify requestor: mail + nudge + unblock + activity log
 	notify.DecisionResolved(townRoot, decisionID, *fields, chosenOption.Label, effectiveRationale, resolvedBy)
 
+	// Auto-assign bead if the chosen option references one (bd-isufm)
+	assignedBeadID := bd.AutoAssignBeadFromDecision(fields, decisionChoice)
+
 	// Emit decision.responded event on bd bus (best-effort, enables real-time subscriptions)
-	emitDecisionBusEvent(events.BusDecisionResponded, map[string]interface{}{
+	busPayload := map[string]interface{}{
 		"decision_id":  decisionID,
 		"question":     fields.Question,
 		"chosen_index": decisionChoice,
@@ -593,7 +596,11 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 		"resolved_by":  resolvedBy,
 		"requested_by": fields.RequestedBy,
 		"urgency":      fields.Urgency,
-	})
+	}
+	if assignedBeadID != "" {
+		busPayload["auto_assigned_bead"] = assignedBeadID
+	}
+	emitDecisionBusEvent(events.BusDecisionResponded, busPayload)
 
 	// Output
 	if decisionJSON {
@@ -604,6 +611,9 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 			"rationale":    effectiveRationale,
 			"resolved_by":  resolvedBy,
 			"unblocked":    fields.Blockers,
+		}
+		if assignedBeadID != "" {
+			result["auto_assigned_bead"] = assignedBeadID
 		}
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Println(string(out))
@@ -617,6 +627,9 @@ func runDecisionResolve(cmd *cobra.Command, args []string) error {
 		}
 		if fields.RequestedBy != "" && fields.RequestedBy != "unknown" {
 			fmt.Printf("→ Notified: %s\n", fields.RequestedBy)
+		}
+		if assignedBeadID != "" {
+			fmt.Printf("→ Auto-assigned: %s to %s\n", assignedBeadID, fields.RequestedBy)
 		}
 	}
 

@@ -131,4 +131,5 @@ message DecisionOption {
   string label = 1;
   string description = 2;
   bool recommended = 3;
+  string bead_id = 4;  // Optional bead ID for auto-assign when this option is selected
 }

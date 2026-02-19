@@ -55,6 +55,7 @@ type DecisionOption struct {
 	Label       string `json:"label"`                 // Short label (e.g., "JWT tokens")
 	Description string `json:"description,omitempty"` // Explanation of this choice
 	Recommended bool   `json:"recommended,omitempty"` // Mark as recommended option
+	BeadID      string `json:"bead_id,omitempty"`     // Optional bead ID this option references (for auto-assign on selection)
 }
 
 // DecisionFields holds structured fields for decision beads.
@@ -278,6 +279,7 @@ type BdDecisionCreateOption struct {
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
 	Recommended bool   `json:"recommended,omitempty"`
+	BeadID      string `json:"bead_id,omitempty"` // Optional bead ID for auto-assign on selection
 }
 
 // CreateBdDecision creates a decision using bd decision create (canonical storage).
@@ -286,11 +288,19 @@ func (b *Beads) CreateBdDecision(fields *DecisionFields) (*Issue, error) {
 	// Convert options to bd's JSON format with IDs
 	var bdOptions []BdDecisionCreateOption
 	for i, opt := range fields.Options {
+		// Auto-extract bead_id from label if not explicitly set (bd-isufm.3)
+		beadID := opt.BeadID
+		if beadID == "" {
+			if ids := ExtractBeadIDs(opt.Label); len(ids) == 1 {
+				beadID = ids[0]
+			}
+		}
 		bdOpt := BdDecisionCreateOption{
 			ID:          fmt.Sprintf("%d", i+1), // Use "1", "2", "3", etc. as IDs
 			Label:       opt.Label,
 			Description: opt.Description,
 			Recommended: opt.Recommended,
+			BeadID:      beadID,
 		}
 		bdOptions = append(bdOptions, bdOpt)
 	}
@@ -566,6 +576,7 @@ func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 			fields.Options = append(fields.Options, DecisionOption{
 				Label:       opt.Label,
 				Description: opt.Description,
+				BeadID:      opt.BeadID,
 			})
 		}
 
@@ -578,6 +589,7 @@ func (b *Beads) GetDecisionBead(id string) (*Issue, *DecisionFields, error) {
 					fields.Options = append(fields.Options, DecisionOption{
 						Label:       opt.Label,
 						Description: opt.Description,
+						BeadID:      opt.BeadID,
 					})
 				}
 			}
@@ -705,6 +717,7 @@ type BdDecisionOption struct {
 	Short       string `json:"short"`
 	Label       string `json:"label"`
 	Description string `json:"description"`
+	BeadID      string `json:"bead_id,omitempty"` // Optional bead ID for auto-assign on selection
 }
 
 // BdDecisionPointData is the nested decision_point data from bd decision show
@@ -836,6 +849,48 @@ func (b *Beads) ListAllPendingDecisions() ([]*Issue, error) {
 	}
 
 	return all, nil
+}
+
+// AutoAssignBeadFromDecision assigns a bead to the requesting agent when
+// a decision option with a bead_id is selected. Sets assignee and status
+// to in_progress. Returns the bead ID if assignment was made, empty string otherwise.
+// Errors are non-fatal (logged but not returned) since the decision itself is already resolved.
+func (b *Beads) AutoAssignBeadFromDecision(fields *DecisionFields, chosenIndex int) string {
+	if fields == nil || chosenIndex < 1 || chosenIndex > len(fields.Options) {
+		return ""
+	}
+
+	option := fields.Options[chosenIndex-1]
+	if option.BeadID == "" {
+		return ""
+	}
+
+	if fields.RequestedBy == "" {
+		return ""
+	}
+
+	// Check if bead exists and is open
+	issue, err := b.Show(option.BeadID)
+	if err != nil || issue == nil {
+		return "" // Bead doesn't exist — skip silently
+	}
+	if issue.Status == "closed" {
+		return "" // Already closed — skip
+	}
+	if issue.Assignee != "" && issue.Assignee != fields.RequestedBy {
+		return "" // Already assigned to someone else — don't steal
+	}
+
+	// Assign to requesting agent and set in_progress
+	status := "in_progress"
+	if err := b.Update(option.BeadID, UpdateOptions{
+		Assignee: &fields.RequestedBy,
+		Status:   &status,
+	}); err != nil {
+		return "" // Non-fatal
+	}
+
+	return option.BeadID
 }
 
 // AddDecisionBlocker adds a blocker dependency to a decision.

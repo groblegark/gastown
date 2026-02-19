@@ -24,6 +24,123 @@ func TestDecisionOptionStruct(t *testing.T) {
 	}
 }
 
+// TestDecisionOptionBeadID verifies the BeadID field on DecisionOption.
+func TestDecisionOptionBeadID(t *testing.T) {
+	opt := DecisionOption{
+		Label:  "bd-yxex: Fix expired GitLab token",
+		BeadID: "bd-yxex",
+	}
+	if opt.BeadID != "bd-yxex" {
+		t.Errorf("BeadID = %q, want 'bd-yxex'", opt.BeadID)
+	}
+
+	// Verify JSON serialization includes bead_id
+	data, err := json.Marshal(opt)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"bead_id":"bd-yxex"`) {
+		t.Errorf("JSON missing bead_id: %s", data)
+	}
+
+	// Verify BdDecisionCreateOption also has bead_id
+	bdOpt := BdDecisionCreateOption{
+		ID:     "1",
+		Label:  "Fix token",
+		BeadID: "bd-yxex",
+	}
+	data, err = json.Marshal(bdOpt)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"bead_id":"bd-yxex"`) {
+		t.Errorf("BdDecisionCreateOption JSON missing bead_id: %s", data)
+	}
+
+	// Verify BdDecisionOption deserialization
+	var bdDecOpt BdDecisionOption
+	input := `{"id":"1","label":"Fix token","bead_id":"bd-yxex"}`
+	if err := json.Unmarshal([]byte(input), &bdDecOpt); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if bdDecOpt.BeadID != "bd-yxex" {
+		t.Errorf("BdDecisionOption.BeadID = %q, want 'bd-yxex'", bdDecOpt.BeadID)
+	}
+}
+
+// TestDecisionOptionBeadIDAutoExtraction verifies bead_id is auto-extracted from labels.
+func TestDecisionOptionBeadIDAutoExtraction(t *testing.T) {
+	tests := []struct {
+		name       string
+		label      string
+		wantBeadID string
+	}{
+		{"explicit bead prefix", "bd-yxex: Fix expired GitLab token", "bd-yxex"},
+		{"hq bead prefix", "hq-axerw2: Pre-existing gastown_ui test failures", "hq-axerw2"},
+		{"gt bead prefix", "gt-naa65p: Graceful upgrade strategy", "gt-naa65p"},
+		{"no bead id", "Fix all the tests", ""},
+		{"multiple bead ids - skip", "bd-abc and bd-def both need fixing", ""},
+		{"hierarchical bead id", "bd-isufm.1: Add bead_id field", "bd-isufm.1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ids := ExtractBeadIDs(tt.label)
+			var got string
+			if len(ids) == 1 {
+				got = ids[0]
+			}
+			if got != tt.wantBeadID {
+				t.Errorf("ExtractBeadIDs(%q) single = %q, want %q (all: %v)", tt.label, got, tt.wantBeadID, ids)
+			}
+		})
+	}
+}
+
+// TestAutoAssignBeadFromDecisionFields verifies the auto-assign logic.
+func TestAutoAssignBeadFromDecisionFields(t *testing.T) {
+	// Test with nil fields
+	b := &Beads{}
+	if got := b.AutoAssignBeadFromDecision(nil, 1); got != "" {
+		t.Errorf("AutoAssignBeadFromDecision(nil) = %q, want empty", got)
+	}
+
+	// Test with invalid chosen index
+	fields := &DecisionFields{
+		Options: []DecisionOption{
+			{Label: "option 1", BeadID: "bd-abc"},
+		},
+		RequestedBy: "test-agent",
+	}
+	if got := b.AutoAssignBeadFromDecision(fields, 0); got != "" {
+		t.Errorf("AutoAssignBeadFromDecision(index=0) = %q, want empty", got)
+	}
+	if got := b.AutoAssignBeadFromDecision(fields, 2); got != "" {
+		t.Errorf("AutoAssignBeadFromDecision(index=2) = %q, want empty", got)
+	}
+
+	// Test with empty BeadID
+	fieldsNoID := &DecisionFields{
+		Options: []DecisionOption{
+			{Label: "option without bead"},
+		},
+		RequestedBy: "test-agent",
+	}
+	if got := b.AutoAssignBeadFromDecision(fieldsNoID, 1); got != "" {
+		t.Errorf("AutoAssignBeadFromDecision(no bead_id) = %q, want empty", got)
+	}
+
+	// Test with empty RequestedBy
+	fieldsNoRequester := &DecisionFields{
+		Options: []DecisionOption{
+			{Label: "option", BeadID: "bd-abc"},
+		},
+	}
+	if got := b.AutoAssignBeadFromDecision(fieldsNoRequester, 1); got != "" {
+		t.Errorf("AutoAssignBeadFromDecision(no requester) = %q, want empty", got)
+	}
+}
+
 // TestDecisionFieldsStruct verifies DecisionFields fields.
 func TestDecisionFieldsStruct(t *testing.T) {
 	fields := DecisionFields{
