@@ -633,6 +633,33 @@ notifyWitness:
 			}
 		}
 
+		// Step 1b (K8s only): Close the agent bead directly to trigger pod deletion.
+		// Previously, gt done only mailed the Witness and relied on it to call
+		// gt polecat nuke to close the bead. This made the Witness a single point
+		// of failure — if it was slow or crashed, pods lingered indefinitely.
+		// Now: gt done closes the bead directly for clean completions, and the
+		// K8s controller's bead watcher immediately triggers pod deletion.
+		// The Witness still receives POLECAT_DONE mail for its bookkeeping.
+		if isRunningInK8s() && doneCleanupStatus == "clean" {
+			ctx := RoleContext{
+				Role:     roleInfo.Role,
+				Rig:      roleInfo.Rig,
+				Polecat:  roleInfo.Polecat,
+				TownRoot: townRoot,
+				WorkDir:  cwd,
+			}
+			if beadID := getAgentBeadID(ctx); beadID != "" {
+				bd := beads.New(townRoot)
+				reason := fmt.Sprintf("gt done: %s (cleanup_status=clean)", exitType)
+				if err := bd.CloseWithReason(reason, beadID); err != nil {
+					// Non-fatal: Witness will close the bead as fallback
+					style.PrintWarning("could not close agent bead %s: %v (Witness will handle)", beadID, err)
+				} else {
+					fmt.Printf("%s Agent bead closed — controller will terminate pod\n", style.Bold.Render("✓"))
+				}
+			}
+		}
+
 		// Step 2: Kill our own session (this terminates Claude and the shell)
 		// This is the last thing we do - the process will be terminated via Coop signal
 		// All exit types kill the session - "done means gone"
