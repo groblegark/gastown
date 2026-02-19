@@ -84,9 +84,6 @@ func main() {
 	cfg.RigCache = make(map[string]config.RigCacheEntry)
 	refreshRigCache(context.Background(), logger, daemon, cfg)
 
-	// Auto-provision git-mirror Deployments for rigs with GitURL.
-	provisionGitMirrors(context.Background(), logger, k8sClient, cfg)
-
 	rec := reconciler.New(daemon, pods, cfg, logger, BuildSpecFromBeadInfo)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
@@ -137,7 +134,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient
 			logger.Info("seeded image digest tracker", "image", cfg.DefaultImage, "digest", digest[:min(19, len(digest))])
 		}()
 	}
-	go runPeriodicSync(ctx, logger, k8sClient, status, rec, daemon, cfg, syncInterval)
+	go runPeriodicSync(ctx, logger, status, rec, daemon, cfg, syncInterval)
 
 	logger.Info("controller ready, waiting for beads events",
 		"sync_interval", syncInterval)
@@ -163,7 +160,7 @@ func run(ctx context.Context, logger *slog.Logger, cfg *config.Config, k8sClient
 }
 
 // runPeriodicSync runs SyncAll, rig cache refresh, and reconciliation at a regular interval.
-func runPeriodicSync(ctx context.Context, logger *slog.Logger, k8sClient kubernetes.Interface, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *daemonclient.DaemonClient, cfg *config.Config, interval time.Duration) {
+func runPeriodicSync(ctx context.Context, logger *slog.Logger, status statusreporter.Reporter, rec *reconciler.Reconciler, daemon *daemonclient.DaemonClient, cfg *config.Config, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -179,8 +176,6 @@ func runPeriodicSync(ctx context.Context, logger *slog.Logger, k8sClient kuberne
 			}
 			// Refresh rig cache from daemon.
 			refreshRigCache(ctx, logger, daemon, cfg)
-			// Auto-provision git-mirror Deployments for new rigs.
-			provisionGitMirrors(ctx, logger, k8sClient, cfg)
 			// Periodically check the OCI registry for image digest updates.
 			digestCheckCounter++
 			if rec != nil && digestCheckCounter >= digestCheckInterval {
@@ -441,11 +436,8 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		}
 	}
 
-	// Wire git mirror info from rig cache.
+	// Wire git info from rig cache.
 	if entry, ok := cfg.RigCache[spec.Rig]; ok {
-		if entry.GitMirrorSvc != "" {
-			spec.GitMirrorService = entry.GitMirrorSvc
-		}
 		if entry.GitURL != "" {
 			spec.GitURL = entry.GitURL
 		}
@@ -578,7 +570,6 @@ func refreshRigCache(ctx context.Context, logger *slog.Logger, daemon *daemoncli
 	for name, info := range rigs {
 		cfg.RigCache[name] = config.RigCacheEntry{
 			Prefix:        info.Prefix,
-			GitMirrorSvc:  info.GitMirrorSvc,
 			GitURL:        info.GitURL,
 			DefaultBranch: info.DefaultBranch,
 			Image:         info.Image,

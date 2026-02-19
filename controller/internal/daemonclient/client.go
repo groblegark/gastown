@@ -151,14 +151,13 @@ type RigInfo struct {
 	Name           string // Rig name (from bead title)
 	Prefix         string // Beads prefix (e.g., "bd", "gt")
 	GitURL         string // Repository URL
-	GitMirrorSvc   string // In-cluster git mirror service name (e.g., "git-mirror-beads")
 	DefaultBranch  string // Default branch (e.g., "main")
 	Image          string // Per-rig agent image override
 	StorageClass   string // Per-rig PVC storage class override
 }
 
 // ListRigBeads queries the daemon for rig beads (type=rig) and extracts
-// git_mirror labels. Returns a map of rig name → RigInfo.
+// rig metadata labels. Returns a map of rig name → RigInfo.
 func (c *DaemonClient) ListRigBeads(ctx context.Context) (map[string]RigInfo, error) {
 	body := map[string]interface{}{
 		"exclude_status": []string{"closed"},
@@ -212,8 +211,6 @@ func (c *DaemonClient) ListRigBeads(ctx context.Context) (map[string]RigInfo, er
 				info.Prefix = parts[1]
 			case "git_url":
 				info.GitURL = parts[1]
-			case "git_mirror":
-				info.GitMirrorSvc = parts[1]
 			case "default_branch":
 				info.DefaultBranch = parts[1]
 			case "image":

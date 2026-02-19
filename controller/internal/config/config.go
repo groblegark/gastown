@@ -113,15 +113,14 @@ type Config struct {
 	// This prevents memory pressure from simultaneous pod initialization.
 	SpawnBurstLimit int
 
-	// RigCache maps rig name → git mirror service name, populated at runtime
-	// from rig beads in the daemon. Not parsed from env/flags.
+	// RigCache maps rig name → metadata, populated at runtime from rig beads
+	// in the daemon. Not parsed from env/flags.
 	RigCache map[string]RigCacheEntry
 }
 
 // RigCacheEntry holds rig metadata from daemon rig beads.
 type RigCacheEntry struct {
 	Prefix        string // e.g., "bd", "gt"
-	GitMirrorSvc  string // e.g., "git-mirror-beads"
 	GitURL        string // e.g., "https://github.com/groblegark/beads.git"
 	DefaultBranch string // e.g., "main"
 
