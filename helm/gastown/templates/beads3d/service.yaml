@@ -1,0 +1,18 @@
+{{- if .Values.beads3d.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gastown.beads3d.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.beads3d.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.beads3d.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.beads3d.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "gastown.beads3d.selectorLabels" . | nindent 4 }}
+{{- end }}

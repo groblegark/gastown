@@ -1,0 +1,56 @@
+{{- if .Values.beads3d.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gastown.beads3d.fullname" . }}-nginx
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.beads3d.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # Static assets with cache headers
+        location /assets/ {
+            expires 7d;
+            add_header Cache-Control "public, immutable";
+        }
+
+        # SPA fallback
+        location / {
+            try_files $uri $uri/ /index.html;
+            expires 1h;
+        }
+
+        # Reverse-proxy daemon API (strips /api prefix)
+        location /api/ {
+            proxy_pass {{ include "gastown.beads3d.daemonURL" . }}/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 30s;
+            {{- if .Values.beads3d.daemonToken }}
+            proxy_set_header Authorization "Bearer {{ .Values.beads3d.daemonToken }}";
+            {{- end }}
+        }
+
+        # SSE events stream
+        location /events {
+            proxy_pass {{ include "gastown.beads3d.daemonURL" . }}/events;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 3600s;
+            {{- if .Values.beads3d.daemonToken }}
+            proxy_set_header Authorization "Bearer {{ .Values.beads3d.daemonToken }}";
+            {{- end }}
+        }
+    }
+{{- end }}

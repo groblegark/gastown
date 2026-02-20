@@ -241,6 +241,28 @@ tasks:
         - key: bd-binaries
           path: bd-bin
 
+  # ── Build beads3d Vite app → artifact (bd-56z54) ────────────────────
+  - key: build-beads3d
+    run: |
+      set -ex
+      # Install Node.js
+      NODE_VERSION="22"
+      NODE_FULL=$(curl -fsSL "https://nodejs.org/dist/index.json" | jq -r "[.[] | select(.version | startswith(\"v${NODE_VERSION}.\"))][0].version")
+      curl -fsSL "https://nodejs.org/dist/${NODE_FULL}/node-${NODE_FULL}-linux-x64.tar.xz" \
+        | sudo tar -xJ --strip-components=1 -C /usr/local
+
+      git clone --depth=1 https://github.com/groblegark/beads3d.git /tmp/beads3d
+      cd /tmp/beads3d
+      npm ci --production=false
+      npm run build
+      cp -r dist beads3d-dist
+    filter:
+      - .rwx/beads3d-version.lock
+    outputs:
+      artifacts:
+        - key: beads3d-dist
+          path: /tmp/beads3d/beads3d-dist
+
   # ═══════════════════════════════════════════════════════════════════════
   # Image tasks — RWX native images via $RWX_IMAGE.
   # These define the container filesystem and metadata.
@@ -756,6 +778,63 @@ tasks:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
+  # ── Push beads3d image to GHCR (bd-56z54) ─────────────────────────────
+  # Static Vite app served by nginx. Reverse-proxies /api/ to daemon HTTP.
+  # Nginx config is mounted from a Helm ConfigMap at runtime.
+  - key: push-beads3d
+    use: [code, build-beads3d]
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    run: |
+      set -ex
+      source platform-versions.env
+
+      # Install crane
+      curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar xz -C /tmp crane
+      sudo mv /tmp/crane /usr/local/bin/
+
+      # Login to GHCR
+      echo "$GHCR_TOKEN" | crane auth login ghcr.io -u "$GITHUB_USER" --password-stdin
+
+      # Build layer: nginx config + Vite dist
+      LAYER=/tmp/layer
+      mkdir -p $LAYER/usr/share/nginx/html
+      mkdir -p $LAYER/etc/nginx/conf.d
+      mkdir -p $LAYER/docker-entrypoint.d
+
+      # Copy built Vite assets
+      cp -r ${{ tasks.build-beads3d.artifacts.beads3d-dist }}/* $LAYER/usr/share/nginx/html/
+
+      # Default nginx config (overridden by Helm ConfigMap in K8s)
+      cat > $LAYER/etc/nginx/conf.d/default.conf <<'NGINXCONF'
+      server {
+          listen 80;
+          server_name _;
+          root /usr/share/nginx/html;
+          index index.html;
+          location /assets/ {
+              expires 7d;
+              add_header Cache-Control "public, immutable";
+          }
+          location / {
+              try_files $uri $uri/ /index.html;
+              expires 1h;
+          }
+      }
+      NGINXCONF
+
+      sudo tar -cf /tmp/layer.tar -C $LAYER .
+
+      # Push with CalVer tag and latest
+      REPO="ghcr.io/groblegark/beads3d"
+      crane append --base nginx:1.27-alpine --new_tag "${REPO}:${PLATFORM_VERSION}" --new_layer /tmp/layer.tar --platform linux/amd64
+      crane tag "${REPO}:${PLATFORM_VERSION}" latest
+      echo "Pushed ${REPO}:${PLATFORM_VERSION} and ${REPO}:latest"
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
+
   # ═══════════════════════════════════════════════════════════════════════
   # Helm chart publish — publish bd-daemon + gastown charts with CalVer
   # ═══════════════════════════════════════════════════════════════════════
@@ -813,7 +892,7 @@ tasks:
   # ═══════════════════════════════════════════════════════════════════════
 
   - key: helm-bump
-    use: [code, push-bd, push-agent, push-controller, helm-publish-charts]
+    use: [code, push-bd, push-agent, push-controller, push-beads3d, helm-publish-charts]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -851,6 +930,7 @@ tasks:
         sed -i -E "s|tag: \"20[0-9]{2}\.[0-9]{1,4}\.[0-9]+\"|tag: \"${PLATFORM_VERSION}\"|g" "$f"
         sed -i -E "s|gastown-agent:20[0-9]{2}\.[0-9]{1,4}\.[0-9]+|gastown-agent:${PLATFORM_VERSION}|g" "$f"
         sed -i -E "s|agent-controller:20[0-9]{2}\.[0-9]{1,4}\.[0-9]+|agent-controller:${PLATFORM_VERSION}|g" "$f"
+        sed -i -E "s|beads3d:20[0-9]{2}\.[0-9]{1,4}\.[0-9]+|beads3d:${PLATFORM_VERSION}|g" "$f"
       }
 
       bump_values "charts/gastown/values/gastown-next.yaml"

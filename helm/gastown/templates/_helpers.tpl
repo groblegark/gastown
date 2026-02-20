@@ -175,3 +175,30 @@ Coopmux service URL (alias for backward compatibility with agent-controller)
 {{- define "gastown.coopBroker.muxServiceURL" -}}
 {{- printf "http://%s:%d" (include "gastown.coopBroker.fullname" .) (int .Values.coopBroker.service.port) }}
 {{- end }}
+
+{{/* ===== beads3d component helpers (bd-56z54) ===== */}}
+
+{{- define "gastown.beads3d.fullname" -}}
+{{- printf "%s-beads3d" (include "gastown.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "gastown.beads3d.labels" -}}
+{{ include "gastown.labels" . }}
+app.kubernetes.io/component: beads3d
+{{- end }}
+
+{{- define "gastown.beads3d.selectorLabels" -}}
+{{ include "gastown.selectorLabels" . }}
+app.kubernetes.io/component: beads3d
+{{- end }}
+
+{{/*
+beads3d daemon URL — points to the bd-daemon HTTP service for API proxying
+*/}}
+{{- define "gastown.beads3d.daemonURL" -}}
+{{- if .Values.beads3d.daemonURL }}
+{{- .Values.beads3d.daemonURL }}
+{{- else }}
+{{- printf "http://%s:%d" (include "gastown.daemon.fullname" .) (int (index .Values "bd-daemon" "daemon" "service" "httpPort")) }}
+{{- end }}
+{{- end }}

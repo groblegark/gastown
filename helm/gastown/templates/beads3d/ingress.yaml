@@ -1,0 +1,60 @@
+{{- if and .Values.beads3d.enabled .Values.beads3d.ingress.enabled }}
+{{- $fullname := include "gastown.beads3d.fullname" . -}}
+{{- $host := .Values.beads3d.ingress.host -}}
+{{- $servicePort := .Values.beads3d.service.port -}}
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.beads3d.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`{{ $host }}`)
+      kind: Rule
+      services:
+        - name: {{ $fullname }}
+          port: {{ $servicePort }}
+      {{- if or .Values.beads3d.ingress.ipWhitelist.enabled .Values.beads3d.ingress.basicAuth.enabled }}
+      middlewares:
+        {{- if .Values.beads3d.ingress.ipWhitelist.enabled }}
+        - name: {{ $fullname }}-ipwhitelist
+        {{- end }}
+        {{- if .Values.beads3d.ingress.basicAuth.enabled }}
+        - name: {{ $fullname }}-basicauth
+        {{- end }}
+      {{- end }}
+{{- if .Values.beads3d.ingress.ipWhitelist.enabled }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-ipwhitelist
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.beads3d.labels" . | nindent 4 }}
+spec:
+  ipWhiteList:
+    sourceRange:
+      {{- toYaml .Values.beads3d.ingress.ipWhitelist.sourceRange | nindent 6 }}
+    ipStrategy:
+      depth: {{ .Values.beads3d.ingress.ipWhitelist.depth | default 1 }}
+{{- end }}
+{{- if .Values.beads3d.ingress.basicAuth.enabled }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-basicauth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "gastown.beads3d.labels" . | nindent 4 }}
+spec:
+  basicAuth:
+    secret: {{ .Values.beads3d.ingress.basicAuth.secret }}
+{{- end }}
+{{- end }}

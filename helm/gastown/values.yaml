@@ -578,3 +578,46 @@ coopBroker:
   tolerations: []
   affinity: {}
 
+# =============================================================================
+# beads3d — Interactive 3D graph visualization (bd-56z54)
+# =============================================================================
+beads3d:
+  enabled: false
+
+  image:
+    repository: ghcr.io/groblegark/beads3d
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 1
+
+  # Daemon API URL override (auto-wired to bd-daemon HTTP service if empty)
+  daemonURL: ""
+  # Bearer token for daemon API (optional, injected by nginx reverse-proxy)
+  daemonToken: ""
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: false
+    host: ""
+    ipWhitelist:
+      enabled: false
+      sourceRange: []
+      depth: 1
+    basicAuth:
+      enabled: false
+      secret: ""
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  nodeSelector: {}
+
