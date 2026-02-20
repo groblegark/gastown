@@ -809,9 +809,7 @@ tasks:
 
       # Copy built Vite assets
       BEADS3D_DIST="${{ tasks.build-beads3d.artifacts.beads3d-dist }}"
-      echo "Artifact dir: $BEADS3D_DIST"
-      ls -la "$BEADS3D_DIST" || echo "ARTIFACT DIR NOT FOUND"
-      ls -la "$BEADS3D_DIST/" 2>/dev/null || true
+      ls -la "$BEADS3D_DIST/"
       cp -r "$BEADS3D_DIST"/. $LAYER/usr/share/nginx/html/
 
       # Default nginx config (overridden by Helm ConfigMap in K8s)
