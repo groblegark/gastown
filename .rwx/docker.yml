@@ -241,10 +241,10 @@ tasks:
         - key: bd-binaries
           path: bd-bin
 
-  # ── Build beads3d Vite app → artifact (bd-56z54) ────────────────────
+  # ── Build beads3d Vite app (bd-56z54) ────────────────────────────────
   # Beads3d is a private repo — clone using GITHUB_USER + GHCR_TOKEN (PAT).
-  # NOTE: Clone and build in $HOME (overlayfs) not /tmp (tmpfs) so RWX can
-  # capture artifacts. /tmp lives on tmpfs which is wiped before artifact capture.
+  # The built dist/ is left on the overlayfs at /home/ubuntu/beads3d-dist.
+  # Downstream tasks access it via the `use` directive (layer inheritance).
   - key: build-beads3d
     run: |
       set -ex
@@ -265,10 +265,6 @@ tasks:
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
     filter:
       - .rwx/beads3d-version.lock
-    outputs:
-      artifacts:
-        - key: beads3d-dist
-          path: /home/ubuntu/beads3d-dist
 
   # ═══════════════════════════════════════════════════════════════════════
   # Image tasks — RWX native images via $RWX_IMAGE.
@@ -810,10 +806,9 @@ tasks:
       mkdir -p $LAYER/etc/nginx/conf.d
       mkdir -p $LAYER/docker-entrypoint.d
 
-      # Copy built Vite assets
-      BEADS3D_DIST="${{ tasks.build-beads3d.artifacts.beads3d-dist }}"
-      ls -la "$BEADS3D_DIST/"
-      cp -r "$BEADS3D_DIST"/. $LAYER/usr/share/nginx/html/
+      # Copy built Vite assets (from build-beads3d layer via `use`)
+      ls -la /home/ubuntu/beads3d-dist/
+      cp -r /home/ubuntu/beads3d-dist/. $LAYER/usr/share/nginx/html/
 
       # Default nginx config (overridden by Helm ConfigMap in K8s)
       cat > $LAYER/etc/nginx/conf.d/default.conf <<'NGINXCONF'
