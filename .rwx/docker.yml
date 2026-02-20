@@ -241,16 +241,9 @@ tasks:
         - key: bd-binaries
           path: bd-bin
 
-  # ── Clone beads3d repo (private — needs git/clone for auth) ─────────
-  - key: code-beads3d
-    call: git/clone 2.0.3
-    with:
-      repository: https://github.com/groblegark/beads3d.git
-      ref: main
-
   # ── Build beads3d Vite app → artifact (bd-56z54) ────────────────────
+  # Beads3d is a private repo — clone using GITHUB_USER + GHCR_TOKEN (PAT).
   - key: build-beads3d
-    use: code-beads3d
     run: |
       set -ex
       # Install Node.js
@@ -259,15 +252,20 @@ tasks:
       curl -fsSL "https://nodejs.org/dist/${NODE_FULL}/node-${NODE_FULL}-linux-x64.tar.xz" \
         | sudo tar -xJ --strip-components=1 -C /usr/local
 
+      git clone --depth=1 "https://${GITHUB_USER}:${GHCR_TOKEN}@github.com/groblegark/beads3d.git" /tmp/beads3d
+      cd /tmp/beads3d
       npm ci --production=false
       npm run build
       cp -r dist beads3d-dist
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
     filter:
       - .rwx/beads3d-version.lock
     outputs:
       artifacts:
         - key: beads3d-dist
-          path: beads3d-dist
+          path: /tmp/beads3d/beads3d-dist
 
   # ═══════════════════════════════════════════════════════════════════════
   # Image tasks — RWX native images via $RWX_IMAGE.
