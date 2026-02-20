@@ -807,8 +807,9 @@ tasks:
       mkdir -p $LAYER/etc/nginx/conf.d
       mkdir -p $LAYER/docker-entrypoint.d
 
-      # Copy built Vite assets
-      cp -r ${{ tasks.build-beads3d.artifacts.beads3d-dist }}/* $LAYER/usr/share/nginx/html/
+      # Copy built Vite assets (use shell variable to avoid RWX quoting the glob)
+      BEADS3D_DIST=${{ tasks.build-beads3d.artifacts.beads3d-dist }}
+      cp -r $BEADS3D_DIST/* $LAYER/usr/share/nginx/html/
 
       # Default nginx config (overridden by Helm ConfigMap in K8s)
       cat > $LAYER/etc/nginx/conf.d/default.conf <<'NGINXCONF'
