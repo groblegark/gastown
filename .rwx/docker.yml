@@ -243,6 +243,8 @@ tasks:
 
   # ── Build beads3d Vite app → artifact (bd-56z54) ────────────────────
   # Beads3d is a private repo — clone using GITHUB_USER + GHCR_TOKEN (PAT).
+  # NOTE: Clone and build in $HOME (overlayfs) not /tmp (tmpfs) so RWX can
+  # capture artifacts. /tmp lives on tmpfs which is wiped before artifact capture.
   - key: build-beads3d
     run: |
       set -ex
@@ -252,11 +254,12 @@ tasks:
       curl -fsSL "https://nodejs.org/dist/${NODE_FULL}/node-${NODE_FULL}-linux-x64.tar.xz" \
         | sudo tar -xJ --strip-components=1 -C /usr/local
 
-      git clone --depth=1 "https://${GITHUB_USER}:${GHCR_TOKEN}@github.com/groblegark/beads3d.git" /tmp/beads3d
-      cd /tmp/beads3d
+      git clone --depth=1 "https://${GITHUB_USER}:${GHCR_TOKEN}@github.com/groblegark/beads3d.git" $HOME/beads3d
+      cd $HOME/beads3d
       npm ci --production=false
       npm run build
-      cp -r dist beads3d-dist
+      cp -r dist $HOME/beads3d-dist
+      ls -la $HOME/beads3d-dist/
     env:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
@@ -265,7 +268,7 @@ tasks:
     outputs:
       artifacts:
         - key: beads3d-dist
-          path: /tmp/beads3d/beads3d-dist
+          path: /home/ubuntu/beads3d-dist
 
   # ═══════════════════════════════════════════════════════════════════════
   # Image tasks — RWX native images via $RWX_IMAGE.
