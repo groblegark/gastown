@@ -1092,6 +1092,7 @@ tasks:
   - key: deploy-next
     use: helm-bump
     if: ${{ init.deploy-next == 'true' }}
+    timeout: 20 minutes
     cache: false
     run: |
       set -ex
@@ -1135,9 +1136,15 @@ tasks:
       NS="gastown-next"
       RELEASE="gastown-next"
 
+      # Pre-deploy diagnostics: show current pod state
+      echo "=== Pre-deploy pod state ==="
+      kubectl get pods -n "$NS" -o wide 2>/dev/null || echo "(no pods or namespace)"
+      echo ""
+
       # Check for stuck release BEFORE deploying.
       STUCK=$(helm history "$RELEASE" -n "$NS" --max 1 -o json 2>/dev/null \
         | jq -r '.[0].status // "none"')
+      echo "Current release status: ${STUCK}"
       if echo "$STUCK" | grep -qE "pending-(upgrade|install|rollback)"; then
         echo "Helm release is stuck in '${STUCK}' — rolling back..."
         LAST_GOOD=$(helm history "$RELEASE" -n "$NS" --max 20 -o json \
@@ -1149,12 +1156,18 @@ tasks:
         fi
       fi
 
+      # Delete StatefulSets with --cascade=orphan to prevent pod restarts during upgrade.
+      for sts in $(kubectl get statefulset -n "$NS" -o name 2>/dev/null); do
+        echo "Deleting ${sts} from ${NS} namespace (cascade=orphan)"
+        kubectl delete "$sts" -n "$NS" --cascade=orphan 2>/dev/null || true
+      done
+
       helm upgrade --install "$RELEASE" ./ \
         -n "$NS" --create-namespace \
         --values values.yaml \
         --values values/gastown-next.yaml \
         --history-max 10 \
-        --atomic --timeout 10m \
+        --atomic --timeout 15m \
         --wait
 
       echo "Deployed ${RELEASE} to ${NS} with platform version ${PLATFORM_VERSION}"
@@ -1163,6 +1176,11 @@ tasks:
       echo "Checking pod health..."
       kubectl get pods -n "$NS" -o wide
       kubectl wait --for=condition=Ready pods -l app.kubernetes.io/component=daemon -n "$NS" --timeout=120s || true
+
+      # Show beads3d pod status specifically
+      echo ""
+      echo "=== beads3d pod status ==="
+      kubectl get pods -n "$NS" -l app.kubernetes.io/component=beads3d -o wide || true
 
       echo ""
       echo "Deploy complete: ${NS} → platform ${PLATFORM_VERSION}"
