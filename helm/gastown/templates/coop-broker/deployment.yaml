@@ -64,6 +64,10 @@ spec:
             - "--nats-token"
             - "$(COOP_MUX_NATS_TOKEN)"
             {{- end }}
+            {{- if .Values.coopBroker.apiKeySecret }}
+            - "--api-key-file"
+            - "/etc/coop-api-key/api-key"
+            {{- end }}
           env:
             - name: COOP_MUX_AUTH_TOKEN
               valueFrom:
@@ -121,6 +125,11 @@ spec:
             - name: credentials-data
               mountPath: {{ dir .Values.coopBroker.persistence.path }}
             {{- end }}
+            {{- if .Values.coopBroker.apiKeySecret }}
+            - name: api-key
+              mountPath: /etc/coop-api-key
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.coopBroker.resources | nindent 12 }}
       volumes:
@@ -131,6 +140,11 @@ spec:
         - name: credentials-data
           persistentVolumeClaim:
             claimName: {{ include "gastown.coopBroker.fullname" . }}-credentials
+        {{- end }}
+        {{- if .Values.coopBroker.apiKeySecret }}
+        - name: api-key
+          secret:
+            secretName: {{ .Values.coopBroker.apiKeySecret }}
         {{- end }}
       {{- with .Values.coopBroker.nodeSelector }}
       nodeSelector:
