@@ -120,6 +120,7 @@ MODULES=(
   "pvc-recovery"
   "crew-pod-resilience"
   "crew-build-push"
+  "crew-pvc-persistence"
   "nats-durability"
   "dolt-s3-sync"
   "controller-crash-recovery"
