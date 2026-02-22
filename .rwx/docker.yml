@@ -35,6 +35,7 @@ on:
         commit-sha: ${{ event.git.sha }}
         ref-name: ${{ event.git.ref }}
         beads-version: ""
+        coop-version: ""
         deploy-next: ""
       status-checks:
         name: Docker
@@ -43,6 +44,7 @@ on:
         commit-sha: ${{ event.git.sha }}
         ref-name: pr
         beads-version: ""
+        coop-version: ""
         deploy-next: ""
       status-checks:
         - tasks: [build-gt, build-controller, download-coop, download-bd]
