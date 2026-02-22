@@ -31,6 +31,8 @@ type ImageDigestTracker struct {
 	mu              sync.RWMutex
 	digests         map[string]string // image ref (repo:tag) → latest known digest (registry-confirmed)
 	observedDigests map[string]string // image ref (repo:tag) → first pod-observed digest (baseline)
+	pendingDigests  map[string]string // image ref → candidate digest awaiting confirmation
+	pendingConfirms map[string]int    // image ref → number of consecutive confirmations of pending digest
 	logger          *slog.Logger
 	interval        time.Duration
 	client          *http.Client
@@ -39,10 +41,18 @@ type ImageDigestTracker struct {
 // NewImageDigestTracker creates a tracker that checks the registry at the
 // given interval. Pass 0 to disable periodic registry checks (digest will
 // still be learned from running pods).
+// DigestConfirmThreshold is the number of consecutive registry checks that must
+// return the same new digest before it replaces the current known digest.
+// This prevents transient registry issues or multi-arch manifest timing from
+// triggering unnecessary pod recreation. (bd-qmn4u)
+const DigestConfirmThreshold = 2
+
 func NewImageDigestTracker(logger *slog.Logger, checkInterval time.Duration) *ImageDigestTracker {
 	return &ImageDigestTracker{
 		digests:         make(map[string]string),
 		observedDigests: make(map[string]string),
+		pendingDigests:  make(map[string]string),
+		pendingConfirms: make(map[string]int),
 		logger:          logger,
 		interval:        checkInterval,
 		client: &http.Client{
@@ -83,8 +93,9 @@ func (t *ImageDigestTracker) RecordDigest(image, digest string) bool {
 }
 
 // RecordRegistryDigest records a digest confirmed by a registry check.
-// If the digest differs from the current known digest, this triggers drift
-// detection for pods running the old digest.
+// A new digest must be confirmed DigestConfirmThreshold times consecutively
+// before it replaces the current known digest and triggers drift detection.
+// This prevents transient registry responses from causing pod churn. (bd-qmn4u)
 func (t *ImageDigestTracker) RecordRegistryDigest(image, digest string) bool {
 	if digest == "" {
 		return false
@@ -93,14 +104,42 @@ func (t *ImageDigestTracker) RecordRegistryDigest(image, digest string) bool {
 	defer t.mu.Unlock()
 	old := t.digests[image]
 	if old == digest {
+		// Current digest confirmed — clear any pending candidate.
+		delete(t.pendingDigests, image)
+		delete(t.pendingConfirms, image)
 		return false
 	}
+
+	// Different digest from what we know. Track as pending candidate.
+	if t.pendingDigests[image] == digest {
+		// Same candidate as before — increment confirmation count.
+		t.pendingConfirms[image]++
+	} else {
+		// New candidate — reset counter.
+		t.pendingDigests[image] = digest
+		t.pendingConfirms[image] = 1
+	}
+
+	if t.pendingConfirms[image] < DigestConfirmThreshold {
+		t.logger.Info("registry digest change detected, awaiting confirmation",
+			"image", image,
+			"current_digest", truncDigest(old),
+			"candidate_digest", truncDigest(digest),
+			"confirms", t.pendingConfirms[image],
+			"threshold", DigestConfirmThreshold)
+		return false
+	}
+
+	// Confirmed: update the known digest.
 	t.digests[image] = digest
+	delete(t.pendingDigests, image)
+	delete(t.pendingConfirms, image)
 	if old != "" {
-		t.logger.Info("registry digest changed",
+		t.logger.Info("registry digest confirmed changed",
 			"image", image,
 			"old_digest", truncDigest(old),
-			"new_digest", truncDigest(digest))
+			"new_digest", truncDigest(digest),
+			"confirms", DigestConfirmThreshold)
 	}
 	return old != ""
 }
