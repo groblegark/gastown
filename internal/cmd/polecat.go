@@ -20,7 +20,6 @@ import (
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/util"
-	"github.com/steveyegge/gastown/internal/witness"
 )
 
 // Polecat command flags
@@ -1622,63 +1621,5 @@ type OrphanInfo struct {
 }
 
 func runPolecatOrphans(cmd *cobra.Command, args []string) error {
-	rigName := args[0]
-	workDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getting working directory: %w", err)
-	}
-
-	// Find polecats with hooked work but no active session
-	orphans, err := witness.FindPolecatsWithHookedWork(workDir, rigName)
-	if err != nil {
-		return fmt.Errorf("finding orphaned polecats: %w", err)
-	}
-
-	// Convert to output format
-	var orphanInfos []OrphanInfo
-	for _, o := range orphans {
-		orphanInfos = append(orphanInfos, OrphanInfo{
-			Rig:      o.RigName,
-			Polecat:  o.PolecatName,
-			HookBead: o.HookBead,
-		})
-	}
-
-	// JSON output
-	if polecatOrphansJSON {
-		return json.NewEncoder(os.Stdout).Encode(orphanInfos)
-	}
-
-	// Human-readable output
-	if len(orphanInfos) == 0 {
-		fmt.Printf("No orphaned polecats found in %s.\n", rigName)
-		return nil
-	}
-
-	fmt.Printf("Found %d orphaned polecat(s) in %s:\n\n", len(orphanInfos), rigName)
-	for _, o := range orphanInfos {
-		fmt.Printf("%s %s\n", style.Warning.Render("○"), style.Bold.Render(o.Polecat))
-		fmt.Printf("    Hooked work: %s\n", o.HookBead)
-		fmt.Println()
-	}
-
-	// Respawn if requested
-	if polecatOrphansRespawn {
-		fmt.Printf("Respawning %d orphaned polecat(s)...\n", len(orphanInfos))
-		respawned := 0
-		for _, o := range orphanInfos {
-			fmt.Printf("  Respawning %s...", o.Polecat)
-			if err := witness.RespawnPolecatWithHookedWork(workDir, o.Rig, o.Polecat); err != nil {
-				fmt.Printf(" %s (%v)\n", style.Error.Render("failed"), err)
-			} else {
-				fmt.Printf(" %s\n", style.Success.Render("done"))
-				respawned++
-			}
-		}
-		fmt.Printf("\n%s Respawned %d orphaned polecat(s).\n", style.SuccessPrefix, respawned)
-	} else {
-		fmt.Println("Use --respawn to respawn these polecats.")
-	}
-
-	return nil
+	return fmt.Errorf("polecat orphan detection removed — use K8s controller reconciler for orphan cleanup")
 }
