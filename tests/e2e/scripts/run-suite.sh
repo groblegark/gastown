@@ -81,6 +81,7 @@ MODULES=(
   "agent-entrypoint"
   "agent-image"
   "crew-image-prereqs"
+  "crew-cgo-build"
   "agent-spawn"
   "agent-state"
   "agent-io"
