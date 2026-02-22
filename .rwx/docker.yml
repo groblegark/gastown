@@ -701,6 +701,22 @@ tasks:
           cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
         done
       done
+      # glibc linker scripts (libc.so, libm.so) reference absolute /lib/
+      # paths, but on Ubuntu 24.04 the real files live in /usr/lib/ (usrmerge).
+      # In a normal system /lib → /usr/lib is a symlink, but the crane layer
+      # has a separate /lib/ directory. Copy any referenced files that are
+      # missing from the /lib/ layer. (bd-xohb8: libmvec.so.1 was missing)
+      for script in /usr/lib/x86_64-linux-gnu/libc.so /usr/lib/x86_64-linux-gnu/libm.so; do
+        [ -f "$script" ] || continue
+        grep -oP '/lib/x86_64-linux-gnu/\S+' "$script" 2>/dev/null | tr -d ')' | while read -r ref; do
+          [ -f "$LAYER$ref" ] && continue
+          src="/usr${ref}"   # /lib/... → /usr/lib/...
+          [ -f "$src" ] || src="$ref"
+          [ -f "$src" ] || continue
+          mkdir -p "$LAYER$(dirname "$ref")"
+          cp "$src" "$LAYER$ref" 2>/dev/null || true
+        done
+      done
       # gcc/g++ support libraries (crtbegin.o, libgcc.a, etc.)
       for d in /usr/lib/gcc/x86_64-linux-gnu/14 /usr/lib/gcc/x86_64-linux-gnu/13; do
         if [ -d "$d" ]; then
