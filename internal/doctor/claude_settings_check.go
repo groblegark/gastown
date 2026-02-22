@@ -390,7 +390,7 @@ func (c *ClaudeSettingsCheck) checkSettings(path, agentType string) []string {
 	// Check for required elements based on template
 	// All templates should have:
 	// 1. enabledPlugins
-	// 2. Stop hook with gt decision turn-check
+	// 2. Stop hook with bd bus emit --hook=Stop
 	// 3. gt nudge deacon session-started in SessionStart
 
 	// Check enabledPlugins
@@ -409,12 +409,12 @@ func (c *ClaudeSettingsCheck) checkSettings(path, agentType string) []string {
 		missing = append(missing, "deacon nudge")
 	}
 
-	// Check Stop hook has turn-check with stdin piping (turn enforcement)
-	// Must capture stdin and pipe it to turn-check so it can read the session_id (gt-0g7zw4.5)
-	if !c.hookHasPattern(hooks, "Stop", "gt decision turn-check") {
-		missing = append(missing, "turn-check hook")
-	} else if !c.hookHasStdinPiping(hooks, "Stop", "turn-check") {
-		missing = append(missing, "turn-check stdin piping")
+	// Check Stop hook has bd bus emit --hook=Stop (turn enforcement via event bus)
+	// Replaces deprecated 'gt decision turn-check' (gt-cbp)
+	if !c.hookHasPattern(hooks, "Stop", "bd bus emit --hook=Stop") {
+		missing = append(missing, "bus-emit hook")
+	} else if !c.hookHasBusEmitStdinPiping(hooks, "Stop") {
+		missing = append(missing, "bus-emit stdin piping")
 	}
 
 	// Check UserPromptSubmit hook has bd decision check --inject with stdin piping
@@ -607,6 +607,43 @@ func (c *ClaudeSettingsCheck) hookHasBdStdinPiping(hooks map[string]any, hookNam
 			// Check for the stdin capture pattern AND the piping pattern for bd decision check
 			if strings.Contains(cmd, "_stdin=$(cat)") &&
 				strings.Contains(cmd, "echo \"$_stdin\" | bd decision check") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hookHasBusEmitStdinPiping checks if a hook command properly pipes stdin to bd bus emit.
+// The pattern should be: _stdin=$(cat) ... && (echo "$_stdin" | bd bus emit --hook=<name>)
+// This is required for Stop hooks using the event bus (gt-cbp).
+func (c *ClaudeSettingsCheck) hookHasBusEmitStdinPiping(hooks map[string]any, hookName string) bool {
+	hookList, ok := hooks[hookName].([]any)
+	if !ok {
+		return false
+	}
+
+	for _, hook := range hookList {
+		hookMap, ok := hook.(map[string]any)
+		if !ok {
+			continue
+		}
+		innerHooks, ok := hookMap["hooks"].([]any)
+		if !ok {
+			continue
+		}
+		for _, inner := range innerHooks {
+			innerMap, ok := inner.(map[string]any)
+			if !ok {
+				continue
+			}
+			cmd, ok := innerMap["command"].(string)
+			if !ok {
+				continue
+			}
+			// Check for the stdin capture pattern AND the piping pattern for bd bus emit
+			if strings.Contains(cmd, "_stdin=$(cat)") &&
+				strings.Contains(cmd, "echo \"$_stdin\" | bd bus emit --hook=") {
 				return true
 			}
 		}

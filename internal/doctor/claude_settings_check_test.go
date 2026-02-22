@@ -104,7 +104,7 @@ func createStaleSettings(t *testing.T, path string, missingElements ...string) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "_stdin=$(cat) && echo \"$_stdin\" | gt decision turn-check",
+							"command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && _stdin=$(cat) && echo \"$_stdin\" | bd bus emit --hook=Stop",
 						},
 					},
 				},
@@ -380,13 +380,13 @@ func TestClaudeSettingsCheck_MissingStopHook(t *testing.T) {
 	}
 	found := false
 	for _, d := range result.Details {
-		if strings.Contains(d, "turn-check hook") {
+		if strings.Contains(d, "bus-emit hook") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected details to mention turn-check hook, got %v", result.Details)
+		t.Errorf("expected details to mention bus-emit hook, got %v", result.Details)
 	}
 }
 
@@ -439,7 +439,7 @@ func TestClaudeSettingsCheck_MissingStdinPiping(t *testing.T) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "_stdin=$(cat) && echo \"$_stdin\" | gt decision turn-check",
+							"command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && _stdin=$(cat) && echo \"$_stdin\" | bd bus emit --hook=Stop",
 						},
 					},
 				},
@@ -1317,7 +1317,7 @@ func TestClaudeSettingsCheck_TemplateDrift(t *testing.T) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "_stdin=$(cat) && echo \"$_stdin\" | gt decision turn-check",
+							"command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && _stdin=$(cat) && echo \"$_stdin\" | bd bus emit --hook=Stop",
 						},
 					},
 				},
@@ -1406,7 +1406,7 @@ func TestClaudeSettingsCheck_TemplateDriftFixUpdatesFromTemplate(t *testing.T) {
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": "_stdin=$(cat) && echo \"$_stdin\" | gt decision turn-check",
+							"command": "export PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\" && _stdin=$(cat) && echo \"$_stdin\" | bd bus emit --hook=Stop",
 						},
 					},
 				},

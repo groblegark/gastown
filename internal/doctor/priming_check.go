@@ -185,6 +185,11 @@ func (c *PrimingCheck) checkAgentPriming(townRoot, agentDir, _ string) []priming
 func (c *PrimingCheck) checkRigPriming(townRoot string) []primingIssue {
 	var issues []primingIssue
 
+	// In daemon mode, PRIME.md files are not needed — context is served via RPC (gt-whi).
+	if beads.IsDaemonMode() {
+		return issues
+	}
+
 	entries, err := os.ReadDir(townRoot)
 	if err != nil {
 		return issues
