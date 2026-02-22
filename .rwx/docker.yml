@@ -107,8 +107,12 @@ tasks:
   # to roll out the new image. Also updates BEADS_VERSION/COOP_VERSION
   # when dispatch override params are set.
   # On main/pr/cli, this task is a no-op pass-through of code's filesystem.
-  # All downstream tasks use version-bump instead of code so they always
-  # pick up the (possibly-bumped) platform-versions.env.
+  # All downstream build/push/helm tasks use version-bump so they pick
+  # up the (possibly-bumped) platform-versions.env.
+  #
+  # Split into two tasks to avoid static secret validation on PR runs:
+  #   version-bump  — modifies platform-versions.env in-place (no secrets)
+  #   version-push  — commits and pushes the bump to gastown main (dispatch only)
   - key: version-bump
     use: code
     cache: false
@@ -117,7 +121,7 @@ tasks:
       source platform-versions.env
       OLD_VERSION="${PLATFORM_VERSION}"
 
-      # Only bump and push on dispatch (skip main, pr, cli)
+      # Only bump on dispatch (skip main, pr, cli)
       case "${REF_NAME}" in
         main|pr|cli)
           echo "No version bump needed for ref: ${REF_NAME}"
@@ -152,20 +156,34 @@ tasks:
 
       echo "Updated platform-versions.env:"
       grep -E '^(PLATFORM|GASTOWN|BEADS|COOP)_VERSION' platform-versions.env
-
-      # Commit and push to gastown main so the new version is recorded
-      git config user.email "ci@gastown"
-      git config user.name "gastown-ci"
-      git remote set-url origin "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/groblegark/gastown.git"
-      git add platform-versions.env
-      git commit -m "chore: auto-bump platform to ${NEW_VERSION} [trigger: ${REF_NAME}]"
-      git push origin HEAD:main
-
-      echo "Pushed version bump commit: ${OLD_VERSION} → ${NEW_VERSION}"
     env:
       REF_NAME: ${{ init.ref-name }}
       BEADS_VERSION_OVERRIDE: ${{ init.beads-version }}
       COOP_VERSION_OVERRIDE: ${{ init.coop-version }}
+
+  # ── Commit and push the version bump to gastown main ─────────────────
+  # Runs only on dispatch so the bumped version is recorded in git history.
+  # Separated from version-bump to avoid GITHUB_TOKEN secret validation
+  # on PR runs (RWX validates secrets statically before task execution).
+  # Downstream build tasks depend on version-bump (not version-push) so
+  # they get the in-memory bumped env without waiting for the push.
+  - key: version-push
+    use: version-bump
+    if: ${{ init.ref-name != 'main' && init.ref-name != 'pr' && init.ref-name != 'cli' }}
+    cache: false
+    run: |
+      set -e
+      source platform-versions.env
+      echo "Pushing version bump to gastown main: ${PLATFORM_VERSION} [trigger: ${REF_NAME}]"
+      git config user.email "ci@gastown"
+      git config user.name "gastown-ci"
+      git remote set-url origin "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/groblegark/gastown.git"
+      git add platform-versions.env
+      git commit -m "chore: auto-bump platform to ${PLATFORM_VERSION} [trigger: ${REF_NAME}]"
+      git push origin HEAD:main
+      echo "Pushed version bump commit to main"
+    env:
+      REF_NAME: ${{ init.ref-name }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_ACTOR: ${{ secrets.GITHUB_USER }}
 
