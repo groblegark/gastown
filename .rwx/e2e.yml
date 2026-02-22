@@ -99,6 +99,7 @@ tasks:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
     filter:
+      - helm/gastown/Chart.yaml
       - helm/gastown/Chart.lock
 
   - key: e2e
