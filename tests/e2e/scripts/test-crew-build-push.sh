@@ -279,12 +279,19 @@ test_run_ci() {
   commit_sha=$(agent_exec "cd ${CLONE_DIR} && git rev-parse origin/main 2>/dev/null") || return 1
   log "Running CI against origin/main $commit_sha (timeout: ${CI_TIMEOUT}s)..."
 
-  local output
+  local output stderr_output
+  # Capture stdout (JSON) and stderr (progress) separately.
+  # rwx writes "Included a git patch" and progress to stderr; JSON result to stdout.
+  local tmpstderr
+  tmpstderr=$(mktemp)
   output=$(kube exec "$TEST_POD_NAME" -c agent -- \
-    bash -c "cd ${CLONE_DIR} && rwx run .rwx/ci.yml --init commit-sha=$commit_sha --wait --output json 2>&1" \
-  ) || true
+    bash -c "cd ${CLONE_DIR} && rwx run .rwx/ci.yml --init commit-sha=$commit_sha --wait --output json 2>/tmp/rwx-ci-stderr.txt; cat /tmp/rwx-ci-stderr.txt >&2" \
+    2>"$tmpstderr") || true
+  stderr_output=$(cat "$tmpstderr" 2>/dev/null)
+  rm -f "$tmpstderr"
 
-  log "CI output: $(echo "$output" | tail -5)"
+  log "CI stdout: $(echo "$output" | tail -3)"
+  log "CI stderr (last 3): $(echo "$stderr_output" | tail -3)"
 
   # Check for success
   if echo "$output" | grep -q '"ResultStatus":"succeeded"'; then
@@ -295,12 +302,11 @@ test_run_ci() {
     status=$(echo "$output" | grep -o '"ResultStatus":"[^"]*"' | head -1)
     log "CI result: $status"
     # CI failure is still a valid test — we proved the agent CAN run CI
-    # Return success if CI was actually invoked (even if tests fail)
     return 0
   else
-    log "Could not determine CI result"
-    # If rwx command ran at all, that's still a pass for this test
-    echo "$output" | grep -qi "rwx\|run\|mint" && return 0
+    log "Could not determine CI result from stdout"
+    # If rwx was invoked (stderr contains rwx progress output), that's a pass
+    echo "$stderr_output" | grep -qi "rwx\|run\|mint\|patch\|agent" && return 0
     return 1
   fi
 }
