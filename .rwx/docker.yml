@@ -587,7 +587,7 @@ tasks:
       # into the layer tree.
       sudo apt-get -y update
       sudo apt-get -y install --no-install-recommends \
-        git curl jq screen ca-certificates libicu74 \
+        git curl jq screen ca-certificates libicu74 libicu-dev \
         python3 python3-pip python3-venv \
         make gcc g++ unzip libc6-dev binutils \
         openssh-client \
@@ -663,6 +663,21 @@ tasks:
         mkdir -p $LAYER/usr/include/unicode
         cp -a /usr/include/unicode/* $LAYER/usr/include/unicode/ 2>/dev/null || true
       fi
+      # C++ standard library headers (needed by ICU regex — unistr.h includes <cstddef>)
+      # bd-76eog: without these, CGO compilation of go-icu-regex fails
+      for d in /usr/include/c++/14 /usr/include/c++/13; do
+        if [ -d "$d" ]; then
+          mkdir -p "$LAYER$d"
+          cp -a "$d"/* "$LAYER$d/" 2>/dev/null || true
+          # Also copy the target-specific headers (bits/, ext/)
+          target_dir="/usr/include/x86_64-linux-gnu/c++/$(basename $d)"
+          if [ -d "$target_dir" ]; then
+            mkdir -p "$LAYER$target_dir"
+            cp -a "$target_dir"/* "$LAYER$target_dir/" 2>/dev/null || true
+          fi
+          break
+        fi
+      done
       # ICU pkg-config files (needed by CGO to find ICU flags)
       find /usr/lib/x86_64-linux-gnu/pkgconfig -name 'icu*.pc' 2>/dev/null | while read -r f; do
         dir="$LAYER$(dirname "$f")"
