@@ -177,15 +177,15 @@ tasks:
       echo "Pushing version bump to gastown main: ${PLATFORM_VERSION} [trigger: ${REF_NAME}]"
       git config user.email "ci@gastown"
       git config user.name "gastown-ci"
-      git remote set-url origin "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/groblegark/gastown.git"
+      git remote set-url origin "https://${GITHUB_USER}:${GHCR_TOKEN}@github.com/groblegark/gastown.git"
       git add platform-versions.env
       git commit -m "chore: auto-bump platform to ${PLATFORM_VERSION} [trigger: ${REF_NAME}]"
       git push origin HEAD:main
       echo "Pushed version bump commit to main"
     env:
       REF_NAME: ${{ init.ref-name }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GITHUB_ACTOR: ${{ secrets.GITHUB_USER }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
   # ── Go toolchain (version from .go-version) ───────────────────────
   - key: go
