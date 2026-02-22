@@ -345,7 +345,7 @@ tasks:
         apt-get -y install --no-install-recommends \
           curl git jq make unzip ca-certificates screen \
           python3 python3-pip python3-venv \
-          gcc g++ openssh-client libcurl3t64-gnutls sudo
+          gcc g++ libc6-dev openssh-client libcurl3t64-gnutls sudo
 
         # Node.js (version from .node-version; binary tarball)
         NODE_VERSION=$(cat .node-version)
@@ -589,7 +589,7 @@ tasks:
       sudo apt-get -y install --no-install-recommends \
         git curl jq screen ca-certificates libicu74 \
         python3 python3-pip python3-venv \
-        make gcc g++ unzip \
+        make gcc g++ unzip libc6-dev \
         openssh-client \
         libcurl3t64-gnutls sudo
 
@@ -607,6 +607,7 @@ tasks:
           make gcc g++ unzip \
           gcc-14 g++-14 cpp-14 libgcc-14-dev \
           gcc-13 g++-13 cpp-13 libgcc-13-dev \
+          libc6-dev linux-libc-dev \
           openssh-client libcurl3t64-gnutls sudo \
           libapparmor1; do
         dpkg -L "$pkg" 2>/dev/null | while read -r f; do
@@ -710,6 +711,12 @@ tasks:
       curl -fsSL "https://github.com/rwx-cloud/cli/releases/latest/download/rwx-linux-x86_64" \
         -o $LAYER/usr/local/bin/rwx
       chmod +x $LAYER/usr/local/bin/rwx
+
+      # ── GitHub CLI (gh) ─────────────────────────────────────────────────
+      GH_VERSION=$(curl -fsSL "https://api.github.com/repos/cli/cli/releases/latest" | jq -r .tag_name | sed "s/^v//")
+      curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" | \
+        tar -xz --strip-components=2 -C $LAYER/usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh"
+      chmod +x $LAYER/usr/local/bin/gh
 
       # ── Docker CLI (client only) ──────────────────────────────────────
       curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" | \
