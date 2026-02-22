@@ -131,11 +131,13 @@ fi
 
 # ── Test 2: Create crew bead and wait for pod ────────────────────────
 test_create_and_wait() {
-  PRE_EXISTING_PODS=$(kube get pods --no-headers 2>/dev/null \
-    | { grep "^gt-" || true; } | awk '{print $1}' | sort)
+  # Use a deterministic bead ID so we can predict the pod name.
+  # Controller names the pod after the bead ID: gt-<rig>-crew-<name>.
+  local CREW_BEAD_ID="gt-${CREW_RIG}-crew-${CREW_NAME}"
 
   local bodyfile
   bodyfile=$(write_json_expr "{
+    'id': '$CREW_BEAD_ID',
     'title': 'E2E build-push test: $CREW_NAME',
     'issue_type': 'agent',
     'priority': 2,
@@ -171,16 +173,11 @@ except:
   daemon_api "Update" "$uf" >/dev/null 2>&1 || true
   rm -f "$uf"
 
-  # Wait for pod
-  log "Waiting for agent pod (timeout: ${POD_CREATE_TIMEOUT}s)..."
+  # Wait for pod — controller names it after the bead ID
+  log "Waiting for agent pod $CREW_BEAD_ID (timeout: ${POD_CREATE_TIMEOUT}s)..."
   local deadline=$((SECONDS + POD_CREATE_TIMEOUT))
   while [[ $SECONDS -lt $deadline ]]; do
-    TEST_POD_NAME=$(kube get pods -l "gastown.io/bead-id=$TEST_BEAD_ID" --no-headers 2>/dev/null | head -1 | awk '{print $1}')
-    if [[ -z "$TEST_POD_NAME" ]]; then
-      local current_pods
-      current_pods=$(kube get pods --no-headers 2>/dev/null | { grep "^gt-" || true; } | awk '{print $1}' | sort)
-      TEST_POD_NAME=$(comm -13 <(echo "$PRE_EXISTING_PODS") <(echo "$current_pods") | head -1)
-    fi
+    TEST_POD_NAME=$(kube get pod "$CREW_BEAD_ID" --no-headers 2>/dev/null | awk '{print $1}')
     if [[ -n "$TEST_POD_NAME" ]]; then
       log "Found pod: $TEST_POD_NAME"
       break
@@ -275,9 +272,12 @@ run_test "Agent creates branch and makes change" test_create_branch
 
 # ── Test 6: Agent runs CI ────────────────────────────────────────────
 test_run_ci() {
+  # Use the upstream main HEAD as commit-sha — rwx will auto-include local
+  # changes as a git patch. Using the test branch commit would fail because
+  # that SHA doesn't exist on GitHub yet (push happens in a later step).
   local commit_sha
-  commit_sha=$(agent_exec "cd ${CLONE_DIR} && git rev-parse HEAD 2>/dev/null") || return 1
-  log "Running CI for commit $commit_sha (timeout: ${CI_TIMEOUT}s)..."
+  commit_sha=$(agent_exec "cd ${CLONE_DIR} && git rev-parse origin/main 2>/dev/null") || return 1
+  log "Running CI against origin/main $commit_sha (timeout: ${CI_TIMEOUT}s)..."
 
   local output
   output=$(kube exec "$TEST_POD_NAME" -c agent -- \
@@ -327,33 +327,32 @@ test_push() {
 run_test "Agent pushes branch to remote" test_push
 
 # ── Test 8: (Optional) Agent creates PR via gh ───────────────────────
-test_create_pr() {
-  # Check if gh CLI is available
-  local has_gh
-  has_gh=$(agent_exec 'which gh 2>/dev/null && echo "yes"' 2>/dev/null) || true
-  if [[ "$has_gh" != *"yes"* ]]; then
-    log "gh CLI not available — skipping PR creation"
-    return 1
-  fi
+# Check if gh CLI is available; skip (not fail) if absent.
+_has_gh=""
+_has_gh=$(agent_exec 'which gh 2>/dev/null && echo "yes"' 2>/dev/null) || true
+if [[ "$_has_gh" != *"yes"* ]]; then
+  skip_test "(Optional) Agent creates PR via gh" "gh CLI not installed"
+else
+  test_create_pr() {
+    local output
+    output=$(agent_exec "
+      cd ${CLONE_DIR}
+      gh pr create --title 'test: E2E crew build verification ($CREW_NAME)' \
+        --body 'Automated E2E test — will be auto-closed.' \
+        --base main 2>&1
+    ") || { log "PR creation failed: $output"; return 1; }
 
-  local output
-  output=$(agent_exec "
-    cd ${CLONE_DIR}
-    gh pr create --title 'test: E2E crew build verification ($CREW_NAME)' \
-      --body 'Automated E2E test — will be auto-closed.' \
-      --base main 2>&1
-  ") || { log "PR creation failed: $output"; return 1; }
-
-  log "PR: $output"
-  # Close the PR immediately
-  local pr_url
-  pr_url=$(echo "$output" | grep -o 'https://[^ ]*' | head -1)
-  if [[ -n "$pr_url" ]]; then
-    agent_exec "cd ${CLONE_DIR} && gh pr close '$pr_url' --delete-branch 2>/dev/null" || true
-    log "Closed PR: $pr_url"
-  fi
-}
-run_test "(Optional) Agent creates PR via gh" test_create_pr
+    log "PR: $output"
+    # Close the PR immediately
+    local pr_url
+    pr_url=$(echo "$output" | grep -o 'https://[^ ]*' | head -1)
+    if [[ -n "$pr_url" ]]; then
+      agent_exec "cd ${CLONE_DIR} && gh pr close '$pr_url' --delete-branch 2>/dev/null" || true
+      log "Closed PR: $pr_url"
+    fi
+  }
+  run_test "(Optional) Agent creates PR via gh" test_create_pr
+fi
 
 # ── Test 9: Cleanup — delete remote branch, close bead ──────────────
 test_final_cleanup() {
