@@ -258,6 +258,39 @@ func TestReconcile_DeletesAndRecreatesFailedPod(t *testing.T) {
 	}
 }
 
+func TestReconcile_DeletesAndRecreatesSucceededPod(t *testing.T) {
+	// Bead exists, pod in Succeeded phase -> pod deleted and recreated.
+	// This mirrors TestReconcile_DeletesAndRecreatesFailedPod for completed polecats.
+	client := fake.NewSimpleClientset()
+	createFakePod(t, client, "gt-gastown-polecat-furiosa", testNamespace, "Succeeded")
+
+	r := newReconciler(client, []daemonclient.AgentBead{
+		bead("gastown", "polecat", "furiosa"),
+	}, nil)
+
+	ctx := context.Background()
+	if err := r.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	names := listPodNames(t, client, testNamespace)
+	if len(names) != 1 {
+		t.Fatalf("expected 1 pod (recreated), got %d: %v", len(names), names)
+	}
+	if names[0] != "gt-gastown-polecat-furiosa" {
+		t.Errorf("pod name = %q, want %q", names[0], "gt-gastown-polecat-furiosa")
+	}
+
+	// Verify it's a new pod (the succeeded one was deleted and a new one created).
+	pod, err := client.CoreV1().Pods(testNamespace).Get(ctx, "gt-gastown-polecat-furiosa", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("expected pod to exist after recreation: %v", err)
+	}
+	if pod.Status.Phase == corev1.PodSucceeded {
+		t.Error("recreated pod should not be in Succeeded phase")
+	}
+}
+
 func TestReconcile_SkipsPendingPod(t *testing.T) {
 	// Bead exists, pod in Pending phase -> no action (still starting).
 	client := fake.NewSimpleClientset()
