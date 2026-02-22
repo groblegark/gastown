@@ -22,12 +22,18 @@ import (
 
 // ImageDigestTracker caches the latest known digest for each image tag
 // and periodically checks the OCI registry for updates.
+//
+// It separates registry-confirmed digests from pod-observed digests to
+// prevent flip-flopping when multiple pods running the same tag have
+// different digests (e.g., after an image rebuild under the same tag).
+// Only registry-confirmed digests trigger drift detection. (bd-tq9ff)
 type ImageDigestTracker struct {
-	mu       sync.RWMutex
-	digests  map[string]string // image ref (repo:tag) → latest known digest
-	logger   *slog.Logger
-	interval time.Duration
-	client   *http.Client
+	mu              sync.RWMutex
+	digests         map[string]string // image ref (repo:tag) → latest known digest (registry-confirmed)
+	observedDigests map[string]string // image ref (repo:tag) → first pod-observed digest (baseline)
+	logger          *slog.Logger
+	interval        time.Duration
+	client          *http.Client
 }
 
 // NewImageDigestTracker creates a tracker that checks the registry at the
@@ -35,9 +41,10 @@ type ImageDigestTracker struct {
 // still be learned from running pods).
 func NewImageDigestTracker(logger *slog.Logger, checkInterval time.Duration) *ImageDigestTracker {
 	return &ImageDigestTracker{
-		digests:  make(map[string]string),
-		logger:   logger,
-		interval: checkInterval,
+		digests:         make(map[string]string),
+		observedDigests: make(map[string]string),
+		logger:          logger,
+		interval:        checkInterval,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -51,9 +58,34 @@ func (t *ImageDigestTracker) LatestDigest(image string) string {
 	return t.digests[image]
 }
 
-// RecordDigest records an observed digest for an image. If the digest is
-// newer (different), it updates the cache and returns true.
+// RecordDigest records an observed digest for an image from a running pod.
+// This only establishes a baseline for tracking — it does NOT trigger drift.
+// Only registry-confirmed digests (via RecordRegistryDigest) trigger drift.
 func (t *ImageDigestTracker) RecordDigest(image, digest string) bool {
+	if digest == "" {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Record as baseline observation if we haven't seen this image yet.
+	if _, exists := t.observedDigests[image]; !exists {
+		t.observedDigests[image] = digest
+	}
+
+	// If no registry-confirmed digest yet, set the first observation as
+	// the baseline so LatestDigest returns something meaningful.
+	if _, exists := t.digests[image]; !exists {
+		t.digests[image] = digest
+	}
+
+	return false
+}
+
+// RecordRegistryDigest records a digest confirmed by a registry check.
+// If the digest differs from the current known digest, this triggers drift
+// detection for pods running the old digest.
+func (t *ImageDigestTracker) RecordRegistryDigest(image, digest string) bool {
 	if digest == "" {
 		return false
 	}
@@ -65,7 +97,7 @@ func (t *ImageDigestTracker) RecordDigest(image, digest string) bool {
 	}
 	t.digests[image] = digest
 	if old != "" {
-		t.logger.Info("image digest changed",
+		t.logger.Info("registry digest changed",
 			"image", image,
 			"old_digest", truncDigest(old),
 			"new_digest", truncDigest(digest))
@@ -139,7 +171,7 @@ func (t *ImageDigestTracker) RefreshImages(ctx context.Context) {
 				"image", img, "error", err)
 			continue
 		}
-		t.RecordDigest(img, digest)
+		t.RecordRegistryDigest(img, digest)
 	}
 }
 
