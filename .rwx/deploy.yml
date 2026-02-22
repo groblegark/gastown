@@ -106,9 +106,24 @@ tasks:
       echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GITHUB_USER" --password-stdin
       helm dependency build ./
 
-      # ── Deploy with --atomic (auto-rollback on failure) ────────────────
+      # ── Deploy ─────────────────────────────────────────────────────────
       NS="gastown-next"
       RELEASE="gastown-next"
+
+      # Recover from stuck pending-* states left by previous failed deploys.
+      STUCK=$(helm history "$RELEASE" -n "$NS" --max 1 -o json 2>/dev/null \
+        | jq -r '.[0].status // "none"')
+      echo "Current release status: ${STUCK}"
+      if echo "$STUCK" | grep -qE "pending-(upgrade|install|rollback)"; then
+        echo "Helm release is stuck in '${STUCK}' — rolling back..."
+        LAST_GOOD=$(helm history "$RELEASE" -n "$NS" --max 20 -o json \
+          | jq -r '[.[] | select(.status == "deployed")] | last | .revision')
+        if [ -n "$LAST_GOOD" ] && [ "$LAST_GOOD" != "null" ]; then
+          helm rollback "$RELEASE" "$LAST_GOOD" -n "$NS" --wait --timeout 5m
+        else
+          helm rollback "$RELEASE" 0 -n "$NS" --wait --timeout 5m
+        fi
+      fi
 
       # Delete StatefulSets that have immutable field changes (Kubernetes
       # forbids in-place updates to most StatefulSet spec fields).
@@ -116,12 +131,23 @@ tasks:
       kubectl delete statefulset -n "$NS" -l app.kubernetes.io/instance="$RELEASE" \
         --cascade=orphan --ignore-not-found 2>&1 || true
 
+      # Use --atomic only when an existing deployed release exists.
+      # On fresh install (no history), --atomic causes rollback to uninstall
+      # the entire release on failure, creating a loop where each retry
+      # starts from scratch (>30m for Dolt PVCs + S3 sync).
+      ATOMIC_FLAG=""
+      if helm history "$RELEASE" -n "$NS" --max 1 &>/dev/null; then
+        ATOMIC_FLAG="--atomic"
+      else
+        echo "Fresh install detected — skipping --atomic to prevent uninstall-on-failure loop"
+      fi
+
       helm upgrade --install "$RELEASE" ./ \
         -n "$NS" --create-namespace \
         --values values.yaml \
         --values values/gastown-next.yaml \
         --history-max 10 \
-        --atomic --timeout 10m \
+        $ATOMIC_FLAG --timeout 15m \
         --wait
 
       echo "Deployed ${RELEASE} to ${NS} with platform version ${PLATFORM_VERSION}"

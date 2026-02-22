@@ -1120,13 +1120,23 @@ tasks:
       kubectl delete statefulset -n "$NS" -l app.kubernetes.io/instance="$RELEASE" \
         --cascade=orphan --ignore-not-found 2>&1 || true
 
+      # Use --atomic only when an existing deployed release exists.
+      # On fresh install, --atomic rollback uninstalls the entire release,
+      # creating a loop where each retry starts from scratch (>30m).
+      ATOMIC_FLAG=""
+      if helm history "$RELEASE" -n "$NS" --max 1 &>/dev/null; then
+        ATOMIC_FLAG="--atomic"
+      else
+        echo "Fresh install detected — skipping --atomic to prevent uninstall-on-failure loop"
+      fi
+
       # Image tags are pinned in gastown-rwx.yaml (updated by helm-bump task).
       helm upgrade --install "$RELEASE" ./ \
         -n "$NS" --create-namespace \
         --values values.yaml \
         --values values/gastown-rwx.yaml \
         --history-max 10 \
-        --atomic --timeout 10m \
+        $ATOMIC_FLAG --timeout 10m \
         --wait
 
       echo "Deployed ${RELEASE} to ${NS} with platform version ${PLATFORM_VERSION}"
@@ -1228,12 +1238,20 @@ tasks:
         kubectl delete "$sts" -n "$NS" --cascade=orphan 2>/dev/null || true
       done
 
+      # Use --atomic only when an existing deployed release exists.
+      ATOMIC_FLAG=""
+      if helm history "$RELEASE" -n "$NS" --max 1 &>/dev/null; then
+        ATOMIC_FLAG="--atomic"
+      else
+        echo "Fresh install detected — skipping --atomic to prevent uninstall-on-failure loop"
+      fi
+
       helm upgrade --install "$RELEASE" ./ \
         -n "$NS" --create-namespace \
         --values values.yaml \
         --values values/gastown-next.yaml \
         --history-max 10 \
-        --atomic --timeout 15m \
+        $ATOMIC_FLAG --timeout 15m \
         --wait
 
       echo "Deployed ${RELEASE} to ${NS} with platform version ${PLATFORM_VERSION}"
