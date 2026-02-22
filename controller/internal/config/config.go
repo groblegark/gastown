@@ -87,6 +87,10 @@ type Config struct {
 	// Injected as RWX_ACCESS_TOKEN in agent pods for CI/CD operations.
 	RWXTokenSecret string
 
+	// GHTokenSecret is the K8s secret containing a GitHub token (env: GH_TOKEN_SECRET).
+	// Injected as GH_TOKEN in agent pods for gh CLI operations (releases, GHCR push).
+	GHTokenSecret string
+
 	// DefaultServiceAccount is the K8s ServiceAccount to use for agent pods (env: DEFAULT_SERVICE_ACCOUNT).
 	// When set, all agent pods use this SA unless overridden by bead metadata.
 	DefaultServiceAccount string
@@ -167,6 +171,7 @@ func Parse() *Config {
 		CoopBrokerTokenSecret: os.Getenv("COOP_BROKER_TOKEN_SECRET"),
 		CoopMuxURL:            os.Getenv("COOP_MUX_URL"),
 		RWXTokenSecret:        os.Getenv("RWX_TOKEN_SECRET"),
+		GHTokenSecret:         os.Getenv("GH_TOKEN_SECRET"),
 		DefaultServiceAccount: os.Getenv("DEFAULT_SERVICE_ACCOUNT"),
 		Transport:         envOr("WATCHER_TRANSPORT", "sse"),
 		NatsConsumerName:  os.Getenv("NATS_CONSUMER_NAME"),
@@ -198,6 +203,7 @@ func Parse() *Config {
 	flag.StringVar(&cfg.CoopBrokerTokenSecret, "coop-broker-token-secret", cfg.CoopBrokerTokenSecret, "K8s secret with broker auth token")
 	flag.StringVar(&cfg.CoopMuxURL, "coop-mux-url", cfg.CoopMuxURL, "URL of the coop multiplexer for session aggregation")
 	flag.StringVar(&cfg.RWXTokenSecret, "rwx-token-secret", cfg.RWXTokenSecret, "K8s secret with RWX access token for agent pods")
+	flag.StringVar(&cfg.GHTokenSecret, "gh-token-secret", cfg.GHTokenSecret, "K8s secret with GitHub token for gh CLI in agent pods")
 	flag.StringVar(&cfg.DefaultServiceAccount, "default-service-account", cfg.DefaultServiceAccount, "K8s ServiceAccount for agent pods")
 	flag.StringVar(&cfg.Transport, "transport", cfg.Transport, "Event transport: sse or nats")
 	flag.StringVar(&cfg.NatsConsumerName, "nats-consumer-name", cfg.NatsConsumerName, "Durable consumer name for JetStream")

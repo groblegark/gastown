@@ -568,6 +568,15 @@ func applyCommonConfig(cfg *config.Config, spec *podmanager.AgentPodSpec) {
 		})
 	}
 
+	// GitHub token for gh CLI (releases, GHCR push) inside agent pods.
+	if cfg.GHTokenSecret != "" {
+		spec.SecretEnv = append(spec.SecretEnv, podmanager.SecretEnvSource{
+			EnvName:    "GH_TOKEN",
+			SecretName: cfg.GHTokenSecret,
+			SecretKey:  "token",
+		})
+	}
+
 	// Wire mux registration URL and auth token. Agent pods auto-register
 	// with the mux on startup and re-register via heartbeat after restarts.
 	if cfg.CoopMuxURL != "" {

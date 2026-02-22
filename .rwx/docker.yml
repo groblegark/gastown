@@ -380,6 +380,12 @@ tasks:
           -o /usr/local/bin/rwx
         chmod +x /usr/local/bin/rwx
 
+        # GitHub CLI (gh)
+        GH_VERSION=$(curl -fsSL "https://api.github.com/repos/cli/cli/releases/latest" | jq -r .tag_name | sed "s/^v//")
+        curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" | \
+          tar -xz --strip-components=2 -C /usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh"
+        chmod +x /usr/local/bin/gh
+
         # Docker CLI (client only)
         curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" | \
           tar -xz --strip-components=1 -C /usr/local/bin docker/docker
