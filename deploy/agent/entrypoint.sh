@@ -808,6 +808,13 @@ refresh_credentials() {
             continue
         fi
 
+        # Coop-provisioned credentials use a sentinel expiresAt (>= 10^12 ms,
+        # i.e. year ~33658). Skip refresh — these are managed by coop profiles.
+        if [ "${expires_at}" -ge 9999999999000 ] 2>/dev/null; then
+            consecutive_failures=0
+            continue
+        fi
+
         # Check if within 1 hour of expiry (3600000ms)
         now_ms=$(date +%s)000
         remaining_ms=$((expires_at - now_ms))
@@ -824,6 +831,14 @@ refresh_credentials() {
             consecutive_failures=$((consecutive_failures + 1))
             echo "[entrypoint] WARNING: OAuth refresh request failed (attempt ${consecutive_failures}/${max_failures})"
             if [ "${consecutive_failures}" -ge "${max_failures}" ]; then
+                # Before killing, check if agent is actively working via coop.
+                # Coop may have provisioned credentials via a different account.
+                agent_state=$(curl -sf http://localhost:8080/api/v1/agent 2>/dev/null | jq -r '.state // empty' 2>/dev/null)
+                if [ "${agent_state}" = "working" ] || [ "${agent_state}" = "idle" ]; then
+                    echo "[entrypoint] WARNING: OAuth refresh failing but agent is ${agent_state}, not terminating"
+                    consecutive_failures=0
+                    continue
+                fi
                 echo "[entrypoint] FATAL: OAuth refresh failed ${max_failures} consecutive times, terminating pod"
                 kill -TERM $$ 2>/dev/null || kill -TERM 1 2>/dev/null
                 exit 1
@@ -840,6 +855,13 @@ refresh_credentials() {
             consecutive_failures=$((consecutive_failures + 1))
             echo "[entrypoint] WARNING: OAuth refresh returned invalid response (attempt ${consecutive_failures}/${max_failures})"
             if [ "${consecutive_failures}" -ge "${max_failures}" ]; then
+                # Check agent state before terminating
+                agent_state=$(curl -sf http://localhost:8080/api/v1/agent 2>/dev/null | jq -r '.state // empty' 2>/dev/null)
+                if [ "${agent_state}" = "working" ] || [ "${agent_state}" = "idle" ]; then
+                    echo "[entrypoint] WARNING: OAuth refresh failing but agent is ${agent_state}, not terminating"
+                    consecutive_failures=0
+                    continue
+                fi
                 echo "[entrypoint] FATAL: OAuth refresh failed ${max_failures} consecutive times, terminating pod"
                 kill -TERM $$ 2>/dev/null || kill -TERM 1 2>/dev/null
                 exit 1
