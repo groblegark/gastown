@@ -131,6 +131,8 @@ MODULES=(
   "slack-bot-health"
   "slack-bot-decisions"
   "credential-refresh"
+  # Phase 5: Pipeline integration
+  "dispatch-rebuild"
 )
 
 should_skip() {
