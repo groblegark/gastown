@@ -117,11 +117,15 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 		}
 	}
 
-	// Count active (non-Failed, non-orphan) pods for concurrency limiting.
+	// Count active (non-terminal, non-orphan) pods for concurrency limiting.
 	// Only count pods that are in the desired set — orphans were just deleted.
+	// Exclude both Failed and Succeeded pods — they are terminal and will be
+	// deleted+recreated below.
 	activePods := 0
 	for name, pod := range actualMap {
-		if _, inDesired := desired[name]; inDesired && pod.Status.Phase != corev1.PodFailed && pod.Status.Phase != corev1.PodSucceeded {
+		if _, inDesired := desired[name]; inDesired &&
+			pod.Status.Phase != corev1.PodFailed &&
+			pod.Status.Phase != corev1.PodSucceeded {
 			activePods++
 		}
 	}
@@ -136,7 +140,7 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 	for name, bead := range desired {
 		pod, exists := actualMap[name]
 		if !exists || pod.Status.Phase == corev1.PodFailed || pod.Status.Phase == corev1.PodSucceeded {
-			continue // Missing, failed, or completed pods are handled in phase 2
+			continue // Missing or terminal pods are handled in phase 2
 		}
 		desiredSpec := r.specBuilder(r.cfg, bead.Rig, bead.Role, bead.AgentName, bead.Metadata)
 		desiredSpec.BeadID = bead.ID
@@ -163,13 +167,13 @@ func (r *Reconciler) Reconcile(ctx context.Context) error {
 
 	for name, bead := range desired {
 		if pod, exists := actualMap[name]; exists {
-			// Pod exists. Check if it's in a terminal state (failed or completed).
+			// Pod exists. Check if it's in a terminal state (Failed or Succeeded).
 			if pod.Status.Phase == corev1.PodFailed || pod.Status.Phase == corev1.PodSucceeded {
-				r.logger.Info("deleting terminal pod for recreation", "pod", name, "phase", pod.Status.Phase)
+				r.logger.Info("deleting terminal pod for recreation",
+					"pod", name, "phase", pod.Status.Phase)
 				if err := r.pods.DeleteAgentPod(ctx, name, pod.Namespace); err != nil {
-					return fmt.Errorf("deleting failed pod %s: %w", name, err)
+					return fmt.Errorf("deleting terminal pod %s: %w", name, err)
 				}
-				activePods-- // no longer active after deletion
 				// Fall through to create.
 			} else if reason, hasDrift := driftReasons[name]; hasDrift {
 				// Pod has spec drift. Use role-aware upgrade strategy.

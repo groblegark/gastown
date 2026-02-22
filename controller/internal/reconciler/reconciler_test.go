@@ -260,7 +260,7 @@ func TestReconcile_DeletesAndRecreatesFailedPod(t *testing.T) {
 
 func TestReconcile_DeletesAndRecreatesSucceededPod(t *testing.T) {
 	// Bead exists, pod in Succeeded phase -> pod deleted and recreated.
-	// This mirrors TestReconcile_DeletesAndRecreatesFailedPod for completed polecats.
+	// This is the core fix for completed polecat pods blocking new sling dispatches.
 	client := fake.NewSimpleClientset()
 	createFakePod(t, client, "gt-gastown-polecat-furiosa", testNamespace, "Succeeded")
 
@@ -290,6 +290,34 @@ func TestReconcile_DeletesAndRecreatesSucceededPod(t *testing.T) {
 		t.Error("recreated pod should not be in Succeeded phase")
 	}
 }
+
+func TestReconcile_SucceededPodNotCountedAsActive(t *testing.T) {
+	// Succeeded pod should not count toward MaxConcurrentPods, allowing new pods to be created.
+	client := fake.NewSimpleClientset()
+	cfg := testCfg()
+	cfg.MaxConcurrentPods = 1
+
+	// One Succeeded polecat pod.
+	createFakePod(t, client, "gt-gastown-polecat-furiosa", testNamespace, "Succeeded")
+
+	lister := &mockBeadLister{beads: []daemonclient.AgentBead{
+		bead("gastown", "polecat", "furiosa"),
+	}}
+	pods := podmanager.New(client, slog.Default())
+	r := New(lister, pods, cfg, slog.Default(), testSpecBuilder)
+
+	ctx := context.Background()
+	if err := r.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	// Succeeded pod should be deleted and recreated — not blocked by MaxConcurrentPods.
+	names := listPodNames(t, client, testNamespace)
+	if len(names) != 1 {
+		t.Fatalf("expected 1 pod (recreated), got %d: %v", len(names), names)
+	}
+}
+
 
 func TestReconcile_SkipsPendingPod(t *testing.T) {
 	// Bead exists, pod in Pending phase -> no action (still starting).
