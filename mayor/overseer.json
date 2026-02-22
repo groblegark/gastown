@@ -1,0 +1,8 @@
+{
+  "type": "overseer",
+  "version": 1,
+  "name": "mayor",
+  "email": "mayor@gastown.local",
+  "username": "mayor",
+  "source": "git-config"
+}

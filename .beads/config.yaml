@@ -65,7 +65,7 @@ sync-branch: beads-sync
 external_projects:
   beads: ../../../beads/mayor/rig
 
-routing.mode: "direct"
+routing.mode: "explicit"
 
 # Storage backend: sqlite (default) or dolt (version-controlled)
 storage-backend: dolt
