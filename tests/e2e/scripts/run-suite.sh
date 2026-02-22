@@ -80,6 +80,7 @@ MODULES=(
   # Phase 2: Agent capabilities
   "agent-entrypoint"
   "agent-image"
+  "crew-image-prereqs"
   "agent-spawn"
   "agent-state"
   "agent-io"
