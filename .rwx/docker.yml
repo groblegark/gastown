@@ -345,7 +345,7 @@ tasks:
         apt-get -y install --no-install-recommends \
           curl git jq make unzip ca-certificates screen \
           python3 python3-pip python3-venv \
-          gcc g++ libc6-dev openssh-client libcurl3t64-gnutls sudo
+          gcc g++ libc6-dev binutils openssh-client libcurl3t64-gnutls sudo
 
         # Node.js (version from .node-version; binary tarball)
         NODE_VERSION=$(cat .node-version)
@@ -589,7 +589,7 @@ tasks:
       sudo apt-get -y install --no-install-recommends \
         git curl jq screen ca-certificates libicu74 \
         python3 python3-pip python3-venv \
-        make gcc g++ unzip libc6-dev \
+        make gcc g++ unzip libc6-dev binutils \
         openssh-client \
         libcurl3t64-gnutls sudo
 
@@ -604,10 +604,10 @@ tasks:
           python3 python3-minimal python3.12 python3.12-minimal \
           python3-pip python3-venv python3.12-venv \
           libpython3.12-stdlib libpython3.12-minimal \
-          make gcc g++ unzip \
+          make gcc g++ unzip binutils \
           gcc-14 g++-14 cpp-14 libgcc-14-dev \
           gcc-13 g++-13 cpp-13 libgcc-13-dev \
-          libc6-dev linux-libc-dev \
+          libc6-dev linux-libc-dev binutils-x86-64-linux-gnu \
           openssh-client libcurl3t64-gnutls sudo \
           libapparmor1; do
         dpkg -L "$pkg" 2>/dev/null | while read -r f; do
@@ -664,6 +664,16 @@ tasks:
         mkdir -p $LAYER/usr/libexec
         cp -r /usr/libexec/gcc $LAYER/usr/libexec/ 2>/dev/null || true
       fi
+      # binutils (as, ld, ar, nm — needed by gcc for CGO compilation)
+      for bin in /usr/bin/x86_64-linux-gnu-as /usr/bin/x86_64-linux-gnu-ld /usr/bin/as /usr/bin/ld; do
+        [ -f "$bin" ] || continue
+        ldd "$bin" 2>/dev/null | grep "=> /" | awk '{print $3}' | while read -r lib; do
+          [ -f "$lib" ] || continue
+          dir="$LAYER$(dirname "$lib")"
+          mkdir -p "$dir"
+          cp -n "$lib" "$LAYER${lib}" 2>/dev/null || true
+        done
+      done
       # gcc/g++ support libraries (crtbegin.o, libgcc.a, etc.)
       for d in /usr/lib/gcc/x86_64-linux-gnu/14 /usr/lib/gcc/x86_64-linux-gnu/13; do
         if [ -d "$d" ]; then
