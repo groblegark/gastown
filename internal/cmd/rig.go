@@ -18,11 +18,9 @@ import (
 	"github.com/steveyegge/gastown/internal/deps"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/polecat"
-	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/wisp"
-	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -34,7 +32,6 @@ var rigCmd = &cobra.Command{
 	Long: `Manage rigs (project containers) in the Gas Town workspace.
 
 A rig is a container for managing a project and its agents:
-  - refinery/rig/  Canonical main clone (Refinery's working copy)
   - mayor/rig/     Mayor's working clone for this rig
   - crew/<name>/   Human workspace(s)
   - witness/       Witness agent (no clone)
@@ -51,14 +48,13 @@ This creates a rig container with:
   - config.json           Rig configuration
   - .beads/               Rig-level issue tracking (initialized)
   - plugins/              Rig-level plugin directory
-  - refinery/rig/         Canonical main clone
   - mayor/rig/            Mayor's working clone
   - crew/                 Empty crew directory (add members with 'gt crew add')
   - witness/              Witness agent directory
   - polecats/             Worker directory (empty)
 
 The command also:
-  - Seeds patrol molecules (Deacon, Witness, Refinery)
+  - Seeds patrol molecules (Deacon, Witness)
   - Creates ~/gt/plugins/ (town-level) if it doesn't exist
   - Creates <rig>/plugins/ (rig-level)
 
@@ -136,12 +132,11 @@ Examples:
 
 var rigBootCmd = &cobra.Command{
 	Use:   "boot <rig>",
-	Short: "Start witness and refinery for a rig",
-	Long: `Start the witness and refinery agents for a rig.
+	Short: "Start witness for a rig",
+	Long: `Start the witness agent for a rig.
 
 This is the inverse of 'gt rig shutdown'. It starts:
 - The witness (if not already running)
-- The refinery (if not already running)
 
 Polecats are NOT started by this command - they are spawned
 on demand when work is assigned.
@@ -154,13 +149,12 @@ Examples:
 
 var rigStartCmd = &cobra.Command{
 	Use:   "start <rig>...",
-	Short: "Start witness and refinery on patrol for one or more rigs",
-	Long: `Start the witness and refinery agents on patrol for one or more rigs.
+	Short: "Start witness on patrol for one or more rigs",
+	Long: `Start the witness agent on patrol for one or more rigs.
 
 This is similar to 'gt rig boot' but supports multiple rigs at once.
 For each rig, it starts:
 - The witness (if not already running)
-- The refinery (if not already running)
 
 Polecats are NOT started by this command - they are spawned
 on demand when work is assigned.
@@ -175,8 +169,8 @@ Examples:
 
 var rigRebootCmd = &cobra.Command{
 	Use:   "reboot <rig>",
-	Short: "Restart witness and refinery for a rig",
-	Long: `Restart the patrol agents (witness and refinery) for a rig.
+	Short: "Restart witness for a rig",
+	Long: `Restart the witness agent for a rig.
 
 This is equivalent to 'gt rig shutdown' followed by 'gt rig boot'.
 Useful after polecats complete work and land their changes.
@@ -195,7 +189,6 @@ var rigShutdownCmd = &cobra.Command{
 
 This command gracefully shuts down:
 - All polecat sessions
-- The refinery (if running)
 - The witness (if running)
 
 Before shutdown, checks all polecats for uncommitted work:
@@ -224,7 +217,6 @@ If no rig is specified, infers the rig from the current directory.
 Displays:
 - Rig information (name, path, beads prefix)
 - Witness status (running/stopped, uptime)
-- Refinery status (running/stopped, uptime, queue size)
 - Polecats (name, state, assigned issue, session status)
 - Crew members (name, branch, session status, git status)
 
@@ -244,7 +236,6 @@ var rigStopCmd = &cobra.Command{
 This command is similar to 'gt rig shutdown' but supports multiple rigs.
 For each rig, it gracefully shuts down:
 - All polecat sessions
-- The refinery (if running)
 - The witness (if running)
 
 Before shutdown, checks all polecats for uncommitted work:
@@ -267,7 +258,7 @@ Examples:
 var rigRestartCmd = &cobra.Command{
 	Use:   "restart <rig>...",
 	Short: "Restart one or more rigs (stop then start)",
-	Long: `Restart the patrol agents (witness and refinery) for one or more rigs.
+	Long: `Restart the witness agent for one or more rigs.
 
 This is equivalent to 'gt rig stop' followed by 'gt rig start' for each rig.
 Useful after polecats complete work and land their changes.
@@ -501,11 +492,10 @@ func runRigAdd(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nStructure:\n")
 	fmt.Printf("  %s/\n", name)
 	fmt.Printf("  ├── config.json\n")
-	fmt.Printf("  ├── .repo.git/        (shared bare repo for refinery+polecats)\n")
+	fmt.Printf("  ├── .repo.git/        (shared bare repo for polecats)\n")
 	fmt.Printf("  ├── .beads/           (prefix: %s)\n", newRig.Config.Prefix)
 	fmt.Printf("  ├── plugins/          (rig-level plugins)\n")
 	fmt.Printf("  ├── mayor/rig/        (clone: %s)\n", defaultBranch)
-	fmt.Printf("  ├── refinery/rig/     (worktree: %s, sees polecat branches)\n", defaultBranch)
 	fmt.Printf("  ├── crew/             (empty - add crew with 'gt crew add')\n")
 	fmt.Printf("  ├── witness/\n")
 	fmt.Printf("  └── polecats/\n")
@@ -565,9 +555,6 @@ func runRigList(cmd *cobra.Command, args []string) error {
 		fmt.Printf("    Polecats: %d  Crew: %d\n", summary.PolecatCount, summary.CrewCount)
 
 		agents := []string{}
-		if summary.HasRefinery {
-			agents = append(agents, "refinery")
-		}
 		if summary.HasWitness {
 			agents = append(agents, "witness")
 		}
@@ -1056,60 +1043,14 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 
 	g := git.NewGit(townRoot)
 	rigMgr := rig.NewManager(townRoot, rigsConfig, g)
-	r, err := rigMgr.GetRig(rigName)
-	if err != nil {
+	if _, err := rigMgr.GetRig(rigName); err != nil {
 		return fmt.Errorf("rig '%s' not found", rigName)
 	}
 
 	fmt.Printf("Booting rig %s...\n", style.Bold.Render(rigName))
 
-	var started []string
-	var skipped []string
-
-	// 1. Start the witness
-	// Check actual session, not state file (may be stale)
-	witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
-	witnessBackend, witnessKey := resolveBackendForSession(witnessSession)
-	witnessRunning, _ := witnessBackend.HasSession(witnessKey)
-	if witnessRunning {
-		skipped = append(skipped, "witness (already running)")
-	} else {
-		fmt.Printf("  Starting witness...\n")
-		witMgr := witness.NewManager(r)
-		if err := witMgr.Start(false, "", nil); err != nil {
-			if err == witness.ErrAlreadyRunning {
-				skipped = append(skipped, "witness (already running)")
-			} else {
-				return fmt.Errorf("starting witness: %w", err)
-			}
-		} else {
-			started = append(started, "witness")
-		}
-	}
-
-	// 2. Start the refinery
-	// Check actual session, not state file (may be stale)
-	refinerySession := fmt.Sprintf("gt-%s-refinery", rigName)
-	refineryBackend, refineryKey := resolveBackendForSession(refinerySession)
-	refineryRunning, _ := refineryBackend.HasSession(refineryKey)
-	if refineryRunning {
-		skipped = append(skipped, "refinery (already running)")
-	} else {
-		fmt.Printf("  Starting refinery...\n")
-		refMgr := refinery.NewManager(r)
-		if err := refMgr.Start(false, ""); err != nil { // false = background mode
-			return fmt.Errorf("starting refinery: %w", err)
-		}
-		started = append(started, "refinery")
-	}
-
-	// Report results
-	if len(started) > 0 {
-		fmt.Printf("%s Started: %s\n", style.Success.Render("✓"), strings.Join(started, ", "))
-	}
-	if len(skipped) > 0 {
-		fmt.Printf("%s Skipped: %s\n", style.Dim.Render("•"), strings.Join(skipped, ", "))
-	}
+	// Witness and refinery roles have been removed; boot is a no-op.
+	fmt.Printf("%s Nothing to boot (witness and refinery roles removed)\n", style.Dim.Render("•"))
 
 	return nil
 }
@@ -1135,8 +1076,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 	var failedRigs []string
 
 	for _, rigName := range args {
-		r, err := rigMgr.GetRig(rigName)
-		if err != nil {
+		if _, err := rigMgr.GetRig(rigName); err != nil {
 			fmt.Printf("%s Rig '%s' not found\n", style.Warning.Render("⚠"), rigName)
 			failedRigs = append(failedRigs, rigName)
 			continue
@@ -1156,44 +1096,6 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 		var started []string
 		var skipped []string
 		hasError := false
-
-		// 1. Start the witness
-		witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
-		witBackend, witKey := resolveBackendForSession(witnessSession)
-		witnessRunning, _ := witBackend.HasSession(witKey)
-		if witnessRunning {
-			skipped = append(skipped, "witness")
-		} else {
-			fmt.Printf("  Starting witness...\n")
-			witMgr := witness.NewManager(r)
-			if err := witMgr.Start(false, "", nil); err != nil {
-				if err == witness.ErrAlreadyRunning {
-					skipped = append(skipped, "witness")
-				} else {
-					fmt.Printf("  %s Failed to start witness: %v\n", style.Warning.Render("⚠"), err)
-					hasError = true
-				}
-			} else {
-				started = append(started, "witness")
-			}
-		}
-
-		// 2. Start the refinery
-		refinerySession := fmt.Sprintf("gt-%s-refinery", rigName)
-		refBackend, refKey := resolveBackendForSession(refinerySession)
-		refineryRunning, _ := refBackend.HasSession(refKey)
-		if refineryRunning {
-			skipped = append(skipped, "refinery")
-		} else {
-			fmt.Printf("  Starting refinery...\n")
-			refMgr := refinery.NewManager(r)
-			if err := refMgr.Start(false, ""); err != nil {
-				fmt.Printf("  %s Failed to start refinery: %v\n", style.Warning.Render("⚠"), err)
-				hasError = true
-			} else {
-				started = append(started, "refinery")
-			}
-		}
 
 		// Report results for this rig
 		if len(started) > 0 {
@@ -1293,23 +1195,6 @@ func runRigShutdown(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 2. Stop the refinery
-	refMgr := refinery.NewManager(r)
-	if running, _ := refMgr.IsRunning(); running {
-		fmt.Printf("  Stopping refinery...\n")
-		if err := refMgr.Stop(); err != nil {
-			errors = append(errors, fmt.Sprintf("refinery: %v", err))
-		}
-	}
-
-	// 3. Stop the witness
-	witMgr := witness.NewManager(r)
-	if running, _ := witMgr.IsRunning(); running {
-		fmt.Printf("  Stopping witness...\n")
-		if err := witMgr.Stop(); err != nil {
-			errors = append(errors, fmt.Sprintf("witness: %v", err))
-		}
-	}
 
 	if len(errors) > 0 {
 		fmt.Printf("\n%s Some agents failed to stop:\n", style.Warning.Render("⚠"))
@@ -1388,32 +1273,6 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
-	// Witness status
-	fmt.Printf("%s\n", style.Bold.Render("Witness"))
-	witMgr := witness.NewManager(r)
-	witnessRunning, _ := witMgr.IsRunning()
-	if witnessRunning {
-		fmt.Printf("  %s running\n", style.Success.Render("●"))
-	} else {
-		fmt.Printf("  %s stopped\n", style.Dim.Render("○"))
-	}
-	fmt.Println()
-
-	// Refinery status
-	fmt.Printf("%s\n", style.Bold.Render("Refinery"))
-	refMgr := refinery.NewManager(r)
-	refineryRunning, _ := refMgr.IsRunning()
-	if refineryRunning {
-		fmt.Printf("  %s running\n", style.Success.Render("●"))
-		// Show queue size
-		queue, err := refMgr.Queue()
-		if err == nil && len(queue) > 0 {
-			fmt.Printf("  Queue: %d items\n", len(queue))
-		}
-	} else {
-		fmt.Printf("  %s stopped\n", style.Dim.Render("○"))
-	}
-	fmt.Println()
 
 	// Polecats
 	polecatGit := git.NewGit(r.Path)
@@ -1556,23 +1415,6 @@ func runRigStop(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// 2. Stop the refinery
-		refMgr := refinery.NewManager(r)
-		if running, _ := refMgr.IsRunning(); running {
-			fmt.Printf("  Stopping refinery...\n")
-			if err := refMgr.Stop(); err != nil {
-				errors = append(errors, fmt.Sprintf("refinery: %v", err))
-			}
-		}
-
-		// 3. Stop the witness
-		witMgr := witness.NewManager(r)
-		if running, _ := witMgr.IsRunning(); running {
-			fmt.Printf("  Stopping witness...\n")
-			if err := witMgr.Stop(); err != nil {
-				errors = append(errors, fmt.Sprintf("witness: %v", err))
-			}
-		}
 
 		if len(errors) > 0 {
 			fmt.Printf("%s Some agents in %s failed to stop:\n", style.Warning.Render("⚠"), rigName)
@@ -1686,23 +1528,6 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// 2. Stop the refinery
-		refMgr := refinery.NewManager(r)
-		if running, _ := refMgr.IsRunning(); running {
-			fmt.Printf("    Stopping refinery...\n")
-			if err := refMgr.Stop(); err != nil {
-				stopErrors = append(stopErrors, fmt.Sprintf("refinery: %v", err))
-			}
-		}
-
-		// 3. Stop the witness
-		witMgr := witness.NewManager(r)
-		if running, _ := witMgr.IsRunning(); running {
-			fmt.Printf("    Stopping witness...\n")
-			if err := witMgr.Stop(); err != nil {
-				stopErrors = append(stopErrors, fmt.Sprintf("witness: %v", err))
-			}
-		}
 
 		if len(stopErrors) > 0 {
 			fmt.Printf("  %s Stop errors:\n", style.Warning.Render("⚠"))
@@ -1719,41 +1544,6 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		var started []string
 		var skipped []string
 
-		// 1. Start the witness
-		witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
-		witBackend, witKey := resolveBackendForSession(witnessSession)
-		witnessRunning, _ := witBackend.HasSession(witKey)
-		if witnessRunning {
-			skipped = append(skipped, "witness")
-		} else {
-			fmt.Printf("    Starting witness...\n")
-			if err := witMgr.Start(false, "", nil); err != nil {
-				if err == witness.ErrAlreadyRunning {
-					skipped = append(skipped, "witness")
-				} else {
-					fmt.Printf("    %s Failed to start witness: %v\n", style.Warning.Render("⚠"), err)
-					startErrors = append(startErrors, fmt.Sprintf("witness: %v", err))
-				}
-			} else {
-				started = append(started, "witness")
-			}
-		}
-
-		// 2. Start the refinery
-		refinerySession := fmt.Sprintf("gt-%s-refinery", rigName)
-		refBackend, refKey := resolveBackendForSession(refinerySession)
-		refineryRunning, _ := refBackend.HasSession(refKey)
-		if refineryRunning {
-			skipped = append(skipped, "refinery")
-		} else {
-			fmt.Printf("    Starting refinery...\n")
-			if err := refMgr.Start(false, ""); err != nil {
-				fmt.Printf("    %s Failed to start refinery: %v\n", style.Warning.Render("⚠"), err)
-				startErrors = append(startErrors, fmt.Sprintf("refinery: %v", err))
-			} else {
-				started = append(started, "refinery")
-			}
-		}
 
 		// Report results for this rig
 		if len(started) > 0 {

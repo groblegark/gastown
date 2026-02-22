@@ -4,10 +4,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/wisp"
-	"github.com/steveyegge/gastown/internal/witness"
 )
 
 // RigStatusKey is the wisp config key for rig operational status.
@@ -22,8 +20,6 @@ var rigParkCmd = &cobra.Command{
 	Long: `Park rigs to temporarily disable them.
 
 Parking a rig:
-  - Stops the witness if running
-  - Stops the refinery if running
   - Sets status=parked in the wisp layer (local/ephemeral)
   - The daemon respects this status and won't auto-restart agents
 
@@ -81,43 +77,13 @@ func runRigPark(cmd *cobra.Command, args []string) error {
 }
 
 func parkOneRig(rigName string) error {
-	// Get rig and town root
-	townRoot, r, err := getRig(rigName)
+	// Get town root
+	townRoot, _, err := getRig(rigName)
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("Parking rig %s...\n", style.Bold.Render(rigName))
-
-	var stoppedAgents []string
-
-	// Stop witness if running
-	witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
-	witBackend, witKey := resolveBackendForSession(witnessSession)
-	witnessRunning, _ := witBackend.HasSession(witKey)
-	if witnessRunning {
-		fmt.Printf("  Stopping witness...\n")
-		witMgr := witness.NewManager(r)
-		if err := witMgr.Stop(); err != nil {
-			fmt.Printf("  %s Failed to stop witness: %v\n", style.Warning.Render("!"), err)
-		} else {
-			stoppedAgents = append(stoppedAgents, "Witness stopped")
-		}
-	}
-
-	// Stop refinery if running
-	refinerySession := fmt.Sprintf("gt-%s-refinery", rigName)
-	refBackend, refKey := resolveBackendForSession(refinerySession)
-	refineryRunning, _ := refBackend.HasSession(refKey)
-	if refineryRunning {
-		fmt.Printf("  Stopping refinery...\n")
-		refMgr := refinery.NewManager(r)
-		if err := refMgr.Stop(); err != nil {
-			fmt.Printf("  %s Failed to stop refinery: %v\n", style.Warning.Render("!"), err)
-		} else {
-			stoppedAgents = append(stoppedAgents, "Refinery stopped")
-		}
-	}
 
 	// Set parked status in wisp layer
 	wispCfg := wisp.NewConfig(townRoot, rigName)
@@ -127,9 +93,6 @@ func parkOneRig(rigName string) error {
 
 	// Output
 	fmt.Printf("%s Rig %s parked (local only)\n", style.Success.Render("✓"), rigName)
-	for _, msg := range stoppedAgents {
-		fmt.Printf("  %s\n", msg)
-	}
 	fmt.Printf("  Daemon will not auto-restart\n")
 
 	return nil

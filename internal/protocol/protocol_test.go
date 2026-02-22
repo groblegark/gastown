@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -227,47 +226,6 @@ func TestHandlerRegistry(t *testing.T) {
 	}
 }
 
-func TestWrapWitnessHandlers(t *testing.T) {
-	handler := &mockWitnessHandler{}
-	registry := WrapWitnessHandlers(handler)
-
-	// Test MERGED
-	mergedMsg := &mail.Message{
-		Subject: "MERGED nux",
-		Body:    "Branch: polecat/nux\nIssue: gt-abc\nPolecat: nux\nRig: gastown\nTarget: main",
-	}
-	if err := registry.Handle(mergedMsg); err != nil {
-		t.Errorf("HandleMerged error: %v", err)
-	}
-	if !handler.mergedCalled {
-		t.Error("HandleMerged was not called")
-	}
-
-	// Test MERGE_FAILED
-	failedMsg := &mail.Message{
-		Subject: "MERGE_FAILED nux",
-		Body:    "Branch: polecat/nux\nIssue: gt-abc\nPolecat: nux\nRig: gastown\nTarget: main\nFailure-Type: tests\nError: failed",
-	}
-	if err := registry.Handle(failedMsg); err != nil {
-		t.Errorf("HandleMergeFailed error: %v", err)
-	}
-	if !handler.failedCalled {
-		t.Error("HandleMergeFailed was not called")
-	}
-
-	// Test REWORK_REQUEST
-	reworkMsg := &mail.Message{
-		Subject: "REWORK_REQUEST nux",
-		Body:    "Branch: polecat/nux\nIssue: gt-abc\nPolecat: nux\nRig: gastown\nTarget: main",
-	}
-	if err := registry.Handle(reworkMsg); err != nil {
-		t.Errorf("HandleReworkRequest error: %v", err)
-	}
-	if !handler.reworkCalled {
-		t.Error("HandleReworkRequest was not called")
-	}
-}
-
 func TestWrapRefineryHandlers(t *testing.T) {
 	handler := &mockRefineryHandler{}
 	registry := WrapRefineryHandlers(handler)
@@ -285,88 +243,7 @@ func TestWrapRefineryHandlers(t *testing.T) {
 	}
 }
 
-func TestDefaultWitnessHandler(t *testing.T) {
-	tmpDir := t.TempDir()
-	handler := NewWitnessHandler("gastown", tmpDir)
-
-	// Capture output
-	var buf bytes.Buffer
-	handler.SetOutput(&buf)
-
-	// Test HandleMerged
-	mergedPayload := &MergedPayload{
-		Branch:       "polecat/nux/gt-abc",
-		Issue:        "gt-abc",
-		Polecat:      "nux",
-		Rig:          "gastown",
-		TargetBranch: "main",
-		MergeCommit:  "abc123",
-	}
-	if err := handler.HandleMerged(mergedPayload); err != nil {
-		t.Errorf("HandleMerged error: %v", err)
-	}
-	if !strings.Contains(buf.String(), "MERGED received") {
-		t.Errorf("Output missing expected text: %s", buf.String())
-	}
-
-	// Test HandleMergeFailed
-	buf.Reset()
-	failedPayload := &MergeFailedPayload{
-		Branch:       "polecat/nux/gt-abc",
-		Issue:        "gt-abc",
-		Polecat:      "nux",
-		Rig:          "gastown",
-		TargetBranch: "main",
-		FailureType:  "tests",
-		Error:        "Test failed",
-	}
-	if err := handler.HandleMergeFailed(failedPayload); err != nil {
-		t.Errorf("HandleMergeFailed error: %v", err)
-	}
-	if !strings.Contains(buf.String(), "MERGE_FAILED received") {
-		t.Errorf("Output missing expected text: %s", buf.String())
-	}
-
-	// Test HandleReworkRequest
-	buf.Reset()
-	reworkPayload := &ReworkRequestPayload{
-		Branch:        "polecat/nux/gt-abc",
-		Issue:         "gt-abc",
-		Polecat:       "nux",
-		Rig:           "gastown",
-		TargetBranch:  "main",
-		ConflictFiles: []string{"file1.go"},
-	}
-	if err := handler.HandleReworkRequest(reworkPayload); err != nil {
-		t.Errorf("HandleReworkRequest error: %v", err)
-	}
-	if !strings.Contains(buf.String(), "REWORK_REQUEST received") {
-		t.Errorf("Output missing expected text: %s", buf.String())
-	}
-}
-
 // Mock handlers for testing
-
-type mockWitnessHandler struct {
-	mergedCalled bool
-	failedCalled bool
-	reworkCalled bool
-}
-
-func (m *mockWitnessHandler) HandleMerged(payload *MergedPayload) error {
-	m.mergedCalled = true
-	return nil
-}
-
-func (m *mockWitnessHandler) HandleMergeFailed(payload *MergeFailedPayload) error {
-	m.failedCalled = true
-	return nil
-}
-
-func (m *mockWitnessHandler) HandleReworkRequest(payload *ReworkRequestPayload) error {
-	m.reworkCalled = true
-	return nil
-}
 
 type mockRefineryHandler struct {
 	readyCalled bool

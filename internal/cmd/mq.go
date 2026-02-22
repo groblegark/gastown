@@ -1,19 +1,15 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/git"
-	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
-	"github.com/steveyegge/gastown/internal/style"
 )
 
 // MQ command flags
@@ -419,187 +415,19 @@ func findCurrentRig(townRoot string) (string, *rig.Rig, error) {
 	return rigName, r, nil
 }
 
-func runMQRetry(cmd *cobra.Command, args []string) error {
-	rigName := args[0]
-	mrID := args[1]
-
-	mgr, _, _, err := getRefineryManager(rigName)
-	if err != nil {
-		return err
-	}
-
-	// Get the MR first to show info
-	mr, err := mgr.FindMR(mrID)
-	if err != nil {
-		if err == refinery.ErrMRNotFound {
-			return fmt.Errorf("merge request '%s' not found in rig '%s'", mrID, rigName)
-		}
-		return fmt.Errorf("getting merge request: %w", err)
-	}
-
-	// Show what we're retrying
-	fmt.Printf("Retrying merge request: %s\n", mrID)
-	fmt.Printf("  Branch: %s\n", mr.Branch)
-	fmt.Printf("  Worker: %s\n", mr.Worker)
-	if mr.Error != "" {
-		fmt.Printf("  Previous error: %s\n", style.Dim.Render(mr.Error))
-	}
-
-	// Retry is deprecated — the Refinery agent handles retries autonomously via beads.
-	fmt.Printf("Note: Retry is deprecated. The Refinery agent handles retries autonomously via beads.\n")
-
-	return nil
+func runMQRetry(_ *cobra.Command, _ []string) error {
+	return fmt.Errorf("mq retry is no longer available: refinery role has been removed")
 }
 
-func runMQReject(cmd *cobra.Command, args []string) error {
-	rigName := args[0]
-	mrIDOrBranch := args[1]
-
-	mgr, _, _, err := getRefineryManager(rigName)
-	if err != nil {
-		return err
-	}
-
-	result, err := mgr.RejectMR(mrIDOrBranch, mqRejectReason, mqRejectNotify)
-	if err != nil {
-		return fmt.Errorf("rejecting MR: %w", err)
-	}
-
-	fmt.Printf("%s Rejected: %s\n", style.Bold.Render("✗"), result.Branch)
-	fmt.Printf("  Worker: %s\n", result.Worker)
-	fmt.Printf("  Reason: %s\n", mqRejectReason)
-
-	if result.IssueID != "" {
-		fmt.Printf("  Issue:  %s %s\n", result.IssueID, style.Dim.Render("(not closed - work not done)"))
-	}
-
-	if mqRejectNotify {
-		fmt.Printf("  %s\n", style.Dim.Render("Worker notified via mail"))
-	}
-
-	return nil
+func runMQReject(_ *cobra.Command, _ []string) error {
+	return fmt.Errorf("mq reject is no longer available: refinery role has been removed")
 }
 
-func runMQClose(cmd *cobra.Command, args []string) error {
-	mrID := args[0]
-
-	// Require at least one close reason flag
-	if !mqCloseMerged {
-		return fmt.Errorf("must specify a close reason (e.g., --merged)")
-	}
-
-	// Determine close reason
-	var closeReason string
-	if mqCloseMerged {
-		closeReason = "merged"
-	}
-
-	// Use current working directory for beads operations
-	workDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getting current directory: %w", err)
-	}
-
-	// Initialize beads client and close the MR
-	bd := beads.New(workDir)
-	if err := bd.CloseWithReason(closeReason, mrID); err != nil {
-		return fmt.Errorf("closing MR: %w", err)
-	}
-
-	fmt.Printf("%s Closed: %s (reason: %s)\n", style.Bold.Render("✓"), mrID, closeReason)
-	return nil
+func runMQClose(_ *cobra.Command, _ []string) error {
+	return fmt.Errorf("mq close is no longer available: refinery role has been removed")
 }
 
-func runMqConfig(cmd *cobra.Command, args []string) error {
-	var rigName string
-	if len(args) > 0 {
-		rigName = args[0]
-	}
-
-	mgr, r, rigName, err := getRefineryManager(rigName)
-	if err != nil {
-		return err
-	}
-
-	// Load config to get merge queue settings
-	if err := mgr.LoadConfig(); err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	}
-
-	cfg := mgr.Config()
-
-	if mqConfigJSON {
-		// JSON output
-		output := struct {
-			Rig          string                    `json:"rig"`
-			Enabled      bool                      `json:"enabled"`
-			Strategy     string                    `json:"strategy"`
-			TargetBranch string                    `json:"target_branch"`
-			PROptions    *refinery.PROptions       `json:"pr_options,omitempty"`
-		}{
-			Rig:          rigName,
-			Enabled:      cfg.Enabled,
-			Strategy:     cfg.Strategy,
-			TargetBranch: cfg.TargetBranch,
-			PROptions:    cfg.PROptions,
-		}
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(output)
-	}
-
-	// Human-readable output
-	fmt.Printf("%s Merge Queue Configuration\n\n", style.Bold.Render("⚙"))
-	fmt.Printf("  Rig:           %s\n", rigName)
-	fmt.Printf("  Path:          %s\n", r.Path)
-	fmt.Println()
-	fmt.Printf("  %s\n", style.Bold.Render("Strategy"))
-	fmt.Printf("  Strategy:      %s\n", strategyDescription(cfg.Strategy))
-	fmt.Printf("  Target branch: %s\n", cfg.TargetBranch)
-	fmt.Printf("  Enabled:       %v\n", cfg.Enabled)
-
-	// Show PR options if using a PR strategy
-	if refinery.IsPRStrategy(cfg.Strategy) && cfg.PROptions != nil {
-		fmt.Println()
-		fmt.Printf("  %s\n", style.Bold.Render("PR Options"))
-		if cfg.PROptions.AutoMerge {
-			fmt.Printf("  Auto-merge:    enabled\n")
-		}
-		if cfg.PROptions.Draft {
-			fmt.Printf("  Draft:         enabled\n")
-		}
-		if len(cfg.PROptions.Labels) > 0 {
-			fmt.Printf("  Labels:        %s\n", strings.Join(cfg.PROptions.Labels, ", "))
-		}
-		if len(cfg.PROptions.Reviewers) > 0 {
-			fmt.Printf("  Reviewers:     %s\n", strings.Join(cfg.PROptions.Reviewers, ", "))
-		}
-	}
-
-	// Show other settings
-	fmt.Println()
-	fmt.Printf("  %s\n", style.Bold.Render("Processing"))
-	fmt.Printf("  Run tests:     %v\n", cfg.RunTests)
-	if cfg.TestCommand != "" {
-		fmt.Printf("  Test command:  %s\n", cfg.TestCommand)
-	}
-	fmt.Printf("  Delete branches after merge: %v\n", cfg.DeleteMergedBranches)
-
-	return nil
+func runMqConfig(_ *cobra.Command, _ []string) error {
+	return fmt.Errorf("mq config is no longer available: refinery role has been removed")
 }
 
-// strategyDescription returns a human-readable description of a merge strategy.
-func strategyDescription(strategy string) string {
-	switch strategy {
-	case refinery.StrategyDirectMerge:
-		return "direct_merge (merge directly to target, no PR)"
-	case refinery.StrategyPRToMain:
-		return "pr_to_main (create PR targeting main)"
-	case refinery.StrategyPRToBranch:
-		return "pr_to_branch (create PR targeting specific branch)"
-	case refinery.StrategyDirectToBranch:
-		return "direct_to_branch (merge directly to specific branch)"
-	default:
-		return strategy
-	}
-}

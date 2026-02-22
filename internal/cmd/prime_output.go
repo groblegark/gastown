@@ -10,7 +10,6 @@ import (
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/checkpoint"
 	"github.com/steveyegge/gastown/internal/deacon"
-	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
@@ -69,17 +68,7 @@ func outputPrimeContext(ctx RoleContext) error {
 			}
 		}
 
-		// Load merge queue config from config.json (separate from rig.json)
-		// The refinery engineer loads this, but we need it for template rendering
-		mqCfg := refinery.LoadMergeQueueConfigFromPath(rigPath)
-		if mqCfg != nil {
-			if mqCfg.Strategy != "" {
-				mergeStrategy = mqCfg.Strategy
-			}
-			if mqCfg.TargetBranch != "" {
-				targetBranch = mqCfg.TargetBranch
-			}
-		}
+		// Merge queue config loading removed (refinery role deleted)
 	}
 
 	data := templates.RoleData{

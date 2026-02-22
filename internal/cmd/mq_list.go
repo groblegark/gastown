@@ -10,14 +10,13 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
-	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/style"
 )
 
 func runMQList(cmd *cobra.Command, args []string) error {
 	rigName := args[0]
 
-	_, r, _, err := getRefineryManager(rigName)
+	_, r, err := getRig(rigName)
 	if err != nil {
 		return err
 	}
@@ -283,36 +282,50 @@ func outputJSON(data interface{}) error {
 	return enc.Encode(data)
 }
 
-// calculateMRScore computes the priority score for an MR using the refinery scoring function.
+// calculateMRScore computes the priority score for an MR.
 // Higher scores mean higher priority (process first).
+//
+// Scoring weights (inlined from former refinery scoring):
+//   - Base score: 1000
+//   - Priority: (4 - priority) * 100 (P0=400, P4=0)
+//   - Convoy age: hours * 10 (older convoys get higher priority)
+//   - MR age: hours * 1.0 (FIFO tiebreaker)
+//   - Retry penalty: min(retryCount * 50, 300)
 func calculateMRScore(issue *beads.Issue, fields *beads.MRFields, now time.Time) float64 {
 	// Parse MR creation time
 	mrCreatedAt, err := time.Parse(time.RFC3339, issue.CreatedAt)
 	if err != nil {
 		mrCreatedAt, err = time.Parse("2006-01-02T15:04:05Z", issue.CreatedAt)
 		if err != nil {
-			mrCreatedAt = now // Fallback to now if parsing fails
+			mrCreatedAt = now
 		}
 	}
 
-	// Build score input
-	input := refinery.ScoreInput{
-		Priority:    issue.Priority,
-		MRCreatedAt: mrCreatedAt,
-		Now:         now,
-	}
+	score := 1000.0
 
-	// Add fields from MR metadata if available
+	// Priority boost: P0 gets +400, P4 gets +0
+	score += float64(4-issue.Priority) * 100.0
+
+	// MR age boost (FIFO tiebreaker): hours since creation
+	mrAge := now.Sub(mrCreatedAt).Hours()
+	score += mrAge * 1.0
+
 	if fields != nil {
-		input.RetryCount = fields.RetryCount
-
-		// Parse convoy created at if available
+		// Convoy age boost: older convoys get priority (starvation prevention)
 		if fields.ConvoyCreatedAt != "" {
 			if convoyTime, err := time.Parse(time.RFC3339, fields.ConvoyCreatedAt); err == nil {
-				input.ConvoyCreatedAt = &convoyTime
+				convoyAge := now.Sub(convoyTime).Hours()
+				score += convoyAge * 10.0
 			}
 		}
+
+		// Retry penalty: repeated failures get deprioritized
+		retryPenalty := float64(fields.RetryCount) * 50.0
+		if retryPenalty > 300.0 {
+			retryPenalty = 300.0
+		}
+		score -= retryPenalty
 	}
 
-	return refinery.ScoreMRWithDefaults(input)
+	return score
 }

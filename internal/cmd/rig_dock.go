@@ -7,9 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/polecat"
-	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/style"
-	"github.com/steveyegge/gastown/internal/witness"
 )
 
 // RigDockedLabel is the label set on rig identity beads when docked.
@@ -22,7 +20,6 @@ var rigDockCmd = &cobra.Command{
 
 Docking a rig:
   - Stops the witness if running
-  - Stops the refinery if running
   - Stops all polecat sessions if running
   - Sets status:docked label on the rig identity bead
   - Syncs via git so all clones see the docked status
@@ -121,34 +118,6 @@ func runRigDock(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Docking rig %s...\n", style.Bold.Render(rigName))
 
 	var stoppedAgents []string
-
-	// Stop witness if running
-	witnessSession := fmt.Sprintf("gt-%s-witness", rigName)
-	witBackend, witKey := resolveBackendForSession(witnessSession)
-	witnessRunning, _ := witBackend.HasSession(witKey)
-	if witnessRunning {
-		fmt.Printf("  Stopping witness...\n")
-		witMgr := witness.NewManager(r)
-		if err := witMgr.Stop(); err != nil {
-			fmt.Printf("  %s Failed to stop witness: %v\n", style.Warning.Render("!"), err)
-		} else {
-			stoppedAgents = append(stoppedAgents, "Witness stopped")
-		}
-	}
-
-	// Stop refinery if running
-	refinerySession := fmt.Sprintf("gt-%s-refinery", rigName)
-	refBackend, refKey := resolveBackendForSession(refinerySession)
-	refineryRunning, _ := refBackend.HasSession(refKey)
-	if refineryRunning {
-		fmt.Printf("  Stopping refinery...\n")
-		refMgr := refinery.NewManager(r)
-		if err := refMgr.Stop(); err != nil {
-			fmt.Printf("  %s Failed to stop refinery: %v\n", style.Warning.Render("!"), err)
-		} else {
-			stoppedAgents = append(stoppedAgents, "Refinery stopped")
-		}
-	}
 
 	// Stop polecat sessions if any
 	polecatMgr := polecat.NewSessionManager(r)

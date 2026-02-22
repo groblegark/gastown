@@ -25,13 +25,11 @@ import (
 	"github.com/steveyegge/gastown/internal/events"
 	"github.com/steveyegge/gastown/internal/feed"
 	"github.com/steveyegge/gastown/internal/polecat"
-	"github.com/steveyegge/gastown/internal/refinery"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/terminal"
 	"github.com/steveyegge/gastown/internal/util"
 	"github.com/steveyegge/gastown/internal/wisp"
-	"github.com/steveyegge/gastown/internal/witness"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
 
@@ -282,23 +280,7 @@ func (d *Daemon) heartbeat(state *State) {
 		d.ensureBootRunning()
 	}
 
-	// 3. Ensure Witnesses are running for all rigs (restart if dead)
-	// Check patrol config - can be disabled in mayor/daemon.json
-	if IsPatrolEnabled(d.patrolConfig, "witness") {
-		d.ensureWitnessesRunning()
-	} else {
-		d.logger.Printf("Witness patrol disabled in config, skipping")
-	}
-
-	// 4. Ensure Refineries are running for all rigs (restart if dead)
-	// Check patrol config - can be disabled in mayor/daemon.json
-	if IsPatrolEnabled(d.patrolConfig, "refinery") {
-		d.ensureRefineriesRunning()
-	} else {
-		d.logger.Printf("Refinery patrol disabled in config, skipping")
-	}
-
-	// 5. Trigger pending polecat spawns (bootstrap mode - ZFC violation acceptable)
+	// 3. Trigger pending polecat spawns (bootstrap mode - ZFC violation acceptable)
 	// This ensures polecats get nudged even when Deacon isn't in a patrol cycle.
 	// Uses regex-based WaitForRuntimeReady, which is acceptable for daemon bootstrap.
 	d.triggerPendingSpawns()
@@ -533,86 +515,6 @@ func (d *Daemon) checkDeaconHeartbeat() {
 			d.logger.Printf("Error nudging stuck Deacon: %v", err)
 		}
 	}
-}
-
-// ensureWitnessesRunning ensures witnesses are running for all rigs.
-// Called on each heartbeat to maintain witness patrol loops.
-func (d *Daemon) ensureWitnessesRunning() {
-	rigs := d.getKnownRigs()
-	for _, rigName := range rigs {
-		d.ensureWitnessRunning(rigName)
-	}
-}
-
-// ensureWitnessRunning ensures the witness for a specific rig is running.
-// Discover, don't track: uses Manager.Start() which checks sessions directly (gt-zecmc).
-func (d *Daemon) ensureWitnessRunning(rigName string) {
-	// Check rig operational state before auto-starting
-	if operational, reason := d.isRigOperational(rigName); !operational {
-		d.logger.Printf("Skipping witness auto-start for %s: %s", rigName, reason)
-		return
-	}
-
-	// Manager.Start() handles: zombie detection, session creation, env vars, theming,
-	// startup readiness waits, and crucially - startup/propulsion nudges (GUPP).
-	// It returns ErrAlreadyRunning if Claude is already running.
-	r := &rig.Rig{
-		Name: rigName,
-		Path: filepath.Join(d.config.TownRoot, rigName),
-	}
-	mgr := witness.NewManager(r)
-
-	if err := mgr.Start(false, "", nil); err != nil {
-		if err == witness.ErrAlreadyRunning {
-			// Already running - this is the expected case
-			d.logger.Printf("Witness for %s already running, skipping spawn", rigName)
-			return
-		}
-		d.logger.Printf("Error starting witness for %s: %v", rigName, err)
-		return
-	}
-
-	d.logger.Printf("Witness session for %s started successfully", rigName)
-}
-
-// ensureRefineriesRunning ensures refineries are running for all rigs.
-// Called on each heartbeat to maintain refinery merge queue processing.
-func (d *Daemon) ensureRefineriesRunning() {
-	rigs := d.getKnownRigs()
-	for _, rigName := range rigs {
-		d.ensureRefineryRunning(rigName)
-	}
-}
-
-// ensureRefineryRunning ensures the refinery for a specific rig is running.
-// Discover, don't track: uses Manager.Start() which checks sessions directly (gt-zecmc).
-func (d *Daemon) ensureRefineryRunning(rigName string) {
-	// Check rig operational state before auto-starting
-	if operational, reason := d.isRigOperational(rigName); !operational {
-		d.logger.Printf("Skipping refinery auto-start for %s: %s", rigName, reason)
-		return
-	}
-
-	// Manager.Start() handles: zombie detection, session creation, env vars, theming,
-	// WaitForClaudeReady, and crucially - startup/propulsion nudges (GUPP).
-	// It returns ErrAlreadyRunning if Claude is already running.
-	r := &rig.Rig{
-		Name: rigName,
-		Path: filepath.Join(d.config.TownRoot, rigName),
-	}
-	mgr := refinery.NewManager(r)
-
-	if err := mgr.Start(false, ""); err != nil {
-		if err == refinery.ErrAlreadyRunning {
-			// Already running - this is the expected case when fix is working
-			d.logger.Printf("Refinery for %s already running, skipping spawn", rigName)
-			return
-		}
-		d.logger.Printf("Error starting refinery for %s: %v", rigName, err)
-		return
-	}
-
-	d.logger.Printf("Refinery session for %s started successfully", rigName)
 }
 
 // getKnownRigs returns list of registered rig names.

@@ -50,7 +50,7 @@ func init() {
 func runMQNext(cmd *cobra.Command, args []string) error {
 	rigName := args[0]
 
-	_, r, _, err := getRefineryManager(rigName)
+	_, r, err := getRig(rigName)
 	if err != nil {
 		return err
 	}
