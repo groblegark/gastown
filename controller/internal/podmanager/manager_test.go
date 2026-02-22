@@ -125,8 +125,6 @@ func TestRestartPolicyForRole(t *testing.T) {
 	}{
 		{"polecat", "Never"},
 		{"crew", "Always"},
-		{"witness", "Always"},
-		{"refinery", "Always"},
 		{"mayor", "Always"},
 		{"deacon", "Always"},
 	}
@@ -146,7 +144,7 @@ func TestK8sManager_CreateSetsEnvVars(t *testing.T) {
 	ctx := context.Background()
 
 	spec := AgentPodSpec{
-		Rig: "gastown", Role: "witness", AgentName: "w1",
+		Rig: "gastown", Role: "crew", AgentName: "w1",
 		Image: "agent:latest", Namespace: "gastown",
 		Env: map[string]string{"BD_DAEMON_HOST": "daemon.svc"},
 	}
@@ -154,7 +152,7 @@ func TestK8sManager_CreateSetsEnvVars(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-witness-w1", metav1.GetOptions{})
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-crew-w1", metav1.GetOptions{})
 	envMap := make(map[string]string)
 	for _, e := range pod.Spec.Containers[0].Env {
 		envMap[e.Name] = e.Value
@@ -556,7 +554,7 @@ func TestK8sManager_ConfigMapMount(t *testing.T) {
 	ctx := context.Background()
 
 	spec := AgentPodSpec{
-		Rig: "gastown", Role: "witness", AgentName: "w1",
+		Rig: "gastown", Role: "crew", AgentName: "w1",
 		Image: "agent:latest", Namespace: "gastown",
 		ConfigMapName: "agent-config",
 	}
@@ -564,7 +562,7 @@ func TestK8sManager_ConfigMapMount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-witness-w1", metav1.GetOptions{})
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-crew-w1", metav1.GetOptions{})
 
 	// Check volume.
 	found := false
@@ -606,7 +604,7 @@ func TestK8sManager_ServiceAccount(t *testing.T) {
 	ctx := context.Background()
 
 	spec := AgentPodSpec{
-		Rig: "gastown", Role: "refinery", AgentName: "r1",
+		Rig: "gastown", Role: "crew", AgentName: "r1",
 		Image: "agent:latest", Namespace: "gastown",
 		ServiceAccountName: "gastown-agent",
 	}
@@ -614,7 +612,7 @@ func TestK8sManager_ServiceAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-refinery-r1", metav1.GetOptions{})
+	pod, _ := client.CoreV1().Pods("gastown").Get(ctx, "gt-gastown-crew-r1", metav1.GetOptions{})
 	if pod.Spec.ServiceAccountName != "gastown-agent" {
 		t.Errorf("ServiceAccountName = %q, want %q", pod.Spec.ServiceAccountName, "gastown-agent")
 	}
@@ -1358,7 +1356,6 @@ func TestBuildPod_ClaudeStatePersistence(t *testing.T) {
 	}{
 		{"mayor", true, true},
 		{"crew", true, true},
-		{"witness", true, true},
 		{"polecat", false, false},
 	}
 

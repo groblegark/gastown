@@ -23,7 +23,6 @@ const (
 
 	// UpgradeLast means defer this role until all other non-Last roles
 	// have been upgraded. Then apply UpgradeRolling.
-	// Used for witness: it monitors other agents, so upgrade it last.
 	UpgradeLast
 )
 
@@ -32,17 +31,14 @@ func roleUpgradeStrategy(role string) UpgradeStrategy {
 	switch role {
 	case "polecat":
 		return UpgradeSkip
-	case "witness":
-		return UpgradeLast
 	default:
-		// crew, refinery, and other persistent agents use rolling updates.
+		// crew and other persistent agents use rolling updates.
 		return UpgradeRolling
 	}
 }
 
 // UpgradeTracker tracks the state of an ongoing rolling upgrade across pods.
-// It ensures only one pod per role is being upgraded at a time and that
-// witness pods are upgraded after all other roles.
+// It ensures only one pod per role is being upgraded at a time.
 type UpgradeTracker struct {
 	mu     sync.Mutex
 	logger *slog.Logger
@@ -145,13 +141,12 @@ func (t *UpgradeTracker) CanUpgrade(podName, role string) bool {
 		return false
 
 	case UpgradeLast:
-		// Only upgrade witness after all other roles are done.
+		// Defer until all other non-Last roles are done.
 		if !t.AllNonLastUpgraded() {
-			t.logger.Info("deferring witness upgrade until all other roles are upgraded",
-				"pod", podName)
+			t.logger.Info("deferring upgrade until all other roles are upgraded",
+				"pod", podName, "role", role)
 			return false
 		}
-		// Fall through to rolling check.
 		return !t.IsUpgrading(role)
 
 	case UpgradeRolling:
@@ -184,7 +179,7 @@ func (t *UpgradeTracker) CleanStaleUpgrades(timeout time.Duration) {
 // Pod names follow the pattern: gt-<rig>-<role>-<agentName>
 // e.g., "gt-gastown-polecat-furiosa" -> "polecat"
 //
-//	"gt-gastown-witness-main" -> "witness"
+//	"gt-gastown-crew-toolbox" -> "crew"
 func extractRoleFromPodName(podName string) string {
 	// Remove "gt-" prefix
 	if len(podName) < 4 {

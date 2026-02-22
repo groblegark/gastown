@@ -239,12 +239,6 @@ func DefaultPodDefaultsForRole(role string) *PodDefaults {
 		}
 	case "polecat":
 		// Polecats use EmptyDir (no WorkspaceStorage).
-	case "witness", "refinery":
-		// Singletons get persistent storage for state.
-		defaults.WorkspaceStorage = &WorkspaceStorageSpec{
-			Size:             "5Gi",
-			StorageClassName: "gp2",
-		}
 	case "mayor", "deacon":
 		// Town-level singletons get persistent storage.
 		// GT_SCOPE and BD_ACTOR are set in buildEnvVars (not here) to avoid

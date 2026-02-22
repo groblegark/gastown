@@ -71,8 +71,6 @@ func TestNormalizeRole(t *testing.T) {
 		{"crews", "crew"},
 		{"polecat", "polecat"},
 		{"crew", "crew"},
-		{"witness", "witness"},
-		{"refinery", "refinery"},
 		{"mayor", "mayor"},
 		{"deacon", "deacon"},
 	}
@@ -164,7 +162,7 @@ func TestExtractAgentInfo_Empty(t *testing.T) {
 }
 
 func TestExtractAgentInfo_ShortActor(t *testing.T) {
-	raw := mutationEvent{Actor: "gastown/witness"}
+	raw := mutationEvent{Actor: "gastown/mayor"}
 	rig, role, name := extractAgentInfo(raw)
 	// Only 2 parts, not enough for full agent info — falls through to IssueID
 	if rig != "" || role != "" || name != "" {

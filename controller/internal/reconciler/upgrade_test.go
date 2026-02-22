@@ -20,9 +20,7 @@ func TestRoleUpgradeStrategy(t *testing.T) {
 		want UpgradeStrategy
 	}{
 		{"polecat", UpgradeSkip},
-		{"witness", UpgradeLast},
 		{"crew", UpgradeRolling},
-		{"refinery", UpgradeRolling},
 		{"mayor", UpgradeRolling},
 		{"deacon", UpgradeRolling},
 	}
@@ -43,9 +41,8 @@ func TestExtractRoleFromPodName(t *testing.T) {
 		want    string
 	}{
 		{"gt-gastown-polecat-furiosa", "polecat"},
-		{"gt-gastown-witness-main", "witness"},
 		{"gt-gastown-crew-toolbox", "crew"},
-		{"gt-gastown-refinery-main", "refinery"},
+		{"gt-gastown-mayor-hq", "mayor"},
 		{"gt-beads-polecat-obsidian", "polecat"},
 		{"gt", ""},
 		{"", ""},
@@ -100,33 +97,6 @@ func TestUpgradeTracker_RollingOneAtATime(t *testing.T) {
 	}
 }
 
-func TestUpgradeTracker_WitnessLast(t *testing.T) {
-	tracker := NewUpgradeTracker(testLogger())
-
-	// Register drift for both crew and witness
-	tracker.RegisterDrift("gt-gastown-crew-toolbox", "crew")
-	tracker.RegisterDrift("gt-gastown-witness-main", "witness")
-
-	// Witness should be deferred because crew hasn't upgraded yet
-	if tracker.CanUpgrade("gt-gastown-witness-main", "witness") {
-		t.Error("witness should be deferred until crew upgrades complete")
-	}
-
-	// Crew can upgrade
-	if !tracker.CanUpgrade("gt-gastown-crew-toolbox", "crew") {
-		t.Error("crew should be allowed to upgrade")
-	}
-
-	// Simulate crew upgrade complete: clear pending and upgrading
-	tracker.pendingByRole["crew"] = nil
-	tracker.ClearUpgrading("gt-gastown-crew-toolbox")
-
-	// Now witness should be allowed
-	if !tracker.CanUpgrade("gt-gastown-witness-main", "witness") {
-		t.Error("witness should be allowed after crew upgrade completes")
-	}
-}
-
 func TestUpgradeTracker_AllNonLastUpgraded(t *testing.T) {
 	tracker := NewUpgradeTracker(testLogger())
 
@@ -147,11 +117,6 @@ func TestUpgradeTracker_AllNonLastUpgraded(t *testing.T) {
 		t.Error("should be all upgraded after clearing crew pending")
 	}
 
-	// Add witness pending (should not affect the check)
-	tracker.RegisterDrift("gt-gastown-witness-main", "witness")
-	if !tracker.AllNonLastUpgraded() {
-		t.Error("witness pending should not affect AllNonLastUpgraded")
-	}
 }
 
 func TestUpgradeTracker_CleanStaleUpgrades(t *testing.T) {
@@ -243,19 +208,19 @@ func TestUpgradeTracker_DifferentRolesIndependent(t *testing.T) {
 	tracker := NewUpgradeTracker(testLogger())
 
 	tracker.RegisterDrift("gt-gastown-crew-toolbox", "crew")
-	tracker.RegisterDrift("gt-gastown-refinery-main", "refinery")
+	tracker.RegisterDrift("gt-gastown-mayor-hq", "mayor")
 
 	// Both should be independently upgradable
 	if !tracker.CanUpgrade("gt-gastown-crew-toolbox", "crew") {
 		t.Error("crew should be upgradable independently")
 	}
-	if !tracker.CanUpgrade("gt-gastown-refinery-main", "refinery") {
-		t.Error("refinery should be upgradable independently")
+	if !tracker.CanUpgrade("gt-gastown-mayor-hq", "mayor") {
+		t.Error("mayor should be upgradable independently")
 	}
 
-	// Mark crew upgrading - shouldn't affect refinery
+	// Mark crew upgrading - shouldn't affect mayor
 	tracker.MarkUpgrading("gt-gastown-crew-toolbox")
-	if !tracker.CanUpgrade("gt-gastown-refinery-main", "refinery") {
-		t.Error("refinery should not be blocked by crew upgrade")
+	if !tracker.CanUpgrade("gt-gastown-mayor-hq", "mayor") {
+		t.Error("mayor should not be blocked by crew upgrade")
 	}
 }

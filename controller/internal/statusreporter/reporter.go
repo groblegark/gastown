@@ -121,7 +121,7 @@ func (r *BdReporter) ReportPodStatus(ctx context.Context, agentName string, stat
 		return fmt.Errorf("reporting status for %s: %w", agentName, err)
 	}
 
-	// On pod failure, create an escalation bead for the witness.
+	// On pod failure, create an escalation bead.
 	if status.Phase == string(corev1.PodFailed) {
 		if err := r.createEscalation(ctx, agentName, status); err != nil {
 			r.logger.Warn("failed to create escalation bead",
@@ -289,7 +289,7 @@ func PhaseToAgentState(phase string) string {
 // agentBeadID returns the bead ID for a pod. It prefers the explicit
 // gastown.io/bead-id annotation (set by Helm or the controller). If absent,
 // it uses role-aware naming conventions:
-//   - Singleton town roles (mayor, deacon, witness): gt-{role}
+//   - Singleton town roles (mayor, deacon): gt-{role}
 //   - Polecats and crew: gt-{rig}-{role}-{agent}
 func agentBeadID(pod *corev1.Pod) string {
 	if id := pod.Annotations[podmanager.AnnotationBeadID]; id != "" {
@@ -301,7 +301,7 @@ func agentBeadID(pod *corev1.Pod) string {
 
 	// Singleton town roles use gt-{role} naming (no rig or agent suffix).
 	switch role {
-	case "mayor", "deacon", "witness":
+	case "mayor", "deacon":
 		return "gt-" + role
 	}
 

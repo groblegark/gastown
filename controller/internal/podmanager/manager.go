@@ -88,7 +88,7 @@ type SecretEnvSource struct {
 // AgentPodSpec describes the desired pod for an agent.
 type AgentPodSpec struct {
 	Rig       string
-	Role      string // polecat, crew, witness, refinery, mayor, deacon
+	Role      string // polecat, crew, mayor, deacon
 	AgentName string
 	BeadID    string // canonical bead ID (written to gastown.io/bead-id annotation)
 	Image     string
@@ -142,7 +142,7 @@ type AgentPodSpec struct {
 	CoopSidecar *CoopSidecarSpec
 
 	// GitURL is the upstream repository URL (e.g., "https://github.com/...").
-	// When set and the role needs code access (polecat, crew, refinery),
+	// When set and the role needs code access (polecat, crew),
 	// an init container clones from this URL into the workspace.
 	GitURL string
 
@@ -524,12 +524,6 @@ func (m *K8sManager) buildEnvVars(spec AgentPodSpec) []corev1.EnvVar {
 			corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: spec.AgentName},
 			corev1.EnvVar{Name: "BEADS_AGENT_NAME", Value: fmt.Sprintf("%s/%s", spec.Rig, spec.AgentName)},
 		)
-	case "witness", "refinery":
-		envVars = append(envVars,
-			corev1.EnvVar{Name: "GT_SCOPE", Value: "rig"},
-			corev1.EnvVar{Name: "BD_ACTOR", Value: spec.Role},
-			corev1.EnvVar{Name: "GIT_AUTHOR_NAME", Value: spec.Role},
-		)
 	case "mayor":
 		envVars = append(envVars,
 			corev1.EnvVar{Name: "GT_SCOPE", Value: "town"},
@@ -877,7 +871,7 @@ func (m *K8sManager) buildCoopResources(coop *CoopSidecarSpec) corev1.ResourceRe
 // roleNeedsCode returns true for roles that need a working copy of the rig's repo.
 func roleNeedsCode(role string) bool {
 	switch role {
-	case "polecat", "crew", "refinery":
+	case "polecat", "crew":
 		return true
 	default:
 		return false

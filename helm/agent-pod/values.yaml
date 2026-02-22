@@ -18,7 +18,7 @@ agent:
     tag: latest
     pullPolicy: Always
 
-  # Agent role: polecat, crew, witness, or refinery
+  # Agent role: polecat, crew, mayor, or deacon
   role: polecat
 
   # Rig this agent belongs to

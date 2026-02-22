@@ -286,16 +286,6 @@ func TestDefaultPodDefaultsForRole_Crew(t *testing.T) {
 	}
 }
 
-func TestDefaultPodDefaultsForRole_Witness(t *testing.T) {
-	d := DefaultPodDefaultsForRole("witness")
-	if d.WorkspaceStorage == nil {
-		t.Fatal("witness should have workspace storage")
-	}
-	if d.WorkspaceStorage.Size != "5Gi" {
-		t.Errorf("workspace size = %q, want %q", d.WorkspaceStorage.Size, "5Gi")
-	}
-}
-
 func TestDefaultPodDefaultsForRole_Mayor(t *testing.T) {
 	d := DefaultPodDefaultsForRole("mayor")
 	if d.WorkspaceStorage == nil {

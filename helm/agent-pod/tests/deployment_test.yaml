@@ -44,22 +44,22 @@ tests:
           value: crew
         template: templates/deployment.yaml
 
-  - it: renders with witness role
+  - it: renders with mayor role
     set:
-      agent.role: witness
+      agent.role: mayor
     asserts:
       - equal:
           path: metadata.labels["gastown.io/role"]
-          value: witness
+          value: mayor
         template: templates/deployment.yaml
 
-  - it: renders with refinery role
+  - it: renders with deacon role
     set:
-      agent.role: refinery
+      agent.role: deacon
     asserts:
       - equal:
           path: metadata.labels["gastown.io/role"]
-          value: refinery
+          value: deacon
         template: templates/deployment.yaml
 
   - it: sets security context - runAsNonRoot

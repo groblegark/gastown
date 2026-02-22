@@ -30,7 +30,7 @@ const (
 	// AgentDone means an agent completed its work (gt done, bead closed).
 	AgentDone EventType = "agent_done"
 
-	// AgentStuck means an agent is unresponsive (witness escalation).
+	// AgentStuck means an agent is unresponsive (escalation).
 	AgentStuck EventType = "agent_stuck"
 
 	// AgentKill means an agent should be terminated (lifecycle shutdown).
@@ -47,7 +47,7 @@ const (
 type Event struct {
 	Type      EventType
 	Rig       string
-	Role      string // polecat, crew, witness, refinery, mayor, deacon
+	Role      string // polecat, crew, mayor, deacon
 	AgentName string
 	BeadID    string            // The bead that triggered this event
 	Metadata  map[string]string // Additional context from beads
@@ -404,8 +404,6 @@ func extractFromLabels(labels []string) (rig, role, name string) {
 // Known patterns:
 //   - "hq-mayor"              → town, mayor, hq
 //   - "hq-deacon"             → town, deacon, hq
-//   - "{rig}-witness-{rig}"   → {rig}, witness, {rig}
-//   - "{rig}-refinery-{rig}"  → {rig}, refinery, {rig}
 //   - "{rig}-polecats-{name}" → {rig}, polecat, {name}
 //   - "{rig}-crew-{name}"     → {rig}, crew, {name}
 func parseAgentBeadID(id string) (rig, role, name string) {

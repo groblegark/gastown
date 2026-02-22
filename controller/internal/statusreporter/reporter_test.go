@@ -476,7 +476,6 @@ func TestAgentBeadID_SingletonRoles(t *testing.T) {
 	}{
 		{"mayor", "gt-mayor"},
 		{"deacon", "gt-deacon"},
-		{"witness", "gt-witness"},
 	}
 
 	for _, tt := range tests {
