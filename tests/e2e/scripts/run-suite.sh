@@ -118,6 +118,8 @@ MODULES=(
   "ws-reconnect"
   "session-persistence"
   "pvc-recovery"
+  "crew-pod-resilience"
+  "crew-build-push"
   "nats-durability"
   "dolt-s3-sync"
   "controller-crash-recovery"
