@@ -208,28 +208,33 @@ except:
 run_test "Create crew bead and wait for agent pod" test_create_and_wait
 
 if [[ -z "$TEST_POD_NAME" ]]; then
-  skip_test "Agent has git and rwx" "no agent pod"
+  skip_test "Agent has git, rwx, and required env vars" "no agent pod"
   skip_test "Agent clones beads repo" "no agent pod"
   skip_test "Agent creates branch and makes change" "no agent pod"
-  skip_test "Agent runs CI" "no agent pod"
-  skip_test "Agent pushes branch" "no agent pod"
-  skip_test "Cleanup" "no agent pod"
+  skip_test "Agent runs CI via rwx" "no agent pod"
+  skip_test "Agent pushes branch to remote" "no agent pod"
+  skip_test "Agent creates PR via gh" "no agent pod"
+  skip_test "Cleanup: delete branch, close bead, pod deleted" "no agent pod"
   print_summary
   exit 0
 fi
 
 # ── Test 3: Agent has git, rwx, and required env vars ────────────────
 test_agent_tools() {
-  local git_ver rwx_ver git_token rwx_token
+  local git_ver rwx_ver gh_ver git_token rwx_token gh_token
   git_ver=$(agent_exec 'git --version 2>&1') || return 1
   rwx_ver=$(agent_exec 'rwx --version 2>&1') || return 1
+  gh_ver=$(agent_exec 'gh --version 2>&1 | head -1') || true
   git_token=$(agent_exec 'test -n "$GIT_TOKEN" && echo "set"' 2>/dev/null) || true
   rwx_token=$(agent_exec 'test -n "$RWX_ACCESS_TOKEN" && echo "set"' 2>/dev/null) || true
+  gh_token=$(agent_exec 'test -n "$GH_TOKEN" && echo "set"' 2>/dev/null) || true
 
   log "git: $git_ver"
   log "rwx: $rwx_ver"
+  log "gh: ${gh_ver:-NOT INSTALLED}"
   log "GIT_TOKEN: ${git_token:-NOT SET}"
   log "RWX_ACCESS_TOKEN: ${rwx_token:-NOT SET}"
+  log "GH_TOKEN: ${gh_token:-NOT SET}"
 
   [[ "$git_token" == "set" ]] || { log "GIT_TOKEN not set"; return 1; }
   [[ "$rwx_token" == "set" ]] || { log "RWX_ACCESS_TOKEN not set"; return 1; }
@@ -332,12 +337,19 @@ test_push() {
 }
 run_test "Agent pushes branch to remote" test_push
 
-# ── Test 8: (Optional) Agent creates PR via gh ───────────────────────
-# Check if gh CLI is available; skip (not fail) if absent.
+# ── Test 8: Agent creates PR via gh ─────────────────────────────────
+# gh CLI is now required in the agent image (bd-bn5hp). Skip (not fail) only
+# if gh CLI is absent or GH_TOKEN is unset — those indicate image/config issues
+# that other tests already cover.
 _has_gh=""
 _has_gh=$(agent_exec 'which gh 2>/dev/null && echo "yes"' 2>/dev/null) || true
+_has_gh_token=""
+_has_gh_token=$(agent_exec 'test -n "$GH_TOKEN" && echo "yes"' 2>/dev/null) || true
+
 if [[ "$_has_gh" != *"yes"* ]]; then
-  skip_test "(Optional) Agent creates PR via gh" "gh CLI not installed"
+  skip_test "Agent creates PR via gh" "gh CLI not installed — image needs rebuild (bd-bn5hp)"
+elif [[ "$_has_gh_token" != *"yes"* ]]; then
+  skip_test "Agent creates PR via gh" "GH_TOKEN not set in agent env — check credential injection"
 else
   test_create_pr() {
     local output
@@ -349,15 +361,17 @@ else
     ") || { log "PR creation failed: $output"; return 1; }
 
     log "PR: $output"
-    # Close the PR immediately
+    # Verify PR URL was returned
     local pr_url
-    pr_url=$(echo "$output" | grep -o 'https://[^ ]*' | head -1)
-    if [[ -n "$pr_url" ]]; then
-      agent_exec "cd ${CLONE_DIR} && gh pr close '$pr_url' --delete-branch 2>/dev/null" || true
-      log "Closed PR: $pr_url"
-    fi
+    pr_url=$(echo "$output" | grep -o 'https://github.com/[^ ]*pull/[0-9]*' | head -1)
+    [[ -n "$pr_url" ]] || { log "No PR URL in output"; return 1; }
+    log "PR created: $pr_url"
+
+    # Close the PR immediately to clean up
+    agent_exec "cd ${CLONE_DIR} && gh pr close '$pr_url' 2>/dev/null" || true
+    log "Closed PR: $pr_url"
   }
-  run_test "(Optional) Agent creates PR via gh" test_create_pr
+  run_test "Agent creates PR via gh" test_create_pr
 fi
 
 # ── Test 9: Cleanup — delete remote branch, close bead ──────────────
