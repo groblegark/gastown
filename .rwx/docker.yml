@@ -35,6 +35,7 @@ on:
         commit-sha: ${{ event.git.sha }}
         ref-name: ${{ event.git.ref }}
         beads-version: ""
+        coop-version: ""
         deploy-next: ""
       status-checks:
         name: Docker
@@ -43,6 +44,7 @@ on:
         commit-sha: ${{ event.git.sha }}
         ref-name: pr
         beads-version: ""
+        coop-version: ""
         deploy-next: ""
       status-checks:
         - tasks: [build-gt, build-controller, download-coop, download-bd]
@@ -98,6 +100,93 @@ tasks:
       repository: https://github.com/groblegark/gastown.git
       ref: ${{ init.commit-sha }}
 
+  # ── Auto-bump PLATFORM_VERSION on dispatch rebuilds ─────────────────
+  # On dispatch triggers (beads/coop releases), increments the patch
+  # number of PLATFORM_VERSION (YYYY.MDD.N → YYYY.MDD.N+1) so a new
+  # image tag is produced, causing helm-bump to commit and deploy-rwx
+  # to roll out the new image. Also updates BEADS_VERSION/COOP_VERSION
+  # when dispatch override params are set.
+  # On main/pr/cli, this task is a no-op pass-through of code's filesystem.
+  # All downstream build/push/helm tasks use version-bump so they pick
+  # up the (possibly-bumped) platform-versions.env.
+  #
+  # Split into two tasks to avoid static secret validation on PR runs:
+  #   version-bump  — modifies platform-versions.env in-place (no secrets)
+  #   version-push  — commits and pushes the bump to gastown main (dispatch only)
+  - key: version-bump
+    use: code
+    cache: false
+    run: |
+      set -e
+      source platform-versions.env
+      OLD_VERSION="${PLATFORM_VERSION}"
+
+      # Only bump on dispatch (skip main, pr, cli)
+      case "${REF_NAME}" in
+        main|pr|cli)
+          echo "No version bump needed for ref: ${REF_NAME}"
+          exit 0
+          ;;
+      esac
+
+      # Parse PLATFORM_VERSION: YYYY.MDD.N
+      PV_YEAR=$(echo "${OLD_VERSION}" | cut -d. -f1)
+      PV_MDD=$(echo "${OLD_VERSION}" | cut -d. -f2)
+      PV_N=$(echo "${OLD_VERSION}" | cut -d. -f3)
+      NEW_N=$((PV_N + 1))
+      NEW_VERSION="${PV_YEAR}.${PV_MDD}.${NEW_N}"
+
+      echo "Bumping PLATFORM_VERSION: ${OLD_VERSION} → ${NEW_VERSION} [trigger: ${REF_NAME}]"
+
+      # Update PLATFORM_VERSION and GASTOWN_VERSION
+      sed -i "s/^PLATFORM_VERSION=.*/PLATFORM_VERSION=${NEW_VERSION}/" platform-versions.env
+      sed -i "s/^GASTOWN_VERSION=.*/GASTOWN_VERSION=${NEW_VERSION}/" platform-versions.env
+
+      # Update BEADS_VERSION if dispatch override provided
+      if [ -n "${BEADS_VERSION_OVERRIDE}" ]; then
+        echo "Setting BEADS_VERSION=${BEADS_VERSION_OVERRIDE}"
+        sed -i "s/^BEADS_VERSION=.*/BEADS_VERSION=${BEADS_VERSION_OVERRIDE}/" platform-versions.env
+      fi
+
+      # Update COOP_VERSION if dispatch override provided
+      if [ -n "${COOP_VERSION_OVERRIDE}" ]; then
+        echo "Setting COOP_VERSION=${COOP_VERSION_OVERRIDE}"
+        sed -i "s/^COOP_VERSION=.*/COOP_VERSION=${COOP_VERSION_OVERRIDE}/" platform-versions.env
+      fi
+
+      echo "Updated platform-versions.env:"
+      grep -E '^(PLATFORM|GASTOWN|BEADS|COOP)_VERSION' platform-versions.env
+    env:
+      REF_NAME: ${{ init.ref-name }}
+      BEADS_VERSION_OVERRIDE: ${{ init.beads-version }}
+      COOP_VERSION_OVERRIDE: ${{ init.coop-version }}
+
+  # ── Commit and push the version bump to gastown main ─────────────────
+  # Runs only on dispatch so the bumped version is recorded in git history.
+  # Separated from version-bump to avoid GITHUB_TOKEN secret validation
+  # on PR runs (RWX validates secrets statically before task execution).
+  # Downstream build tasks depend on version-bump (not version-push) so
+  # they get the in-memory bumped env without waiting for the push.
+  - key: version-push
+    use: version-bump
+    if: ${{ init.ref-name != 'main' && init.ref-name != 'pr' && init.ref-name != 'cli' }}
+    cache: false
+    run: |
+      set -e
+      source platform-versions.env
+      echo "Pushing version bump to gastown main: ${PLATFORM_VERSION} [trigger: ${REF_NAME}]"
+      git config user.email "ci@gastown"
+      git config user.name "gastown-ci"
+      git remote set-url origin "https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/groblegark/gastown.git"
+      git add platform-versions.env
+      git commit -m "chore: auto-bump platform to ${PLATFORM_VERSION} [trigger: ${REF_NAME}]"
+      git push origin HEAD:main
+      echo "Pushed version bump commit to main"
+    env:
+      REF_NAME: ${{ init.ref-name }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_ACTOR: ${{ secrets.GITHUB_USER }}
+
   # ── Go toolchain (version from .go-version) ───────────────────────
   - key: go
     call: golang/install 1.2.0
@@ -106,7 +195,7 @@ tasks:
 
   # ── Go mod download (cached by go.mod/go.sum) ──────────────────────
   - key: go-deps
-    use: [code, go]
+    use: [version-bump, go]
     run: go mod download
     filter:
       - go.mod
@@ -164,7 +253,7 @@ tasks:
 
   # ── Build controller binary → artifact (separate Go module) ─────────
   - key: build-controller
-    use: [code, go]
+    use: [version-bump, go]
     run: |
       source platform-versions.env
       cd controller
@@ -188,7 +277,7 @@ tasks:
   # When dispatched from a coop release, init.coop-version overrides the
   # pinned version so the agent image always gets the just-released binary.
   - key: download-coop
-    use: code
+    use: version-bump
     run: |
       set -ex
       source platform-versions.env
@@ -216,7 +305,7 @@ tasks:
   # When dispatched from a beads release, init.beads-version overrides the
   # pinned version so the agent image always gets the just-released binary.
   - key: download-bd
-    use: code
+    use: version-bump
     run: |
       set -ex
       source platform-versions.env
@@ -316,7 +405,7 @@ tasks:
   # ── Agent image (rich: Go, Python, Rust Analyzer, kubectl, AWS, Docker + gt/coop/bd/claude) ──
   # Self-sufficient agent image — no toolchain sidecar needed.
   - key: image-agent
-    use: [build-gt, download-coop, download-bd, build-oj, code]
+    use: [build-gt, download-coop, download-bd, build-oj, version-bump]
     if: ${{ init.ref-name != 'pr' }}
     filter:
       - deploy/agent/entrypoint.sh
@@ -449,7 +538,7 @@ tasks:
   # image.yml — this task adds a CalVer alias so all images share a
   # single version number for deployment.
   - key: push-bd
-    use: [code, download-bd, build-oj]
+    use: [version-bump, download-bd, build-oj]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -513,7 +602,7 @@ tasks:
 
   # ── Push controller image to GHCR ─────────────────────────────────────
   - key: push-controller
-    use: [code, build-controller]
+    use: [version-bump, build-controller]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -554,7 +643,7 @@ tasks:
   # Rich agent image: includes full dev toolchain (Go, Python, Rust Analyzer,
   # kubectl, AWS CLI, Docker CLI, ssh) so agents are self-sufficient.
   - key: push-agent
-    use: [code, build-gt, download-coop, download-bd, build-oj]
+    use: [version-bump, build-gt, download-coop, download-bd, build-oj]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -896,7 +985,7 @@ tasks:
   # Static Vite app served by nginx. Reverse-proxies /api/ to daemon HTTP.
   # Nginx config is mounted from a Helm ConfigMap at runtime.
   - key: push-beads3d
-    use: [code, build-beads3d]
+    use: [version-bump, build-beads3d]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -962,7 +1051,7 @@ tasks:
   # version overridden to CalVer, and published. The gastown chart lives in
   # fics-helm-chart and depends on bd-daemon directly (no GHCR publishing).
   - key: helm-publish-charts
-    use: code
+    use: version-bump
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
@@ -1007,7 +1096,7 @@ tasks:
   # ═══════════════════════════════════════════════════════════════════════
 
   - key: helm-bump
-    use: [code, push-bd, push-agent, push-controller, push-beads3d, helm-publish-charts]
+    use: [version-bump, push-bd, push-agent, push-controller, push-beads3d, helm-publish-charts]
     if: ${{ init.ref-name != 'pr' }}
     cache: false
     run: |
