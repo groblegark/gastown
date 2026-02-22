@@ -64,6 +64,24 @@ if [ ! -d "${WORKSPACE}/.git" ]; then
 else
     echo "[entrypoint] Git repo already exists in ${WORKSPACE}"
     cd "${WORKSPACE}"
+
+    # bd-3wkmr: Auto-fix stale branch in town root on restart.
+    # PVC workspace may retain a non-main branch from a previous session
+    # (e.g. e2e/crew-build-test-...). Detect and force checkout main.
+    CURRENT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
+    if [ -n "${CURRENT_BRANCH}" ] && [ "${CURRENT_BRANCH}" != "main" ] && [ "${CURRENT_BRANCH}" != "master" ]; then
+        echo "[entrypoint] WARNING: Town root on stale branch '${CURRENT_BRANCH}', resetting to main"
+        # Discard any uncommitted changes — stale session artifacts
+        git checkout -- . 2>/dev/null || true
+        git clean -fd 2>/dev/null || true
+        # Switch to main (create if needed)
+        if git show-ref --verify --quiet refs/heads/main 2>/dev/null; then
+            git checkout main 2>/dev/null || echo "[entrypoint] ERROR: git checkout main failed"
+        else
+            git checkout -b main 2>/dev/null || echo "[entrypoint] ERROR: git checkout -b main failed"
+        fi
+        echo "[entrypoint] Town root now on branch: $(git branch --show-current 2>/dev/null)"
+    fi
 fi
 
 # ── Gas Town workspace structure ───────────────────────────────────────
