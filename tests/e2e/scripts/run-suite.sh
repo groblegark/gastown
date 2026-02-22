@@ -122,6 +122,7 @@ MODULES=(
   "crew-pod-resilience"
   "crew-build-push"
   "crew-pvc-persistence"
+  "crew-concurrent"
   "nats-durability"
   "dolt-s3-sync"
   "controller-crash-recovery"
