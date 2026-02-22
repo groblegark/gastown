@@ -34,7 +34,7 @@ const (
 	LabelAppValue = "gastown"
 
 	// Default resource values.
-	DefaultCPURequest    = "500m"
+	DefaultCPURequest    = "2"
 	DefaultCPULimit      = "4"
 	DefaultMemoryRequest = "1Gi"
 	DefaultMemoryLimit   = "4Gi"

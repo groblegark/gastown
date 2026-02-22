@@ -96,7 +96,7 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].resources.requests.cpu
-          value: 500m
+          value: 2
         template: templates/deployment.yaml
       - equal:
           path: spec.template.spec.containers[0].resources.requests.memory
@@ -104,7 +104,7 @@ tests:
         template: templates/deployment.yaml
       - equal:
           path: spec.template.spec.containers[0].resources.limits.cpu
-          value: 2
+          value: 4
         template: templates/deployment.yaml
       - equal:
           path: spec.template.spec.containers[0].resources.limits.memory
