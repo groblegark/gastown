@@ -847,6 +847,51 @@ tasks:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       GITHUB_USER: ${{ secrets.GITHUB_USER }}
 
+  # ── Notify cluster: force-restart agent pods after image push ────────
+  # Interim fix (gt-kfw.2): ensures pods pick up the new image without waiting
+  # for a full helm upgrade cycle. Runs immediately after push-agent succeeds.
+  # Complements the CalVer bump + deploy-rwx path — pods restart in minutes
+  # rather than waiting for the full helm pipeline.
+  - key: notify-cluster
+    use: [push-agent]
+    if: ${{ init.ref-name != 'pr' }}
+    cache: false
+    run: |
+      set -ex
+
+      # Skip if no AWS credentials configured
+      if [ -z "${AWS_ACCESS_KEY_ID}" ]; then
+        echo "AWS credentials not set — skipping notify-cluster."
+        echo "To enable, add E2E_AWS_ACCESS_KEY_ID and E2E_AWS_SECRET_ACCESS_KEY to the RWX vault."
+        exit 0
+      fi
+
+      # Install kubectl
+      KUBE_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+      curl -fsSL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/amd64/kubectl" -o /tmp/kubectl
+      sudo install /tmp/kubectl /usr/local/bin/kubectl
+
+      # Install AWS CLI
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+      unzip -q /tmp/awscli.zip -d /tmp
+      sudo /tmp/aws/install
+      rm -rf /tmp/awscli.zip /tmp/aws
+
+      # Configure kubeconfig
+      aws eks update-kubeconfig --name "${EKS_CLUSTER}" --region us-east-1
+
+      # Force-restart agent pods so new image takes effect without waiting
+      # for helm upgrade cycle. Tolerates no matching deployments (|| true).
+      kubectl rollout restart deployment -l app.kubernetes.io/component=agent -n gastown-rwx || true
+      kubectl rollout status deployment -l app.kubernetes.io/component=agent -n gastown-rwx --timeout=5m || true
+
+      echo "Cluster notified: agent pods restarted in gastown-rwx"
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.E2E_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.E2E_AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+      EKS_CLUSTER: ${{ secrets.E2E_EKS_CLUSTER }}
+
   # ── Push beads3d image to GHCR (bd-56z54) ─────────────────────────────
   # Static Vite app served by nginx. Reverse-proxies /api/ to daemon HTTP.
   # Nginx config is mounted from a Helm ConfigMap at runtime.
