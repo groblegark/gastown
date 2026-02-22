@@ -262,18 +262,30 @@ func runNudge(cmd *cobra.Command, args []string) error {
 
 	// Try remote backend (K8s-hosted agents via Coop).
 	// When running outside K8s (developer workstation), ResolveBackend returns
-	// a CoopBackend with the internal pod IP which is unreachable. Use port-forward
-	// when connected to a namespace. (bd-5we9b)
-	if ns := getConnectedNamespace(); ns != "" {
-		if err := nudgeViaPortForward(target, ns, message); err != nil {
-			return fmt.Errorf("nudging remote session: %w", err)
+	// a CoopBackend with the internal pod IP which is unreachable. Auto-detect
+	// outside-K8s and use port-forward. (bd-5ib91, bd-5we9b)
+	if os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
+		// Outside K8s: use kubectl port-forward to reach agent pods.
+		// Try connected namespace first, fall back to bead metadata.
+		ns := getConnectedNamespace()
+		if ns == "" {
+			// No explicit connection — resolve namespace from bead metadata.
+			podInfo, err := terminal.ResolveAgentPodInfo(target)
+			if err == nil {
+				ns = podInfo.Namespace
+			}
 		}
-		fmt.Printf("%s Nudged %s (remote)\n", style.Bold.Render("✓"), target)
-		if townRoot != "" {
-			_ = LogNudge(townRoot, target, message)
+		if ns != "" {
+			if err := nudgeViaPortForward(target, ns, message); err != nil {
+				return fmt.Errorf("nudging remote session: %w", err)
+			}
+			fmt.Printf("%s Nudged %s (remote)\n", style.Bold.Render("✓"), target)
+			if townRoot != "" {
+				_ = LogNudge(townRoot, target, message)
+			}
+			_ = events.LogFeed(events.TypeNudge, sender, events.NudgePayload("", target, message))
+			return nil
 		}
-		_ = events.LogFeed(events.TypeNudge, sender, events.NudgePayload("", target, message))
-		return nil
 	}
 
 	// In-cluster path: ResolveBackend returns CoopBackend with reachable pod IP.
