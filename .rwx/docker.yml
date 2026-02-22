@@ -608,6 +608,7 @@ tasks:
           gcc-14 g++-14 cpp-14 libgcc-14-dev \
           gcc-13 g++-13 cpp-13 libgcc-13-dev \
           libc6-dev linux-libc-dev binutils-x86-64-linux-gnu \
+          libicu-dev icu-devtools \
           openssh-client libcurl3t64-gnutls sudo \
           libapparmor1; do
         dpkg -L "$pkg" 2>/dev/null | while read -r f; do
@@ -656,6 +657,17 @@ tasks:
         dir="$LAYER$(dirname "$f")"
         mkdir -p "$dir"
         cp -a "$f" "$LAYER${f}" 2>/dev/null || true
+      done
+      # ICU development headers (needed by go-icu-regex CGO compilation)
+      if [ -d /usr/include/unicode ]; then
+        mkdir -p $LAYER/usr/include/unicode
+        cp -a /usr/include/unicode/* $LAYER/usr/include/unicode/ 2>/dev/null || true
+      fi
+      # ICU pkg-config files (needed by CGO to find ICU flags)
+      find /usr/lib/x86_64-linux-gnu/pkgconfig -name 'icu*.pc' 2>/dev/null | while read -r f; do
+        dir="$LAYER$(dirname "$f")"
+        mkdir -p "$dir"
+        cp "$f" "$LAYER${f}" 2>/dev/null || true
       done
       # git-core helpers (git-remote-https, etc.)
       cp -r /usr/lib/git-core $LAYER/usr/lib/ 2>/dev/null || true
