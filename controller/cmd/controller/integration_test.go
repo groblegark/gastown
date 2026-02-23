@@ -1322,7 +1322,7 @@ func TestIntegration_FullRunLoop(t *testing.T) {
 	// Start controller in background.
 	runDone := make(chan error, 1)
 	go func() {
-		runDone <- run(ctx, logger, cfg, watcher, pods, reporter)
+		runDone <- run(ctx, logger, cfg, client, watcher, pods, reporter, nil, nil)
 	}()
 
 	// Give the controller a moment to start.
@@ -1403,7 +1403,7 @@ func TestIntegration_FullRunLoopStuckRestart(t *testing.T) {
 
 	runDone := make(chan error, 1)
 	go func() {
-		runDone <- run(ctx, logger, cfg, watcher, pods, reporter)
+		runDone <- run(ctx, logger, cfg, client, watcher, pods, reporter, nil, nil)
 	}()
 	time.Sleep(50 * time.Millisecond)
 
@@ -1467,7 +1467,7 @@ func TestIntegration_PeriodicSyncReportsAllPods(t *testing.T) {
 
 	runDone := make(chan error, 1)
 	go func() {
-		runDone <- run(ctx, logger, cfg, watcher, pods, reporter)
+		runDone <- run(ctx, logger, cfg, client, watcher, pods, reporter, nil, nil)
 	}()
 
 	// Wait for at least one sync cycle.
