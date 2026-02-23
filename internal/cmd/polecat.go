@@ -987,13 +987,25 @@ func getGitState(worktreePath string) (*GitState, error) {
 	// Determine the correct reference to compare against
 	var compareRef string
 	if err == nil && currentBranch != "" && currentBranch != "HEAD" {
-		// Check if origin/<branch> exists (for pushed polecat branches)
-		remoteBranch := "origin/" + currentBranch
-		checkCmd := exec.Command("git", "rev-parse", "--verify", remoteBranch)
-		checkCmd.Dir = worktreePath
-		if checkErr := checkCmd.Run(); checkErr == nil {
-			// Remote branch exists - use it
-			compareRef = remoteBranch
+		// Prefer the configured upstream tracking branch over a guessed remote name.
+		upstreamCmd := exec.Command("git", "rev-parse", "--abbrev-ref", currentBranch+"@{upstream}")
+		upstreamCmd.Dir = worktreePath
+		if upstreamOut, upErr := upstreamCmd.Output(); upErr == nil {
+			upstream := strings.TrimSpace(string(upstreamOut))
+			if upstream != "" {
+				compareRef = upstream
+			}
+		}
+
+		if compareRef == "" {
+			// Check if origin/<branch> exists (for pushed polecat branches)
+			remoteBranch := "origin/" + currentBranch
+			checkCmd := exec.Command("git", "rev-parse", "--verify", remoteBranch)
+			checkCmd.Dir = worktreePath
+			if checkErr := checkCmd.Run(); checkErr == nil {
+				// Remote branch exists - use it
+				compareRef = remoteBranch
+			}
 		}
 	}
 
