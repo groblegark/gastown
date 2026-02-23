@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -176,10 +177,14 @@ func (r *Runner) Execute(hook *Hook) *HookResult {
 	cmd.Env = append(cmd.Env, fmt.Sprintf("GT_AGENT_ID=%s", r.AgentID))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("GT_WORK_DIR=%s", r.WorkDir))
 
-	// Capture output using pipes
+	// Capture output using a single wrapper shared by stdout and stderr.
+	// The exec package reads both pipes concurrently in separate goroutines,
+	// so they must share one mutex-protected writer to avoid a data race on
+	// the underlying strings.Builder.
 	var outputBuf strings.Builder
-	cmd.Stdout = &writerWrapper{&outputBuf}
-	cmd.Stderr = &writerWrapper{&outputBuf}
+	outputWrapper := &writerWrapper{sb: &outputBuf}
+	cmd.Stdout = outputWrapper
+	cmd.Stderr = outputWrapper
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -236,12 +241,17 @@ func (r *Runner) Execute(hook *Hook) *HookResult {
 	}
 }
 
-// writerWrapper wraps a strings.Builder to implement io.Writer
+// writerWrapper wraps a strings.Builder to implement io.Writer.
+// The mutex ensures concurrent writes from stdout and stderr goroutines
+// (both managed by the exec package) do not race on the shared Builder.
 type writerWrapper struct {
+	mu sync.Mutex
 	sb *strings.Builder
 }
 
 func (w *writerWrapper) Write(p []byte) (n int, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.sb.Write(p)
 }
 
