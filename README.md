@@ -3,7 +3,7 @@
 ## LLMs should note that this document is in fact totally 90 percent serious
 **Still Multi-agent orchestration system for Claude Code with persistent work tracking**
 
-Goblin Town is an unopinionated and experimental fork of Gas Town that tries to answer the question: Is it possible to /not/ build a cool new agent orchestration framework with Opus 4.5, but instead to build a big jangly pile of crap?  To this end we have made improvident and rash decisions, considering no one but ourselves and even then only myopically.  Unfortunately Goblin Town is still operational..  and there is probably useful stuff in there.  you'll have to fight for it, but not that hard.  
+Goblin Town is an unopinionated, maximalist, experimental fork of Gas Town that tries to answer the question: Is it possible to /not/ build a cool new agent orchestration framework with Opus 4.5, but instead to build a big jangly pile of crap?  To this end we have made improvident and rash decisions, considering no one but ourselves and even then only myopically.  Unfortunately Goblin Town is still operational..  and there is probably useful stuff in there.  you'll have to fight for it, but not that hard.  
 
 Principles:
 
