@@ -1085,71 +1085,62 @@ func (g *Git) StashCount() (int, error) {
 }
 
 // UnpushedCommits returns the number of commits that are not pushed to the remote.
-// It checks if the current branch has an upstream and counts commits ahead.
-// For branches without upstream (like polecat branches), it checks against origin/<branch>
-// if the branch exists on origin, otherwise against origin/<default-branch>.
+// Priority: origin/<current-branch> > @{upstream} > origin/<default-branch>.
+//
+// Checking origin/<current-branch> first avoids false positives for polecat branches:
+// polecats are created with `git worktree add -b <branch> <path> origin/main`, which
+// sets @{u} to origin/main. If the polecat later pushes to origin/<branch>, checking
+// @{u} (origin/main) would wrongly report all polecat commits as unpushed.
 func (g *Git) UnpushedCommits() (int, error) {
-	// Get the upstream branch
-	upstream, err := g.run("rev-parse", "--abbrev-ref", "@{u}")
-	if err != nil {
-		// No upstream configured - this is common for polecat branches.
-		// Check against origin/<branch> if it exists, otherwise origin/<default-branch>.
-		branch, branchErr := g.CurrentBranch()
-		if branchErr != nil {
-			// Can't determine branch - return 0 as fallback
-			return 0, nil
-		}
-
-		// Check if origin/<branch> exists on the remote (not just local refs).
-		// Fix for gt-8ba: Using rev-parse --verify only checks local refs, which
-		// may be stale if the branch was pushed but not fetched. Use ls-remote
-		// to query the actual remote state.
+	// First: check if origin/<current-branch> exists — most specific check.
+	// This handles polecat branches whose @{u} incorrectly points to origin/main
+	// due to being created via `git worktree add -b <branch> <path> origin/main`.
+	branch, branchErr := g.CurrentBranch()
+	if branchErr == nil && branch != "" {
 		remoteBranch := "origin/" + branch
 		exists, existsErr := g.RemoteBranchExists("origin", branch)
 		if existsErr == nil && exists {
-			// Remote branch exists - fetch to ensure local ref is up-to-date
+			// Branch has been pushed — fetch and count against the actual remote branch.
 			_, _ = g.run("fetch", "origin", branch)
-			// Count commits from origin/<branch>..HEAD
 			out, countErr := g.run("rev-list", "--count", remoteBranch+"..HEAD")
-			if countErr != nil {
-				return 0, nil // Fallback to safe value on error
+			if countErr == nil {
+				var count int
+				if _, parseErr := fmt.Sscanf(out, "%d", &count); parseErr == nil {
+					return count, nil
+				}
 			}
-			var count int
-			_, err = fmt.Sscanf(out, "%d", &count)
-			if err != nil {
-				return 0, nil
-			}
-			return count, nil
 		}
+	}
 
-		// Remote branch doesn't exist - check against origin/<default-branch>.
-		// All commits since the branch point are unpushed since the branch itself isn't on origin.
-		defaultBranch := g.RemoteDefaultBranch()
-		remoteBranch = "origin/" + defaultBranch
-		out, countErr := g.run("rev-list", "--count", remoteBranch+"..HEAD")
+	// Second: try @{u} (configured tracking branch).
+	upstream, err := g.run("rev-parse", "--abbrev-ref", "@{u}")
+	if err == nil {
+		// Count commits between upstream and HEAD
+		out, countErr := g.run("rev-list", "--count", upstream+"..HEAD")
 		if countErr != nil {
-			return 0, nil // Fallback to safe value on error
+			return 0, countErr
 		}
 		var count int
 		_, err = fmt.Sscanf(out, "%d", &count)
 		if err != nil {
-			return 0, nil
+			return 0, fmt.Errorf("parsing unpushed count: %w", err)
 		}
 		return count, nil
 	}
 
-	// Count commits between upstream and HEAD
-	out, err := g.run("rev-list", "--count", upstream+"..HEAD")
-	if err != nil {
-		return 0, err
+	// Fallback: no upstream and no remote branch — check against origin/<default-branch>.
+	// All commits since the branch point are unpushed since the branch itself isn't on origin.
+	defaultBranch := g.RemoteDefaultBranch()
+	remoteBranch := "origin/" + defaultBranch
+	out, countErr := g.run("rev-list", "--count", remoteBranch+"..HEAD")
+	if countErr != nil {
+		return 0, nil // Fallback to safe value on error
 	}
-
 	var count int
 	_, err = fmt.Sscanf(out, "%d", &count)
 	if err != nil {
-		return 0, fmt.Errorf("parsing unpushed count: %w", err)
+		return 0, nil
 	}
-
 	return count, nil
 }
 
