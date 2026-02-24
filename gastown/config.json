@@ -1,0 +1,11 @@
+{
+  "type": "rig",
+  "version": 1,
+  "name": "gastown",
+  "git_url": "https://github.com/groblegark/gastown.git",
+  "default_branch": "main",
+  "created_at": "2026-02-24T06:24:15.92737861Z",
+  "beads": {
+    "prefix": "gt"
+  }
+}
